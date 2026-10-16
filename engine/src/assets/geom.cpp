@@ -106,7 +106,9 @@ bool parseGeom(const std::vector<uint8_t>& f, Geom& out, std::string* error) {
             if (!plausible(stride) && plausible(used)) vstride = unsigned(used);
         }
         if (m.vertexCount && !has(vAt, size_t(m.vertexCount - 1) * vstride + used)) return fail(error, "geom vertices outside the file");
-        if (nodeAt) m.node = u32(nodeAt);
+        const unsigned paletteSize = u16(r);
+        if (nodeAt && !has(nodeAt, size_t(paletteSize) * 4)) return fail(error, "geom palette outside the file");
+        for (unsigned k = 0; nodeAt && k < paletteSize; ++k) m.palette.push_back(u32(nodeAt + 4 * size_t(k)));
         m.strip.resize(indices);
         if (indices) std::memcpy(m.strip.data(), &f[iAt], size_t(indices) * 2);
         for (uint16_t ix : m.strip)
@@ -168,7 +170,11 @@ bool parseGeom(const std::vector<uint8_t>& f, Geom& out, std::string* error) {
             const uint8_t* e = &f[p + 0x18 + 0x14 * size_t(k)];
             const int id = e[0], kind = e[1];
             if (kind == 0) mat.textures[id] = std::string(reinterpret_cast<const char*>(e + 4), strnlen(reinterpret_cast<const char*>(e + 4), 12));
-            else if (kind == 1 || kind == 3 || kind == 4) {
+            else if (kind == 100) {
+                std::array<uint32_t, 4> v;
+                std::memcpy(v.data(), e + 4, 16);
+                mat.states[id] = v;
+            } else if (kind == 1 || kind == 3 || kind == 4) {
                 std::vector<float> v(static_cast<size_t>(kind));
                 std::memcpy(v.data(), e + 4, 4 * size_t(kind));
                 mat.params[id] = std::move(v);
@@ -176,6 +182,19 @@ bool parseGeom(const std::vector<uint8_t>& f, Geom& out, std::string* error) {
         }
         out.materials.push_back(std::move(mat));
         p += 0x18 + 0x14 * size_t(n);
+    }
+    // inverse binds: Android / the Vita 3x4 row-major (0x30 bytes), the iPad 4x4 column-major (0x40)
+    const unsigned joints = u16(0xc);
+    const size_t bindAt = u32(0x40), bindSize = out.version == 0x50 ? 0x30 : 0x40;
+    if (bindAt && has(bindAt, joints * bindSize)) {
+        out.inverseBind.resize(joints);
+        for (unsigned j = 0; j < joints; ++j) {
+            float v[16];
+            std::memcpy(v, &f[bindAt + j * bindSize], bindSize);
+            for (int row = 0; row < 3; ++row)
+                for (int col = 0; col < 4; ++col)
+                    out.inverseBind[j].m[row * 4 + col] = out.version == 0x50 ? v[row * 4 + col] : v[col * 4 + row];
+        }
     }
     if (out.meshes.empty())
         for (int c = 0; c < 3; ++c) out.boundsMin[c] = out.boundsMax[c] = 0;

@@ -36,7 +36,10 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] Skeletons (`skel`: Sony Edge Animation's, ported) and the meshes' inverse bind matrices
 - [x] Animations (`anim`): Edge Animation's frame sets and keyframes, decoded and checked
       (`tools/anim.py`)
-- [ ] Skinning and animation in the engine, the game's own shaders and materials
+- [x] Skinning and animation in the engine: the viewer plays every figure's animations (relative
+      to the base pose, as the game blends them); materials' render states (alpha test, blending,
+      culling, depth writes)
+- [ ] The game's own shaders (lighting, normal maps), effects
 - [ ] Engine: the field, events, battles, menus
 
 ## What you need
@@ -53,8 +56,8 @@ One or more of:
 
 | | |
 |---|---|
-| `cr2view --data <archive> [--model name] [--capture out.bmp]` | the model viewer: drag to turn, the wheel to zoom, Left / Right for the other models |
-| `cr2tool check / scripts / run / images / models / compare-models` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared |
+| `cr2view --data <archive> [--model name] [--anim name --time s] [--capture out.bmp]` | the model viewer: drag to turn, the wheel to zoom, Left / Right for the other models, Up / Down for the figure's animations, Space to pause |
+| `cr2tool check / scripts / run / images / models / compare-models / animations / pose` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared |
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
 | `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |
 | `tools/geom.py` | a mesh file's meshes and materials, a check of them all, a flat-shaded preview |

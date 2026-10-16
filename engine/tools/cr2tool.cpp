@@ -11,6 +11,10 @@
 //                                                    materials name are in the archive
 //   cr2tool compare-models <archive> <archive>       the mesh files both have, decoded: the
 //                                                    largest differences in positions, uvs, normals
+//   cr2tool animations <archive>                     skeletons: base pose * inverse bind = identity
+//                                                    for the skinned joints; every animation:
+//                                                    unit rotations, frame set boundaries continuous
+//   cr2tool pose <archive> <figure> <anim> <frame>   the animation's pose at a frame (joint: R, T, S)
 //   cr2tool images <archive> [pattern [out dir]]     every texture decodes (formats counted);
 //                                                    with a folder, those matching as .tga
 #include <cmath>
@@ -22,6 +26,7 @@
 
 #include "assets/geom.hpp"
 #include "assets/image.hpp"
+#include "assets/skeleton.hpp"
 #include "assets/mvgl.hpp"
 #include "script/vm.hpp"
 
@@ -34,7 +39,8 @@ int usage() {
                  "cr2tool run <archive> <script> [function]\n"
                  "cr2tool images <archive> [pattern [out dir]]\n"
                  "cr2tool models <archive>\n"
-                 "cr2tool compare-models <archive> <archive>\n");
+                 "cr2tool compare-models <archive> <archive>\n"
+                 "cr2tool animations <archive>\n");
     return 2;
 }
 
@@ -224,6 +230,118 @@ int compareModels(const char* pa, const char* pb) {
     return 0;
 }
 
+int animations(const char* path) {
+    cr2::MvglArchive a;
+    if (!openArchive(a, path)) return 1;
+    std::vector<uint8_t> data;
+    // skeletons against their figures' inverse binds
+    size_t figures = 0, skinned = 0, bound = 0;
+    std::map<std::string, cr2::Skeleton> skeletons;
+    for (const auto& e : a.entries()) {
+        if (e.name.size() < 5 || e.name.compare(e.name.size() - 5, 5, ".skel") != 0) continue;
+        cr2::Skeleton sk;
+        std::string err;
+        if (!a.read(e, data) || !cr2::parseSkeleton(data, sk, &err)) {
+            std::printf("bad %s: %s\n", e.name.c_str(), err.c_str());
+            continue;
+        }
+        const std::string base = e.name.substr(0, e.name.size() - 5);
+        cr2::Geom g;
+        if (a.read(base + ".geom", data) && cr2::parseGeom(data, g) && g.inverseBind.size() == sk.basePose.size()) {
+            ++figures;
+            const auto world = sk.world(sk.basePose);
+            std::vector<bool> used(sk.basePose.size(), false);
+            for (const auto& m : g.meshes)
+                for (uint32_t j : m.palette)
+                    if (j < used.size()) used[j] = true;
+            for (size_t j = 0; j < used.size(); ++j) {
+                if (!used[j]) continue;
+                const cr2::Mat34 m = world[j] * g.inverseBind[j];
+                float err = 0;
+                for (int r = 0; r < 3; ++r)
+                    for (int c = 0; c < 4; ++c) err = std::max(err, std::fabs(m.m[r * 4 + c] - (r == c ? 1.0f : 0.0f)));
+                ++skinned;
+                bound += err <= 1e-3f;
+            }
+        }
+        skeletons[base] = std::move(sk);
+    }
+    std::printf("%zu skeletons; %zu figures, %zu skinned joints: %zu with base pose * inverse bind = identity (%.1f%%)\n",
+                skeletons.size(), figures, skinned, bound, 100.0 * double(bound) / double(std::max<size_t>(skinned, 1)));
+    // animations
+    size_t anims = 0, bad = 0, unitBad = 0, boundaries = 0;
+    double worst = 0;
+    std::string worstAt;
+    for (const auto& e : a.entries()) {
+        if (e.name.size() < 5 || e.name.compare(e.name.size() - 5, 5, ".anim") != 0) continue;
+        cr2::Animation an;
+        std::string err;
+        if (!a.read(e, data) || !an.parse(data, &err)) {
+            ++bad;
+            std::printf("bad %s: %s\n", e.name.c_str(), err.c_str());
+            continue;
+        }
+        ++anims;
+        std::vector<cr2::JointTransform> base(size_t(an.joints()));
+        for (size_t cut = e.name.size() - 5; cut > 0; --cut) { // the figure: the name before the motion's
+            const auto it = skeletons.find(e.name.substr(0, cut));
+            if (it != skeletons.end() && it->second.basePose.size() == base.size()) { base = it->second.basePose; break; }
+        }
+        // driven joints: the ones some rotation channel sets (base poses of UI skeletons aren't unit)
+        std::vector<cr2::JointTransform> probe = base;
+        for (auto& t : probe) t.rotation[0] = t.rotation[1] = t.rotation[2] = t.rotation[3] = 0;
+        an.evaluate(0, probe);
+        for (int fr = 0; fr < an.frames(); fr += std::max(1, an.frames() / 16)) {
+            std::vector<cr2::JointTransform> p = base;
+            an.evaluate(float(fr), p);
+            for (size_t j = 0; j < p.size(); ++j) {
+                const float* q = probe[j].rotation;
+                if (q[0] == 0 && q[1] == 0 && q[2] == 0 && q[3] == 0) continue;
+                const float* r = p[j].rotation;
+                if (std::fabs(std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2] + r[3] * r[3]) - 1) > 1e-3f) { ++unitBad; break; }
+            }
+        }
+        // continuity across frame sets: just before a set's start and at it
+        for (int fr = 1; fr < an.frames(); ++fr) {
+            std::vector<cr2::JointTransform> p0 = base, p1 = base, pm = base;
+            an.evaluate(float(fr) - 1e-4f, p0);
+            an.evaluate(float(fr), p1);
+            an.evaluate(float(fr) - 2e-4f, pm);
+            // a jump: the step at the frame far bigger than the step just before it
+            for (size_t j = 0; j < p0.size(); ++j)
+                for (int c = 0; c < 3; ++c) {
+                    const double step = std::fabs(double(p1[j].translation[c]) - p0[j].translation[c]);
+                    const double before = std::fabs(double(p0[j].translation[c]) - pm[j].translation[c]);
+                    const double rel = (step - 2 * before) / std::max(1.0, std::fabs(double(p1[j].translation[c])));
+                    if (rel > worst) worst = rel, worstAt = e.name + " frame " + std::to_string(fr);
+                }
+            ++boundaries;
+        }
+    }
+    std::printf("%zu animations parse, %zu bad; driven rotations off unit length in %zu sampled frames; "
+                "%zu frames checked for jumps, the largest translation jump %.2g (%s)\n",
+                anims, bad, unitBad, boundaries, worst, worstAt.c_str());
+    return bad ? 1 : 0;
+}
+
+int pose(const char* path, const std::string& figure, const std::string& animName, float frame) {
+    cr2::MvglArchive a;
+    if (!openArchive(a, path)) return 1;
+    std::vector<uint8_t> data;
+    cr2::Skeleton sk;
+    cr2::Animation an;
+    std::string err;
+    if (!a.read(figure + ".skel", data, &err) || !cr2::parseSkeleton(data, sk, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
+    if (!a.read(animName + ".anim", data, &err) || !an.parse(data, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
+    std::vector<cr2::JointTransform> p = sk.basePose;
+    an.evaluate(frame, p);
+    for (size_t j = 0; j < p.size(); ++j)
+        std::printf("%zu: R %.4f %.4f %.4f %.4f  T %.4f %.4f %.4f  S %.4f %.4f %.4f\n", j, p[j].rotation[0], p[j].rotation[1],
+                    p[j].rotation[2], p[j].rotation[3], p[j].translation[0], p[j].translation[1], p[j].translation[2], p[j].scale[0],
+                    p[j].scale[1], p[j].scale[2]);
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -231,6 +349,8 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[1], "check")) return check(argv[2]);
     if (!std::strcmp(argv[1], "scripts")) return scripts(argv[2], argc > 3 ? argv[3] : nullptr);
     if (!std::strcmp(argv[1], "models")) return models(argv[2]);
+    if (!std::strcmp(argv[1], "animations")) return animations(argv[2]);
+    if (!std::strcmp(argv[1], "pose") && argc > 5) return pose(argv[2], argv[3], argv[4], float(std::atof(argv[5])));
     if (!std::strcmp(argv[1], "compare-models") && argc > 3) return compareModels(argv[2], argv[3]);
     if (!std::strcmp(argv[1], "images")) return images(argv[2], argc > 3 ? argv[3] : nullptr, argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "run") && argc > 3) return run(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);

@@ -139,7 +139,16 @@ A material: u32 hash, ..., +0x14 u8 parameters, +0x15 u8 render states, then 0x1
 u8 parameter, u8 kind (0 texture, 1 / 3 / 4 a float / vec3 / vec4, 100 a render state), u16, then
 the texture's name (12 characters: `images\<name>.img`) or the values. Parameters seen: 0x32
 diffuse map, 0x35 normal map, 0x33 colour (vec4), 0x36 / 0x38 / 0x39 / 0x41 / 0x42 floats, 0x3e /
-0x3f / 0x40 vec3s; render states 0x78..0x80.
+0x3f / 0x40 vec3s.
+
+A render state's entry holds 4 u32 GL values; the ids are `RenderContext`'s table (its names, in
+order from 0x78): `alpha_func` (func, ref as a float - GREATER), `alpha_test_enable`,
+`blend_func` (src, dst), `blend_equation`, `blend_enable`, `cull_face`, `cull_face_enable`,
+`depth_func`, `depth_mask`, `depth_test_enable`, `polygon_offset`, `polygon_offset_fill_enable`,
+`color_mask`, `stencil_func`, `stencil_mask`, `stencil_op`, `stencil_test_enable` (0x88). Those
+a material leaves out keep the defaults: no alpha test, no blending, back faces culled, depth test
+and writes on. The textures' alpha is not transparency unless the material tests or blends (the
+characters' carries other data).
 
 Name prefixes: `d` dungeon maps (832), `eff` effects (281), `t` towns (148), `obj` objects (72),
 `m` monsters (64), `cam_z` cameras (63), `c` characters (42), `v` vistas (36), `gmk` gimmicks.
@@ -194,6 +203,13 @@ user; key rotation, translation, scale, user - padded to 4), the initial values 
 one keyframe bit per animated channel per frame (frames 1 .. count, MSB first; rotation channels,
 then translation, scale, user), the keys (each channel's in turn), and - aligned to 16 - the next
 set's header and initial values (local frame count + 1), so a set reaches the next one alone.
+**The animations are relative to the figure's base pose**: their constant channels hold 0 /
+identity where a joint stays put (19,238 constant translations are 0 where the base's isn't, none
+equals the base; 1,078 constant rotations are identity, one equals the base's), so an animation
+evaluated over an identity pose is composed onto the base as `edgeAnimBlendJointsRelative` does:
+rotation base * delta (Hamilton product), translation base + delta, scale base * delta. Each
+figure has a `<figure>.anim` with no channels (892 of them: the base layer).
+
 Between the keys P and Q around frame i + f: t = (i - P + f) / (Q - P); rotations slerp on the
 short arc (lerp from a dot of 0.999), the rest lerp; channels without keys in the set run from
 the initial value to the next set's. `tools/anim.py check`: in all three releases every frame set

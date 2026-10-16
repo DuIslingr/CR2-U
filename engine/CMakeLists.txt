@@ -21,6 +21,7 @@ add_library(cr2core STATIC
     src/assets/mvgl.cpp
     src/assets/image.cpp
     src/assets/geom.cpp
+    src/assets/skeleton.cpp
     src/script/vm.cpp
 )
 target_include_directories(cr2core PUBLIC src)

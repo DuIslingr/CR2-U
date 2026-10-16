@@ -1,11 +1,13 @@
 // cr2view: CR2-U's model viewer - a figure (`.geom`) from your copy's archive, its meshes with
-// their materials' diffuse textures, vertex colours and a simple light.
+// their materials' diffuse textures, vertex colours and a simple light, skinned to its skeleton
+// (`.skel`) and playing its animations (`<figure>*.anim`).
 //
 //   cr2view --data <CRDB.ios.mvgl | main.212...obb | CRDB.psp2.mvgl> [--model <name>]
-//           [--size WxH] [--yaw deg] [--pitch deg] [--capture out.bmp]
+//           [--anim <name>] [--time s] [--size WxH] [--yaw deg] [--pitch deg] [--capture out.bmp]
 //
 // Drag to turn it, the wheel to zoom, Left / Right (or PageUp / PageDown) for the archive's other
-// models, Esc to quit. --capture draws one frame to a BMP and exits.
+// models, Up / Down for the figure's animations, Space to pause, Esc to quit. --capture draws one
+// frame (at --time) to a BMP and exits.
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -19,6 +21,7 @@
 #include "assets/geom.hpp"
 #include "assets/image.hpp"
 #include "assets/mvgl.hpp"
+#include "assets/skeleton.hpp"
 #include "gfx/gl.hpp"
 
 namespace {
@@ -93,16 +96,17 @@ in vec4 vColour;
 uniform sampler2D uTexture;
 uniform float uLit;      // 1: the mesh has normals
 uniform float uTextured; // 1: a diffuse texture
+uniform float uAlphaRef; // the alpha test: discard at or below (-1: off)
 out vec4 outColour;
 void main() {
     vec4 c = vColour * mix(vec4(1.0), texture(uTexture, vUv), uTextured);
-    if (c.a < 0.25) discard;
+    if (c.a <= uAlphaRef) discard; // (the materials' alpha test: GREATER ref; -1 when off)
     float light = 1.0;
     if (uLit > 0.5) {
         vec3 n = normalize(vNormal);
         light = 0.45 + 0.65 * max(dot(n, normalize(vec3(0.4, 0.8, 0.45))), 0.0);
     }
-    outColour = vec4(c.rgb * light, 1.0);
+    outColour = vec4(c.rgb * light, c.a);
 }
 )";
 
@@ -127,6 +131,9 @@ struct GpuMesh {
     GLsizei indices = 0;
     bool lit = false;
     GLuint texture = 0;
+    cr2::GeomMesh source;       // (for skinning)
+    cr2::GeomMaterial material; // (its render states)
+    std::vector<float> vertices; // the interleaved buffer: position 3, normal 3, uv 2, colour 4
 };
 
 struct Viewer {
@@ -136,6 +143,14 @@ struct Viewer {
     std::vector<GpuMesh> meshes;
     std::map<std::string, GLuint> textures;
     float centre[3] = {0, 0, 0}, radius = 1;
+    cr2::Skeleton skeleton;
+    bool skinned = false;
+    std::vector<cr2::Mat34> inverseBind;
+    std::vector<std::string> anims; // the figure's animations
+    size_t animIndex = 0;
+    cr2::Animation anim;
+    bool animLoaded = false, paused = false;
+    float time = 0;
     float yaw = 30, pitch = 15, zoom = 1;
     GLuint program = 0;
     std::string status;
@@ -204,7 +219,7 @@ struct Viewer {
             gl::BindVertexArray(gm.vao);
             gl::GenBuffers(1, &gm.vbo);
             gl::BindBuffer(GL_ARRAY_BUFFER, gm.vbo);
-            gl::BufferData(GL_ARRAY_BUFFER, GLsizeiptr(v.size() * 4), v.data(), GL_STATIC_DRAW);
+            gl::BufferData(GL_ARRAY_BUFFER, GLsizeiptr(v.size() * 4), v.data(), GL_DYNAMIC_DRAW);
             gl::GenBuffers(1, &gm.ibo);
             gl::BindBuffer(GL_ELEMENT_ARRAY_BUFFER, gm.ibo);
             gl::BufferData(GL_ELEMENT_ARRAY_BUFFER, GLsizeiptr(idx.size() * 4), idx.data(), GL_STATIC_DRAW);
@@ -216,7 +231,12 @@ struct Viewer {
             for (GLuint a = 0; a < 4; ++a) gl::EnableVertexAttribArray(a);
             gm.indices = GLsizei(idx.size());
             gm.lit = !m.normal.empty();
-            if (m.material < g.materials.size()) gm.texture = texture(g.materials[m.material].diffuse());
+            gm.source = m;
+            gm.vertices = std::move(v);
+            if (m.material < g.materials.size()) {
+                gm.material = g.materials[m.material];
+                gm.texture = texture(gm.material.diffuse());
+            }
             meshes.push_back(gm);
             verts += m.vertexCount;
             tris += idx.size() / 3;
@@ -229,6 +249,19 @@ struct Viewer {
             r2 += h * h;
         }
         radius = std::max(std::sqrt(r2), 1e-3f);
+        // the skeleton and the figure's animations (<figure>*.anim: c217.anim, c217e080.anim, ...)
+        const std::string base = name.substr(0, name.size() - 5);
+        skinned = archive.read(base + ".skel", data) && cr2::parseSkeleton(data, skeleton) &&
+                  g.inverseBind.size() == skeleton.basePose.size();
+        inverseBind = g.inverseBind;
+        anims.clear();
+        animLoaded = false;
+        if (skinned)
+            for (const auto& e : archive.entries())
+                if (e.name.size() > 5 && e.name.compare(0, base.size(), base) == 0 && e.name.compare(e.name.size() - 5, 5, ".anim") == 0)
+                    anims.push_back(e.name);
+        std::sort(anims.begin(), anims.end());
+        if (!anims.empty()) loadAnim(std::min(animIndex, anims.size() - 1));
         char buf[256];
         std::snprintf(buf, sizeof buf, "%s (%zu/%zu): %zu meshes, %zu vertices, %zu triangles", name.c_str(), index + 1,
                       models.size(), g.meshes.size(), verts, tris);
@@ -237,13 +270,84 @@ struct Viewer {
         return true;
     }
 
+    void loadAnim(size_t index) {
+        animIndex = index;
+        std::vector<uint8_t> data;
+        std::string err;
+        animLoaded = archive.read(anims[index], data, &err) && anim.parse(data, &err) && anim.joints() == int(skeleton.basePose.size());
+        if (!animLoaded) SDL_Log("%s: %s", anims[index].c_str(), err.empty() ? "not this skeleton's" : err.c_str());
+        time = 0;
+    }
+
+    std::string animStatus() const {
+        if (!skinned) return "";
+        if (!animLoaded) return " - base pose";
+        char buf[160];
+        std::snprintf(buf, sizeof buf, " - %s (%zu/%zu) %.2f / %.2f s", anims[animIndex].c_str(), animIndex + 1, anims.size(),
+                      time, anim.duration());
+        return buf;
+    }
+
+    // the pose now, the skinning matrices (world * inverse bind), the meshes' vertices through their
+    // palettes (as the game's vertex shaders: MatrixPalette[index / 3 slot], the weights as stored)
+    void pose() {
+        if (!skinned) return;
+        std::vector<cr2::JointTransform> p = skeleton.basePose;
+        if (animLoaded) {
+            const float frames = float(std::max(anim.frames() - 1, 1));
+            float fr = time * anim.sampleRate();
+            if (fr > frames) fr = std::fmod(fr, frames);
+            p = anim.poseOver(skeleton.basePose, fr); // (relative to the base pose)
+        }
+        const std::vector<cr2::Mat34> world = skeleton.world(p);
+        std::vector<cr2::Mat34> skin(world.size());
+        for (size_t j = 0; j < world.size(); ++j) skin[j] = world[j] * inverseBind[j];
+        for (GpuMesh& gm : meshes) {
+            const cr2::GeomMesh& m = gm.source;
+            std::vector<const cr2::Mat34*> pal;
+            for (uint32_t j : m.palette) pal.push_back(j < skin.size() ? &skin[j] : nullptr);
+            static const cr2::Mat34 kIdentity;
+            for (uint32_t i = 0; i < m.vertexCount; ++i) {
+                const float* sp = &m.position[size_t(i) * 3];
+                const float* sn = m.normal.empty() ? nullptr : &m.normal[size_t(i) * 3];
+                float op[3] = {0, 0, 0}, on[3] = {0, 0, 0};
+                auto add = [&](const cr2::Mat34& M, float w) {
+                    for (int r = 0; r < 3; ++r) {
+                        op[r] += w * (M.m[r * 4] * sp[0] + M.m[r * 4 + 1] * sp[1] + M.m[r * 4 + 2] * sp[2] + M.m[r * 4 + 3]);
+                        if (sn) on[r] += w * (M.m[r * 4] * sn[0] + M.m[r * 4 + 1] * sn[1] + M.m[r * 4 + 2] * sn[2]);
+                    }
+                };
+                if (m.joints.empty()) {
+                    add(pal.empty() || !pal[0] ? kIdentity : *pal[0], 1.0f);
+                } else {
+                    for (int k = 0; k < 4; ++k) {
+                        const float w = m.weights.empty() ? (k == 0 ? 1.0f : 0.0f) : m.weights[size_t(i) * 4 + k];
+                        const size_t slot = m.joints[size_t(i) * 4 + k] / 3;
+                        if (w != 0.0f && slot < pal.size() && pal[slot]) add(*pal[slot], w);
+                    }
+                }
+                float* o = &gm.vertices[size_t(i) * 12];
+                std::memcpy(o, op, 12);
+                if (sn) std::memcpy(o + 3, on, 12);
+            }
+            if (SDL_getenv("CR2_DEBUG_SKIN")) {
+                float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+                for (uint32_t i = 0; i < m.vertexCount; ++i)
+                    for (int c = 0; c < 3; ++c) lo[c] = std::min(lo[c], gm.vertices[i * 12 + c]), hi[c] = std::max(hi[c], gm.vertices[i * 12 + c]);
+                SDL_Log("skinned mesh: %.3f %.3f %.3f .. %.3f %.3f %.3f (palette %zu, joints %zu, weights %zu)", lo[0], lo[1], lo[2], hi[0], hi[1], hi[2],
+                        m.palette.size(), m.joints.size(), m.weights.size());
+            }
+            gl::BindBuffer(GL_ARRAY_BUFFER, gm.vbo);
+            gl::BufferSubData(GL_ARRAY_BUFFER, 0, GLsizeiptr(gm.vertices.size() * 4), gm.vertices.data());
+        }
+    }
+
     void draw(int w, int h) {
         gl::Viewport(0, 0, w, h);
         gl::ClearColor(0.16f, 0.17f, 0.20f, 1);
         gl::Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         gl::Enable(GL_DEPTH_TEST);
         gl::DepthFunc(GL_LEQUAL);
-        gl::Disable(GL_CULL_FACE); // (the game's culling per material: not read yet)
         const float yr = yaw * 3.14159265f / 180, pr = pitch * 3.14159265f / 180, d = radius * 2.6f * zoom;
         const float eye[3] = {centre[0] + d * std::cos(pr) * std::sin(yr), centre[1] + d * std::sin(pr),
                               centre[2] + d * std::cos(pr) * std::cos(yr)};
@@ -253,7 +357,45 @@ struct Viewer {
         gl::UniformMatrix4fv(gl::GetUniformLocation(program, "uMvp"), 1, GL_FALSE, mvp.m);
         gl::Uniform1i(gl::GetUniformLocation(program, "uTexture"), 0);
         gl::ActiveTexture(GL_TEXTURE0);
-        for (const GpuMesh& m : meshes) {
+        // the materials' render states (opaque meshes first, then those blending)
+        std::vector<const GpuMesh*> order;
+        for (const GpuMesh& m : meshes) order.push_back(&m);
+        std::stable_sort(order.begin(), order.end(), [](const GpuMesh* a, const GpuMesh* b) {
+            uint32_t ba = 0, bb = 0;
+            a->material.state(0x7c, 0, ba);
+            b->material.state(0x7c, 0, bb);
+            return ba < bb;
+        });
+        for (const GpuMesh* mp : order) {
+            const GpuMesh& m = *mp;
+            uint32_t v = 0, v2 = 0;
+            m.material.state(0x79, 0, v); // alpha test: GREATER (the game's only func) against ref
+            float ref = 0;
+            if (v) {
+                uint32_t bits = 0;
+                m.material.state(0x78, 0, bits, 1);
+                std::memcpy(&ref, &bits, 4);
+            }
+            gl::Uniform1f(gl::GetUniformLocation(program, "uAlphaRef"), v ? ref : -1.0f);
+            m.material.state(0x7c, 0, v);
+            if (v) {
+                gl::Enable(GL_BLEND);
+                m.material.state(0x7a, GL_SRC_ALPHA, v, 0);
+                m.material.state(0x7a, GL_ONE_MINUS_SRC_ALPHA, v2, 1);
+                gl::BlendFunc(v, v2);
+            } else {
+                gl::Disable(GL_BLEND);
+            }
+            m.material.state(0x7e, 1, v);
+            if (v && !SDL_getenv("CR2_NO_CULL")) {
+                gl::Enable(GL_CULL_FACE);
+                m.material.state(0x7d, GL_BACK, v);
+                gl::CullFace(v);
+            } else {
+                gl::Disable(GL_CULL_FACE);
+            }
+            m.material.state(0x80, 1, v);
+            gl::DepthMask(v ? GL_TRUE : GL_FALSE);
             gl::Uniform1f(gl::GetUniformLocation(program, "uLit"), m.lit ? 1.0f : 0.0f);
             gl::Uniform1f(gl::GetUniformLocation(program, "uTextured"), m.texture ? 1.0f : 0.0f);
             gl::BindTexture(GL_TEXTURE_2D, m.texture);
@@ -261,6 +403,8 @@ struct Viewer {
             gl::DrawElements(GL_TRIANGLES, m.indices, GL_UNSIGNED_INT, nullptr);
         }
         gl::BindVertexArray(0);
+        gl::Disable(GL_BLEND);
+        gl::DepthMask(GL_TRUE);
     }
 };
 
@@ -280,7 +424,8 @@ bool saveBmp(const char* path, int w, int h) {
 } // namespace
 
 int main(int argc, char** argv) {
-    std::string data, model, capture;
+    std::string data, model, capture, animName;
+    float startTime = 0;
     int width = 1280, height = 800;
     float yaw = 30, pitch = 15;
     for (int i = 1; i < argc; ++i) {
@@ -289,6 +434,8 @@ int main(int argc, char** argv) {
         if (a == "--data" && next) data = next, ++i;
         else if (a == "--model" && next) model = next, ++i;
         else if (a == "--capture" && next) capture = next, ++i;
+        else if (a == "--anim" && next) animName = next, ++i;
+        else if (a == "--time" && next) startTime = float(std::atof(next)), ++i;
         else if (a == "--size" && next) std::sscanf(next, "%dx%d", &width, &height), ++i;
         else if (a == "--yaw" && next) yaw = float(std::atof(next)), ++i;
         else if (a == "--pitch" && next) pitch = float(std::atof(next)), ++i;
@@ -340,6 +487,15 @@ int main(int argc, char** argv) {
     gl::BindAttribLocation(v.program, 3, "aColour");
     gl::LinkProgram(v.program);
     v.load(start);
+    if (!animName.empty()) {
+        const std::string want = animName.size() > 5 && animName.compare(animName.size() - 5, 5, ".anim") == 0 ? animName : animName + ".anim";
+        const auto it = std::find(v.anims.begin(), v.anims.end(), want);
+        if (it == v.anims.end()) return std::fprintf(stderr, "%s: not one of the figure's animations\n", want.c_str()), 1;
+        v.loadAnim(size_t(it - v.anims.begin()));
+    }
+    v.time = startTime;
+    v.pose();
+    SDL_Log("%s%s", v.status.c_str(), v.animStatus().c_str());
 
     if (!capture.empty()) { // one frame to a file
         int w = 0, h = 0;
@@ -352,8 +508,8 @@ int main(int argc, char** argv) {
         SDL_Quit();
         return ok ? 0 : 1;
     }
-    SDL_SetWindowTitle(win, ("CR2-U viewer - " + v.status).c_str());
     bool running = true, dragging = false;
+    Uint64 last = SDL_GetTicksNS();
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -365,10 +521,10 @@ int main(int argc, char** argv) {
                 else if (k == SDLK_RIGHT || k == SDLK_PAGEDOWN) to = (v.current + (k == SDLK_PAGEDOWN ? 10 : 1)) % v.models.size();
                 else if (k == SDLK_LEFT || k == SDLK_PAGEUP)
                     to = (v.current + v.models.size() * 10 - (k == SDLK_PAGEUP ? 10 : 1)) % v.models.size();
-                if (to != v.current) {
-                    v.load(to);
-                    SDL_SetWindowTitle(win, ("CR2-U viewer - " + v.status).c_str());
-                }
+                if (to != v.current) v.load(to);
+                if (k == SDLK_SPACE) v.paused = !v.paused;
+                if ((k == SDLK_UP || k == SDLK_DOWN) && !v.anims.empty())
+                    v.loadAnim((v.animIndex + (k == SDLK_DOWN ? 1 : v.anims.size() - 1)) % v.anims.size());
             } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) dragging = true;
             else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) dragging = false;
             else if (e.type == SDL_EVENT_MOUSE_MOTION && dragging) {
@@ -378,6 +534,12 @@ int main(int argc, char** argv) {
                 v.zoom = std::clamp(v.zoom * (e.wheel.y > 0 ? 0.9f : 1.1f), 0.05f, 20.0f);
             }
         }
+        const Uint64 now = SDL_GetTicksNS();
+        if (!v.paused) v.time += float(double(now - last) / 1e9);
+        last = now;
+        if (v.animLoaded && v.time > v.anim.duration()) v.time = std::fmod(v.time, std::max(v.anim.duration(), 0.05f));
+        v.pose();
+        SDL_SetWindowTitle(win, ("CR2-U viewer - " + v.status + v.animStatus()).c_str());
         int w = 0, h = 0;
         SDL_GetWindowSizeInPixels(win, &w, &h);
         v.draw(w, h);

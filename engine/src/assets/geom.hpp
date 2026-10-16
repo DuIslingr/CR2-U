@@ -101,11 +101,23 @@ struct GeomLight {
     const float* ground() const { return &v[6]; }
 };
 
+// A camera the figure carries (header +0x0a count, +0x3c records of 0x24 bytes;
+// Figure::SetupCameras, GetContaindCamera): the maps' <map>c figures hold theirs. The joint named
+// `hash` places it, looking down its -Z axis.
+struct GeomCamera {
+    uint32_t hash = 0;     // +0x00 the joint's name hash
+    float fovY = 45;       // +0x04 degrees, vertical
+    float near = 1, far = 5000; // +0x0c, +0x10
+    float orthoSize = 0;   // +0x14 (half height)
+    bool ortho = false;    // +0x18
+};
+
 struct Geom {
     uint32_t version = 0; // 0x3c (iPad) or 0x50
     std::vector<GeomMesh> meshes;
     std::vector<GeomMaterial> materials;
     std::vector<GeomLight> lights;
+    std::vector<GeomCamera> cameras;
     std::vector<Mat34> inverseBind; // one per skeleton joint (+0xc: their count)
     float boundsMin[3] = {0, 0, 0}, boundsMax[3] = {0, 0, 0}; // over every mesh's positions
 };

@@ -25,6 +25,10 @@ struct JointTransform {
 // product), translation base + delta, scale base * delta
 JointTransform composeRelative(const JointTransform& base, const JointTransform& delta);
 
+// MVGL::GenerateNameHash: CRC-32 (reflected, 0xedb88320) from 0xffffffff, not inverted at the end;
+// names a joint (Skeleton::nameHashes), a material (GeomMaterial::hash), a light, a camera
+uint32_t nameHash(const char* name);
+
 struct Skeleton {
     std::vector<JointTransform> basePose;
     std::vector<std::pair<uint16_t, uint16_t>> links; // (joint, parent | flags), parents first

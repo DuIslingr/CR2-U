@@ -200,6 +200,20 @@ bool parseGeom(const std::vector<uint8_t>& f, Geom& out, std::string* error) {
         std::memcpy(l.v, &f[at + 8], sizeof l.v);
         out.lights.push_back(l);
     }
+    const unsigned cameras = u16(0x0a);
+    const size_t cameraAt = u32(0x3c);
+    if (cameras && !has(cameraAt, size_t(cameras) * 0x24)) return fail(error, "geom cameras outside the file");
+    for (unsigned k = 0; k < cameras; ++k) {
+        const size_t at = cameraAt + 0x24 * size_t(k);
+        GeomCamera c;
+        c.hash = u32(at);
+        std::memcpy(&c.fovY, &f[at + 4], 4);
+        std::memcpy(&c.near, &f[at + 0xc], 4);
+        std::memcpy(&c.far, &f[at + 0x10], 4);
+        std::memcpy(&c.orthoSize, &f[at + 0x14], 4);
+        c.ortho = u32(at + 0x18) != 0;
+        out.cameras.push_back(c);
+    }
     // inverse binds: Android / the Vita 3x4 row-major (0x30 bytes), the iPad 4x4 column-major (0x40)
     const unsigned joints = u16(0xc);
     const size_t bindAt = u32(0x40), bindSize = out.version == 0x50 ? 0x30 : 0x40;

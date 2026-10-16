@@ -124,6 +124,16 @@ bool parseSkeleton(const std::vector<uint8_t>& d, Skeleton& out, std::string* er
     return true;
 }
 
+uint32_t nameHash(const char* name) {
+    uint32_t h = 0xffffffffu;
+    for (const unsigned char* p = reinterpret_cast<const unsigned char*>(name); p && *p; ++p) {
+        uint32_t c = (h ^ *p) & 0xff;
+        for (int k = 0; k < 8; ++k) c = (c & 1) ? (c >> 1) ^ 0xedb88320u : c >> 1;
+        h = c ^ (h >> 8);
+    }
+    return h;
+}
+
 int Skeleton::joint(uint32_t hash) const {
     for (size_t j = 0; j < nameHashes.size(); ++j)
         if (nameHashes[j] == hash) return int(j);

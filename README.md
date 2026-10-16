@@ -50,7 +50,11 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       animations' user channels (material colours: the UI's fades). `cr2tool shaders` checks the
       key decoder against every shader's source
 - [ ] Shading left out: point lights, overlays, distortion, billboards (effects)
-- [ ] Engine: the field, events, battles, menus
+- [x] Fields: the maps' table (read from your copy's executable), the painted layers, the map's 3D
+      figure, its camera, lights and points; the viewer walks a character around a map
+      (`cr2view --field d0101`), scrolling as the game does, idle / walk motions
+- [ ] Field collision (`phys`), NPCs, gimmicks, the HUD
+- [ ] Engine: events, battles, menus
 
 ## What you need
 
@@ -67,6 +71,7 @@ One or more of:
 | | |
 |---|---|
 | `cr2view --data <archive> [--model name] [--anim name --time s] [--lights figure\|none] [--renderer vulkan\|opengl] [--capture out.bmp]` | the model viewer: drag to turn, the wheel to zoom, Left / Right for the other models, Up / Down for the figure's animations, Space to pause |
+| `cr2view --data <archive> --field <map> [--model c001] [--at point] [--binary file]` | a field: the arrow keys walk the character; the maps' table comes from the executable beside the iPad's / Vita's archive, or `--binary` (Android: `lib/armeabi-v7a/libChaosRings2.so`) |
 | `cr2tool check / scripts / run / images / models / compare-models / animations / pose / shaders` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared, the shader keys against their GLSL |
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
 | `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |

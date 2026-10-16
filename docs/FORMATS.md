@@ -63,7 +63,7 @@ Counts are the iPad's (Android / Vita alike unless noted).
 | `img` | 1873 (Android 1605, Vita 1950) | a texture: the iPad a legacy PVR file, Android PVR v3, the Vita GXT (below) |
 | `geom` | 1724 | a figure's meshes and materials (below) |
 | `skel` | 1724 | an Edge Animation skeleton; magic `ES02` (below) |
-| `name` | 1259 | a string table: count, ?, then offsets to NUL-terminated names (node / camera names) |
+| `name` | 1259 | a figure's names: u32 joints, u32 materials, then an offset per name (not terminated: each runs to the next) - the joints' and materials' names, whose hashes the figure uses |
 | `dat` | 880 | tables: `message\*.dat` (874) the text (below), `data\*.dat` (6) |
 | `shad` | 466 | a GLSL ES shader's source (`shaders\<4 hex words>_fp` / `_vp`) |
 | `phys` | 419 | collision / physics (Bullet); magic `PHYS` |
@@ -117,11 +117,13 @@ range (±32) where the Vita's don't (a whole number of repeats: the same samplin
 | +0x04 u16 | meshes |
 | +0x06 u16 | materials |
 | +0x08 u16 | lights (below) |
+| +0x0a u16 | cameras (below) |
 | +0x10 u16 | relocations (the list at +0x48: offsets of pointers to make absolute) |
 | +0x18 | the bounds |
 | +0x30 u32 | the meshes (0x54 bytes each) |
 | +0x34 u32 | the materials |
 | +0x38 u32 | the lights (0x34 bytes each) |
+| +0x3c u32 | the cameras (0x24 bytes each) |
 | +0x40 u32 | the inverse bind matrices, one per skeleton joint: 3x4 row-major (0x30 bytes) on Android / the Vita, 4x4 column-major (0x40) on the iPad |
 
 | Mesh | |
@@ -197,6 +199,54 @@ near), -1 / (far - near), alpha), FogColor. Without a light figure, RenderContex
 light (0.531, -0.758, 0.379) at 0.5 grey, ambient 0.5, ground 0.3, sky (0, -1, 0), fog (1.5,
 -0.005, 1) white. The maps' lights are figures of their own: `<map>c` lights the characters (118
 with ambient + directional + fog, ...), `<map>b` battles, `*_evt_light` events.
+
+### Cameras
+
+`Figure::SetupCameras` / `GetContaindCamera`: +0 u32 the joint whose name hash it is (the camera
+looks down that joint's -Z, its +Y up), +4 f32 the vertical field of view in degrees, +0xc near,
++0x10 far, +0x14 an orthographic half height, +0x18 u32 orthographic. The maps' `<map>c` figures
+hold their field camera (`CAM_d0101c`: 13.2 degrees, 12 units away), with the lights, a
+`defaultPos` joint (where the player starts) and the walls (`MTR_kabe`); `<map>p` the entrances
+(`d0101_p1`, `ragdoll_d0103_p1`, ...) and boxes (`evt021_box00`, `c208_box00_scale080`).
+
+Names are hashed with `MVGL::GenerateNameHash`: CRC-32 (reflected, 0xedb88320) from 0xffffffff,
+not inverted at the end.
+
+## Fields
+
+`FldMap::ChangeArea` builds a map from a table in the **executable** (225 records of 0x18 bytes,
+from `t0101`; the iPad's executable, the Vita's `eboot.bin` and Android's library each have one -
+the iPad's and the Vita's set +0x17 on 8 maps where Android's doesn't):
+
+| Record | |
+|---|---|
+| +0x00 | the name (`t0101`, `d0101`, ...) |
+| +0x08 i32 | the painting: 0 = `f1` (drawn at half scale), else `f2`; for the scroll, bit 1 = 2048 units wide (else 1024), bit 0 = 2048 tall, in units of a 960-wide screen |
+| +0x0c u8, +0x0d u8 | a midground, a foreground layer |
+| +0x10 i32 | 1: the foreground at twice the scroll, 1152 units to the left (one map) |
+| +0x14 u8, +0x17 u8 | a 3D figure `<map>f` (and its animator) |
+| +0x15 u8 | the painting is the shared `d5051f2_hdbg` (a sky: 0.4 of the scroll, not clamped) |
+| +0x16 u8 | no painting (a 3D map: the camera unscaled, unscrolled) |
+
+The painted layers are `images\<map><f1|f2>_hd<bg|mg|fg>.img`: 2048 x 2048 textures (the painting
+in their middle, alpha for the foreground's cut-outs), each drawn as a 4096 x 4096-unit quad
+(`CustomFigure`: the background at z -5000, the others -0.5, blending src alpha) with an
+orthographic camera in MVGL's virtual pixels (`DisplayInfo`: 1920 wide, the height the screen's
+aspect gives; `Camera::GetProjectionMatrix` with the half height = half the larger side) and
+the painting's scale (+0x260 / +0x264: 1, or 0.5 for `f1`). The 3D figures use the `<map>c`
+camera (near x 0.5, at least 0.1; far x 5, at most 5000; the aspect the virtual screen's),
+magnified on screen by `2.13 x width / height` x the painting's scale: the painting's height is
+the camera's field of view, the two line up by construction.
+
+Draw order (`FldMain`): the background, the midground (half the scroll), the 3D passes (opaque,
+alpha-tested, transparent), the foreground. Scrolling (`CalcNewScreenPos`, `SetScrollStop`,
+`CalcScrollStop`): the offset = -(the player's NDC in the map camera) x the screen's size x the
+scale, clamped to +-(the painting's size x width / 960 - the screen's size), and applied to both
+cameras' screen matrices (`GetScreenMatrix`: offset / the screen's size, in NDC) - the player
+stays centred until the painting's edge.
+
+The player (`FldPlayer::CreatePlayer`): `c<id>` with the motions `c<id>` + `fn01` (idle), `ff01`
+(walk), `ff02` (run), `fj01..03` (jumps), `fp01..06` (the character's own).
 
 ## Shaders (`shad`) and shading
 

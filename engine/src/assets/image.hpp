@@ -20,6 +20,7 @@ struct Image {
     bool alphaOnly = false;    // (A8 / U8 R000: a mask, no colour of its own)
     bool bottomUp = false;     // the first row is the picture's bottom (PVR's flip flag / orientation)
     std::string format;        // for tools: "PVR2 PVRTC4", "PVR3 ETC1", "GXT UBC2", ...
+    bool mipmaps = false;      // upload with a mip chain
 };
 
 bool decodeImg(const std::vector<uint8_t>& file, Image& out, std::string* error = nullptr);

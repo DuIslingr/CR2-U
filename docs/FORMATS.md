@@ -64,7 +64,7 @@ Counts are the iPad's (Android / Vita alike unless noted).
 | `geom` | 1724 | a figure's meshes and materials (below) |
 | `skel` | 1724 | an Edge Animation skeleton; magic `ES02` (below) |
 | `name` | 1259 | a string table: count, ?, then offsets to NUL-terminated names (node / camera names) |
-| `dat` | 880 | tables: offsets then records (`message\*.dat`: 874 of them, the text) |
+| `dat` | 880 | tables: `message\*.dat` (874) the text (below), `data\*.dat` (6) |
 | `shad` | 466 | a GLSL ES shader's source (`shaders\<4 hex words>_fp` / `_vp`) |
 | `phys` | 419 | collision / physics (Bullet); magic `PHYS` |
 | `nut` | 139 | a compiled Squirrel script: `0xfafa`, `SQIR`, char / int / float sizes, then `PART`-separated parts; the source name (`D12_01_0206_evt.i`) and `main` |
@@ -215,3 +215,28 @@ short arc (lerp from a dot of 0.999), the rest lerp; channels without keys in th
 the initial value to the next set's. `tools/anim.py check`: in all three releases every frame set
 is as its sizes say, every driven rotation is unit length, and all 10742..12340 boundaries are
 continuous to 1e-8 (the Vita splits its animations into more frame sets).
+
+## Text (`message\*.dat`)
+
+From `EvtTextData` and `EvtWindowMessage::ReadPage`; `tools/msg.py check`: all 874 files in the
+three releases, 75,490 of the 75,504 strings UTF-8 (the 14 others, all in `instructions.dat`,
+start inside another string's character: offsets into a shared tail, for entries not shown in that
+language).
+
+| | |
+|---|---|
+| header | u32 records' offset (0x10), u32 strings' offset, u32 records, u32 0 |
+| records | 0x20 bytes: 8 u32 offsets into the strings, one per language (`Cr3UtilOptionLanguage`); messages count from 1 |
+| strings | UTF-8, NUL-terminated |
+| trailer | optional (853 files): a u32 voice id per record, then `voic`, u32 count - the last 8 bytes |
+
+A message's commands: `\f` the page ends, `\n` the next line, `\c` the line is centred, `\#`
+digit the line's colour (1 red, 2 (0, 0.8, 1), 3 green, 4 (1, 0.8, 0), 5 magenta, 6 white, 7
+black; else white), `\d` and 3 digits the speaker's tag (one of 21: `d001`..`d007`, `d101`..`d103`,
+`d301`..`d312`, `d407`, `d509`, `d510`, `d999` - its index picks the name from the window's name
+data), `\w` digits a wait, `\@` a wait mark (each page gets one at its end), `\*` the message
+ends, `\m` a page flag, `\\` a backslash.
+
+The fonts: Android's APK carries TypeBank Gothic Pro Bold and Regular (`assets/00000`, `00001`:
+CFF OpenType), the Vita's `CR2/resources/font` the same Bold plus DynaFont faces for Chinese and
+Korean (`DFGB_H9.ttc`, `DFT_C5.ttc`, `DFMINBD.TTF`); the iPad's release has none (iOS's own).

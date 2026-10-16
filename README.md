@@ -39,6 +39,8 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] Skinning and animation in the engine: the viewer plays every figure's animations (relative
       to the base pose, as the game blends them); materials' render states (alpha test, blending,
       culling, depth writes)
+- [x] The text (`message\*.dat`): eight languages, voice ids, the window's commands
+      (`tools/msg.py`)
 - [ ] The game's own shaders (lighting, normal maps), effects
 - [ ] Engine: the field, events, battles, menus
 
@@ -61,6 +63,7 @@ One or more of:
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
 | `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |
 | `tools/geom.py` | a mesh file's meshes and materials, a check of them all, a flat-shaded preview |
+| `tools/msg.py` | the text: `check` every message, `show` one in your terminal |
 | `tools/anim.py` | Edge animations: evaluate a pose at any frame; `check` every animation |
 | `tools/skel.py` | Edge skeletons: base pose, hierarchy, world matrices; `check` against the inverse binds |
 | `tools/sq_bindings.py` | the scripts' native API, from the Android library's decompilation |

@@ -49,6 +49,10 @@ struct Skeleton {
 
 bool parseSkeleton(const std::vector<uint8_t>& file, Skeleton& out, std::string* error = nullptr);
 
+// A figure's names (`<figure>.name`): u32 joints, u32 materials, then an offset per name, each
+// running to the next - the joints' names in order (their hashes: Skeleton::nameHashes)
+std::vector<std::string> parseJointNames(const std::vector<uint8_t>& file);
+
 class Animation {
 public:
     bool parse(const std::vector<uint8_t>& file, std::string* error = nullptr);
@@ -59,11 +63,18 @@ public:
     // the pose at `frame` (in frames, from 0) over `pose` (what joints without channels keep);
     // with `user`, the user channels' values too (those the animation has; the rest kept)
     void evaluate(float frame, std::vector<JointTransform>& pose, std::vector<float>* user = nullptr) const;
-    // the game's animations are relative to the figure's base pose (their constant channels hold
-    // 0 / identity where a joint stays put): evaluated over identity, composed onto `base`. The
-    // user channels are absolute.
+    // A motion (a figure's animator slots 1 - 4: FldNPC / FldObject / FldBox / the motion managers'
+    // BindAnimator(figure, 1 or 2, ...)) is relative to the figure's base pose - its constant
+    // channels hold 0 / identity where a joint stays put: evaluated over identity, composed onto
+    // `base` (Figure::Pose's blend tree: slot 0 and the rest under a relative branch,
+    // edgeAnimBlendJointsRelative). The user channels are absolute.
     std::vector<JointTransform> poseOver(const std::vector<JointTransform>& base, float frame,
                                          std::vector<float>* user = nullptr) const;
+    // An animation alone in slot 0 (a map's figure, the vista's map / camera / light, an event's
+    // scene: BindAnimator(figure, 0, ...) and nothing else) is the blend tree's one leaf: evaluated
+    // over the base pose, its channels replacing the base's values (edgeAnimProcessBlendTree)
+    std::vector<JointTransform> poseAbsolute(const std::vector<JointTransform>& base, float frame,
+                                             std::vector<float>* user = nullptr) const;
     bool hasUserChannels() const { return counts_[3] || counts_[7]; }
 
 private:

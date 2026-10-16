@@ -11,12 +11,18 @@
 // found beside the iPad's or the Vita's archive, or given with --binary (Android's
 // libChaosRings2.so).
 //
+// Events (--event <function> --vista <map>): an event's script played by the runtime (event/
+// runtime.hpp) in its vista - the map's figure (d0151b for the opening's), the scene's models on
+// their locators with their animations, through the scene's camera, under its lights, with the
+// screen's fades - 20 updates a second. A message's pages turn on Return or a click (or by
+// themselves after --page seconds; 0 never). --time runs the event that far first.
+//
 // Vulkan by default, OpenGL where Vulkan can't start (or with --renderer opengl).
 //
 //   cr2view --data <CRDB.ios.mvgl | main.212...obb | CRDB.psp2.mvgl> [--model <name>]
 //           [--anim <name>] [--time s] [--size WxH] [--yaw deg] [--pitch deg]
 //           [--lights <figure> | none] [--field <map> [--at <point>] [--binary <file>]
-//           [--walk sx,sy,seconds]]
+//           [--walk sx,sy,seconds]] [--event <function> [--vista <map>] [--page s]]
 //           [--renderer vulkan|opengl] [--capture out.bmp]
 //
 // Models: drag to turn, the wheel to zoom, Left / Right (or PageUp / PageDown) for the archive's
@@ -40,6 +46,7 @@
 #include "assets/maptable.hpp"
 #include "assets/mvgl.hpp"
 #include "assets/skeleton.hpp"
+#include "event/runtime.hpp"
 #include "field/character.hpp"
 #include "field/fieldmap.hpp"
 #include "field/fieldscript.hpp"
@@ -109,6 +116,7 @@ struct ViewFigure {
     bool animLoaded = false;
     float centre[3] = {0, 0, 0}, radius = 1;
     cr2::Mat34 place; // in the world (the skinning matrices are place * world * inverse bind)
+    bool absolute = false; // its animation alone in slot 0 (map figures): not a motion over the base
     size_t vertices = 0, triangles = 0;
 };
 
@@ -319,16 +327,17 @@ struct Viewer {
     // A figure's pose at time t, the skinning matrices (place * world * inverse bind), the meshes'
     // vertices through their palettes (as the game's vertex shaders: MatrixPalette[index / 3 slot],
     // the weights as stored)
-    void pose(ViewFigure& f, float t) {
+    void pose(ViewFigure& f, float t, bool loop = true) {
         if (!f.skinned) return;
         std::vector<cr2::JointTransform> p = f.skeleton.basePose;
         if (f.animLoaded) {
             const float frames = float(std::max(f.anim.frames() - 1, 1));
             float fr = t * f.anim.sampleRate();
-            if (fr > frames) fr = std::fmod(fr, frames);
+            if (fr > frames) fr = loop ? std::fmod(fr, frames) : frames;
             // (relative to the base pose); the user channels: material parameters (UI fades, colours)
             std::vector<float> user(f.skeleton.userChannels.size(), std::nanf(""));
-            p = f.anim.poseOver(f.skeleton.basePose, fr, f.anim.hasUserChannels() ? &user : nullptr);
+            p = f.absolute ? f.anim.poseAbsolute(f.skeleton.basePose, fr, f.anim.hasUserChannels() ? &user : nullptr)
+                           : f.anim.poseOver(f.skeleton.basePose, fr, f.anim.hasUserChannels() ? &user : nullptr);
             for (ViewMesh& vm : f.meshes) {
                 vm.material = vm.baseMaterial;
                 for (size_t k = 0; k < user.size() && k < f.skeleton.userChannels.size(); ++k) {
@@ -392,6 +401,10 @@ struct Viewer {
     }
 
     void pose() {
+        if (eventMode) {
+            poseEvent();
+            return;
+        }
         if (fieldMode) {
             // the character stands at `player`, facing `heading` (radians about y, 0 = +z)
             const float c = std::cos(heading), s = std::sin(heading);
@@ -467,6 +480,10 @@ struct Viewer {
     void draw(int w, int h) {
         dev->beginFrame(w, h);
         dev->setViewport(0, 0, float(w), float(h));
+        if (eventMode) {
+            drawEvent(w, h);
+            return;
+        }
         if (fieldMode) {
             // FldMain's order: the background (and midground), the 3D figures, the foreground
             const cr2::FieldFrame fr = field.frame(w, h, player);
@@ -535,6 +552,7 @@ struct Viewer {
         mapFigure = ViewFigure();
         if (!field.figureName().empty() && !loadFigure(field.figureName() + ".geom", mapFigure, &err))
             SDL_Log("%s: %s", field.figureName().c_str(), err.c_str());
+        mapFigure.absolute = true; // (FldMap::ChangeArea: BindAnimator(figure, 0, ...))
         // the dungeon's script sets the area up (evt000: which gimmicks show, which collide)
         if (!script) script = std::make_unique<cr2::FieldScript>(archive, game);
         if (!script->enter(map, field.gimmicks())) SDL_Log("%s's script: %s", map.c_str(), script->error().c_str());
@@ -580,6 +598,139 @@ struct Viewer {
     bool loadField(const std::string& map, const std::string& at, const std::string& binary, const std::string& dataPath) {
         return loadTable(binary, dataPath) && enterMap(map, at);
     }
+
+    // The event (--event): its runtime, the vista's map figure, a figure for each of the scene's
+    // models (in its order)
+    std::unique_ptr<cr2::EventRuntime> event;
+    bool eventMode = false;
+    ViewFigure vistaMap;
+    std::vector<ViewFigure> eventFigures;
+    std::vector<std::string> eventFigureNames; // (what eventFigures were made for)
+    float eventClock = 0;
+    float fadeColours[4][3] = {{0, 0, 0}, {1, 1, 1}, {1, 1, 1}, {0, 0, 0}};
+    cr2::Texture white;
+    bool eventEnded = false, messageLogged = false;
+
+    bool startEvent(const std::string& function, const std::string& map, float page) {
+        std::string err;
+        // the fades' colours (InterfaceMain's fade windows: the figures fadeb, fadew, fadef, their
+        // material's DiffuseColor); the encounter's wipe black
+        const char* fades[3] = {"fadeb", "fadew", "fadef"};
+        for (int k = 0; k < 3; ++k) {
+            std::vector<uint8_t> d;
+            cr2::Geom g;
+            if (archive.read(std::string(fades[k]) + ".geom", d) && cr2::parseGeom(d, g) && !g.materials.empty())
+                g.materials[0].param(0x33, fadeColours[k], 3);
+        }
+        cr2::Image px;
+        px.width = px.height = 1;
+        px.rgba = {255, 255, 255, 255};
+        white = dev->upload(px);
+        if (map != "null" && !loadFigure(map + ".geom", vistaMap, &err)) SDL_Log("vista %s: %s", map.c_str(), err.c_str());
+        vistaMap.absolute = true; // (VistaMain::LoadMapData: slot 0)
+        event = std::make_unique<cr2::EventRuntime>(archive, game);
+        event->autoPage = page;
+        if (!event->start(function)) {
+            SDL_Log("event %s: %s", function.c_str(), event->error().c_str());
+            return false;
+        }
+        eventMode = true;
+        stepEvent(); // (the update the game starts it in)
+        status = function + " in " + map;
+        SDL_Log("event %s: vista %s, %zu scene models", function.c_str(), map.c_str(), event->scene().models().size());
+        return true;
+    }
+
+    // one of the game's updates, the figures following the scene's models
+    void stepEvent() {
+        if (eventEnded) return;
+        if (!event->tick()) {
+            SDL_Log("event: %s", event->error().c_str());
+            eventEnded = true;
+        }
+        if (!event->running() && !eventEnded) {
+            eventEnded = true;
+            SDL_Log("event ended at frame %d (%.2f s)%s", event->frame(), event->frame() * cr2::EventRuntime::kTick,
+                    event->battle() >= 0 ? (": battle " + std::to_string(event->battle())).c_str() : "");
+        }
+        if (event->messageShown() != messageLogged) {
+            messageLogged = event->messageShown();
+            if (messageLogged) SDL_Log("frame %d: a message, %zu pages", event->frame(), event->message().pages.size());
+        }
+        std::vector<std::string> names;
+        for (const cr2::EventModel& m : event->scene().models()) names.push_back(m.figure);
+        if (names != eventFigureNames) {
+            for (ViewFigure& f : eventFigures) unload(f);
+            eventFigures.clear();
+            for (const std::string& n : names) {
+                ViewFigure f;
+                std::string err;
+                if (!archive.contains(n + ".geom") || !loadFigure(n + ".geom", f, &err)) SDL_Log("event model %s: %s", n.c_str(), err.empty() ? "no figure" : err.c_str());
+                eventFigures.push_back(std::move(f));
+            }
+            eventFigureNames = names;
+        }
+    }
+
+    void updateEvent(float dt) {
+        eventClock = std::min(eventClock + dt, 0.25f);
+        for (; eventClock >= cr2::EventRuntime::kTick; eventClock -= cr2::EventRuntime::kTick) stepEvent();
+    }
+
+    // the models where the scene has them, playing what the script chose (ChangeAnimator: their
+    // <figure><suffix>; else the figure's own), their faces as ChangeModelFace left them
+    void poseEvent() {
+        pose(vistaMap, time);
+        std::vector<cr2::EventModel>& models = event->scene().models();
+        for (size_t i = 0; i < models.size() && i < eventFigures.size(); ++i) {
+            ViewFigure& f = eventFigures[i];
+            const cr2::EventModel& m = models[i];
+            if (!m.visible || f.meshes.empty()) continue;
+            const std::string want = (m.animation.empty() ? m.figure : m.animation) + ".anim";
+            const auto it = std::find(f.anims.begin(), f.anims.end(), want);
+            if (it != f.anims.end() && (!f.animLoaded || f.anims[f.animIndex] != want)) {
+                const float keep = time;
+                loadAnim(f, size_t(it - f.anims.begin()));
+                time = keep;
+            }
+            // EvtModel::ChangeTexture_Face: the j<NNN>face material's colour texture
+            const auto face = event->faces().find(m.face);
+            const uint32_t faceMaterial = cr2::nameHash(("j" + m.figure.substr(1, 3) + "face").c_str());
+            for (ViewMesh& vm : f.meshes)
+                vm.texture = texture(face != event->faces().end() && vm.baseMaterial.hash == faceMaterial ? face->second : vm.baseMaterial.diffuse());
+            f.place = m.place;
+            pose(f, m.animTime, m.loop);
+        }
+    }
+
+    void drawEvent(int w, int h) {
+        cr2::Mat34 cw;
+        float fov = 45, zn = 0.1f, zf = 100;
+        if (event->sceneShown() && event->scene().camera(cw, fov, zn, zf)) {
+            const Mat4 world = cr2::mat4FromMat34(cw);
+            const Mat4 vp = cr2::mat4Multiply(perspective(fov * 3.14159265f / 180, float(w) / float(std::max(h, 1)), zn, zf),
+                                              cr2::mat4RigidInverse(world));
+            // VistaMain::Draw: the vista light figure's lights for the map and the models
+            cr2::SceneLighting l = lighting;
+            event->scene().lights(l);
+            l.camera[0] = world[12], l.camera[1] = world[13], l.camera[2] = world[14];
+            l.time = time;
+            dev->setLighting(l);
+            drawFigure(vistaMap, vp.data());
+            const std::vector<cr2::EventModel>& models = event->scene().models();
+            for (size_t i = 0; i < models.size() && i < eventFigures.size(); ++i)
+                if (models[i].visible) drawFigure(eventFigures[i], vp.data());
+        }
+        // the fade over it all
+        const cr2::EventFade& fd = event->fade();
+        if (fd.alpha > 0 && white.id) {
+            static const float kScreen[24] = {-1, -1, 0, 0, 1, -1, 1, 0, 1, 1, 1, 1, -1, -1, 0, 0, 1, 1, 1, 1, -1, 1, 0, 1};
+            const Mat4 id = cr2::mat4Identity();
+            const float* c = fadeColours[std::clamp(fd.colour, 0, 3)];
+            const float rgba[4] = {c[0], c[1], c[2], fd.alpha};
+            dev->drawQuad(white, kScreen, id.data(), rgba);
+        }
+    }
 };
 
 bool saveBmp(const char* path, const std::vector<uint8_t>& rgba, int w, int h) {
@@ -596,6 +747,8 @@ bool saveBmp(const char* path, const std::vector<uint8_t>& rgba, int w, int h) {
 int main(int argc, char** argv) {
     std::string data, model, capture, animName, renderer = "vulkan", lights = "d0101c", fieldName, at = "defaultPos", binary;
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
+    std::string eventName, vista = "null";
+    float page = 3.0f;
     int width = 1280, height = 800;
     float yaw = 30, pitch = 15, startTime = 0;
     for (int i = 1; i < argc; ++i) {
@@ -615,11 +768,14 @@ int main(int argc, char** argv) {
         else if (a == "--at" && next) at = next, ++i;
         else if (a == "--binary" && next) binary = next, ++i;
         else if (a == "--walk" && next) std::sscanf(next, "%f,%f,%f", &walkX, &walkY, &walkSeconds), ++i;
+        else if (a == "--event" && next) eventName = next, ++i;
+        else if (a == "--vista" && next) vista = next, ++i;
+        else if (a == "--page" && next) page = float(std::atof(next)), ++i;
     }
     if (data.empty()) {
         std::fprintf(stderr, "cr2view --data <archive> [--model name] [--anim name] [--time s] [--size WxH] [--yaw deg] "
                              "[--pitch deg] [--lights figure|none] [--field map [--at point] [--binary file]] "
-                             "[--renderer vulkan|opengl] [--capture out.bmp]\n");
+                             "[--event function [--vista map] [--page s]] [--renderer vulkan|opengl] [--capture out.bmp]\n");
         return 2;
     }
     Viewer v;
@@ -672,6 +828,11 @@ int main(int argc, char** argv) {
         else SDL_Log("lights: %s has none (the engine's defaults)", lights.c_str());
     }
     v.load(start);
+    if (!eventName.empty()) {
+        if (!v.startEvent(eventName, vista, page)) return 1;
+        for (float t = 0; t + cr2::EventRuntime::kTick * 0.5f < startTime; t += cr2::EventRuntime::kTick) v.stepEvent();
+        startTime = 0;
+    }
     if (!animName.empty()) {
         const std::string want = animName.size() > 5 && animName.compare(animName.size() - 5, 5, ".anim") == 0 ? animName : animName + ".anim";
         const auto it = std::find(v.fig.anims.begin(), v.fig.anims.end(), want);
@@ -706,6 +867,10 @@ int main(int argc, char** argv) {
                     const SDL_Keycode k = e.key.key;
                     if (k == SDLK_ESCAPE) running = false;
                     if (k == SDLK_SPACE) v.paused = !v.paused;
+                    if (v.eventMode) {
+                        if (k == SDLK_RETURN || k == SDLK_KP_ENTER) v.event->advance();
+                        continue;
+                    }
                     ViewFigure& f = v.fig;
                     if (v.fieldMode) {
                         if ((k == SDLK_PAGEUP || k == SDLK_PAGEDOWN) && !f.anims.empty())
@@ -719,7 +884,10 @@ int main(int argc, char** argv) {
                     if (to != v.current) v.load(to);
                     if ((k == SDLK_UP || k == SDLK_DOWN) && !f.anims.empty())
                         v.loadAnim(f, (f.animIndex + (k == SDLK_DOWN ? 1 : f.anims.size() - 1)) % f.anims.size());
-                } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) dragging = true;
+                } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+                    dragging = true;
+                    if (v.eventMode) v.event->advance();
+                }
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) dragging = false;
                 else if (e.type == SDL_EVENT_MOUSE_MOTION && dragging && !v.fieldMode) {
                     v.yaw -= e.motion.xrel * 0.4f;
@@ -732,6 +900,7 @@ int main(int argc, char** argv) {
             const float dt = float(double(now - last) / 1e9);
             if (!v.paused) v.time += dt;
             last = now;
+            if (v.eventMode && !v.paused) v.updateEvent(dt);
             if (v.fieldMode) { // the arrows / WASD run, with Shift walk
                 const bool* keys = SDL_GetKeyboardState(nullptr);
                 const float sx = float((keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) - (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]));
@@ -750,6 +919,9 @@ int main(int argc, char** argv) {
     }
     v.unload(v.fig);
     v.unload(v.mapFigure);
+    v.unload(v.vistaMap);
+    for (ViewFigure& g : v.eventFigures) v.unload(g);
+    if (v.white.id) dev->destroy(v.white);
     for (ViewFigure& g : v.gimmicks) v.unload(g);
     for (auto& [k, t] : v.textures) dev->destroy(t);
     dev->shutdown();

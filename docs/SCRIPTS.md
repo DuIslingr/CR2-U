@@ -90,7 +90,43 @@ objects, effects and boxes shown. A gimmick's touch / tap calls the script funct
 and area, `Cr3GimmickData`'s display / collision / event switches, `Cr3FieldMap`'s layers);
 `cr2tool fieldscript <archive> <executable>`: from a new game's state `evt000` runs on 216 of
 the 217 maps in all three releases - d0103's starts a story event, which waits on its first
-message (the event runtime is next).
+message.
+
+## Events
+
+A vista event is a script of its own, `script\<event>.nut` (`d01_01_0101_evt.nut`, its function
+`D01_01_0101_evt`), set by a field's script (`SetVistaEvent(function, map)`: `D01_01_0101` sets
+`('D01_01_0101_evt', 'd0151b')`, the map a battle environment's figure). VistaMain loads the map's
+figure, the event's scene - three figures named after it: `<event>` (its joints `ev_<model>` the
+models' locators: `ev_v001`, `ev_v206_00`, ...), `<event>_camera` (an animated camera) and
+`<event>_light` - and calls the function (Cr3Event::Call). The game updates 20 times a second
+(TestApp::onUpdate: no sooner than 0.05 s after the last; the skip button runs 5 updates a
+frame), in GameMain::Update's order: the scene (EvtScene::Update, the camera, the lights), the
+scripts (ScriptManager::Update: a `WaitFrame(n)` counts n updates down - WaitProcessor - and the
+script resumes), the windows, the fade (Cr3Fade::Update). The scripts drive:
+
+- **the scene** (`EvtScene`): `Init(event)`, `Visible(model, on)`, `ChangeAnimator(model,
+  "e826", loop)` (the model plays `<figure>e826`, its figure the name up to `_NN`),
+  `SetFaceTexture(slot, image)` / `ChangeModelFace(model, slot)` (the colour texture of the
+  model's `j<NNN>face` material: EvtModel::ChangeTexture_Face), `SetDrawSkip`, `Terminate`;
+- **the timelines** (`VistaEvent`, in the scene's frames - 20 a second): `SetMove(model, from,
+  to)` (the model along its locator), `CameraMove(from, to)` / `LightMove` (to + 1: the frame's
+  end). The vista camera's near plane is at least 0.05, its far 5 x the camera's (at most 5000;
+  VistaCamera::Init, but for D11_06_0102 and D12_03_0106a). `ExecutionStart` /
+  `ExecutionEndStart` wait for the player's slash (`WaitPlayerSlash`: `CheckExecution` each
+  frame);
+- **the window** (`EvtWindow`): `LoadSharedTextData(name)` (`message\<name>.dat`),
+  `LoadSharedNameData('name_tag')`, `Open`, `SetMessage(window, n)`, then `CheckMessage` each
+  frame until the player has read it (`WaitMessage`), `Close`;
+- **the fades** (`Cr3Fade.FadeIn / FadeOut(type, frames)`, the `2`s with from / to %): the colour
+  0 black (the interface's `fadeB`), 1 white (`fadeW`), 2 `fadeF`, 3 the encounter's wipe
+  (Cr3FadeIn's table; the colours the fade figures' DiffuseColor), linear over the frames;
+- **the end**: `Cr3System.BattleIN(id)` and the like.
+
+`engine/src/event/` implements them (`scene.cpp`: the figures and timelines; `runtime.cpp`: the
+script, the window's messages, the fades); `cr2tool play <archive> all` plays every event script
+to its end (pages turning by themselves) - all 70, in all three releases; `cr2view --event
+D01_01_0101_evt --vista d0151b` shows one.
 
 `cr2tool scripts <archive>` loads every script and runs its `main` (all 139, in all three
 releases); `cr2tool run <archive> <script>` then calls the script's function with every native

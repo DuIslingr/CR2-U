@@ -6,16 +6,20 @@ namespace cr2 {
 
 FieldScript::FieldScript(const MvglArchive& archive, GameState& state) : archive_(archive), state_(state) {}
 
+void bindGameState(ScriptVM& vm, GameState& state) {
+    vm.setNative("Cr3Flag", "Set", [&state](NativeCall& c) { state.setFlag(c.integer(0), true); });
+    vm.setNative("Cr3Flag", "Clear", [&state](NativeCall& c) { state.setFlag(c.integer(0), false); });
+    vm.setNative("Cr3Flag", "Check", [&state](NativeCall& c) { c.result(state.flag(c.integer(0))); });
+    vm.setNative("Cr3Work", "Set", [&state](NativeCall& c) { state.work[c.integer(0)] = c.integer(1); });
+    vm.setNative("Cr3Work", "Get", [&state](NativeCall& c) {
+        const auto it = state.work.find(c.integer(0));
+        c.result(it == state.work.end() ? 0 : it->second);
+    });
+}
+
 void FieldScript::bind() {
     ScriptVM& vm = *vm_;
-    vm.setNative("Cr3Flag", "Set", [this](NativeCall& c) { state_.setFlag(c.integer(0), true); });
-    vm.setNative("Cr3Flag", "Clear", [this](NativeCall& c) { state_.setFlag(c.integer(0), false); });
-    vm.setNative("Cr3Flag", "Check", [this](NativeCall& c) { c.result(state_.flag(c.integer(0))); });
-    vm.setNative("Cr3Work", "Set", [this](NativeCall& c) { state_.work[c.integer(0)] = c.integer(1); });
-    vm.setNative("Cr3Work", "Get", [this](NativeCall& c) {
-        const auto it = state_.work.find(c.integer(0));
-        c.result(it == state_.work.end() ? 0 : it->second);
-    });
+    bindGameState(vm, state_);
     vm.setNative("Cr3System", "GetDungeonNum", [this](NativeCall& c) { c.result(dungeon_); });
     vm.setNative("Cr3System", "GetAreaNum", [this](NativeCall& c) { c.result(area_); });
     vm.setNative("Cr3System", "GetSelectDungeonNum", [this](NativeCall& c) { c.result(dungeon_); });

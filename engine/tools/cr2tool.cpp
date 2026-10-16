@@ -27,12 +27,19 @@
 //   cr2tool fieldscript <archive> <executable> [map] every map's entry (its dungeon script's
 //                                                    evt000, a new game's state): runs or not, the
 //                                                    gimmicks it shows, the stub natives it reached
+//   cr2tool event <archive> <script> [function]     an event's timeline: its native calls frame by
+//                                                    frame (the waits met at once)
+//   cr2tool play <archive> <event | all>             an event played by the runtime (event/
+//                                                    runtime.hpp, its pages turning by themselves):
+//                                                    its messages (numbers, not text), fades, camera,
+//                                                    end; "all": every event script's, to its end
 //   cr2tool shaders <archive>                        the materials' shaders: the features their
 //                                                    GLSL has, and where the key decoder (gfx/
 //                                                    material.cpp) disagrees with it, per bit
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <string>
@@ -44,6 +51,7 @@
 #include "assets/mvgl.hpp"
 #include "field/character.hpp"
 #include "field/fieldmap.hpp"
+#include "event/runtime.hpp"
 #include "field/fieldscript.hpp"
 #include "gfx/material.hpp"
 #include "script/vm.hpp"
@@ -62,7 +70,9 @@ int usage() {
                  "cr2tool shaders <archive>\n"
                  "cr2tool walk <archive> <executable> [map]\n"
                  "cr2tool exits <archive> <executable>\n"
-                 "cr2tool fieldscript <archive> <executable> [map]\n");
+                 "cr2tool fieldscript <archive> <executable> [map]\n"
+                 "cr2tool event <archive> <script> [function]\n"
+                 "cr2tool play <archive> <event | all>\n");
     return 2;
 }
 
@@ -138,6 +148,139 @@ int run(const char* path, const char* script, const char* function) {
     std::printf("%s.%s: %s\n", name.c_str(), fn.c_str(), ok ? "returned" : ("failed: " + vm.error()).c_str());
     for (const auto& [k, n] : vm.stubCalls()) std::printf("  %s x%d\n", k.c_str(), n);
     return ok ? 0 : 1;
+}
+
+// An event's timeline: the script run frame by frame (WaitFrame waits), its native calls in order
+// with their arguments - the messages taken as read at once, no button touched, sounds done
+int traceEvent(const char* path, const char* script, const char* function, int maxFrames) {
+    cr2::MvglArchive a;
+    if (!openArchive(a, path)) return 1;
+    std::string name = script;
+    if (name.find('.') == std::string::npos) name += ".nut";
+    if (name.find('\\') == std::string::npos) name = "script\\" + name;
+    std::vector<uint8_t> data;
+    std::string err;
+    if (!a.read(name, data, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
+    cr2::ScriptVM vm;
+    if (!vm.load(data, name) || !vm.runMain()) return std::fprintf(stderr, "%s\n", vm.error().c_str()), 1;
+    std::string fn = function ? function : name.substr(name.rfind('\\') + 1, name.rfind('.') - name.rfind('\\') - 1);
+    if (const std::string f = vm.findFunction(fn); !f.empty()) fn = f;
+    int frame = 0, wait = 0;
+    std::string last;
+    int repeats = 0;
+    vm.setNative("", "WaitFrame", [&](cr2::NativeCall& c) {
+        wait = std::max(1, c.integer(0, 1));
+        c.suspend();
+    });
+    vm.setStubHook([&](const std::string& n, cr2::NativeCall& c) {
+        std::string line = n + "(";
+        for (int i = 0; i < c.count(); ++i) line += (i ? ", " : "") + c.text(i);
+        line += ")";
+        if (line == last) {
+            ++repeats;
+        } else {
+            if (repeats) std::printf("         (x%d more)\n", repeats);
+            std::printf("%6d  %s\n", frame, line.c_str());
+            last = line;
+            repeats = 0;
+        }
+        // the waits' conditions: met at once
+        if (n == "EvtWindow.CheckMessage" || n == "EvtFade.Check") c.result(true);
+        else if (n == "Cr3Sound.GetState" || n == "EvtSkip.CheckButtonTouch" || n == "Cr3Touch.GetTouchState") c.result(0);
+        else if (n == "EvtWindow.CheckYesNoButton") c.result(1);
+        else if (n == "EvtIntroduction.GetVisible") c.result(false);
+        else if (n == "VistaEvent.CheckExecution") c.result(false);
+    });
+    bool ok = vm.call(fn);
+    while (ok && vm.waiting() && frame < maxFrames) {
+        frame += wait;
+        wait = 0;
+        ok = vm.resume();
+    }
+    if (repeats) std::printf("         (x%d more)\n", repeats);
+    std::printf("%s.%s: %s at frame %d (%.1f s at 20 frames a second)\n", name.c_str(), fn.c_str(),
+                !ok ? ("failed: " + vm.error()).c_str() : vm.waiting() ? "still running" : "finished", frame, frame / 20.0);
+    return ok ? 0 : 1;
+}
+
+// An event to its end through the runtime: what it shows, per change (a message's number and
+// pages, never its text); `quiet` only the outcome. 0: it ended
+int playEvent(const cr2::MvglArchive& a, const std::string& event, bool quiet, std::string* outcome = nullptr) {
+    cr2::GameState state;
+    cr2::EventRuntime rt(a, state);
+    rt.autoPage = 1.0f;
+    if (!rt.start(event)) {
+        if (outcome) *outcome = "failed: " + rt.error();
+        if (!quiet) std::printf("%s: %s\n", event.c_str(), rt.error().c_str());
+        return 1;
+    }
+    int lastMessage = -1, lastColour = -1, lastVisible = -1;
+    float lastTarget = -1;
+    bool ok = true;
+    const int maxFrames = 20 * 60 * 20;
+    while (ok && rt.running() && rt.frame() < maxFrames) {
+        ok = rt.tick();
+        if (quiet) continue;
+        const double t = rt.frame() * cr2::EventRuntime::kTick;
+        const int msg = rt.messageShown() ? 1 : 0;
+        if (msg != lastMessage && msg)
+            std::printf("%6d %6.2f s  message: %zu pages, speaker %d\n", rt.frame(), t, rt.message().pages.size(), rt.message().speaker);
+        lastMessage = msg;
+        if (rt.fade().colour != lastColour || rt.fade().target != lastTarget)
+            std::printf("%6d %6.2f s  fade: colour %d to %.2f\n", rt.frame(), t, rt.fade().colour, rt.fade().target);
+        lastColour = rt.fade().colour, lastTarget = rt.fade().target;
+        int visible = 0;
+        for (const cr2::EventModel& m : rt.scene().models()) visible += m.visible;
+        if (visible != lastVisible) std::printf("%6d %6.2f s  models shown: %d of %zu\n", rt.frame(), t, visible, rt.scene().models().size());
+        lastVisible = visible;
+        if (rt.frame() % 20 == 0) {
+            cr2::Mat34 w;
+            float fov, zn, zf;
+            if (rt.scene().camera(w, fov, zn, zf))
+                std::printf("%6d %6.2f s  camera (%.3f %.3f %.3f) fov %.1f, near %.3f far %.1f\n", rt.frame(), t, w.m[3], w.m[7], w.m[11], fov, zn, zf);
+            if (std::getenv("CR2_PLAY_MODELS"))
+                std::printf("               camera looks along (%.3f %.3f %.3f), up (%.3f %.3f %.3f)\n", -w.m[2], -w.m[6], -w.m[10], w.m[1], w.m[5], w.m[9]);
+            if (std::getenv("CR2_PLAY_MODELS"))
+                for (const cr2::EventModel& m : rt.scene().models())
+                    if (m.visible)
+                        std::printf("               %-8s at (%.3f %.3f %.3f) scale %.3f, %s %.2f s\n", m.name.c_str(), m.place.m[3], m.place.m[7], m.place.m[11],
+                                    std::sqrt(m.place.m[0] * m.place.m[0] + m.place.m[4] * m.place.m[4] + m.place.m[8] * m.place.m[8]),
+                                    m.animation.empty() ? m.figure.c_str() : m.animation.c_str(), m.animTime);
+        }
+    }
+    char buf[256];
+    std::snprintf(buf, sizeof buf, "%s at frame %d (%.1f s)%s", !ok ? ("failed: " + rt.error()).c_str() : rt.running() ? "still running" : "ended",
+                  rt.frame(), rt.frame() * cr2::EventRuntime::kTick, rt.battle() >= 0 ? (", battle " + std::to_string(rt.battle())).c_str() : "");
+    if (outcome) *outcome = buf;
+    if (!quiet) {
+        std::printf("%s: %s\n", event.c_str(), buf);
+        std::string stubs;
+        for (const auto& [n, k] : rt.stubCalls()) stubs += " " + n + " " + std::to_string(k);
+        std::printf("stubs:%s\n", stubs.c_str());
+    }
+    return ok && !rt.running() ? 0 : 1;
+}
+
+int play(const char* path, const char* event) {
+    cr2::MvglArchive a;
+    if (!openArchive(a, path)) return 1;
+    if (std::strcmp(event, "all") != 0) return playEvent(a, event, false);
+    // every event script: script\<name>.nut whose name ends in _evt (its function the same, but for case)
+    std::map<std::string, int> outcomes;
+    int n = 0, ended = 0;
+    for (const auto& e : a.entries()) {
+        const std::string& f = e.name;
+        if (f.compare(0, 7, "script\\") != 0 || f.size() < 12 || f.compare(f.size() - 8, 8, "_evt.nut") != 0) continue;
+        std::string outcome;
+        ++n;
+        ended += playEvent(a, f.substr(7, f.size() - 11), true, &outcome) == 0;
+        const std::string kind = outcome.substr(0, outcome.find(" at frame"));
+        if (kind != "ended") std::printf("%s: %s\n", f.c_str(), outcome.c_str());
+        ++outcomes[kind.substr(0, 40)];
+    }
+    std::printf("%d events: %d ended\n", n, ended);
+    for (const auto& [k, c] : outcomes) std::printf("  %s: %d\n", k.c_str(), c);
+    return ended == n ? 0 : 1;
 }
 
 bool writeTga(const std::string& path, const cr2::Image& img) {
@@ -593,6 +736,11 @@ int pose(const char* path, const std::string& figure, const std::string& animNam
     std::vector<cr2::JointTransform> p = sk.basePose;
     an.evaluate(frame, p);
     for (size_t j = 0; j < p.size(); ++j)
+        std::printf("%zu: base R %.4f %.4f %.4f %.4f  T %.4f %.4f %.4f  S %.4f %.4f %.4f\n", j, sk.basePose[j].rotation[0],
+                    sk.basePose[j].rotation[1], sk.basePose[j].rotation[2], sk.basePose[j].rotation[3], sk.basePose[j].translation[0],
+                    sk.basePose[j].translation[1], sk.basePose[j].translation[2], sk.basePose[j].scale[0], sk.basePose[j].scale[1],
+                    sk.basePose[j].scale[2]);
+    for (size_t j = 0; j < p.size(); ++j)
         std::printf("%zu: R %.4f %.4f %.4f %.4f  T %.4f %.4f %.4f  S %.4f %.4f %.4f\n", j, p[j].rotation[0], p[j].rotation[1],
                     p[j].rotation[2], p[j].rotation[3], p[j].translation[0], p[j].translation[1], p[j].translation[2], p[j].scale[0],
                     p[j].scale[1], p[j].scale[2]);
@@ -610,6 +758,8 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[1], "pose") && argc > 5) return pose(argv[2], argv[3], argv[4], float(std::atof(argv[5])));
     if (!std::strcmp(argv[1], "compare-models") && argc > 3) return compareModels(argv[2], argv[3]);
     if (!std::strcmp(argv[1], "shaders")) return shaders(argv[2]);
+    if (!std::strcmp(argv[1], "event") && argc > 3) return traceEvent(argv[2], argv[3], argc > 4 ? argv[4] : nullptr, 20 * 60 * 30);
+    if (!std::strcmp(argv[1], "play") && argc > 3) return play(argv[2], argv[3]);
     if (!std::strcmp(argv[1], "exits") && argc > 3) return exits(argv[2], argv[3]);
     if (!std::strcmp(argv[1], "fieldscript") && argc > 3) return fieldScripts(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "walk") && argc > 3) return walk(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);

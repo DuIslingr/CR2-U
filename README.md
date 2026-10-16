@@ -31,17 +31,18 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] The script VM: the game's own Squirrel 2.2.4 (`engine/third_party/squirrel2`); every
       script loads and runs its `main` in all three releases (`cr2tool scripts`), events run up to
       their first wait with the native API stubbed (`cr2tool run`)
-- [ ] The native API (222 functions) for real: the field's set-up natives so far (flags, work
-      values, the area, the gimmicks' display / collision / events, the layers)
+- [ ] The native API (222 functions) for real: the field's set-up natives (flags, work values,
+      the area, the gimmicks' display / collision / events, the layers) and the events' (the
+      scene, its timelines, the message window, the fades) so far
 - [x] A model viewer (`cr2view`): any figure of any of the three releases, textured; rendered with
       Vulkan 1.3 by default, OpenGL 3.3 where Vulkan can't start (`--renderer opengl`) - CR1:U's
       device layer, with CR2's vertices and the game's shading
 - [x] Skeletons (`skel`: Sony Edge Animation's, ported) and the meshes' inverse bind matrices
 - [x] Animations (`anim`): Edge Animation's frame sets and keyframes, decoded and checked
       (`tools/anim.py`)
-- [x] Skinning and animation in the engine: the viewer plays every figure's animations (relative
-      to the base pose, as the game blends them); materials' render states (alpha test, blending,
-      culling, depth writes)
+- [x] Skinning and animation in the engine: the viewer plays every figure's animations (motions
+      relative to the base pose, a map's or a camera's absolute, as the game's blend tree has
+      them); materials' render states (alpha test, blending, culling, depth writes)
 - [x] The text (`message\*.dat`): eight languages, voice ids, the window's commands
       (`tools/msg.py`)
 - [x] The game's own shading: its generated GLSL shaders (`shad`, one per material shader key) as
@@ -63,8 +64,12 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       solid as in the game; `cr2tool walk` runs from every map's arrival points
 - [x] Which gimmicks the story shows: each area's entry (`evt000`) runs in the dungeon's script on
       entering it (`cr2tool fieldscript`: 216 of 217 maps from a new game's state)
-- [ ] Events (the scripts' waits, messages, scenes), talking / tapping, event boxes, the HUD, the
-      fades and sounds between areas
+- [x] Vista events: the event's script at the game's 20 updates a second - its scene's models on
+      their locators with their animations and faces, the animated camera and lights, the fades,
+      the messages' pages (`cr2view --event D01_01_0101_evt --vista d0151b`; `cr2tool play all`:
+      all 70 event scripts play to their end in all three releases)
+- [ ] The message window drawn (text in the game's font), field events (talking / tapping, event
+      boxes), the HUD, the fades and sounds between areas
 - [ ] Engine: events, battles, menus
 
 ## What you need

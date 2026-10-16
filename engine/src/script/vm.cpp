@@ -21,9 +21,13 @@ const std::vector<std::pair<std::string, std::vector<std::string>>> kNativeApi =
 };
 
 // Cr3BindVectorStruct's classes (Sqrat, a default constructor and float members)
+// Cr3BindVectorStruct: the root's Cr3Struct table and its two classes (Sqrat's tagCr3Vector3 /
+// tagCr3Vector4: float members x y z (w), constructed zero)
 const char kVectorClasses[] =
-    "class Vector3 { x = 0.0; y = 0.0; z = 0.0; }\n"
-    "class Vector4 { x = 0.0; y = 0.0; z = 0.0; w = 0.0; }\n";
+    "Cr3Struct <- {\n"
+    "  Vector3 = class { x = 0.0; y = 0.0; z = 0.0; },\n"
+    "  Vector4 = class { x = 0.0; y = 0.0; z = 0.0; w = 0.0; }\n"
+    "};\n";
 
 // The game's scripts were compiled by a 32-bit Squirrel: every SQInteger in the stream (tags,
 // counts, string lengths, integer literals, outer / local variable fields, line infos, default
@@ -134,6 +138,15 @@ ScriptVM* owner(HSQUIRRELVM v) { return static_cast<ScriptVM*>(sq_getforeignptr(
 
 long stubNativeCalls(ScriptVM& s, const char* name) { return ++s.stubCalls_[name]; }
 
+// a stub's trace hook: the call's arguments (all but the name, the free variable on the top)
+SQInteger_t stubNativeHook(ScriptVM& s, SQVM* v, const char* name) {
+    if (!s.stubHook_) return 0;
+    NativeCall call(v, int(sq_gettop(v)) - 2);
+    s.stubHook_(name, call);
+    if (call.suspending()) return sq_suspendvm(v);
+    return call.hasResult() ? 1 : 0;
+}
+
 namespace {
 
 void scriptError(HSQUIRRELVM v, const SQChar* fmt, ...) {
@@ -150,9 +163,11 @@ void scriptError(HSQUIRRELVM v, const SQChar* fmt, ...) {
 SQInteger stubNative(HSQUIRRELVM v) {
     const SQChar* name = nullptr;
     if (SQ_SUCCEEDED(sq_getstring(v, sq_gettop(v), &name)) && name)
-        if (ScriptVM* s = owner(v))
+        if (ScriptVM* s = owner(v)) {
             if (stubNativeCalls(*s, name) > 100000) // (a script waiting on a stub forever)
                 return sq_throwerror(v, (std::string("stub called 100000 times: ") + name).c_str());
+            return SQInteger(stubNativeHook(*s, v, name));
+        }
     return 0;
 }
 
@@ -162,6 +177,7 @@ SQInteger implementedNative(HSQUIRRELVM v) {
     if (SQ_FAILED(sq_getuserpointer(v, sq_gettop(v), &p)) || !p) return 0;
     NativeCall call(v, int(sq_gettop(v)) - 2); // (1 this, 2.. the arguments, the top the free variable)
     (*static_cast<Native*>(p))(call);
+    if (call.suspending()) return sq_suspendvm(v);
     return call.hasResult() ? 1 : 0;
 }
 
@@ -200,6 +216,25 @@ std::string NativeCall::string(int i) const {
     const SQChar* s = nullptr;
     if (i < count_ && SQ_SUCCEEDED(sq_getstring(v_, i + 2, &s)) && s) return s;
     return "";
+}
+
+std::string NativeCall::text(int i) const {
+    if (i >= count_) return "";
+    const int at = i + 2;
+    SQInteger n;
+    SQFloat f;
+    SQBool b;
+    const SQChar* str;
+    switch (sq_gettype(v_, at)) {
+    case OT_INTEGER: sq_getinteger(v_, at, &n); return std::to_string(n);
+    case OT_FLOAT: { sq_getfloat(v_, at, &f); char buf[32]; std::snprintf(buf, sizeof buf, "%g", double(f)); return buf; }
+    case OT_BOOL: sq_getbool(v_, at, &b); return b ? "true" : "false";
+    case OT_STRING: sq_getstring(v_, at, &str); return std::string("'") + str + "'";
+    case OT_NULL: return "null";
+    case OT_INSTANCE: return "<instance>";
+    case OT_TABLE: return "<table>";
+    default: return "<?>";
+    }
 }
 
 void NativeCall::result(int v) { sq_pushinteger(v_, v), result_ = true; }
@@ -338,7 +373,19 @@ bool ScriptVM::call(const std::string& function, const std::vector<int>& args) {
     sq_pushroottable(vm_);
     for (int a : args) sq_pushinteger(vm_, a);
     const bool ok = SQ_SUCCEEDED(sq_call(vm_, SQInteger(args.size()) + 1, SQFalse, SQTrue));
-    sq_settop(vm_, top);
+    if (!waiting()) sq_settop(vm_, top);
+    else callTop_ = (long long)top;
+    return ok;
+}
+
+bool ScriptVM::waiting() const { return sq_getvmstate(vm_) == SQ_VMSTATE_SUSPENDED; }
+
+bool ScriptVM::resume() {
+    if (!waiting()) return true;
+    // (the suspending native's result: null; Squirrel 2's wakeup pushes it as the call's value)
+    sq_pushnull(vm_);
+    const bool ok = SQ_SUCCEEDED(sq_wakeupvm(vm_, SQTrue, SQFalse, SQTrue, SQFalse));
+    if (!waiting()) sq_settop(vm_, SQInteger(callTop_));
     return ok;
 }
 

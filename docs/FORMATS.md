@@ -385,12 +385,19 @@ user; key rotation, translation, scale, user - padded to 4), the initial values 
 one keyframe bit per animated channel per frame (frames 1 .. count, MSB first; rotation channels,
 then translation, scale, user), the keys (each channel's in turn), and - aligned to 16 - the next
 set's header and initial values (local frame count + 1), so a set reaches the next one alone.
-**The animations are relative to the figure's base pose**: their constant channels hold 0 /
+**Motions are relative to the figure's base pose**: their constant channels hold 0 /
 identity where a joint stays put (19,238 constant translations are 0 where the base's isn't, none
-equals the base; 1,078 constant rotations are identity, one equals the base's), so an animation
+equals the base; 1,078 constant rotations are identity, one equals the base's), so a motion
 evaluated over an identity pose is composed onto the base as `edgeAnimBlendJointsRelative` does:
 rotation base * delta (Hamilton product), translation base + delta, scale base * delta. Each
-figure has a `<figure>.anim` with no channels (892 of them: the base layer).
+figure has a `<figure>.anim` with no channels (892 of them: the base layer). That is
+Figure::Pose's blend tree: a figure has five animator slots - slot 0 the base layer, 1 + 2 and
+3 + 4 cross-faded (op 0, linear) - and slot 0 is joined to the rest under a relative branch (ops
+1 - 6: edgeAnimBlendPose's table). The characters', NPCs', objects' and boxes' motions are bound
+to slots 1 / 2 (FldNPC, FldObject, FldBox, the motion managers). An animation alone in slot 0 -
+a map's figure (FldMap::ChangeArea), the vista's map, camera and light, an event's scene - is the
+tree's one leaf, **absolute**: evaluated over the base pose, its channels replacing the base's
+values (edgeAnimProcessBlendTree; the cameras' animations start at their base poses).
 
 User channels are floats (constant ones at +0x48, animated ones' initial values after the
 scales', their keys after the scale keys aligned to 4) and absolute: MVGL's are material

@@ -23,11 +23,14 @@ add_library(cr2core STATIC
     src/assets/geom.cpp
     src/assets/skeleton.cpp
     src/assets/maptable.cpp
+    src/assets/text.cpp
     src/field/fieldmap.cpp
     src/field/collision.cpp
     src/field/character.cpp
     src/field/gimmicks.cpp
     src/field/fieldscript.cpp
+    src/event/scene.cpp
+    src/event/runtime.cpp
     src/gfx/material.cpp
     src/script/vm.cpp
 )

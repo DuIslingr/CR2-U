@@ -30,6 +30,9 @@ struct GameState {
     }
 };
 
+// the natives on the story's state (Cr3Flag, Cr3Work), for any script
+void bindGameState(ScriptVM& vm, GameState& state);
+
 // A gimmick as the scripts leave it (by its id: Gimmick::id)
 struct GimmickState {
     bool visible = false;   // NPCs start hidden (FldNPC +0x10); objects, effects and boxes shown

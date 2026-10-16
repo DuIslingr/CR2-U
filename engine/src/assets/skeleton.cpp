@@ -76,6 +76,13 @@ std::vector<JointTransform> Animation::poseOver(const std::vector<JointTransform
     return out;
 }
 
+std::vector<JointTransform> Animation::poseAbsolute(const std::vector<JointTransform>& base, float frame,
+                                                    std::vector<float>* user) const {
+    std::vector<JointTransform> out = base;
+    evaluate(frame, out, user);
+    return out;
+}
+
 std::vector<Mat34> Skeleton::world(const std::vector<JointTransform>& pose, const Mat34& root) const {
     std::vector<Mat34> w(pose.size(), root);
     for (const auto& [joint, link] : links) {
@@ -132,6 +139,20 @@ uint32_t nameHash(const char* name) {
         h = c ^ (h >> 8);
     }
     return h;
+}
+
+std::vector<std::string> parseJointNames(const std::vector<uint8_t>& d) {
+    std::vector<std::string> out;
+    if (d.size() < 8) return out;
+    const uint32_t joints = uint32_t(rd32(d, 0)), materials = uint32_t(rd32(d, 4));
+    const size_t count = size_t(joints) + materials;
+    if (8 + 4 * count > d.size()) return out;
+    for (size_t k = 0; k < joints; ++k) {
+        const size_t from = size_t(uint32_t(rd32(d, 8 + 4 * k)));
+        const size_t to = k + 1 < count ? size_t(uint32_t(rd32(d, 8 + 4 * (k + 1)))) : d.size();
+        if (from <= to && to <= d.size()) out.emplace_back(reinterpret_cast<const char*>(&d[from]), to - from);
+    }
+    return out;
 }
 
 int Skeleton::joint(uint32_t hash) const {

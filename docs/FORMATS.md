@@ -138,8 +138,11 @@ joints (`MatrixPalette[56*3]`).
 A material: u32 hash, ..., +0x14 u8 parameters, +0x15 u8 render states, then 0x14-byte entries:
 u8 parameter, u8 kind (0 texture, 1 / 3 / 4 a float / vec3 / vec4, 100 a render state), u16, then
 the texture's name (12 characters: `images\<name>.img`) or the values. Parameters seen: 0x32
-diffuse map, 0x35 normal map, 0x33 colour (vec4), 0x36 / 0x38 / 0x39 / 0x41 / 0x42 floats, 0x3e /
-0x3f / 0x40 vec3s.
+diffuse map, 0x35 normal map, 0x43 alpha map (the UI's: an A8 texture beside an opaque colour
+one, `hud_logoTtlC` + `hud_logoTtlA`), 0x44 / 0x48 textures not identified yet, 0x33 colour
+(vec4), 0x36 / 0x38 / 0x39 / 0x41 / 0x42 floats, 0x3e / 0x3f / 0x40 vec3s. The UI is figures
+too: the title screen is `title.geom` (7 textured quads, its own skeleton) played with
+`title_in` / `title_wait` / `title_loop` / `title_out`.
 
 A render state's entry holds 4 u32 GL values; the ids are `RenderContext`'s table (its names, in
 order from 0x78): `alpha_func` (func, ref as a float - GREATER), `alpha_test_enable`,

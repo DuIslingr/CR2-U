@@ -34,7 +34,8 @@ struct GeomMesh {
 
 struct GeomMaterial {
     uint32_t hash = 0;
-    std::map<int, std::string> textures;     // parameter -> image name: 0x32 diffuse, 0x35 normal map
+    // parameter -> image name: 0x32 diffuse, 0x35 normal map, 0x43 alpha map (A8, the UI's), 0x44 / 0x48
+    std::map<int, std::string> textures;
     std::map<int, std::vector<float>> params; // parameter -> 1, 3 or 4 floats (0x33: colour)
     // render states (kind 100; RenderContext's table): id -> 4 GL values. 0x78 alpha_func (func,
     // ref as a float), 0x79 alpha_test_enable, 0x7a blend_func (src, dst), 0x7b blend_equation,

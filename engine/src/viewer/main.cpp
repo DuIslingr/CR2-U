@@ -94,12 +94,15 @@ in vec3 vNormal;
 in vec2 vUv;
 in vec4 vColour;
 uniform sampler2D uTexture;
+uniform sampler2D uAlphaMap; // the material's 0x43: the alpha, separately (A8)
+uniform float uHasAlphaMap;
 uniform float uLit;      // 1: the mesh has normals
 uniform float uTextured; // 1: a diffuse texture
 uniform float uAlphaRef; // the alpha test: discard at or below (-1: off)
 out vec4 outColour;
 void main() {
     vec4 c = vColour * mix(vec4(1.0), texture(uTexture, vUv), uTextured);
+    if (uHasAlphaMap > 0.5) c.a *= texture(uAlphaMap, vUv).a;
     if (c.a <= uAlphaRef) discard; // (the materials' alpha test: GREATER ref; -1 when off)
     float light = 1.0;
     if (uLit > 0.5) {
@@ -130,7 +133,7 @@ struct GpuMesh {
     GLuint vao = 0, vbo = 0, ibo = 0;
     GLsizei indices = 0;
     bool lit = false;
-    GLuint texture = 0;
+    GLuint texture = 0, alphaMap = 0;
     cr2::GeomMesh source;       // (for skinning)
     cr2::GeomMaterial material; // (its render states)
     std::vector<float> vertices; // the interleaved buffer: position 3, normal 3, uv 2, colour 4
@@ -236,6 +239,7 @@ struct Viewer {
             if (m.material < g.materials.size()) {
                 gm.material = g.materials[m.material];
                 gm.texture = texture(gm.material.diffuse());
+                if (const auto it = gm.material.textures.find(0x43); it != gm.material.textures.end()) gm.alphaMap = texture(it->second);
             }
             meshes.push_back(gm);
             verts += m.vertexCount;
@@ -356,6 +360,7 @@ struct Viewer {
         gl::UseProgram(program);
         gl::UniformMatrix4fv(gl::GetUniformLocation(program, "uMvp"), 1, GL_FALSE, mvp.m);
         gl::Uniform1i(gl::GetUniformLocation(program, "uTexture"), 0);
+        gl::Uniform1i(gl::GetUniformLocation(program, "uAlphaMap"), 1);
         gl::ActiveTexture(GL_TEXTURE0);
         // the materials' render states (opaque meshes first, then those blending)
         std::vector<const GpuMesh*> order;
@@ -398,6 +403,10 @@ struct Viewer {
             gl::DepthMask(v ? GL_TRUE : GL_FALSE);
             gl::Uniform1f(gl::GetUniformLocation(program, "uLit"), m.lit ? 1.0f : 0.0f);
             gl::Uniform1f(gl::GetUniformLocation(program, "uTextured"), m.texture ? 1.0f : 0.0f);
+            gl::Uniform1f(gl::GetUniformLocation(program, "uHasAlphaMap"), m.alphaMap ? 1.0f : 0.0f);
+            gl::ActiveTexture(GL_TEXTURE1);
+            gl::BindTexture(GL_TEXTURE_2D, m.alphaMap);
+            gl::ActiveTexture(GL_TEXTURE0);
             gl::BindTexture(GL_TEXTURE_2D, m.texture);
             gl::BindVertexArray(m.vao);
             gl::DrawElements(GL_TRIANGLES, m.indices, GL_UNSIGNED_INT, nullptr);

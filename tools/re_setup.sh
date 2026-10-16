@@ -21,7 +21,8 @@ for abi in armeabi-v7a:armv7 x86:x86; do
     d="${abi%%:*}"; o="$R/re/android/${abi##*:}"; so="$APK/lib/$d/libChaosRings2.so"
     echo "ghidra: android $d"
     llvm-nm -D -n --defined-only "$so" > "$o/symbols.txt"
-    "$G" "$o/ghidra" cr2_${abi##*:} -import "$so" -overwrite -scriptPath "$T/ghidra" \
+    pre=(); [ "$d" = x86 ] && pre=(-preScript X86Setup.java)
+    "$G" "$o/ghidra" cr2_${abi##*:} -import "$so" -overwrite -scriptPath "$T/ghidra" "${pre[@]}" \
         -postScript ExportDecomp.java "$o" -postScript ExportFeatures.java "$o/features.jsonl" > "$o/ghidra.log" 2>&1
 done
 echo "ghidra: android dex"

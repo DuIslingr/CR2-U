@@ -23,7 +23,10 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       carried to the iPad and Vita builds
 - [ ] The formats: `img` (PVR v2 on the iPad), `geom` / `skel` / `anim` (models), `name`, `dat`,
       `phys`, `shad` (GLSL ES), `emta`, `message`
-- [ ] Squirrel bytecode: a disassembler, then the script VM
+- [x] The scripts surveyed (docs/SCRIPTS.md): Squirrel 2.2.4 bytecode, all 139 parsed and
+      disassembled (`tools/nut.py`); the native API they call - 24 tables, 219 functions - read
+      out of the Android library (`tools/sq_bindings.py`)
+- [ ] The script VM (Squirrel 2.2.4) and the native API
 - [ ] Engine: a model viewer first, then the field, events, battles, menus
 
 ## What you need
@@ -41,6 +44,8 @@ One or more of:
 | | |
 |---|---|
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
+| `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |
+| `tools/sq_bindings.py` | the scripts' native API, from the Android library's decompilation |
 | `tools/re_setup.sh` | Ghidra groundwork in `re/` (never committed): the Android library (x86 and armv7, named), the iPad and Vita builds named from it |
 | `tools/vita_self.py` | the Vita's eboot (a fake-signed SELF) to an ELF plus its imports |
 | `tools/ghidra/` | headless scripts: export decompilation and features, match functions across builds, apply names |

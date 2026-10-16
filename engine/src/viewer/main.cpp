@@ -15,11 +15,13 @@
 //
 //   cr2view --data <CRDB.ios.mvgl | main.212...obb | CRDB.psp2.mvgl> [--model <name>]
 //           [--anim <name>] [--time s] [--size WxH] [--yaw deg] [--pitch deg]
-//           [--lights <figure> | none] [--field <map> [--at <point>] [--binary <file>]]
+//           [--lights <figure> | none] [--field <map> [--at <point>] [--binary <file>]
+//           [--walk sx,sy,seconds]]
 //           [--renderer vulkan|opengl] [--capture out.bmp]
 //
 // Models: drag to turn, the wheel to zoom, Left / Right (or PageUp / PageDown) for the archive's
-// other models, Up / Down for the figure's animations. Fields: the arrow keys (or WASD) walk,
+// other models, Up / Down for the figure's animations. Fields: the arrow keys (or WASD) run,
+// with Shift walk, on the map's floors and against its walls;
 // PageUp / PageDown for the character's animations. Space pauses, Esc quits. --capture draws
 // one frame (at --time) to a BMP and exits.
 #include <SDL3/SDL.h>
@@ -38,6 +40,7 @@
 #include "assets/maptable.hpp"
 #include "assets/mvgl.hpp"
 #include "assets/skeleton.hpp"
+#include "field/character.hpp"
 #include "field/fieldmap.hpp"
 #include "gfx/material.hpp"
 #include "gfx/render_device.hpp"
@@ -135,6 +138,29 @@ struct Viewer {
     cr2::FieldMap field;
     ViewFigure mapFigure; // <map>f
     float player[3] = {0, 0, 0}, heading = 0;
+    std::unique_ptr<cr2::CharacterController> controller; // (on the map's walls and floors)
+    float stepClock = 0;
+
+    // FldPlayer::Update: the stick (screen right / up, -1..1) as a direction along the ground from
+    // the camera's view, walking (0.09 units a second) or running (0.48), the controller stepped
+    // at the world's fixed 1/60 s; the figure stands 0.02 below the controller's sphere
+    void walk(float dt, float sx, float sy, bool run) {
+        if (!controller) return;
+        cr2::Vec3 right, forward;
+        field.groundAxes(right, forward);
+        cr2::Vec3 dir{right[0] * sx + forward[0] * sy, 0, right[2] * sx + forward[2] * sy};
+        const float l = std::sqrt(dir[0] * dir[0] + dir[2] * dir[2]);
+        const float speed = l > 0 ? (run ? 0.48f : 0.09f) : 0.0f;
+        if (l > 0) dir = {dir[0] / l * speed, 0, dir[2] / l * speed}, heading = std::atan2(dir[0], dir[2]);
+        stepClock = std::min(stepClock + dt, 4.0f / 60.0f);
+        for (; stepClock >= 1.0f / 60.0f; stepClock -= 1.0f / 60.0f) {
+            controller->setVelocity(dir);
+            controller->step();
+        }
+        const cr2::Vec3& p = controller->position();
+        player[0] = p[0], player[1] = p[1] - 0.02f, player[2] = p[2];
+        playMotion(fig, speed == 0 ? "fn01" : run ? "ff02" : "ff01");
+    }
 
     bool decode(const std::string& name, cr2::Image& img) {
         std::vector<uint8_t> data;
@@ -495,10 +521,14 @@ struct Viewer {
             for (const std::string& n : field.pointNames()) SDL_Log("  %s", n.c_str());
         }
         fieldMode = true;
-        SDL_Log("field %s (table from %s): variant %d, layers %s%s%s%s, at %s (%.3f %.3f %.3f)", map.c_str(), from.c_str(),
-                row->variant, field.backgroundImage().empty() ? "" : "bg ", field.midgroundImage().empty() ? "" : "mg ",
-                field.foregroundImage().empty() ? "" : "fg ", field.figureName().empty() ? "" : "+ 3D figure", at.c_str(),
-                player[0], player[1], player[2]);
+        controller = std::make_unique<cr2::CharacterController>(field.collision());
+        controller->setPosition({player[0], player[1] + 0.17f, player[2]}); // (dropped onto the floor)
+        for (int k = 0; k < 30; ++k) walk(1.0f / 60.0f, 0, 0, false);
+        SDL_Log("field %s (table from %s): variant %d, layers %s%s%s%s, %zu collision triangles, at %s (%.3f %.3f %.3f)",
+                map.c_str(), from.c_str(), row->variant, field.backgroundImage().empty() ? "" : "bg ",
+                field.midgroundImage().empty() ? "" : "mg ", field.foregroundImage().empty() ? "" : "fg ",
+                field.figureName().empty() ? "" : "+ 3D figure", field.collision().triangles(), at.c_str(), player[0], player[1],
+                player[2]);
         return true;
     }
 };
@@ -516,6 +546,7 @@ bool saveBmp(const char* path, const std::vector<uint8_t>& rgba, int w, int h) {
 
 int main(int argc, char** argv) {
     std::string data, model, capture, animName, renderer = "vulkan", lights = "d0101c", fieldName, at = "defaultPos", binary;
+    float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
     int width = 1280, height = 800;
     float yaw = 30, pitch = 15, startTime = 0;
     for (int i = 1; i < argc; ++i) {
@@ -534,6 +565,7 @@ int main(int argc, char** argv) {
         else if (a == "--field" && next) fieldName = next, ++i;
         else if (a == "--at" && next) at = next, ++i;
         else if (a == "--binary" && next) binary = next, ++i;
+        else if (a == "--walk" && next) std::sscanf(next, "%f,%f,%f", &walkX, &walkY, &walkSeconds), ++i;
     }
     if (data.empty()) {
         std::fprintf(stderr, "cr2view --data <archive> [--model name] [--anim name] [--time s] [--size WxH] [--yaw deg] "
@@ -598,6 +630,7 @@ int main(int argc, char** argv) {
         v.loadAnim(v.fig, size_t(it - v.fig.anims.begin()));
     }
     if (v.fieldMode && animName.empty()) v.playMotion(v.fig, "fn01");
+    for (float t = 0; v.fieldMode && t < walkSeconds; t += 1.0f / 60.0f) v.walk(1.0f / 60.0f, walkX, walkY, true);
     v.time = startTime;
     v.pose();
     SDL_Log("%s%s", v.status.c_str(), v.animStatus().c_str());
@@ -649,17 +682,11 @@ int main(int argc, char** argv) {
             const float dt = float(double(now - last) / 1e9);
             if (!v.paused) v.time += dt;
             last = now;
-            if (v.fieldMode) { // walk on the ground plane (no collision yet)
+            if (v.fieldMode) { // the arrows / WASD run, with Shift walk
                 const bool* keys = SDL_GetKeyboardState(nullptr);
-                const float dx = float((keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) - (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]));
-                const float dz = float((keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S]) - (keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W]));
-                if (dx != 0 || dz != 0) {
-                    const float l = std::sqrt(dx * dx + dz * dz), speed = 0.4f;
-                    v.player[0] += dx / l * speed * dt;
-                    v.player[2] += dz / l * speed * dt;
-                    v.heading = std::atan2(dx, dz);
-                }
-                v.playMotion(v.fig, dx != 0 || dz != 0 ? "ff01" : "fn01");
+                const float sx = float((keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) - (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]));
+                const float sy = float((keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W]) - (keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S]));
+                v.walk(dt, sx, sy, !(keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]));
             }
             if (v.fig.animLoaded && v.time > v.fig.anim.duration()) v.time = std::fmod(v.time, std::max(v.fig.anim.duration(), 0.05f));
             v.pose();

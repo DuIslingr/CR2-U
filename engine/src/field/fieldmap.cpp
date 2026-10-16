@@ -110,6 +110,11 @@ bool FieldMap::load(const MvglArchive& a, const MapInfo& info, std::string* erro
     if (info.foreground) fg_ = image(info.layer("fg"));
     if ((info.figure || info.figure2) && a.contains(info.name + "f.geom")) figure_ = info.name + "f";
     lightsFromFigure(c_, cSkel_, lighting_);
+    std::vector<uint8_t> phys;
+    PhysScene scene;
+    std::string err;
+    if (a.read(info.name + "c.phys", phys) && parsePhys(phys, scene, &err)) collision_.addScene(scene);
+    else if (!err.empty()) return fail(error, info.name + "c.phys: " + err);
     // the camera (InitCamera): near halved (at least 0.1), far five times (at most 5000)
     if (c_.cameras.empty()) return fail(error, info.name + "c: no camera");
     const GeomCamera& cam = c_.cameras[0];
@@ -137,6 +142,15 @@ bool FieldMap::point(const std::string& name, float* pos) const {
 }
 
 std::vector<std::string> FieldMap::pointNames() const { return names_; }
+
+void FieldMap::groundAxes(Vec3& right, Vec3& forward) const {
+    auto flat = [](float x, float z) {
+        const float l = std::sqrt(x * x + z * z);
+        return l > 1e-6f ? Vec3{x / l, 0, z / l} : Vec3{0, 0, 0};
+    };
+    right = flat(cameraWorld_[0], cameraWorld_[2]);       // the camera's +X
+    forward = flat(-cameraWorld_[8], -cameraWorld_[10]);  // its view: -Z
+}
 
 FieldFrame FieldMap::frame(int w, int h, const float* focus) const {
     FieldFrame out;

@@ -14,6 +14,7 @@
 #include "assets/maptable.hpp"
 #include "assets/mvgl.hpp"
 #include "assets/skeleton.hpp"
+#include "field/collision.hpp"
 #include "gfx/render_device.hpp"
 
 namespace cr2 {
@@ -55,6 +56,12 @@ public:
     bool point(const std::string& name, float* pos) const;
     std::vector<std::string> pointNames() const;
 
+    // The walls and floors (<map>c.phys's solid bodies)
+    const CollisionWorld& collision() const { return collision_; }
+    // The camera's right and forward directions along the ground (unit, y 0): the player's
+    // input turns into a direction with them (FldPlayer::Update)
+    void groundAxes(Vec3& right, Vec3& forward) const;
+
     // The frame for a screen of w x h pixels with the player at `focus` (world space)
     FieldFrame frame(int w, int h, const float* focus) const;
 
@@ -70,6 +77,7 @@ private:
     std::vector<Mat34> cWorld_, pWorld_;
     std::vector<std::string> names_; // the joints' names (from the .name files), for pointNames
     SceneLighting lighting_;
+    CollisionWorld collision_;
     Mat4 cameraWorld_ = mat4Identity();
     float fovY_ = 45, near_ = 1, far_ = 5000;
 };

@@ -17,6 +17,10 @@
 //   cr2tool pose <archive> <figure> <anim> <frame>   the animation's pose at a frame (joint: R, T, S)
 //   cr2tool images <archive> [pattern [out dir]]     every texture decodes (formats counted);
 //                                                    with a folder, those matching as .tga
+//   cr2tool walk <archive> <executable> [map]       the field player (field/character.hpp) on every
+//                                                    map's floors: dropped at defaultPos, run 4 s
+//                                                    in 8 directions - on a floor throughout, never
+//                                                    through a wall
 //   cr2tool shaders <archive>                        the materials' shaders: the features their
 //                                                    GLSL has, and where the key decoder (gfx/
 //                                                    material.cpp) disagrees with it, per bit
@@ -31,6 +35,8 @@
 #include "assets/image.hpp"
 #include "assets/skeleton.hpp"
 #include "assets/mvgl.hpp"
+#include "field/character.hpp"
+#include "field/fieldmap.hpp"
 #include "gfx/material.hpp"
 #include "script/vm.hpp"
 
@@ -45,7 +51,8 @@ int usage() {
                  "cr2tool models <archive>\n"
                  "cr2tool compare-models <archive> <archive>\n"
                  "cr2tool animations <archive>\n"
-                 "cr2tool shaders <archive>\n");
+                 "cr2tool shaders <archive>\n"
+                 "cr2tool walk <archive> <executable> [map]\n");
     return 2;
 }
 
@@ -271,6 +278,77 @@ int shaders(const char* path) {
     return extraClash ? 1 : 0;
 }
 
+int walk(const char* path, const char* binary, const char* only) {
+    cr2::MvglArchive a;
+    if (!openArchive(a, path)) return 1;
+    std::vector<uint8_t> bin;
+    if (std::FILE* f = std::fopen(binary, "rb")) {
+        std::fseek(f, 0, SEEK_END);
+        bin.resize(size_t(std::ftell(f)));
+        std::fseek(f, 0, SEEK_SET);
+        bin.resize(std::fread(bin.data(), 1, bin.size(), f));
+        std::fclose(f);
+    }
+    std::vector<cr2::MapInfo> table;
+    if (!cr2::findMapTable(bin, table)) return std::fprintf(stderr, "%s: no maps' table\n", binary), 1;
+    size_t maps = 0, settled = 0, runs = 0, offFloor = 0, tunnels = 0, stuck = 0, skipped = 0;
+    for (const cr2::MapInfo& info : table) {
+        if (only && info.name != only) continue;
+        cr2::FieldMap field;
+        std::string err;
+        float start[3];
+        if (!field.load(a, info, &err) || !field.point("defaultPos", start) || !field.collision().triangles()) {
+            if (only) std::printf("  %s: %s\n", info.name.c_str(), err.empty() ? "no defaultPos or no collision" : err.c_str());
+            ++skipped;
+            continue;
+        }
+        ++maps;
+        const cr2::CollisionWorld& w = field.collision();
+        auto floorBelow = [&](const cr2::Vec3& p) { return !w.surfaceBelow(p, 0.5f).empty(); };
+        auto throughWall = [&](const cr2::Vec3& from, const cr2::Vec3& to) {
+            cr2::CollisionWorld::Hit h;
+            return w.sweep(from, to, 0.001f, {0, 1, 0}, -2.0f, h) && std::fabs(h.normal[1]) < 0.7f;
+        };
+        cr2::CharacterController c(w);
+        c.setPosition({start[0], start[1] + 0.17f, start[2]});
+        for (int k = 0; k < 60; ++k) c.setVelocity({0, 0, 0}), c.step();
+        const cr2::Vec3 rest = c.position();
+        const bool onFloor = c.onGround() && floorBelow(rest);
+        settled += onFloor;
+        if (!onFloor) {
+            std::printf("  %s: not on a floor after dropping at defaultPos (%.3f %.3f %.3f -> %.3f %.3f %.3f)\n", info.name.c_str(),
+                        start[0], start[1], start[2], rest[0], rest[1], rest[2]);
+            continue;
+        }
+        for (int dir = 0; dir < 8; ++dir) {
+            ++runs;
+            c.setPosition(rest);
+            const float ang = float(dir) * 0.785398f;
+            const cr2::Vec3 v{0.48f * std::sin(ang), 0, 0.48f * std::cos(ang)};
+            bool off = false, tunnel = false;
+            for (int k = 0; k < 240; ++k) {
+                const cr2::Vec3 before = c.position();
+                c.setVelocity(v);
+                c.step();
+                if (!off && !floorBelow(c.position())) off = true;
+                if (!tunnel && throughWall({before[0], before[1], before[2]}, c.position())) tunnel = true;
+            }
+            const cr2::Vec3 end = c.position();
+            const float moved = std::hypot(end[0] - rest[0], end[2] - rest[2]);
+            offFloor += off;
+            tunnels += tunnel;
+            stuck += moved < 0.01f;
+            if (off || tunnel)
+                std::printf("  %s, direction %d: %s%s (ends %.3f %.3f %.3f)\n", info.name.c_str(), dir, off ? "left the floor " : "",
+                            tunnel ? "through a wall" : "", end[0], end[1], end[2]);
+        }
+    }
+    std::printf("%zu maps walked (%zu without collision or defaultPos): %zu settled on a floor; %zu runs, %zu left the floor, "
+                "%zu went through a wall, %zu didn't move (against a wall at once)\n",
+                maps, skipped, settled, runs, offFloor, tunnels, stuck);
+    return offFloor || tunnels ? 1 : 0;
+}
+
 int compareModels(const char* pa, const char* pb) {
     cr2::MvglArchive a, b;
     if (!openArchive(a, pa) || !openArchive(b, pb)) return 1;
@@ -427,6 +505,7 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[1], "pose") && argc > 5) return pose(argv[2], argv[3], argv[4], float(std::atof(argv[5])));
     if (!std::strcmp(argv[1], "compare-models") && argc > 3) return compareModels(argv[2], argv[3]);
     if (!std::strcmp(argv[1], "shaders")) return shaders(argv[2]);
+    if (!std::strcmp(argv[1], "walk") && argc > 3) return walk(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "images")) return images(argv[2], argc > 3 ? argv[3] : nullptr, argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "run") && argc > 3) return run(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     return usage();

@@ -66,7 +66,7 @@ Counts are the iPad's (Android / Vita alike unless noted).
 | `name` | 1259 | a figure's names: u32 joints, u32 materials, then an offset per name (not terminated: each runs to the next) - the joints' and materials' names, whose hashes the figure uses |
 | `dat` | 880 | tables: `message\*.dat` (874) the text (below), `data\*.dat` (6) |
 | `shad` | 466 | a GLSL ES shader's source (`shaders\<4 hex words>_fp` / `_vp`) |
-| `phys` | 419 | collision / physics (Bullet); magic `PHYS` |
+| `phys` | 419 | a Bullet scene: the fields' walls and floors, their triggers (below); magic `SYHP` ("PHYS" as a u32) |
 | `nut` | 139 | a compiled Squirrel script: `0xfafa`, `SQIR`, char / int / float sizes, then `PART`-separated parts; the source name (`D12_01_0206_evt.i`) and `main` |
 | `emta` | 3 | effect parameters |
 
@@ -244,6 +244,22 @@ alpha-tested, transparent), the foreground. Scrolling (`CalcNewScreenPos`, `SetS
 scale, clamped to +-(the painting's size x width / 960 - the screen's size), and applied to both
 cameras' screen matrices (`GetScreenMatrix`: offset / the screen's size, in NDC) - the player
 stays centred until the painting's edge.
+
+Collision (`PhysicsSceneLoader::LoadScene`, `<map>c.phys` the walls and floors, `<map>p.phys`
+the exits' trigger volumes): a header (+4 version 1, +8 bodies, +0xc shapes, +0x10 surface names,
+then the bodies', the shape pointers' and the names' offsets), bodies of 0x4c bytes (position,
+rotation quaternion, friction / restitution, +0x2c the shape, +0x30 contact response - 0 a
+trigger, +0x34 the name), shapes (u32 kind: 0 a box - half extents, surface; 1 a sphere - radius,
+surface; 2 a triangle mesh - +4 vertices, +8 triangles, +0x24 / +0x28 / +0x2c the indices', the
+vertices' and a surface id per triangle's offsets) and 64-byte surface names: the floors name
+their footstep sound (`se02`), the walls `MTR_kabe` (0.5 units tall). The player is Bullet
+2.81's `btKinematicCharacterController` (`MVGL::Physics::CharacterController`): a sphere of
+radius 0.02, step height 0.01, Bullet's defaults otherwise (gravity 29.4, fall speed 55, 45-degree
+slopes), the figure drawn 0.02 below its centre. `FldPlayer::Update` turns the stick (the touch's
+drag from where it started, over the virtual screen's size, x 0.01: under 0.0002 idle, under
+0.0005 walking, else running) into a direction along the ground from the camera and passes
+`direction x speed x dt x 60` (walking 0.09, running 0.48) to `setVelocityForTimeInterval` for
+0.05 s; the world steps once a frame at a fixed 1/60 s - so 0.09 and 0.48 units a second.
 
 The player (`FldPlayer::CreatePlayer`): `c<id>` with the motions `c<id>` + `fn01` (idle), `ff01`
 (walk), `ff02` (run), `fj01..03` (jumps), `fp01..06` (the character's own).

@@ -24,6 +24,8 @@ add_library(cr2core STATIC
     src/assets/skeleton.cpp
     src/assets/maptable.cpp
     src/field/fieldmap.cpp
+    src/field/collision.cpp
+    src/field/character.cpp
     src/gfx/material.cpp
     src/script/vm.cpp
 )

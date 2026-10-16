@@ -7,12 +7,15 @@
 //   cr2tool run <archive> <script> [function]        loads one script, runs main, then its
 //                                                    function (default: the script's name) with
 //                                                    every native a stub; the stubs it reached
+//   cr2tool images <archive> [pattern [out dir]]     every texture decodes (formats counted);
+//                                                    with a folder, those matching as .tga
 #include <cstdio>
 #include <cstring>
 #include <map>
 #include <string>
 #include <vector>
 
+#include "assets/image.hpp"
 #include "assets/mvgl.hpp"
 #include "script/vm.hpp"
 
@@ -22,7 +25,8 @@ int usage() {
     std::fprintf(stderr,
                  "cr2tool check <archive>\n"
                  "cr2tool scripts <archive> [name]\n"
-                 "cr2tool run <archive> <script> [function]\n");
+                 "cr2tool run <archive> <script> [function]\n"
+                 "cr2tool images <archive> [pattern [out dir]]\n");
     return 2;
 }
 
@@ -100,12 +104,61 @@ int run(const char* path, const char* script, const char* function) {
     return ok ? 0 : 1;
 }
 
+bool writeTga(const std::string& path, const cr2::Image& img) {
+    std::FILE* f = std::fopen(path.c_str(), "wb");
+    if (!f) return false;
+    uint8_t h[18] = {};
+    h[2] = 2; // uncompressed true-colour
+    h[12] = uint8_t(img.width), h[13] = uint8_t(img.width >> 8), h[14] = uint8_t(img.height), h[15] = uint8_t(img.height >> 8);
+    h[16] = 32;
+    h[17] = uint8_t(8 | (img.bottomUp ? 0 : 0x20)); // 8 alpha bits; origin top-left unless stored bottom-up
+    std::fwrite(h, 1, sizeof h, f);
+    std::vector<uint8_t> row(size_t(img.width) * 4);
+    for (int y = 0; y < img.height; ++y) {
+        const uint8_t* s = &img.rgba[size_t(y) * img.width * 4];
+        for (int x = 0; x < img.width; ++x) row[x * 4] = s[x * 4 + 2], row[x * 4 + 1] = s[x * 4 + 1], row[x * 4 + 2] = s[x * 4], row[x * 4 + 3] = s[x * 4 + 3];
+        std::fwrite(row.data(), 1, row.size(), f);
+    }
+    std::fclose(f);
+    return true;
+}
+
+int images(const char* path, const char* pattern, const char* outDir) {
+    cr2::MvglArchive a;
+    if (!openArchive(a, path)) return 1;
+    std::map<std::string, int> formats;
+    size_t ok = 0, bad = 0, written = 0;
+    std::vector<uint8_t> data;
+    for (const auto& e : a.entries()) {
+        if (e.name.size() < 4 || e.name.compare(e.name.size() - 4, 4, ".img") != 0) continue;
+        if (pattern && e.name.find(pattern) == std::string::npos) continue;
+        cr2::Image img;
+        std::string err;
+        if (!a.read(e, data, &err) || !cr2::decodeImg(data, img, &err)) {
+            ++bad;
+            std::printf("bad %s: %s\n", e.name.c_str(), err.c_str());
+            continue;
+        }
+        ++ok;
+        ++formats[img.format];
+        if (outDir) {
+            std::string n = e.name.substr(e.name.rfind('\\') + 1);
+            n = n.substr(0, n.size() - 4);
+            written += writeTga(std::string(outDir) + "/" + n + ".tga", img);
+        }
+    }
+    std::printf("%zu textures decode, %zu bad%s\n", ok, bad, outDir ? (", " + std::to_string(written) + " written").c_str() : "");
+    for (const auto& [k, n] : formats) std::printf("  %-20s %d\n", k.c_str(), n);
+    return bad ? 1 : 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     if (argc < 3) return usage();
     if (!std::strcmp(argv[1], "check")) return check(argv[2]);
     if (!std::strcmp(argv[1], "scripts")) return scripts(argv[2], argc > 3 ? argv[3] : nullptr);
+    if (!std::strcmp(argv[1], "images")) return images(argv[2], argc > 3 ? argv[3] : nullptr, argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "run") && argc > 3) return run(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     return usage();
 }

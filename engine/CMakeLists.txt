@@ -19,6 +19,7 @@ target_compile_options(squirrel2 PRIVATE $<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w -fno
 # Core library: everything that is not an app entry point, so tools can reuse it
 add_library(cr2core STATIC
     src/assets/mvgl.cpp
+    src/assets/image.cpp
     src/script/vm.cpp
 )
 target_include_directories(cr2core PUBLIC src)

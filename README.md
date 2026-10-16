@@ -21,8 +21,10 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] The file types surveyed (docs/FORMATS.md)
 - [x] Reverse-engineering setup (`tools/re_setup.sh`): the Android library's 18,000 exported names
       carried to the iPad and Vita builds
-- [ ] The formats: `img` (PVR v2 on the iPad), `geom` / `skel` / `anim` (models), `name`, `dat`,
-      `phys`, `shad` (GLSL ES), `emta`, `message`
+- [x] Textures: every `img` decodes in all three releases (PVRTC, ETC1, DXT1 / DXT3, the plain
+      formats; `cr2tool images`), and agrees across them
+- [x] Meshes (`geom`): the layout, vertex formats and materials; all parse (`tools/geom.py`)
+- [ ] The rest: `skel` / `anim`, `name`, `dat` (the text), `phys`, `shad` (GLSL ES), `emta`
 - [x] The scripts surveyed (docs/SCRIPTS.md): Squirrel 2.2.4 bytecode, all 139 parsed and
       disassembled (`tools/nut.py`); the native API they call - 23 tables, 219 functions - read
       out of the Android library (`tools/sq_bindings.py`)
@@ -48,6 +50,7 @@ One or more of:
 |---|---|
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
 | `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |
+| `tools/geom.py` | a mesh file's meshes and materials, a check of them all, a flat-shaded preview |
 | `tools/sq_bindings.py` | the scripts' native API, from the Android library's decompilation |
 | `tools/re_setup.sh` | Ghidra groundwork in `re/` (never committed): the Android library (x86 and armv7, named), the iPad and Vita builds named from it |
 | `tools/vita_self.py` | the Vita's eboot (a fake-signed SELF) to an ELF plus its imports |

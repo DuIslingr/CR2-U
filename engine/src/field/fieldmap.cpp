@@ -103,7 +103,21 @@ bool FieldMap::load(const MvglArchive& a, const MapInfo& info, std::string* erro
     info_ = info;
     std::vector<std::string> pNames;
     if (!readFigure(a, info.name + "c", c_, cSkel_, cWorld_, names_)) return fail(error, info.name + "c: not in the archive");
-    if (readFigure(a, info.name + "p", p_, pSkel_, pWorld_, pNames)) names_.insert(names_.end(), pNames.begin(), pNames.end());
+    if (readFigure(a, info.name + "p", p_, pSkel_, pWorld_, pNames)) {
+        names_.insert(names_.end(), pNames.begin(), pNames.end());
+        gimmicks_ = readGimmicks(pSkel_, pNames);
+    }
+    // the NPCs', objects' and boxes' bodies (FldNPC / FldObject / FldBox::Init: solid, the joint's
+    // scale / 100 the shape's size - a ball's radius, a box's half extents, a capsule's radius and
+    // height)
+    for (const Gimmick& g : gimmicks_) {
+        if (g.kind != Gimmick::Npc && g.kind != Gimmick::Object && g.kind != Gimmick::Box) continue;
+        const Vec3 pos{g.position[0], g.position[1], g.position[2]};
+        const Vec3 size{g.jointScale[0] / 100.0f, g.jointScale[1] / 100.0f, g.jointScale[2] / 100.0f};
+        if (g.shape == Gimmick::ShapeBox) collision_.addBox(pos, g.rotation, size, g.name);
+        else if (g.shape == Gimmick::Capsule) collision_.addCapsule(pos, g.rotation, size[0], size[1]);
+        else collision_.addCapsule(pos, g.rotation, size[0], 0.0f);
+    }
     auto image = [&](const std::string& n) { return a.contains("images\\" + n + ".img") ? n : std::string(); };
     if (!info.noBackground) bg_ = image(info.layer("bg"));
     if (info.midground) mg_ = image(info.layer("mg"));

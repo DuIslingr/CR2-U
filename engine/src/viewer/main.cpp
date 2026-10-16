@@ -137,6 +137,7 @@ struct Viewer {
     bool fieldMode = false;
     cr2::FieldMap field;
     ViewFigure mapFigure; // <map>f
+    std::vector<ViewFigure> gimmicks; // the figures <map>p's NPCs, objects, boxes and effects show
     float player[3] = {0, 0, 0}, heading = 0;
     std::unique_ptr<cr2::CharacterController> controller; // (on the map's walls and floors)
     float stepClock = 0;
@@ -395,6 +396,7 @@ struct Viewer {
             fig.place.m[0] = c, fig.place.m[2] = s, fig.place.m[8] = -s, fig.place.m[10] = c;
             fig.place.m[3] = player[0], fig.place.m[7] = player[1], fig.place.m[11] = player[2];
             pose(mapFigure, time);
+            for (ViewFigure& g : gimmicks) pose(g, time);
         }
         pose(fig, time);
     }
@@ -472,6 +474,7 @@ struct Viewer {
             drawLayer(field.backgroundImage(), fr.background);
             drawLayer(field.midgroundImage(), fr.midground);
             drawFigure(mapFigure, fr.scene.data());
+            for (const ViewFigure& g : gimmicks) drawFigure(g, fr.scene.data());
             drawFigure(fig, fr.scene.data());
             drawLayer(field.foregroundImage(), fr.foreground, field.info().foregroundShift == 1 ? -1152.0f : 0.0f);
             return;
@@ -529,6 +532,21 @@ struct Viewer {
         mapFigure = ViewFigure();
         if (!field.figureName().empty() && !loadFigure(field.figureName() + ".geom", mapFigure, &err))
             SDL_Log("%s: %s", field.figureName().c_str(), err.c_str());
+        // the gimmicks with a figure: placed by their joints, NPCs idling (FldNPC: <figure>fn01)
+        for (ViewFigure& g : gimmicks) unload(g);
+        gimmicks.clear();
+        for (const cr2::Gimmick& gm : field.gimmicks()) {
+            if (gm.figure.empty() || !archive.contains(gm.figure + ".geom")) continue;
+            ViewFigure g;
+            cr2::JointTransform t;
+            std::memcpy(t.rotation, gm.rotation.data(), sizeof t.rotation);
+            std::memcpy(t.translation, gm.position, sizeof t.translation);
+            t.scale[0] = t.scale[1] = t.scale[2] = gm.scale;
+            g.place = t.matrix();
+            if (!loadFigure(gm.figure + ".geom", g, &err)) continue;
+            if (gm.kind == cr2::Gimmick::Npc) playMotion(g, "fn01");
+            gimmicks.push_back(std::move(g));
+        }
         if (!field.point(at, player)) {
             SDL_Log("%s: no point %s; the points:", map.c_str(), at.c_str());
             for (const std::string& n : field.pointNames()) SDL_Log("  %s", n.c_str());
@@ -540,6 +558,7 @@ struct Viewer {
         for (int k = 0; k < 30; ++k) walk(1.0f / 60.0f, 0, 0, false);
         std::string exits;
         for (const std::string& e : field.exitNames()) exits += " " + e;
+        SDL_Log("%zu gimmicks, %zu with figures", field.gimmicks().size(), gimmicks.size());
         SDL_Log("field %s (table from %s): variant %d, layers %s%s%s%s, %zu collision triangles, exits%s, at %s (%.3f %.3f %.3f)",
                 map.c_str(), tableFrom.c_str(), row->variant, field.backgroundImage().empty() ? "" : "bg ",
                 field.midgroundImage().empty() ? "" : "mg ", field.foregroundImage().empty() ? "" : "fg ",
@@ -721,6 +740,7 @@ int main(int argc, char** argv) {
     }
     v.unload(v.fig);
     v.unload(v.mapFigure);
+    for (ViewFigure& g : v.gimmicks) v.unload(g);
     for (auto& [k, t] : v.textures) dev->destroy(t);
     dev->shutdown();
     SDL_DestroyWindow(win);

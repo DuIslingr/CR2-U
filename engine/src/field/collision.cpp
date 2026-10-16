@@ -49,6 +49,13 @@ Vec3 closestOnTriangle(const Vec3& p, const Vec3& a, const Vec3& b, const Vec3& 
     return add(a, add(mul(ab, vb * denom), mul(ac, vc * denom)));
 }
 
+Vec3 closestOnSegment(const Vec3& p, const Vec3& a, const Vec3& b) {
+    const Vec3 ab = sub(b, a);
+    const float l2 = dot(ab, ab);
+    if (l2 <= 0) return a;
+    return add(a, mul(ab, std::clamp(dot(sub(p, a), ab) / l2, 0.0f, 1.0f)));
+}
+
 // the first t in [0, 1] at which a ray o + t d is at `r` from point p (the sphere meeting a vertex)
 bool rayToPoint(const Vec3& o, const Vec3& d, const Vec3& p, float r, float& t) {
     const Vec3 m = sub(o, p);
@@ -136,31 +143,45 @@ bool parsePhys(const std::vector<uint8_t>& f, PhysScene& out, std::string* error
     return true;
 }
 
+void CollisionWorld::pushTriangle(const Vec3& a, const Vec3& b, const Vec3& c, const std::string& surface) {
+    Tri t{a, b, c, {}, surface};
+    const Vec3 n = cross(sub(b, a), sub(c, a));
+    const float l = length(n);
+    if (l <= 0) return; // (degenerate)
+    t.n = mul(n, 1.0f / l);
+    tris_.push_back(std::move(t));
+}
+
+void CollisionWorld::addBox(const Vec3& position, const std::array<float, 4>& rotation, const Vec3& h, const std::string& surface) {
+    Vec3 c[8];
+    for (int k = 0; k < 8; ++k)
+        c[k] = add(rotate(rotation, {(k & 1) ? h[0] : -h[0], (k & 2) ? h[1] : -h[1], (k & 4) ? h[2] : -h[2]}), position);
+    static const int kFaces[6][4] = {{0, 2, 3, 1}, {4, 5, 7, 6}, {0, 1, 5, 4}, {2, 6, 7, 3}, {0, 4, 6, 2}, {1, 3, 7, 5}};
+    for (const auto& q : kFaces) {
+        pushTriangle(c[q[0]], c[q[1]], c[q[2]], surface);
+        pushTriangle(c[q[0]], c[q[2]], c[q[3]], surface);
+    }
+}
+
+void CollisionWorld::addCapsule(const Vec3& position, const std::array<float, 4>& rotation, float radius, float height) {
+    const Vec3 axis = rotate(rotation, {0, height * 0.5f, 0});
+    capsules_.push_back({sub(position, axis), add(position, axis), radius});
+}
+
 void CollisionWorld::addScene(const PhysScene& scene) {
     for (const PhysBody& b : scene.bodies) {
         if (!b.contactResponse) continue;
         const PhysShape& s = scene.shapes[b.shape];
+        auto name = [&](uint32_t k) { return k < scene.surfaces.size() ? scene.surfaces[k] : std::string(); };
         auto world = [&](const Vec3& v) { return add(rotate(b.rotation, v), b.position); };
-        auto push = [&](const Vec3& a, const Vec3& bb, const Vec3& c, uint32_t surface) {
-            Tri t{world(a), world(bb), world(c), {}, surface < scene.surfaces.size() ? scene.surfaces[surface] : std::string()};
-            const Vec3 n = cross(sub(t.b, t.a), sub(t.c, t.a));
-            const float l = length(n);
-            if (l <= 0) return; // (degenerate)
-            t.n = mul(n, 1.0f / l);
-            tris_.push_back(std::move(t));
-        };
         if (s.kind == PhysShape::Mesh) {
             for (size_t k = 0; k < s.triangles.size(); ++k)
-                push(s.vertices[s.triangles[k][0]], s.vertices[s.triangles[k][1]], s.vertices[s.triangles[k][2]], s.surfaces[k]);
+                pushTriangle(world(s.vertices[s.triangles[k][0]]), world(s.vertices[s.triangles[k][1]]),
+                             world(s.vertices[s.triangles[k][2]]), name(s.surfaces[k]));
         } else if (s.kind == PhysShape::Box) {
-            const Vec3& h = s.halfExtents;
-            Vec3 c[8];
-            for (int k = 0; k < 8; ++k) c[k] = {(k & 1) ? h[0] : -h[0], (k & 2) ? h[1] : -h[1], (k & 4) ? h[2] : -h[2]};
-            static const int kFaces[6][4] = {{0, 2, 3, 1}, {4, 5, 7, 6}, {0, 1, 5, 4}, {2, 6, 7, 3}, {0, 4, 6, 2}, {1, 3, 7, 5}};
-            for (const auto& q : kFaces) {
-                push(c[q[0]], c[q[1]], c[q[2]], s.surfaces[0]);
-                push(c[q[0]], c[q[2]], c[q[3]], s.surfaces[0]);
-            }
+            addBox(b.position, b.rotation, s.halfExtents, name(s.surfaces[0]));
+        } else if (s.kind == PhysShape::Sphere) {
+            addCapsule(b.position, b.rotation, s.radius, 0.0f);
         }
     }
 }
@@ -225,6 +246,36 @@ bool CollisionWorld::sweep(const Vec3& from, const Vec3& to, float r, const Vec3
             any = true;
         }
     }
+    for (size_t k = 0; k < capsules_.size(); ++k) { // (the sphere's centre against the capsule grown by its radius)
+        const Capsule& c = capsules_[k];
+        const float R = c.radius + r;
+        const Vec3 near0 = closestOnSegment(from, c.a, c.b), away = sub(from, near0);
+        const float dist = length(away);
+        float best = 2;
+        Vec3 normal{};
+        if (dist < R + 1e-6f) {
+            normal = dist > 1e-7f ? mul(away, 1.0f / dist) : Vec3{0, 1, 0};
+            if (dot(d, normal) >= 0) continue;
+            best = 0;
+        } else {
+            float t;
+            if (rayToSegment(from, d, c.a, c.b, R, t)) best = t;
+            if (rayToPoint(from, d, c.a, R, t) && t < best) best = t;
+            if (rayToPoint(from, d, c.b, R, t) && t < best) best = t;
+            if (best > 1) continue;
+            const Vec3 at = add(from, mul(d, best));
+            const Vec3 dir = sub(at, closestOnSegment(at, c.a, c.b));
+            const float l = length(dir);
+            normal = l > 0 ? mul(dir, 1.0f / l) : Vec3{0, 1, 0};
+        }
+        if (dot(normal, up) < minDot) continue;
+        if (!any || best < hit.fraction) {
+            hit.fraction = best;
+            hit.normal = normal;
+            hit.triangle = uint32_t(tris_.size() + k);
+            any = true;
+        }
+    }
     return any;
 }
 
@@ -239,6 +290,17 @@ std::vector<CollisionWorld::Contact> CollisionWorld::overlaps(const Vec3& centre
         c.normal = l > 1e-7f ? mul(dir, 1.0f / l) : t.n;
         c.depth = r - l;
         c.triangle = uint32_t(k);
+        out.push_back(c);
+    }
+    for (size_t k = 0; k < capsules_.size(); ++k) {
+        const Capsule& cap = capsules_[k];
+        const Vec3 dir = sub(centre, closestOnSegment(centre, cap.a, cap.b));
+        const float l = length(dir);
+        if (l >= r + cap.radius) continue;
+        Contact c;
+        c.normal = l > 1e-7f ? mul(dir, 1.0f / l) : Vec3{0, 1, 0};
+        c.depth = r + cap.radius - l;
+        c.triangle = uint32_t(tris_.size() + k);
         out.push_back(c);
     }
     return out;

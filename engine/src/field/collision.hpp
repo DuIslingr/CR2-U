@@ -39,12 +39,17 @@ struct PhysScene {
 
 bool parsePhys(const std::vector<uint8_t>& file, PhysScene& out, std::string* error = nullptr);
 
-// The solid triangles of one or more scenes, in world space (boxes as their 12 triangles; spheres
-// left out - none of the fields' solid bodies is one)
+// The solid shapes of one or more scenes, in world space: triangles (meshes, and boxes as their
+// 12), spheres and capsules
 class CollisionWorld {
 public:
     void addScene(const PhysScene& scene);
+    // a box (half extents), a sphere, a capsule (Bullet's btCapsuleShape: along its local y, the
+    // hemispheres' centres `height` apart) at `position`, turned by `rotation`
+    void addBox(const Vec3& position, const std::array<float, 4>& rotation, const Vec3& halfExtents, const std::string& surface);
+    void addCapsule(const Vec3& position, const std::array<float, 4>& rotation, float radius, float height);
     size_t triangles() const { return tris_.size(); }
+    size_t shapes() const { return tris_.size() + capsules_.size(); }
 
     struct Hit {
         float fraction = 1;  // of the move
@@ -74,6 +79,12 @@ private:
         std::string surface;
     };
     std::vector<Tri> tris_;
+    struct Capsule {
+        Vec3 a, b; // the segment (a sphere: a == b)
+        float radius;
+    };
+    std::vector<Capsule> capsules_;
+    void pushTriangle(const Vec3& a, const Vec3& b, const Vec3& c, const std::string& surface);
 };
 
 } // namespace cr2

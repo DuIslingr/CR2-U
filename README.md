@@ -58,7 +58,10 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       character lands on a floor and runs in 8 directions without leaving it or passing a wall
 - [x] Field exits: touching one loads the map it leads to, at its pop point (`cr2tool exits`: all
       427 lead somewhere real)
-- [ ] NPCs, gimmicks, the HUD, the fades and sounds between areas
+- [x] Gimmicks: the maps' NPCs, objects, effects and treasure boxes placed and drawn (NPCs idling),
+      solid as in the game; `cr2tool walk` runs from every map's arrival points
+- [ ] Which gimmicks the story shows (flags, scripts), talking / tapping, event boxes, the HUD, the
+      fades and sounds between areas
 - [ ] Engine: events, battles, menus
 
 ## What you need

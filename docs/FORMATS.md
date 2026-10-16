@@ -269,6 +269,20 @@ point `d0103_p1`. They are solid (contact response on: the player stops at them)
 it) changes the area (`CollisionEventExec`: a sound, a fade). `cr2tool exits`: all 427 exits of
 the 217 maps lead to a map that has the point.
 
+Gimmicks (`FldGimmickDataManager::SetData`): `<map>p`'s joints, each placing one by its
+position, rotation and scale, and saying by its name what it is - `ragdoll_*` an exit's marker,
+`<map>_p<n>` a pop point, `c<nnn>` / `j<nnn>` an NPC (`FldNPC`: the figure `c<nnn>`, idling on
+`c<nnn>fn01`), `obj<nnn>` an object (the figure), `eff<nnn>` an effect (the figure),
+`tbox` / `fbox` / `obox` a treasure box (`obj011`, `obox` `obj012`), `sprint` (`obj151`), `hjump`,
+`mystic`, `iai`, `aim`, `marts` the characters' field abilities, `spot<nn>` / `POP` / `JUMP`
+spots, `evt<nnn>` an event box - and with `_scaleNNN` the figure's scale (NNN / 100), `_check`
+a thing to tap, `_box` / `_ball` / `_cap` its collision shape: a solid body (NPCs, objects,
+boxes) sized by the joint's scale / 100 (a box's half extents; a ball's radius, x; a capsule's
+radius, x, and height, y). Some places hold a character more than once (t0101's `c003_check_cap00`
+/ `_cap01` / `_cap09`): alternative spots the story chooses between. Across the maps: 503 pop
+points, 427 exit markers, 310 objects, 244 spots, 178 effects, 123 event boxes, 96 sprint spots,
+93 NPCs, 130 boxes.
+
 The player (`FldPlayer::CreatePlayer`): `c<id>` with the motions `c<id>` + `fn01` (idle), `ff01`
 (walk), `ff02` (run), `fj01..03` (jumps), `fp01..06` (the character's own).
 

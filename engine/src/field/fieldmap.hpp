@@ -15,6 +15,7 @@
 #include "assets/mvgl.hpp"
 #include "assets/skeleton.hpp"
 #include "field/collision.hpp"
+#include "field/gimmicks.hpp"
 #include "gfx/render_device.hpp"
 
 namespace cr2 {
@@ -55,6 +56,8 @@ public:
     // A named point (a joint of <map>c or <map>p: "defaultPos", "d0101_p1", ...): false if none
     bool point(const std::string& name, float* pos) const;
     std::vector<std::string> pointNames() const;
+    // The gimmicks <map>p's joints place (NPCs, objects, boxes, event boxes, ...)
+    const std::vector<Gimmick>& gimmicks() const { return gimmicks_; }
 
     // The walls and floors (<map>c.phys's solid bodies, and <map>p.phys's exits)
     const CollisionWorld& collision() const { return collision_; }
@@ -89,6 +92,7 @@ private:
         CollisionWorld volume;
     };
     std::vector<Exit> exits_;
+    std::vector<Gimmick> gimmicks_;
     Mat4 cameraWorld_ = mat4Identity();
     float fovY_ = 45, near_ = 1, far_ = 5000;
 };

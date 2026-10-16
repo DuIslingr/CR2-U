@@ -18,9 +18,9 @@
 //   cr2tool images <archive> [pattern [out dir]]     every texture decodes (formats counted);
 //                                                    with a folder, those matching as .tga
 //   cr2tool walk <archive> <executable> [map]       the field player (field/character.hpp) on every
-//                                                    map's floors: dropped at defaultPos, run 4 s
-//                                                    in 8 directions - on a floor throughout, never
-//                                                    through a wall
+//                                                    map's floors: dropped at each pop point (else
+//                                                    defaultPos), run 4 s in 8 directions - on a
+//                                                    floor throughout, never through a wall
 //   cr2tool exits <archive> <executable>             every map's exits: the map each leads to (the
 //                                                    pop point's first five letters) is there and
 //                                                    has that point
@@ -348,7 +348,7 @@ int walk(const char* path, const char* binary, const char* only) {
     }
     std::vector<cr2::MapInfo> table;
     if (!cr2::findMapTable(bin, table)) return std::fprintf(stderr, "%s: no maps' table\n", binary), 1;
-    size_t maps = 0, settled = 0, runs = 0, offFloor = 0, tunnels = 0, stuck = 0, skipped = 0;
+    size_t maps = 0, settled = 0, points = 0, runs = 0, offFloor = 0, tunnels = 0, stuck = 0, skipped = 0;
     for (const cr2::MapInfo& info : table) {
         if (only && info.name != only) continue;
         cr2::FieldMap field;
@@ -366,43 +366,51 @@ int walk(const char* path, const char* binary, const char* only) {
             cr2::CollisionWorld::Hit h;
             return w.sweep(from, to, 0.001f, {0, 1, 0}, -2.0f, h) && std::fabs(h.normal[1]) < 0.7f;
         };
-        cr2::CharacterController c(w);
-        c.setPosition({start[0], start[1] + 0.17f, start[2]});
-        for (int k = 0; k < 60; ++k) c.setVelocity({0, 0, 0}), c.step();
-        const cr2::Vec3 rest = c.position();
-        const bool onFloor = c.onGround() && floorBelow(rest);
-        settled += onFloor;
-        if (!onFloor) {
-            std::printf("  %s: not on a floor after dropping at defaultPos (%.3f %.3f %.3f -> %.3f %.3f %.3f)\n", info.name.c_str(),
-                        start[0], start[1], start[2], rest[0], rest[1], rest[2]);
-            continue;
-        }
-        for (int dir = 0; dir < 8; ++dir) {
-            ++runs;
-            c.setPosition(rest);
-            const float ang = float(dir) * 0.785398f;
-            const cr2::Vec3 v{0.48f * std::sin(ang), 0, 0.48f * std::cos(ang)};
-            bool off = false, tunnel = false;
-            for (int k = 0; k < 240; ++k) {
-                const cr2::Vec3 before = c.position();
-                c.setVelocity(v);
-                c.step();
-                if (!off && !floorBelow(c.position())) off = true;
-                if (!tunnel && throughWall({before[0], before[1], before[2]}, c.position())) tunnel = true;
+        // from where the game puts the player: each pop point (an exit's arrival), else defaultPos
+        std::vector<std::pair<std::string, cr2::Vec3>> starts;
+        for (const cr2::Gimmick& g : field.gimmicks())
+            if (g.kind == cr2::Gimmick::PopPoint) starts.push_back({g.name, {g.position[0], g.position[1], g.position[2]}});
+        if (starts.empty()) starts.push_back({"defaultPos", {start[0], start[1], start[2]}});
+        bool allSettled = true;
+        for (const auto& [from, at] : starts) {
+            cr2::CharacterController c(w);
+            c.setPosition({at[0], at[1] + 0.17f, at[2]});
+            for (int k = 0; k < 60; ++k) c.setVelocity({0, 0, 0}), c.step();
+            const cr2::Vec3 rest = c.position();
+            ++points;
+            if (!(c.onGround() && floorBelow(rest))) {
+                allSettled = false;
+                std::printf("  %s: not on a floor after dropping at %s (%.3f %.3f %.3f -> %.3f %.3f %.3f)\n", info.name.c_str(),
+                            from.c_str(), at[0], at[1], at[2], rest[0], rest[1], rest[2]);
+                continue;
             }
-            const cr2::Vec3 end = c.position();
-            const float moved = std::hypot(end[0] - rest[0], end[2] - rest[2]);
-            offFloor += off;
-            tunnels += tunnel;
-            stuck += moved < 0.01f;
-            if (off || tunnel)
-                std::printf("  %s, direction %d: %s%s (ends %.3f %.3f %.3f)\n", info.name.c_str(), dir, off ? "left the floor " : "",
-                            tunnel ? "through a wall" : "", end[0], end[1], end[2]);
+            for (int dir = 0; dir < 8; ++dir) {
+                ++runs;
+                c.setPosition(rest);
+                const float ang = float(dir) * 0.785398f;
+                const cr2::Vec3 v{0.48f * std::sin(ang), 0, 0.48f * std::cos(ang)};
+                bool off = false, tunnel = false;
+                for (int k = 0; k < 240; ++k) {
+                    const cr2::Vec3 before = c.position();
+                    c.setVelocity(v);
+                    c.step();
+                    if (!off && !floorBelow(c.position())) off = true;
+                    if (!tunnel && throughWall({before[0], before[1], before[2]}, c.position())) tunnel = true;
+                }
+                const cr2::Vec3 end = c.position();
+                offFloor += off;
+                tunnels += tunnel;
+                stuck += std::hypot(end[0] - rest[0], end[2] - rest[2]) < 0.01f;
+                if (off || tunnel)
+                    std::printf("  %s from %s, direction %d: %s%s (ends %.3f %.3f %.3f)\n", info.name.c_str(), from.c_str(), dir,
+                                off ? "left the floor " : "", tunnel ? "through a wall" : "", end[0], end[1], end[2]);
+            }
         }
+        settled += allSettled;
     }
-    std::printf("%zu maps walked (%zu without collision or defaultPos): %zu settled on a floor; %zu runs, %zu left the floor, "
-                "%zu went through a wall, %zu didn't move (against a wall at once)\n",
-                maps, skipped, settled, runs, offFloor, tunnels, stuck);
+    std::printf("%zu maps walked (%zu without collision or defaultPos), from %zu points: %zu maps settled on a floor at all; "
+                "%zu runs, %zu left the floor, %zu went through a wall, %zu didn't move (against a wall at once)\n",
+                maps, skipped, points, settled, runs, offFloor, tunnels, stuck);
     return offFloor || tunnels ? 1 : 0;
 }
 

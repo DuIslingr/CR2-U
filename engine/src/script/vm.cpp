@@ -156,7 +156,76 @@ SQInteger stubNative(HSQUIRRELVM v) {
     return 0;
 }
 
+// An implemented native: the Native's address is the closure's free variable (on the stack's top)
+SQInteger implementedNative(HSQUIRRELVM v) {
+    SQUserPointer p = nullptr;
+    if (SQ_FAILED(sq_getuserpointer(v, sq_gettop(v), &p)) || !p) return 0;
+    NativeCall call(v, int(sq_gettop(v)) - 2); // (1 this, 2.. the arguments, the top the free variable)
+    (*static_cast<Native*>(p))(call);
+    return call.hasResult() ? 1 : 0;
+}
+
 } // namespace
+
+int NativeCall::integer(int i, int fallback) const {
+    if (i >= count_) return fallback;
+    SQInteger n;
+    SQFloat f;
+    SQBool b;
+    if (SQ_SUCCEEDED(sq_getinteger(v_, i + 2, &n))) return int(n);
+    if (SQ_SUCCEEDED(sq_getfloat(v_, i + 2, &f))) return int(f);
+    if (SQ_SUCCEEDED(sq_getbool(v_, i + 2, &b))) return b ? 1 : 0;
+    return fallback;
+}
+
+float NativeCall::number(int i, float fallback) const {
+    if (i >= count_) return fallback;
+    SQFloat f;
+    SQInteger n;
+    if (SQ_SUCCEEDED(sq_getfloat(v_, i + 2, &f))) return float(f);
+    if (SQ_SUCCEEDED(sq_getinteger(v_, i + 2, &n))) return float(n);
+    return fallback;
+}
+
+bool NativeCall::boolean(int i, bool fallback) const {
+    if (i >= count_) return fallback;
+    SQBool b;
+    SQInteger n;
+    if (SQ_SUCCEEDED(sq_getbool(v_, i + 2, &b))) return b != 0;
+    if (SQ_SUCCEEDED(sq_getinteger(v_, i + 2, &n))) return n != 0;
+    return fallback;
+}
+
+std::string NativeCall::string(int i) const {
+    const SQChar* s = nullptr;
+    if (i < count_ && SQ_SUCCEEDED(sq_getstring(v_, i + 2, &s)) && s) return s;
+    return "";
+}
+
+void NativeCall::result(int v) { sq_pushinteger(v_, v), result_ = true; }
+void NativeCall::result(float v) { sq_pushfloat(v_, v), result_ = true; }
+void NativeCall::result(bool v) { sq_pushbool(v_, v ? SQTrue : SQFalse), result_ = true; }
+void NativeCall::result(const std::string& v) { sq_pushstring(v_, v.c_str(), -1), result_ = true; }
+
+void ScriptVM::setNative(const std::string& table, const std::string& function, Native fn) {
+    natives_.push_back(std::move(fn));
+    sq_pushroottable(vm_);
+    if (!table.empty()) {
+        sq_pushstring(vm_, table.c_str(), -1);
+        if (SQ_FAILED(sq_get(vm_, -2))) {
+            sq_pushstring(vm_, table.c_str(), -1);
+            sq_newtable(vm_);
+            sq_newslot(vm_, -3, SQFalse);
+            sq_pushstring(vm_, table.c_str(), -1);
+            sq_get(vm_, -2);
+        }
+    }
+    sq_pushstring(vm_, function.c_str(), -1);
+    sq_pushuserpointer(vm_, &natives_.back());
+    sq_newclosure(vm_, implementedNative, 1);
+    sq_createslot(vm_, -3);
+    sq_pop(vm_, table.empty() ? 1 : 2);
+}
 
 const std::vector<std::pair<std::string, std::vector<std::string>>>& ScriptVM::nativeApi() { return kNativeApi; }
 

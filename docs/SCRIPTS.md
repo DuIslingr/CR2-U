@@ -22,8 +22,10 @@ Each script carries the whole helper library compiled in - its `main` defines `S
 ## The native API
 
 `Cr3BindNativeClosure` calls 24 bind functions: 23 tables into the root table, and the vector
-classes (`tools/sq_bindings.py` lists them from the Android library's decompilation: 219
-functions, each with the native function it calls and its argument types):
+classes (`tools/sq_bindings.py` lists them from the Android library's decompilation: 222
+functions, each with the native function it calls and its argument types; three are registered
+through a helper call Ghidra prints without its template argument - `Cr3Sound.PlayBGM`,
+`Cr3GimmickData.ChangeModelColor`, `Cr3Battle.SetScript` - which the extractor takes too):
 
 | Table | Functions | What for |
 |---|---|---|
@@ -66,8 +68,29 @@ The engine runs the scripts on Squirrel 2.2.4 itself (`engine/third_party/squirr
   `SQFunctionProto::Load`; instructions, floats and object types keep their sizes).
 - A script's `main` defines its functions; the one the game calls is named after the script
   (its source name: `D01_01_0101_evt` for `script\d01_01_0101_evt.nut`, `title`, `credit`).
-- `engine/src/script/native_api.inc` (`tools/gen_native_api.py`) lists the 219 functions; those
-  not implemented yet are stubs that count their calls.
+- `engine/src/script/native_api.inc` (`tools/gen_native_api.py`) lists the 222 functions; those
+  not implemented yet are stubs that count their calls. `ScriptVM::setNative` puts an
+  implementation in a stub's place.
+
+## Fields
+
+Each dungeon has one script (`t01`, `d01` .. `d13`: `Cr3EventScriptFileNameTbl`), loaded when
+the dungeon changes (`FldMain::LoadScriptFile`). On entering an area the engine calls its
+`evt000` (`FldMain::Update` after `ChangeAreaExecute`, and `FldMain::Init` by how the field was
+entered: modes -2, -1, 3 `evt000`, 1 `evt100`, 2 `evt200`, 0 none), which sets the dungeon's flags
+up and calls `<dungeon>_gim`: per area (`Cr3System.GetAreaNum`: the map's last two digits - 1),
+from the story's flags (`Cr3Flag.Check`), which gimmicks show (`Cr3GimmickData.Disp`), collide
+(`SetCollision`) and react (`SetEventEnable`) - d0101's beast `c208_00` until flag 1508 - and then
+the area's own set-up (`D01_01_01_set`: an event when its flags say). Gimmicks are named by
+their joints (FORMATS.md: `c208_00`, `eff104_01`, `tbox_07`, `evt021_00`); NPCs start hidden,
+objects, effects and boxes shown. A gimmick's touch / tap calls the script function of its id
+(an event box's: its first six characters, `evt021`).
+
+`engine/src/field/fieldscript.cpp` implements those natives (`Cr3Flag`, `Cr3Work`, the dungeon
+and area, `Cr3GimmickData`'s display / collision / event switches, `Cr3FieldMap`'s layers);
+`cr2tool fieldscript <archive> <executable>`: from a new game's state `evt000` runs on 216 of
+the 217 maps in all three releases - d0103's starts a story event, which waits on its first
+message (the event runtime is next).
 
 `cr2tool scripts <archive>` loads every script and runs its `main` (all 139, in all three
 releases); `cr2tool run <archive> <script>` then calls the script's function with every native

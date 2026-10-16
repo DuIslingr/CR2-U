@@ -278,7 +278,10 @@ position, rotation and scale, and saying by its name what it is - `ragdoll_*` an
 spots, `evt<nnn>` an event box - and with `_scaleNNN` the figure's scale (NNN / 100), `_check`
 a thing to tap, `_box` / `_ball` / `_cap` its collision shape: a solid body (NPCs, objects,
 boxes) sized by the joint's scale / 100 (a box's half extents; a ball's radius, x; a capsule's
-radius, x, and height, y). Some places hold a character more than once (t0101's `c003_check_cap00`
+radius, x, and height, y). The scripts name a gimmick by its name's start (5 characters for NPCs and boxes, 7 for objects,
+effects and event boxes) and the two digits after `_box` / `_ball` / `_cap`
+(`Cr3UtilGetScriptFunctionName`): `c208_box00_scale080` is `c208_00`, `tbox_check_cap07`
+`tbox_07`, `evt021_box00` `evt021_00` (its script function `evt021`). Some places hold a character more than once (t0101's `c003_check_cap00`
 / `_cap01` / `_cap09`): alternative spots the story chooses between. Across the maps: 503 pop
 points, 427 exit markers, 310 objects, 244 spots, 178 effects, 123 event boxes, 96 sprint spots,
 93 NPCs, 130 boxes.

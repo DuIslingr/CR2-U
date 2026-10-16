@@ -42,6 +42,7 @@
 #include "assets/skeleton.hpp"
 #include "field/character.hpp"
 #include "field/fieldmap.hpp"
+#include "field/fieldscript.hpp"
 #include "gfx/material.hpp"
 #include "gfx/render_device.hpp"
 
@@ -138,6 +139,8 @@ struct Viewer {
     cr2::FieldMap field;
     ViewFigure mapFigure; // <map>f
     std::vector<ViewFigure> gimmicks; // the figures <map>p's NPCs, objects, boxes and effects show
+    cr2::GameState game;                        // the story's flags and work values (a new game's)
+    std::unique_ptr<cr2::FieldScript> script;   // the dungeon's script
     float player[3] = {0, 0, 0}, heading = 0;
     std::unique_ptr<cr2::CharacterController> controller; // (on the map's walls and floors)
     float stepClock = 0;
@@ -532,11 +535,18 @@ struct Viewer {
         mapFigure = ViewFigure();
         if (!field.figureName().empty() && !loadFigure(field.figureName() + ".geom", mapFigure, &err))
             SDL_Log("%s: %s", field.figureName().c_str(), err.c_str());
-        // the gimmicks with a figure: placed by their joints, NPCs idling (FldNPC: <figure>fn01)
+        // the dungeon's script sets the area up (evt000: which gimmicks show, which collide)
+        if (!script) script = std::make_unique<cr2::FieldScript>(archive, game);
+        if (!script->enter(map, field.gimmicks())) SDL_Log("%s's script: %s", map.c_str(), script->error().c_str());
+        field.setSolidGimmicks([this](const cr2::Gimmick& g) {
+            const auto it = script->gimmicks().find(g.id);
+            return script->visible(g) && (it == script->gimmicks().end() || it->second.collision);
+        });
+        // the gimmicks shown with a figure: placed by their joints, NPCs idling (FldNPC: <figure>fn01)
         for (ViewFigure& g : gimmicks) unload(g);
         gimmicks.clear();
         for (const cr2::Gimmick& gm : field.gimmicks()) {
-            if (gm.figure.empty() || !archive.contains(gm.figure + ".geom")) continue;
+            if (gm.figure.empty() || !archive.contains(gm.figure + ".geom") || !script->visible(gm)) continue;
             ViewFigure g;
             cr2::JointTransform t;
             std::memcpy(t.rotation, gm.rotation.data(), sizeof t.rotation);
@@ -558,7 +568,7 @@ struct Viewer {
         for (int k = 0; k < 30; ++k) walk(1.0f / 60.0f, 0, 0, false);
         std::string exits;
         for (const std::string& e : field.exitNames()) exits += " " + e;
-        SDL_Log("%zu gimmicks, %zu with figures", field.gimmicks().size(), gimmicks.size());
+        SDL_Log("%zu gimmicks, %zu with figures; layers bg [%s] fg [%s]", field.gimmicks().size(), gimmicks.size(), field.backgroundImage().c_str(), field.foregroundImage().c_str());
         SDL_Log("field %s (table from %s): variant %d, layers %s%s%s%s, %zu collision triangles, exits%s, at %s (%.3f %.3f %.3f)",
                 map.c_str(), tableFrom.c_str(), row->variant, field.backgroundImage().empty() ? "" : "bg ",
                 field.midgroundImage().empty() ? "" : "mg ", field.foregroundImage().empty() ? "" : "fg ",

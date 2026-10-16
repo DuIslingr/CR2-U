@@ -71,6 +71,16 @@ std::vector<Gimmick> readGimmicks(const Skeleton& p, const std::vector<std::stri
         const size_t sc = n.find("scale");
         if (sc != std::string::npos) g.scale = float(std::atoi(n.substr(sc + 5, 3).c_str())) / 100.0f;
         g.check = has(n, "check");
+        {
+            const size_t keep = g.kind == Gimmick::Object || g.kind == Gimmick::Effect || g.kind == Gimmick::Event ? 7 : 5;
+            size_t tag = n.find("_box"), skip = 4;
+            if (tag == std::string::npos) tag = n.find("_cap");
+            if (tag == std::string::npos) tag = n.find("_ball"), skip = 5;
+            const bool named = g.kind == Gimmick::Npc || g.kind == Gimmick::Object || g.kind == Gimmick::Effect ||
+                               g.kind == Gimmick::Box || g.kind == Gimmick::Event;
+            g.id = tag != std::string::npos && named ? n.substr(0, keep) + n.substr(tag + skip, 2) : n;
+            g.function = g.kind == Gimmick::Event ? n.substr(0, 6) : g.id;
+        }
         g.shape = has(n, "_box") ? Gimmick::ShapeBox : has(n, "_cap") ? Gimmick::Capsule : Gimmick::Ball;
         out.push_back(std::move(g));
     }

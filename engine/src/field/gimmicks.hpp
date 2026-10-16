@@ -24,6 +24,13 @@ namespace cr2 {
 struct Gimmick {
     enum Kind { Npc, Object, Effect, Box, Ability, Event, PopPoint, Exit, Spot, Other } kind = Other;
     std::string name;   // the joint's
+    // the scripts' name for it (Cr3UtilGetScriptFunctionName): the name's start - 5 characters
+    // (NPCs, boxes) or 7 (objects, effects) - and the two digits after its _box / _ball / _cap:
+    // "c208_box00_scale080" -> "c208_00", "eff104_check_box01" -> "eff104_01", "tbox_check_cap07" ->
+    // "tbox_07", "evt021_box00" -> "evt021_00"
+    std::string id;
+    std::string function; // the script function touching / tapping it calls: its id, an event box's
+                          // first six characters ("evt021")
     std::string figure; // the figure it shows ("" none)
     float position[3] = {0, 0, 0};
     std::array<float, 4> rotation{0, 0, 0, 1}; // quaternion x y z w

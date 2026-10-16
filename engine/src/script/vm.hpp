@@ -5,6 +5,7 @@
 // record their calls and return null.
 
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <string>
@@ -13,6 +14,28 @@
 struct SQVM;
 
 namespace cr2 {
+
+// A native's call: its arguments (from 0, after `this`) and its result
+class NativeCall {
+public:
+    NativeCall(SQVM* v, int count) : v_(v), count_(count) {}
+    int count() const { return count_; }
+    int integer(int i, int fallback = 0) const; // (floats and bools convert)
+    float number(int i, float fallback = 0) const;
+    bool boolean(int i, bool fallback = false) const;
+    std::string string(int i) const;
+    void result(int v);
+    void result(float v);
+    void result(bool v);
+    void result(const std::string& v);
+    bool hasResult() const { return result_; }
+
+private:
+    SQVM* v_;
+    int count_;
+    bool result_ = false;
+};
+using Native = std::function<void(NativeCall&)>;
 
 class ScriptVM {
 public:
@@ -34,6 +57,10 @@ public:
 
     const std::string& error() const { return error_; }
     void appendError(const std::string& text) { error_ += text; }
+    // an implementation for a native ("Table.Function", or a root function's name), in place of
+    // its stub
+    void setNative(const std::string& table, const std::string& function, Native fn);
+
     // stub calls so far: "Table.Function" -> count
     const std::map<std::string, int>& stubCalls() const { return stubCalls_; }
     // the native API's table and function names (docs/SCRIPTS.md), as bound
@@ -44,6 +71,7 @@ private:
     SQVM* vm_ = nullptr;
     std::string error_;
     std::map<std::string, int> stubCalls_;
+    std::deque<Native> natives_; // (their addresses are the closures' free variables)
     friend long stubNativeCalls(ScriptVM&, const char*);
 };
 

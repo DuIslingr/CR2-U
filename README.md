@@ -26,12 +26,13 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] Meshes (`geom`): the layout, vertex formats and materials; all parse (`tools/geom.py`)
 - [ ] The rest: `name`, `phys`, `emta`
 - [x] The scripts surveyed (docs/SCRIPTS.md): Squirrel 2.2.4 bytecode, all 139 parsed and
-      disassembled (`tools/nut.py`); the native API they call - 23 tables, 219 functions - read
+      disassembled (`tools/nut.py`); the native API they call - 23 tables, 222 functions - read
       out of the Android library (`tools/sq_bindings.py`)
 - [x] The script VM: the game's own Squirrel 2.2.4 (`engine/third_party/squirrel2`); every
       script loads and runs its `main` in all three releases (`cr2tool scripts`), events run up to
       their first wait with the native API stubbed (`cr2tool run`)
-- [ ] The native API (219 functions) for real
+- [ ] The native API (222 functions) for real: the field's set-up natives so far (flags, work
+      values, the area, the gimmicks' display / collision / events, the layers)
 - [x] A model viewer (`cr2view`): any figure of any of the three releases, textured; rendered with
       Vulkan 1.3 by default, OpenGL 3.3 where Vulkan can't start (`--renderer opengl`) - CR1:U's
       device layer, with CR2's vertices and the game's shading
@@ -60,7 +61,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       427 lead somewhere real)
 - [x] Gimmicks: the maps' NPCs, objects, effects and treasure boxes placed and drawn (NPCs idling),
       solid as in the game; `cr2tool walk` runs from every map's arrival points
-- [ ] Which gimmicks the story shows (flags, scripts), talking / tapping, event boxes, the HUD, the
+- [x] Which gimmicks the story shows: each area's entry (`evt000`) runs in the dungeon's script on
+      entering it (`cr2tool fieldscript`: 216 of 217 maps from a new game's state)
+- [ ] Events (the scripts' waits, messages, scenes), talking / tapping, event boxes, the HUD, the
       fades and sounds between areas
 - [ ] Engine: events, battles, menus
 
@@ -80,7 +83,7 @@ One or more of:
 |---|---|
 | `cr2view --data <archive> [--model name] [--anim name --time s] [--lights figure\|none] [--renderer vulkan\|opengl] [--capture out.bmp]` | the model viewer: drag to turn, the wheel to zoom, Left / Right for the other models, Up / Down for the figure's animations, Space to pause |
 | `cr2view --data <archive> --field <map> [--model c001] [--at point] [--binary file] [--walk sx,sy,s]` | a field: the arrow keys run the character (Shift walks) on the floors and against the walls; the maps' table comes from the executable beside the iPad's / Vita's archive, or `--binary` (Android: `lib/armeabi-v7a/libChaosRings2.so`) |
-| `cr2tool check / scripts / run / images / models / compare-models / animations / pose / shaders / walk / exits` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared, the shader keys against their GLSL, the field player on every map, every map's exits |
+| `cr2tool check / scripts / run / images / models / compare-models / animations / pose / shaders / walk / exits / fieldscript` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared, the shader keys against their GLSL, the field player on every map, every map's exits, every map's entry script |
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
 | `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |
 | `tools/geom.py` | a mesh file's meshes and materials, a check of them all, a flat-shaded preview |

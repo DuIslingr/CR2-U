@@ -7,6 +7,7 @@
 // the painting. <map>c also has the lights and the walls, <map>p the entrances and event boxes.
 
 #include <array>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -58,6 +59,9 @@ public:
     std::vector<std::string> pointNames() const;
     // The gimmicks <map>p's joints place (NPCs, objects, boxes, event boxes, ...)
     const std::vector<Gimmick>& gimmicks() const { return gimmicks_; }
+    // Which NPCs, objects and boxes are solid (the scripts' Disp / SetCollision): the collision
+    // rebuilt with those (all of them after load)
+    void setSolidGimmicks(const std::function<bool(const Gimmick&)>& solid);
 
     // The walls and floors (<map>c.phys's solid bodies, and <map>p.phys's exits)
     const CollisionWorld& collision() const { return collision_; }
@@ -86,7 +90,7 @@ private:
     std::vector<Mat34> cWorld_, pWorld_;
     std::vector<std::string> names_; // the joints' names (from the .name files), for pointNames
     SceneLighting lighting_;
-    CollisionWorld collision_;
+    CollisionWorld collision_, static_; // (static_: the walls, floors and exits alone)
     struct Exit {
         std::string pop;
         CollisionWorld volume;

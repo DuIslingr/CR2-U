@@ -107,17 +107,6 @@ bool FieldMap::load(const MvglArchive& a, const MapInfo& info, std::string* erro
         names_.insert(names_.end(), pNames.begin(), pNames.end());
         gimmicks_ = readGimmicks(pSkel_, pNames);
     }
-    // the NPCs', objects' and boxes' bodies (FldNPC / FldObject / FldBox::Init: solid, the joint's
-    // scale / 100 the shape's size - a ball's radius, a box's half extents, a capsule's radius and
-    // height)
-    for (const Gimmick& g : gimmicks_) {
-        if (g.kind != Gimmick::Npc && g.kind != Gimmick::Object && g.kind != Gimmick::Box) continue;
-        const Vec3 pos{g.position[0], g.position[1], g.position[2]};
-        const Vec3 size{g.jointScale[0] / 100.0f, g.jointScale[1] / 100.0f, g.jointScale[2] / 100.0f};
-        if (g.shape == Gimmick::ShapeBox) collision_.addBox(pos, g.rotation, size, g.name);
-        else if (g.shape == Gimmick::Capsule) collision_.addCapsule(pos, g.rotation, size[0], size[1]);
-        else collision_.addCapsule(pos, g.rotation, size[0], 0.0f);
-    }
     auto image = [&](const std::string& n) { return a.contains("images\\" + n + ".img") ? n : std::string(); };
     if (!info.noBackground) bg_ = image(info.layer("bg"));
     if (info.midground) mg_ = image(info.layer("mg"));
@@ -143,6 +132,8 @@ bool FieldMap::load(const MvglArchive& a, const MapInfo& info, std::string* erro
     } else if (!err.empty()) {
         return fail(error, info.name + "p.phys: " + err);
     }
+    static_ = collision_;
+    setSolidGimmicks([](const Gimmick&) { return true; });
     // the camera (InitCamera): near halved (at least 0.1), far five times (at most 5000)
     if (c_.cameras.empty()) return fail(error, info.name + "c: no camera");
     const GeomCamera& cam = c_.cameras[0];
@@ -170,6 +161,21 @@ bool FieldMap::point(const std::string& name, float* pos) const {
 }
 
 std::vector<std::string> FieldMap::pointNames() const { return names_; }
+
+void FieldMap::setSolidGimmicks(const std::function<bool(const Gimmick&)>& solid) {
+    // the NPCs', objects' and boxes' bodies (FldNPC / FldObject / FldBox::Init: solid, the joint's
+    // scale / 100 the shape's size - a ball's radius, a box's half extents, a capsule's radius and
+    // height)
+    collision_ = static_;
+    for (const Gimmick& g : gimmicks_) {
+        if ((g.kind != Gimmick::Npc && g.kind != Gimmick::Object && g.kind != Gimmick::Box) || !solid(g)) continue;
+        const Vec3 pos{g.position[0], g.position[1], g.position[2]};
+        const Vec3 size{g.jointScale[0] / 100.0f, g.jointScale[1] / 100.0f, g.jointScale[2] / 100.0f};
+        if (g.shape == Gimmick::ShapeBox) collision_.addBox(pos, g.rotation, size, g.name);
+        else if (g.shape == Gimmick::Capsule) collision_.addCapsule(pos, g.rotation, size[0], size[1]);
+        else collision_.addCapsule(pos, g.rotation, size[0], 0.0f);
+    }
+}
 
 std::vector<std::string> FieldMap::exitNames() const {
     std::vector<std::string> out;

@@ -24,6 +24,9 @@
 //   cr2tool exits <archive> <executable>             every map's exits: the map each leads to (the
 //                                                    pop point's first five letters) is there and
 //                                                    has that point
+//   cr2tool fieldscript <archive> <executable> [map] every map's entry (its dungeon script's
+//                                                    evt000, a new game's state): runs or not, the
+//                                                    gimmicks it shows, the stub natives it reached
 //   cr2tool shaders <archive>                        the materials' shaders: the features their
 //                                                    GLSL has, and where the key decoder (gfx/
 //                                                    material.cpp) disagrees with it, per bit
@@ -41,6 +44,7 @@
 #include "assets/mvgl.hpp"
 #include "field/character.hpp"
 #include "field/fieldmap.hpp"
+#include "field/fieldscript.hpp"
 #include "gfx/material.hpp"
 #include "script/vm.hpp"
 
@@ -57,7 +61,8 @@ int usage() {
                  "cr2tool animations <archive>\n"
                  "cr2tool shaders <archive>\n"
                  "cr2tool walk <archive> <executable> [map]\n"
-                 "cr2tool exits <archive> <executable>\n");
+                 "cr2tool exits <archive> <executable>\n"
+                 "cr2tool fieldscript <archive> <executable> [map]\n");
     return 2;
 }
 
@@ -295,6 +300,41 @@ bool readTable(const char* binary, std::vector<cr2::MapInfo>& table) {
     if (cr2::findMapTable(bin, table)) return true;
     std::fprintf(stderr, "%s: no maps' table\n", binary);
     return false;
+}
+
+int fieldScripts(const char* path, const char* binary, const char* only) {
+    cr2::MvglArchive a;
+    std::vector<cr2::MapInfo> table;
+    if (!openArchive(a, path) || !readTable(binary, table)) return 1;
+    size_t maps = 0, ran = 0, npcs = 0, npcsShown = 0;
+    std::map<std::string, int> stubs;
+    for (const cr2::MapInfo& info : table) {
+        if (only && info.name != only) continue;
+        cr2::FieldMap f;
+        if (!f.load(a, info)) continue;
+        ++maps;
+        cr2::GameState state; // (a new game's: every flag clear)
+        cr2::FieldScript script(a, state);
+        const bool ok = script.enter(info.name, f.gimmicks());
+        ran += ok;
+        std::string shown;
+        for (const cr2::Gimmick& g : f.gimmicks()) {
+            if (g.kind != cr2::Gimmick::Npc) continue;
+            ++npcs;
+            if (script.visible(g)) ++npcsShown, shown += " " + g.id;
+        }
+        if (!ok || only) std::printf("  %s: %s%s%s\n", info.name.c_str(), ok ? "ran" : script.error().c_str(), shown.empty() ? "" : "; NPCs shown:",
+                                    shown.c_str());
+        for (const auto& [k, n] : script.stubCalls()) stubs[k] += n;
+    }
+    std::printf("%zu maps: evt000 ran on %zu; NPCs %zu, shown %zu (a new game's flags)\n", maps, ran, npcs, npcsShown);
+    std::vector<std::pair<int, std::string>> top;
+    for (const auto& [k, n] : stubs) top.push_back({n, k});
+    std::sort(top.rbegin(), top.rend());
+    std::printf("  stub natives reached (calls):");
+    for (size_t k = 0; k < top.size() && k < 30; ++k) std::printf(" %s %d", top[k].second.c_str(), top[k].first);
+    std::printf("\n");
+    return 0;
 }
 
 int exits(const char* path, const char* binary) {
@@ -571,6 +611,7 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[1], "compare-models") && argc > 3) return compareModels(argv[2], argv[3]);
     if (!std::strcmp(argv[1], "shaders")) return shaders(argv[2]);
     if (!std::strcmp(argv[1], "exits") && argc > 3) return exits(argv[2], argv[3]);
+    if (!std::strcmp(argv[1], "fieldscript") && argc > 3) return fieldScripts(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "walk") && argc > 3) return walk(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "images")) return images(argv[2], argc > 3 ? argv[3] : nullptr, argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "run") && argc > 3) return run(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);

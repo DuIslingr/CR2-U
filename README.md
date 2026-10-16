@@ -32,7 +32,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       script loads and runs its `main` in all three releases (`cr2tool scripts`), events run up to
       their first wait with the native API stubbed (`cr2tool run`)
 - [ ] The native API (219 functions) for real
-- [ ] Engine: a model viewer first, then the field, events, battles, menus
+- [x] A model viewer (`cr2view`): any figure of any of the three releases, textured
+- [ ] Skeletons and animation (`skel`, `anim`), the game's own shaders and materials
+- [ ] Engine: the field, events, battles, menus
 
 ## What you need
 
@@ -48,6 +50,8 @@ One or more of:
 
 | | |
 |---|---|
+| `cr2view --data <archive> [--model name] [--capture out.bmp]` | the model viewer: drag to turn, the wheel to zoom, Left / Right for the other models |
+| `cr2tool check / scripts / run / images / models / compare-models` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared |
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
 | `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |
 | `tools/geom.py` | a mesh file's meshes and materials, a check of them all, a flat-shaded preview |
@@ -60,7 +64,7 @@ One or more of:
 
 | Path | Purpose |
 |---|---|
-| `engine/` | the C++17 engine (`cr2core`) and `cr2tool` (`cmake -S engine -B engine/build && cmake --build engine/build`) |
+| `engine/` | the C++17 engine (`cr2core`), `cr2tool` and `cr2view` (`cmake -S engine -B engine/build && cmake --build engine/build`; SDL3) |
 | `docs/` | format and engine notes |
 | `tools/` | analysis / extraction tools; they work on your own copy |
 | `re/`, `extracted/` | (not in the repository) local RE output and decoded assets - never commit or share |

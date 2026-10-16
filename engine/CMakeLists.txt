@@ -28,3 +28,18 @@ target_link_libraries(cr2core PUBLIC squirrel2)
 
 add_executable(cr2tool tools/cr2tool.cpp)
 target_link_libraries(cr2tool PRIVATE cr2core)
+
+# The viewer: SDL3 (the system's when present, else built from source as CR1:U does) and OpenGL 3.3
+find_package(SDL3 CONFIG QUIET)
+if(NOT SDL3_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(SDL3
+        GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+        GIT_TAG release-3.2.0
+        GIT_SHALLOW TRUE)
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(SDL3)
+endif()
+add_executable(cr2view src/viewer/main.cpp src/gfx/gl.cpp)
+target_link_libraries(cr2view PRIVATE cr2core SDL3::SDL3)

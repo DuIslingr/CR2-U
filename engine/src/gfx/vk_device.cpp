@@ -63,6 +63,9 @@ const uint32_t kSceneMeshFrag[] =
 constexpr int kFrames = 2;                      // frames in flight
 constexpr VkDeviceSize kBlockSize = 64u << 20;  // memory blocks / buffer arenas
 constexpr VkDeviceSize kRingSize = 16u << 20;   // per-frame dynamic vertices, grows as needed
+constexpr VkDeviceSize kShadingRing = 1u << 20; // per-frame Material blocks (shading.glsl), grows too
+constexpr unsigned kSamplers = 128;             // sampler variants: 1/2 clamp S/T, 4 min / 8 mag linear,
+                                                 // 16 mipmapped, 32/64 mirrored S/T
 constexpr VkFormat kColorFormat = VK_FORMAT_R8G8B8A8_UNORM;
 constexpr VkFormat kMotionFormat = VK_FORMAT_R16G16_SFLOAT; // scene: motion vectors
 constexpr VkFormat kReactiveFormat = VK_FORMAT_R8_UNORM;    // scene: reactive mask
@@ -154,7 +157,7 @@ struct TextureRec {
     VkImage image = VK_NULL_HANDLE;
     VkImageView view = VK_NULL_HANDLE;
     Alloc mem;
-    std::array<VkDescriptorSet, 32> sets{}; // per sampler (16+: the mipmapped variants)
+    std::array<VkDescriptorSet, kSamplers> sets{}; // per sampler variant (kSamplers)
     uint32_t mips = 1;
     bool live = false;
 };
@@ -178,6 +181,12 @@ struct Frame {
     VkDeviceMemory ringMemory = VK_NULL_HANDLE;
     uint8_t* ringMapped = nullptr;
     VkDeviceSize ringSize = 0, ringUsed = 0;
+    // the draws' Material blocks: a dynamic uniform buffer (set 1)
+    VkBuffer ubo = VK_NULL_HANDLE;
+    VkDeviceMemory uboMemory = VK_NULL_HANDLE;
+    uint8_t* uboMapped = nullptr;
+    VkDeviceSize uboSize = 0, uboUsed = 0;
+    VkDescriptorSet uboSet = VK_NULL_HANDLE;
 };
 
 class VkDevice_ final : public RenderDevice {
@@ -205,6 +214,8 @@ public:
             vkDestroySemaphore(device_, f.acquired, nullptr);
             if (f.ring) vkDestroyBuffer(device_, f.ring, nullptr);
             if (f.ringMemory) vkFreeMemory(device_, f.ringMemory, nullptr);
+            if (f.ubo) vkDestroyBuffer(device_, f.ubo, nullptr);
+            if (f.uboMemory) vkFreeMemory(device_, f.uboMemory, nullptr);
         }
         for (VkSemaphore s : presentSems_) vkDestroySemaphore(device_, s, nullptr);
         presentSems_.clear();
@@ -222,6 +233,7 @@ public:
         vkDestroyPipelineLayout(device_, layout_, nullptr);
         if (sceneLayout_) vkDestroyPipelineLayout(device_, sceneLayout_, nullptr);
         vkDestroyDescriptorSetLayout(device_, setLayout_, nullptr);
+        vkDestroyDescriptorSetLayout(device_, uboLayout_, nullptr);
         vkDestroyDescriptorPool(device_, pool_, nullptr);
         for (VkShaderModule m : {quadVert_, quadFrag_, meshVert_, meshFrag_, sceneQuadVert_, sceneQuadFrag_, sceneMeshVert_,
                                  sceneMeshFrag_})
@@ -392,6 +404,7 @@ public:
         vkResetFences(device_, 1, &f.fence);
         runDeletions(serial_ >= kFrames ? serial_ - kFrames : 0);
         f.ringUsed = 0;
+        f.uboUsed = 0;
         const uint64_t now = SDL_GetTicksNS();
         frameMs_ = lastFrameNs_ ? std::clamp(float(double(now - lastFrameNs_) * 1e-6), 0.0f, 1000.0f) : 16.7f;
         lastFrameNs_ = now;
@@ -530,7 +543,7 @@ public:
         passW_ = w;
         passH_ = h;
         bound_ = VK_NULL_HANDLE;
-        boundSet_ = VK_NULL_HANDLE;
+        boundSets_ = {};
         boundLayout_ = VK_NULL_HANDLE;
         setViewport(0, 0, float(w), float(h));
         const VkRect2D scissor{{0, 0}, {uint32_t(w), uint32_t(h)}};
@@ -769,7 +782,7 @@ public:
         toVulkanClip(proj, pc.base.matrix);
         std::memcpy(pc.base.color, rgba, sizeof pc.base.color);
         pushConstants(pc);
-        bindTexture(tex.id - 1, 15); // clamp, linear
+        bindTexture(0, tex.id - 1, 15); // clamp, linear
         vkCmdBindVertexBuffers(cmd_, 0, 1, &buf, &off);
         vkCmdDraw(cmd_, 6, 1, 0, 0);
     }
@@ -830,10 +843,14 @@ public:
             }
         }
         pushConstants(pc);
-        const bool textured = tex && tex->id && tex->id <= textures_.size() && textures_[tex->id - 1].image;
-        const unsigned samplerBits = (st.clampS ? 1u : 0u) | (st.clampT ? 2u : 0u) | (st.minLinear ? 4u : 0u) |
-                                     (st.magLinear ? 8u : 0u);
-        bindTexture(textured ? tex->id - 1 : white_.id - 1, textured ? samplerBits : 15);
+        const ShadingBlock block = shadingBlock(sh, lighting_);
+        uint32_t uboOffset = 0;
+        if (!shadingWrite(block, uboOffset)) return;
+        vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, boundLayout_, 1, 1, &frames_[serial_ % kFrames].uboSet, 1,
+                                &uboOffset);
+        bindTexture(0, tex, st.sampling);
+        bindTexture(2, sh.normalMap, sh.normalSampling);
+        bindTexture(3, sh.extraMap, sh.extraSampling);
         const VkBuffer bufs[2] = {vb, prevBuf};
         const VkDeviceSize offs[2] = {voff, prevOff};
         vkCmdBindVertexBuffers(cmd_, 0, inScene_ ? 2 : 1, bufs, offs);
@@ -1066,7 +1083,9 @@ private:
                 break;
             }
         }
-        // Descriptors: one combined image sampler per set, cached per (texture, sampler)
+        // Descriptors: one combined image sampler per set, cached per (texture, sampler), for sets
+        // 0 (the colour), 2 (normal map), 3 (CLUT / light map); set 1 the Material block, a
+        // dynamic uniform buffer (one set per frame, an offset per draw)
         VkDescriptorSetLayoutBinding b{};
         b.binding = 0;
         b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1076,17 +1095,22 @@ private:
         li.bindingCount = 1;
         li.pBindings = &b;
         if (!ok(vkCreateDescriptorSetLayout(device_, &li, nullptr, &setLayout_))) return false;
-        const VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32768};
+        b.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+        b.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        if (!ok(vkCreateDescriptorSetLayout(device_, &li, nullptr, &uboLayout_))) return false;
+        const VkDescriptorPoolSize ps[2] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32768},
+                                            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 64}};
         VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         dpi.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-        dpi.maxSets = 32768;
-        dpi.poolSizeCount = 1;
-        dpi.pPoolSizes = &ps;
+        dpi.maxSets = 32768 + 64;
+        dpi.poolSizeCount = 2;
+        dpi.pPoolSizes = ps;
         if (!ok(vkCreateDescriptorPool(device_, &dpi, nullptr, &pool_))) return false;
         const VkPushConstantRange pcr{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants)};
+        const VkDescriptorSetLayout sets[4] = {setLayout_, uboLayout_, setLayout_, setLayout_};
         VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-        pli.setLayoutCount = 1;
-        pli.pSetLayouts = &setLayout_;
+        pli.setLayoutCount = 4;
+        pli.pSetLayouts = sets;
         pli.pushConstantRangeCount = 1;
         pli.pPushConstantRanges = &pcr;
         if (!ok(vkCreatePipelineLayout(device_, &pli, nullptr, &layout_))) return false;
@@ -1171,15 +1195,17 @@ private:
                                                              {1, uint32_t(kVertexStride), VK_VERTEX_INPUT_RATE_VERTEX}};
         const VkVertexInputAttributeDescription quadAttrs[2] = {{0, 0, VK_FORMAT_R32G32_SFLOAT, 0},
                                                                 {1, 0, VK_FORMAT_R32G32_SFLOAT, 8}};
-        const VkVertexInputAttributeDescription meshAttrs[5] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
+        const VkVertexInputAttributeDescription meshAttrs[7] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
                                                                 {1, 0, VK_FORMAT_R32G32_SFLOAT, 12},
                                                                 {2, 0, VK_FORMAT_R8G8B8A8_UNORM, 20},
                                                                 {4, 0, VK_FORMAT_R32G32B32_SFLOAT, 24},
+                                                                {5, 0, VK_FORMAT_R32G32B32_SFLOAT, 36},
+                                                                {6, 0, VK_FORMAT_R32G32B32_SFLOAT, 48},
                                                                 {3, 1, VK_FORMAT_R32G32B32_SFLOAT, 0}};
         VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         vi.vertexBindingDescriptionCount = scene && !quad ? 2 : 1;
         vi.pVertexBindingDescriptions = bindings;
-        vi.vertexAttributeDescriptionCount = quad ? 2 : scene ? 5 : 4;
+        vi.vertexAttributeDescriptionCount = quad ? 2 : scene ? 7 : 6;
         vi.pVertexAttributeDescriptions = quad ? quadAttrs : meshAttrs;
         VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
         ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -1263,19 +1289,23 @@ private:
         const VkPipelineLayout layout = inScene_ ? sceneLayout_ : layout_;
         if (layout != boundLayout_) { // sets bound through the other layout don't carry over
             boundLayout_ = layout;
-            boundSet_ = VK_NULL_HANDLE;
+            boundSets_ = {};
         }
     }
 
     // Samplers by bits: 1 clamp S, 2 clamp T, 4 linear min, 8 linear mag, 16 blend mips (HD)
     bool createSamplers() {
-        for (unsigned bits = 0; bits < 32; ++bits) {
+        for (unsigned bits = 0; bits < kSamplers; ++bits) {
             VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
             si.magFilter = (bits & 8) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
             si.minFilter = (bits & 4) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
             si.mipmapMode = (bits & 16) ? VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST;
-            si.addressModeU = (bits & 1) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
-            si.addressModeV = (bits & 2) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            si.addressModeU = (bits & 1)    ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+                              : (bits & 32) ? VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT
+                                            : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            si.addressModeV = (bits & 2)    ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+                              : (bits & 64) ? VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT
+                                            : VK_SAMPLER_ADDRESS_MODE_REPEAT;
             si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
             si.maxLod = (bits & 16) ? VK_LOD_CLAMP_NONE : 0.0f;
             if ((bits & 16) && anisotropy_ > 1.0f) { // HD textures: sharp on surfaces seen at an angle
@@ -1287,11 +1317,19 @@ private:
         return true;
     }
 
-    void bindTexture(unsigned index, unsigned samplerBits) {
+    // A texture (white without one) and its sampling on set `slot`
+    void bindTexture(unsigned slot, const Texture* tex, const Sampling& smp) {
+        const bool textured = tex && tex->id && tex->id <= textures_.size() && textures_[tex->id - 1].image;
+        const unsigned bits = (smp.clampS ? 1u : 0u) | (smp.clampT ? 2u : 0u) | (smp.minLinear ? 4u : 0u) |
+                              (smp.magLinear ? 8u : 0u) | (smp.mirrorS ? 32u : 0u) | (smp.mirrorT ? 64u : 0u);
+        bindTexture(slot, textured ? tex->id - 1 : white_.id - 1, textured ? bits : 15);
+    }
+
+    void bindTexture(unsigned slot, unsigned index, unsigned samplerBits) {
         if (index >= textures_.size()) return;
         TextureRec& t = textures_[index];
         if (!t.image) return;
-        samplerBits = (samplerBits & 15) | (t.mips > 1 ? 16u : 0u);
+        samplerBits = (samplerBits & ~16u & (kSamplers - 1)) | (t.mips > 1 ? 16u : 0u);
         VkDescriptorSet& set = t.sets[samplerBits];
         if (!set) {
             VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
@@ -1307,9 +1345,9 @@ private:
             w.pImageInfo = &ii;
             vkUpdateDescriptorSets(device_, 1, &w, 0, nullptr);
         }
-        if (set != boundSet_) {
-            vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, boundLayout_, 0, 1, &set, 0, nullptr);
-            boundSet_ = set;
+        if (set != boundSets_[slot]) {
+            vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, boundLayout_, slot, 1, &set, 0, nullptr);
+            boundSets_[slot] = set;
         }
     }
 
@@ -1328,6 +1366,7 @@ private:
             if (!createHostBuffer(kRingSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, f.ring, f.ringMemory, f.ringMapped))
                 return false;
             f.ringSize = kRingSize;
+            if (!createShadingRing(f, kShadingRing)) return false;
         }
         return true;
     }
@@ -1338,6 +1377,51 @@ private:
         img.rgba = {255, 255, 255, 255};
         white_ = upload(img);
         return white_.id != 0;
+    }
+
+    // A frame's Material block ring and its descriptor set
+    bool createShadingRing(Frame& f, VkDeviceSize size) {
+        if (!createHostBuffer(size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, f.ubo, f.uboMemory, f.uboMapped)) return false;
+        f.uboSize = size;
+        f.uboUsed = 0;
+        VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        ai.descriptorPool = pool_;
+        ai.descriptorSetCount = 1;
+        ai.pSetLayouts = &uboLayout_;
+        if (!ok(vkAllocateDescriptorSets(device_, &ai, &f.uboSet))) return false;
+        const VkDescriptorBufferInfo bi{f.ubo, 0, sizeof(ShadingBlock)};
+        VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        w.dstSet = f.uboSet;
+        w.descriptorCount = 1;
+        w.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+        w.pBufferInfo = &bi;
+        vkUpdateDescriptorSets(device_, 1, &w, 0, nullptr);
+        return true;
+    }
+
+    // A draw's Material block into this frame's ring (which doubles when full: the draws already
+    // recorded keep the old buffer and set, freed after the frame)
+    bool shadingWrite(const ShadingBlock& block, uint32_t& offset) {
+        Frame& f = frames_[serial_ % kFrames];
+        const VkDeviceSize align = std::max<VkDeviceSize>(props_.limits.minUniformBufferOffsetAlignment, 16);
+        const VkDeviceSize start = (f.uboUsed + align - 1) / align * align;
+        if (start + sizeof block > f.uboSize) {
+            const VkBuffer oldBuf = f.ubo;
+            const VkDeviceMemory oldMem = f.uboMemory;
+            const VkDescriptorSet oldSet = f.uboSet;
+            later([this, oldBuf, oldMem, oldSet] {
+                VkDescriptorSet s = oldSet;
+                vkFreeDescriptorSets(device_, pool_, 1, &s);
+                vkDestroyBuffer(device_, oldBuf, nullptr);
+                vkFreeMemory(device_, oldMem, nullptr);
+            });
+            if (!createShadingRing(f, f.uboSize * 2)) return false;
+            return shadingWrite(block, offset);
+        }
+        std::memcpy(f.uboMapped + start, &block, sizeof block);
+        f.uboUsed = start + sizeof block;
+        offset = uint32_t(start);
+        return true;
     }
 
     // Per-frame dynamic data (quad corners, re-skinned vertices); the ring doubles when full
@@ -1703,16 +1787,16 @@ private:
     VkFence uploadFence_ = VK_NULL_HANDLE;
     VkFormat depthFormat_ = VK_FORMAT_D32_SFLOAT;
     VkImageAspectFlags depthAspect_ = VK_IMAGE_ASPECT_DEPTH_BIT;
-    VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE, uboLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool pool_ = VK_NULL_HANDLE;
     VkPipelineLayout layout_ = VK_NULL_HANDLE;
     VkShaderModule quadVert_ = VK_NULL_HANDLE, quadFrag_ = VK_NULL_HANDLE, meshVert_ = VK_NULL_HANDLE,
                    meshFrag_ = VK_NULL_HANDLE;
     VkPipeline quadPipeline_ = VK_NULL_HANDLE, bound_ = VK_NULL_HANDLE;
     VkPipeline quadAddPipeline_ = VK_NULL_HANDLE, sceneQuadAddPipeline_ = VK_NULL_HANDLE;
-    VkDescriptorSet boundSet_ = VK_NULL_HANDLE;
+    std::array<VkDescriptorSet, 4> boundSets_{}; // per set number
     std::map<uint32_t, VkPipeline> pipelines_;
-    std::array<VkSampler, 32> samplers_{};
+    std::array<VkSampler, kSamplers> samplers_{};
     float anisotropy_ = 1.0f;
     std::vector<Block> blocks_;
     std::vector<TextureRec> textures_;

@@ -127,12 +127,13 @@ bool parseGeom(const std::vector<uint8_t>& f, Geom& out, std::string* error) {
             }
             const int size = type == 0x1406 ? 4 : type == 0x1402 || type == 0x1403 || type == 0x140b ? 2 : type == 0x1400 || type == 0x1401 ? 1 : 0;
             if (!size || count < 1 || count > 4 || size_t(offset) + size_t(size) * count > stride) return fail(error, "geom attribute not understood");
-            std::vector<float>* dst = sem == kPosition ? &m.position : sem == kNormal ? &m.normal : sem == kUv0 ? &m.uv
-                                    : sem == kUv1 ? &m.uv1 : sem == kColour ? &m.colour : sem == kWeights ? &m.weights : nullptr;
-            const int want = sem == kPosition || sem == kNormal ? 3 : sem == kUv0 || sem == kUv1 ? 2 : 4;
+            std::vector<float>* dst = sem == kPosition ? &m.position : sem == kNormal ? &m.normal : sem == kTangent ? &m.tangent
+                                    : sem == kBinormal ? &m.binormal : sem == kUv0 ? &m.uv : sem == kUv1 ? &m.uv1
+                                    : sem == kColour ? &m.colour : sem == kWeights ? &m.weights : nullptr;
+            const int want = sem == kPosition || sem == kNormal || sem == kTangent || sem == kBinormal ? 3 : sem == kUv0 || sem == kUv1 ? 2 : 4;
             if (sem == kJoints) m.joints.assign(size_t(m.vertexCount) * 4, 0);
             if (dst) dst->assign(size_t(m.vertexCount) * want, sem == kColour ? 1.0f : 0.0f);
-            if (!dst && sem != kJoints) continue; // (tangents, binormals: not used yet)
+            if (!dst && sem != kJoints) continue;
             for (uint32_t v = 0; v < m.vertexCount; ++v) {
                 const uint8_t* p = &f[vAt + size_t(v) * vstride + offset];
                 for (int c = 0; c < count && c < want; ++c) {
@@ -166,15 +167,19 @@ bool parseGeom(const std::vector<uint8_t>& f, Geom& out, std::string* error) {
         if (!has(p + 0x18, size_t(n) * 0x14)) return fail(error, "geom material entries outside the file");
         GeomMaterial mat;
         mat.hash = u32(p);
+        for (int k = 0; k < 4; ++k) mat.shaderKey[size_t(k)] = u32(p + 4 + 4 * size_t(k));
         for (unsigned k = 0; k < n; ++k) {
             const uint8_t* e = &f[p + 0x18 + 0x14 * size_t(k)];
             const int id = e[0], kind = e[1];
-            if (kind == 0) mat.textures[id] = std::string(reinterpret_cast<const char*>(e + 4), strnlen(reinterpret_cast<const char*>(e + 4), 12));
+            if (kind == 0) {
+                mat.textures[id] = std::string(reinterpret_cast<const char*>(e + 4), strnlen(reinterpret_cast<const char*>(e + 4), 12));
+                std::memcpy(&mat.samplers[id], e + 0x10, 4);
+            }
             else if (kind == 100) {
                 std::array<uint32_t, 4> v;
                 std::memcpy(v.data(), e + 4, 16);
                 mat.states[id] = v;
-            } else if (kind == 1 || kind == 3 || kind == 4) {
+            } else if (kind >= 1 && kind <= 4) {
                 std::vector<float> v(static_cast<size_t>(kind));
                 std::memcpy(v.data(), e + 4, 4 * size_t(kind));
                 mat.params[id] = std::move(v);
@@ -182,6 +187,18 @@ bool parseGeom(const std::vector<uint8_t>& f, Geom& out, std::string* error) {
         }
         out.materials.push_back(std::move(mat));
         p += 0x18 + 0x14 * size_t(n);
+    }
+    const unsigned lights = u16(8);
+    const size_t lightAt = u32(0x38);
+    if (lights && !has(lightAt, size_t(lights) * 0x34)) return fail(error, "geom lights outside the file");
+    for (unsigned k = 0; k < lights; ++k) {
+        const size_t at = lightAt + 0x34 * size_t(k);
+        GeomLight l;
+        l.hash = u32(at);
+        l.type = u16(at + 4);
+        l.index = u16(at + 6);
+        std::memcpy(l.v, &f[at + 8], sizeof l.v);
+        out.lights.push_back(l);
     }
     // inverse binds: Android / the Vita 3x4 row-major (0x30 bytes), the iPad 4x4 column-major (0x40)
     const unsigned joints = u16(0xc);

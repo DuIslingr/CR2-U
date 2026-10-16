@@ -35,37 +35,68 @@ void main() {
 }
 )";
 
+// The game's shading (shading.glsl, after shade_flags.h) or the fixed path: GL ES 1.1-style
+// texture modes (uTexMode: 0 replace, 1 add, 2 blend, 3 decal, 4 modulate, -1 untextured), an
+// alpha test, a directional light
+const char* kShadeFlags =
+#include "shade_flags.h.inc"
+    ;
+const char* kShading =
+#include "shading.glsl.inc"
+    ;
+
 const char* kMeshVertex = R"(
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec2 aUV;
 layout(location = 2) in vec4 aColor;
 layout(location = 4) in vec3 aNormal;
+layout(location = 5) in vec3 aTangent;
+layout(location = 6) in vec3 aBinormal;
 uniform mat4 uMvp;
 out vec2 vUV;
 out vec4 vColor;
 out vec3 vNormal;
+out vec3 vTangent;
+out vec3 vBinormal;
+out vec3 vView;
+out float vFog;
 void main() {
     vUV = aUV;
     vColor = aColor;
     vNormal = aNormal;
     gl_Position = uMvp * vec4(aPos, 1.0);
+    if ((mat.flags.x & SHADE_ON) != 0) {
+        vUV = shadeUV(aUV);
+        vTangent = aTangent;
+        vBinormal = aBinormal;
+        vView = shadeView(aPos);
+        vFog = shadeFog(gl_Position.w);
+    } else {
+        vTangent = vBinormal = vView = vec3(0.0);
+        vFog = 0.0;
+    }
 }
 )";
 
-// A surface: GL ES 1.1-style texture modes, an alpha test, a directional light.
-// uTexMode: 0 replace, 1 add, 2 blend, 3 decal, 4 modulate, -1 untextured.
 const char* kMeshFragment = R"(
 in vec2 vUV;
 in vec4 vColor;
 in vec3 vNormal;
+in vec3 vTangent;
+in vec3 vBinormal;
+in vec3 vView;
+in float vFog;
 uniform vec4 uLight; // xyz towards the light, w > 0: lit
-uniform sampler2D uTex;
 uniform vec4 uColor;
 uniform int uTexMode;
 uniform int uAlphaTex;  // GL_ALPHA texture: colour always comes from the fragment
 uniform float uAlphaRef;
 out vec4 fragColor;
 void main() {
+    if ((mat.flags.x & SHADE_ON) != 0) {
+        fragColor = shade(vUV, vColor, vNormal, vTangent, vBinormal, vView, vFog);
+        return;
+    }
     vec4 base = uColor * vColor;
     vec4 c = base;
     if (uTexMode >= 0) {
@@ -83,8 +114,8 @@ void main() {
 }
 )";
 
-unsigned compile(unsigned type, const char* body) {
-    const std::string src = std::string(gl::shaderHeader()) + body;
+unsigned compile(unsigned type, const char* body, const std::string& prefix) {
+    const std::string src = std::string(gl::shaderHeader()) + prefix + body;
     const char* p = src.c_str();
     const unsigned s = gl::CreateShader(type);
     gl::ShaderSource(s, 1, &p, nullptr);
@@ -101,9 +132,11 @@ unsigned compile(unsigned type, const char* body) {
     return s;
 }
 
-unsigned link(const char* vsBody, const char* fsBody) {
-    const unsigned vs = compile(GL_VERTEX_SHADER, vsBody);
-    const unsigned fs = compile(GL_FRAGMENT_SHADER, fsBody);
+// `shading`: the shared GLSL first (the mesh program)
+unsigned link(const char* vsBody, const char* fsBody, bool shading = false) {
+    const std::string common = shading ? std::string(kShadeFlags) + kShading : std::string();
+    const unsigned vs = compile(GL_VERTEX_SHADER, vsBody, common);
+    const unsigned fs = compile(GL_FRAGMENT_SHADER, fsBody, shading ? std::string(kShadeFlags) + "#define SHADING_FRAGMENT\n" + kShading : common);
     if (!vs || !fs) return 0;
     const unsigned p = gl::CreateProgram();
     gl::AttachShader(p, vs);
@@ -157,10 +190,18 @@ public:
             return false;
         }
         program_ = link(kVertex, kFragment);
-        meshProgram_ = link(kMeshVertex, kMeshFragment);
+        meshProgram_ = link(kMeshVertex, kMeshFragment, true);
         if (!program_ || !meshProgram_) return false;
         uMvp_ = gl::GetUniformLocation(meshProgram_, "uMvp");
-        uMeshTex_ = gl::GetUniformLocation(meshProgram_, "uTex");
+        gl::UseProgram(meshProgram_);
+        gl::Uniform1i(gl::GetUniformLocation(meshProgram_, "uTex"), 0);
+        gl::Uniform1i(gl::GetUniformLocation(meshProgram_, "uNormal"), 1);
+        gl::Uniform1i(gl::GetUniformLocation(meshProgram_, "uExtra"), 2);
+        gl::UniformBlockBinding(meshProgram_, gl::GetUniformBlockIndex(meshProgram_, "Material"), 0);
+        gl::GenBuffers(1, &ubo_);
+        gl::BindBuffer(GL_UNIFORM_BUFFER, ubo_);
+        gl::BufferData(GL_UNIFORM_BUFFER, sizeof(ShadingBlock), nullptr, GL_DYNAMIC_DRAW);
+        gl::BindBufferBase(GL_UNIFORM_BUFFER, 0, ubo_);
         uAlphaRef_ = gl::GetUniformLocation(meshProgram_, "uAlphaRef");
         uMeshColor_ = gl::GetUniformLocation(meshProgram_, "uColor");
         uTexMode_ = gl::GetUniformLocation(meshProgram_, "uTexMode");
@@ -188,10 +229,11 @@ public:
     void shutdown() override {
         if (!ctx_) return;
         if (vbo_) gl::DeleteBuffers(1, &vbo_);
+        if (ubo_) gl::DeleteBuffers(1, &ubo_);
         if (vao_) gl::DeleteVertexArrays(1, &vao_);
         if (program_) gl::DeleteProgram(program_);
         if (meshProgram_) gl::DeleteProgram(meshProgram_);
-        vbo_ = vao_ = program_ = meshProgram_ = 0;
+        vbo_ = ubo_ = vao_ = program_ = meshProgram_ = 0;
         SDL_GL_DestroyContext(ctx_);
         ctx_ = nullptr;
     }
@@ -247,10 +289,9 @@ public:
         gl::VertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(12));
         gl::VertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, kStride, reinterpret_cast<const void*>(20));
         gl::VertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(24));
-        gl::EnableVertexAttribArray(0);
-        gl::EnableVertexAttribArray(1);
-        gl::EnableVertexAttribArray(2);
-        gl::EnableVertexAttribArray(4);
+        gl::VertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(36));
+        gl::VertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(48));
+        for (unsigned a : {0u, 1u, 2u, 4u, 5u, 6u}) gl::EnableVertexAttribArray(a);
         gl::BindVertexArray(0);
         return g;
     }
@@ -317,8 +358,6 @@ public:
     void drawMesh(const GpuMesh& mesh, const Texture* tex, const float* mvp, const MeshShading& sh,
                   const DrawState& st) override {
         gl::UseProgram(meshProgram_);
-        gl::Uniform1i(uMeshTex_, 0);
-        gl::ActiveTexture(GL_TEXTURE0);
         gl::FrontFace(GL_CCW);
         gl::DepthFunc(GL_LEQUAL);
         gl::UniformMatrix4fv(uMvp_, 1, GL_FALSE, mvp);
@@ -327,18 +366,12 @@ public:
         gl::Uniform1i(uTexMode_, sh.texMode);
         gl::Uniform1i(uAlphaTex_, sh.alphaTex ? 1 : 0);
         gl::Uniform4f(uLight_, sh.light[0], sh.light[1], sh.light[2], sh.lit ? 1.0f : 0.0f);
-        const bool textured = tex && tex->id;
-        gl::BindTexture(GL_TEXTURE_2D, textured ? tex->id : whiteId());
-        if (textured) {
-            gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, st.clampS ? GL_CLAMP_TO_EDGE : GL_REPEAT);
-            gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, st.clampT ? GL_CLAMP_TO_EDGE : GL_REPEAT);
-            // Mipmapped (HD) textures blend between mips whatever the base filter
-            const bool mips = mipmapped_.count(tex->id) != 0;
-            gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                              mips ? (st.minLinear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR)
-                                   : st.minLinear ? GL_LINEAR : GL_NEAREST);
-            gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, st.magLinear ? GL_LINEAR : GL_NEAREST);
-        }
+        const ShadingBlock block = shadingBlock(sh, lighting_);
+        gl::BindBuffer(GL_UNIFORM_BUFFER, ubo_);
+        gl::BufferSubData(GL_UNIFORM_BUFFER, 0, sizeof block, &block);
+        bindTexture(2, sh.extraMap, sh.extraSampling);
+        bindTexture(1, sh.normalMap, sh.normalSampling);
+        bindTexture(0, tex, st.sampling);
         if (st.blend) {
             gl::Enable(GL_BLEND);
             gl::BlendFunc(kBlendSrc[st.blendSrc < 9 ? st.blendSrc : 4], kBlendDst[st.blendDst < 8 ? st.blendDst : 5]);
@@ -379,6 +412,24 @@ public:
     void setVSync(bool on) override { SDL_GL_SetSwapInterval(on ? 1 : 0); }
 
 private:
+    // A texture on unit `unit` with its sampling (texture parameters: per texture, so set per draw)
+    void bindTexture(unsigned unit, const Texture* tex, const Sampling& smp) {
+        gl::ActiveTexture(GL_TEXTURE0 + unit);
+        const bool textured = tex && tex->id;
+        gl::BindTexture(GL_TEXTURE_2D, textured ? tex->id : whiteId());
+        if (!textured) return;
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,
+                          smp.clampS ? GL_CLAMP_TO_EDGE : smp.mirrorS ? GL_MIRRORED_REPEAT : GL_REPEAT);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,
+                          smp.clampT ? GL_CLAMP_TO_EDGE : smp.mirrorT ? GL_MIRRORED_REPEAT : GL_REPEAT);
+        // Mipmapped (HD) textures blend between mips whatever the base filter
+        const bool mips = mipmapped_.count(tex->id) != 0;
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                          mips ? (smp.minLinear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR)
+                               : smp.minLinear ? GL_LINEAR : GL_NEAREST);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, smp.magLinear ? GL_LINEAR : GL_NEAREST);
+    }
+
     // A 1x1 white texture for untextured meshes
     unsigned whiteId() {
         if (!white_.id) {
@@ -394,8 +445,8 @@ private:
     SDL_GLContext ctx_ = nullptr;
     unsigned program_ = 0, vao_ = 0, vbo_ = 0;
     int uProj_ = -1, uColor_ = -1, uTex_ = -1;
-    unsigned meshProgram_ = 0;
-    int uMvp_ = -1, uMeshTex_ = -1, uAlphaRef_ = -1, uMeshColor_ = -1, uTexMode_ = -1, uAlphaTex_ = -1, uLight_ = -1;
+    unsigned meshProgram_ = 0, ubo_ = 0;
+    int uMvp_ = -1, uAlphaRef_ = -1, uMeshColor_ = -1, uTexMode_ = -1, uAlphaTex_ = -1, uLight_ = -1;
     int drawableW_ = 0, drawableH_ = 0;
     std::unordered_set<unsigned> mipmapped_; // textures uploaded with a mip chain
     Texture white_;
@@ -406,6 +457,39 @@ private:
 std::unique_ptr<RenderDevice> makeGlDevice() { return std::make_unique<GlDevice>(); }
 
 const char* backendName(Backend b) { return b == Backend::Vulkan ? "Vulkan" : "OpenGL"; }
+
+ShadingBlock shadingBlock(const MeshShading& sh, const SceneLighting& l) {
+    ShadingBlock b{};
+    auto put = [](float* dst, const float* src, int n, float w = 0) {
+        for (int k = 0; k < n; ++k) dst[k] = src[k];
+        if (n == 3) dst[3] = w;
+    };
+    put(b.diffuse, sh.color, 4);
+    b.params[0] = sh.bumpiness;
+    b.params[1] = sh.specularStrength;
+    b.params[2] = sh.specularPower;
+    b.params[3] = sh.alphaRef;
+    b.velvet[0] = sh.rollOff;
+    b.velvet[1] = sh.velvetStrength;
+    b.velvet[2] = l.time;
+    b.flags[0] = int32_t(sh.shade);
+    put(b.surface, sh.surfaceColor, 3);
+    put(b.fuzzy, sh.fuzzySpecColor, 3);
+    put(b.sub, sh.subColor, 3);
+    b.uvAnim[0] = sh.scrollSpeed[0];
+    b.uvAnim[1] = sh.scrollSpeed[1];
+    b.uvAnim[2] = sh.offset[0];
+    b.uvAnim[3] = sh.offset[1];
+    put(b.lightDir, l.lightDir, 3);
+    put(b.lightColor, l.lightColor, 3, 1);
+    put(b.ambient, l.ambient, 3);
+    put(b.ground, l.ground, 3);
+    put(b.skyDir, l.skyDir, 3);
+    put(b.fogParams, l.fogParams, 3);
+    put(b.fogColor, l.fogColor, 3);
+    put(b.camera, l.camera, 3, 1);
+    return b;
+}
 
 uint8_t blendCode(uint32_t f, bool dst) {
     for (uint8_t i = 0; i < (dst ? 8 : 9); ++i)

@@ -2,7 +2,7 @@
 // The GPU API: OpenGL 3.3 / GLES 3.0 (gl_device.cpp) or Vulkan 1.3 (vk_device.cpp), Vulkan the
 // default - CR1:U's device layer, carried over: a device only sees drawable pixels, GL-style
 // clip-space matrices and per-draw material state (here MVGL's: GL blend factors, culling, depth,
-// an alpha test, a directional light).
+// and either the game's generated shaders' shading - shading.glsl - or a fixed path).
 
 #include <cstdint>
 #include <memory>
@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "assets/image.hpp"
+#include "gfx/shaders/shade_flags.h"
 
 struct SDL_Window;
 
@@ -22,16 +23,24 @@ struct Texture {
 };
 
 // A mesh uploaded to the GPU: interleaved vertices (kVertexStride bytes: position 3 f32 at 0,
-// uv 2 f32 at 12, colour 4 u8 at 20, normal 3 f32 at 24) plus a triangle index buffer
+// uv 2 f32 at 12, colour 4 u8 at 20, normal 3 f32 at 24, tangent 3 f32 at 36, binormal 3 f32 at
+// 48) plus a triangle index buffer
 struct GpuMesh {
     unsigned vao = 0, vbo = 0, ebo = 0; // GL objects; Vulkan keeps its handle in vao (0 = none)
     int indexCount = 0;
     int texture = -1;
 };
-constexpr size_t kVertexStride = 36;
+constexpr size_t kVertexStride = 60;
 
 enum class Backend { OpenGL, Vulkan };
 const char* backendName(Backend b);
+
+// How a texture is sampled: clamp or mirrored repeat (else repeat) per axis, linear (else
+// nearest) per filter
+struct Sampling {
+    bool clampS = false, clampT = false, mirrorS = false, mirrorT = false;
+    bool minLinear = true, magLinear = true;
+};
 
 // A mesh draw's fixed-function state (a material's render states)
 struct DrawState {
@@ -42,19 +51,56 @@ struct DrawState {
     uint8_t blendSrc = 4, blendDst = 5;
     uint8_t cull = 0;                   // 0 none, 1 front, 2 back
     bool depthTest = true, depthWrite = true;
-    // Sampler: clamp (else repeat) per axis, linear (else nearest) per filter
-    bool clampS = false, clampT = false, minLinear = false, magLinear = false;
+    Sampling sampling; // the texture's
 };
 
-// What the mesh fragment shader needs (see kMeshFragment)
+// What the mesh shaders need. `shade` 0: the fixed path (the colour, a GL ES 1.1 texture mode, an
+// alpha test, a simple light); SHADE_ON | ...: the game's shading (shading.glsl), with the
+// material's parameters below and the scene's lights (setLighting)
 struct MeshShading {
-    float color[4] = {1, 1, 1, 1};
+    float color[4] = {1, 1, 1, 1}; // (the game's shading: DiffuseColor)
     int texMode = -1;   // 0 replace, 1 add, 2 blend, 3 decal, 4 modulate, -1 untextured
     bool alphaTex = false;
-    float alphaRef = -1; // the alpha test: fragments with alpha <= ref are discarded (< 0: off)
-    bool lit = false;    // a directional light over the vertices' normals
+    float alphaRef = -1; // fixed: alpha <= ref discarded (< 0: off); the game's: texture alpha < ref
+    bool lit = false;    // fixed: a directional light over the vertices' normals
     float light[3] = {0.4f, 0.8f, 0.45f};
+
+    uint32_t shade = 0; // SHADE_* (shade_flags.h)
+    float bumpiness = 1, specularStrength = 0, specularPower = 1, rollOff = 0, velvetStrength = 0;
+    float surfaceColor[3] = {1, 1, 1}, fuzzySpecColor[3] = {0, 0, 0}, subColor[3] = {0, 0, 0};
+    float scrollSpeed[2] = {0, 0}, offset[2] = {0, 0};
+    const Texture* normalMap = nullptr; // SHADE_NORMAL_MAP
+    Sampling normalSampling;
+    const Texture* extraMap = nullptr;  // SHADE_CLUT's CLUT or SHADE_LIGHT_MAP's light map
+    Sampling extraSampling;
 };
+
+// The scene's lights for the game's shading (MVGL's RenderContext; the defaults are its own),
+// in the space of the vertices drawn
+struct SceneLighting {
+    float lightDir[3] = {0.5307f, -0.7581f, 0.3790f}; // DirLamp01Dir: towards the light
+    float lightColor[3] = {0.5f, 0.5f, 0.5f};
+    float ambient[3] = {0.5f, 0.5f, 0.5f};
+    float ground[3] = {0.3f, 0.3f, 0.3f};
+    float skyDir[3] = {0, -1, 0};
+    float fogParams[3] = {1.5f, -0.005f, 1.0f}; // far / (far - near), -1 / (far - near), alpha
+    float fogColor[3] = {1, 1, 1};
+    float camera[3] = {0, 0, 0};
+    float time = 0; // seconds (scrolling textures)
+};
+
+// The shaders' Material block (shading.glsl), std140
+struct ShadingBlock {
+    float diffuse[4];
+    float params[4]; // Bumpiness, SpecularStrength, SpecularPower, AlphaRef
+    float velvet[4]; // RollOff, VelvetStrength, Time, -
+    int32_t flags[4];
+    float surface[4], fuzzy[4], sub[4];
+    float uvAnim[4]; // ScrollSpeedSet1, OffsetSet1
+    float lightDir[4], lightColor[4], ambient[4], ground[4], skyDir[4], fogParams[4], fogColor[4], camera[4];
+};
+static_assert(sizeof(ShadingBlock) == 256, "Material block layout");
+ShadingBlock shadingBlock(const MeshShading& sh, const SceneLighting& scene);
 
 // A GL blend factor enum as a DrawState code (source, or destination with `dst`)
 uint8_t blendCode(uint32_t glFactor, bool dst);
@@ -100,6 +146,9 @@ public:
     virtual void drawQuad(const Texture& tex, const float* vertices24, const float* proj16, const float* rgba) = 0;
     virtual void drawMesh(const GpuMesh& mesh, const Texture* tex, const float* mvp16, const MeshShading& shading,
                           const DrawState& state) = 0;
+    // The lights (and camera, time) the game's shading uses from here on
+    void setLighting(const SceneLighting& l) { lighting_ = l; }
+    const SceneLighting& lighting() const { return lighting_; }
 
     // The last frame's pixels, RGBA, top row first
     virtual bool readPixels(std::vector<uint8_t>& rgba, int& w, int& h) = 0;
@@ -126,6 +175,9 @@ public:
     // last frame's pixels say nothing about this one
     virtual void setCamera(float /*near*/, float /*far*/, float /*fovY*/) {}
     virtual void resetHistory() {}
+
+protected:
+    SceneLighting lighting_;
 };
 
 std::unique_ptr<RenderDevice> makeGlDevice();

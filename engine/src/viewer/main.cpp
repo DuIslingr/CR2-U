@@ -1,11 +1,12 @@
 // cr2view: CR2-U's model viewer - a figure (`.geom`) from your copy's archive, its meshes with
-// their materials' textures and render states, vertex colours and a simple light, skinned to its
-// skeleton (`.skel`) and playing its animations (`<figure>*.anim`). Vulkan by default, OpenGL
-// where Vulkan can't start (or with --renderer opengl).
+// their materials' textures, render states and the game's shading (its generated shaders, as
+// shading.glsl), lit by a map's character lights (`<map>c.geom`; d0101c unless --lights says),
+// skinned to its skeleton (`.skel`) and playing its animations (`<figure>*.anim`). Vulkan by
+// default, OpenGL where Vulkan can't start (or with --renderer opengl).
 //
 //   cr2view --data <CRDB.ios.mvgl | main.212...obb | CRDB.psp2.mvgl> [--model <name>]
 //           [--anim <name>] [--time s] [--size WxH] [--yaw deg] [--pitch deg]
-//           [--renderer vulkan|opengl] [--capture out.bmp]
+//           [--lights <figure> | none] [--renderer vulkan|opengl] [--capture out.bmp]
 //
 // Drag to turn it, the wheel to zoom, Left / Right (or PageUp / PageDown) for the archive's other
 // models, Up / Down for the figure's animations, Space to pause, Esc to quit. --capture draws one
@@ -25,6 +26,7 @@
 #include "assets/image.hpp"
 #include "assets/mvgl.hpp"
 #include "assets/skeleton.hpp"
+#include "gfx/material.hpp"
 #include "gfx/render_device.hpp"
 
 namespace {
@@ -82,16 +84,21 @@ struct ViewMesh {
     cr2::GpuMesh gpu;
     bool lit = false;
     cr2::Texture* texture = nullptr;
+    cr2::Texture* normalMap = nullptr; // 0x35
+    cr2::Texture* extraMap = nullptr;  // 0x48 CLUT or 0x43 light map
     cr2::GeomMesh source;        // (for skinning)
-    cr2::GeomMaterial material;  // (its render states)
+    cr2::GeomMaterial material;  // (its render states; its parameters as the animation leaves them)
+    cr2::GeomMaterial baseMaterial; // (as the file has it)
     std::vector<uint8_t> vertices; // kVertexStride bytes each
 };
 
-void packVertex(uint8_t* o, const float* p, const float* n, const float* uv, const float* c) {
+void packVertex(uint8_t* o, const float* p, const float* n, const float* uv, const float* c, const float* t, const float* b) {
     std::memcpy(o, p, 12);
     std::memcpy(o + 12, uv, 8);
     for (int k = 0; k < 4; ++k) o[20 + k] = uint8_t(std::clamp(c[k], 0.0f, 1.0f) * 255.0f + 0.5f);
     std::memcpy(o + 24, n, 12);
+    std::memcpy(o + 36, t, 12);
+    std::memcpy(o + 48, b, 12);
 }
 
 struct Viewer {
@@ -100,7 +107,9 @@ struct Viewer {
     std::vector<std::string> models; // the archive's .geom names, sorted
     size_t current = 0;
     std::vector<ViewMesh> meshes;
-    std::map<std::string, cr2::Texture> textures; // by "colour|alpha map"
+    std::map<std::string, cr2::Texture> textures; // by name
+    cr2::SceneLighting lighting;                  // the light figure's (--lights)
+    std::unique_ptr<cr2::ShaderLibrary> shaders;  // the archive's (its GLSL, or the keys decoded)
     float centre[3] = {0, 0, 0}, radius = 1;
     float yaw = 30, pitch = 15, zoom = 1;
     std::string status;
@@ -121,33 +130,30 @@ struct Viewer {
         return false;
     }
 
-    // A material's texture; with an alpha map (0x43), the two merged at the larger size - the
-    // colour's alpha times the map's (nearest texels: they share the texture coordinates)
-    cr2::Texture* texture(const std::string& name, const std::string& alphaMap) {
+    // A material's texture (`mipmaps` off for lookup tables: CLUTs)
+    cr2::Texture* texture(const std::string& name, bool mipmaps = true) {
         if (name.empty()) return nullptr;
-        const std::string key = name + "|" + alphaMap;
-        if (auto it = textures.find(key); it != textures.end()) return it->second.id ? &it->second : nullptr;
+        if (auto it = textures.find(name); it != textures.end()) return it->second.id ? &it->second : nullptr;
         cr2::Image img;
-        cr2::Texture& t = textures[key];
+        cr2::Texture& t = textures[name];
         if (!decode(name, img)) return nullptr;
-        cr2::Image a;
-        if (!alphaMap.empty() && decode(alphaMap, a)) {
-            cr2::Image m;
-            m.width = std::max(img.width, a.width);
-            m.height = std::max(img.height, a.height);
-            m.rgba.resize(size_t(m.width) * m.height * 4);
-            for (int y = 0; y < m.height; ++y)
-                for (int x = 0; x < m.width; ++x) {
-                    const uint8_t* c = &img.rgba[(size_t(y * img.height / m.height) * img.width + size_t(x * img.width / m.width)) * 4];
-                    const uint8_t* al = &a.rgba[(size_t(y * a.height / m.height) * a.width + size_t(x * a.width / m.width)) * 4];
-                    uint8_t* o = &m.rgba[(size_t(y) * m.width + x) * 4];
-                    o[0] = c[0], o[1] = c[1], o[2] = c[2], o[3] = uint8_t(c[3] * al[3] / 255);
-                }
-            img = std::move(m);
-        }
-        img.mipmaps = true;
+        img.mipmaps = mipmaps;
         t = dev->upload(img);
         return t.id ? &t : nullptr;
+    }
+
+    // The scene's lights from a light figure (a map's <name>c): false when it has none
+    bool loadLights(const std::string& figure) {
+        std::vector<uint8_t> data;
+        cr2::Geom g;
+        cr2::Skeleton sk;
+        if (!archive.read(figure + ".geom", data) || !cr2::parseGeom(data, g) || !archive.read(figure + ".skel", data) ||
+            !cr2::parseSkeleton(data, sk))
+            return false;
+        cr2::SceneLighting l;
+        if (!cr2::lightsFromFigure(g, sk, l)) return false;
+        lighting = l;
+        return true;
     }
 
     void unload() {
@@ -174,18 +180,21 @@ struct Viewer {
             vm.vertices.resize(size_t(m.vertexCount) * cr2::kVertexStride);
             for (uint32_t i = 0; i < m.vertexCount; ++i) {
                 static const float kNoUv[2] = {0, 0};
-                packVertex(&vm.vertices[size_t(i) * cr2::kVertexStride], &m.position[size_t(i) * 3],
-                           m.normal.empty() ? kZero : &m.normal[size_t(i) * 3], m.uv.empty() ? kNoUv : &m.uv[size_t(i) * 2],
-                           m.colour.empty() ? kWhite : &m.colour[size_t(i) * 4]);
+                auto at3 = [&](const std::vector<float>& v) { return v.empty() ? kZero : &v[size_t(i) * 3]; };
+                packVertex(&vm.vertices[size_t(i) * cr2::kVertexStride], &m.position[size_t(i) * 3], at3(m.normal),
+                           m.uv.empty() ? kNoUv : &m.uv[size_t(i) * 2], m.colour.empty() ? kWhite : &m.colour[size_t(i) * 4],
+                           at3(m.tangent), at3(m.binormal));
             }
             const std::vector<uint32_t> idx = m.triangles();
             vm.gpu = dev->upload(vm.vertices, idx, -1);
             vm.lit = !m.normal.empty();
             vm.source = m;
             if (m.material < g.materials.size()) {
-                vm.material = g.materials[m.material];
-                const auto am = vm.material.textures.find(0x43);
-                vm.texture = texture(vm.material.diffuse(), am == vm.material.textures.end() ? "" : am->second);
+                vm.material = vm.baseMaterial = g.materials[m.material];
+                vm.texture = texture(vm.material.diffuse());
+                vm.normalMap = texture(vm.material.texture(0x35));
+                vm.extraMap = vm.material.textures.count(0x48) ? texture(vm.material.texture(0x48), false)
+                                                               : texture(vm.material.texture(0x43));
             }
             meshes.push_back(std::move(vm));
             verts += m.vertexCount;
@@ -246,7 +255,19 @@ struct Viewer {
             const float frames = float(std::max(anim.frames() - 1, 1));
             float fr = time * anim.sampleRate();
             if (fr > frames) fr = std::fmod(fr, frames);
-            p = anim.poseOver(skeleton.basePose, fr); // (relative to the base pose)
+            // (relative to the base pose); the user channels: material parameters (UI fades, colours)
+            std::vector<float> user(skeleton.userChannels.size(), std::nanf(""));
+            p = anim.poseOver(skeleton.basePose, fr, anim.hasUserChannels() ? &user : nullptr);
+            for (ViewMesh& vm : meshes) {
+                vm.material = vm.baseMaterial;
+                for (size_t k = 0; k < user.size() && k < skeleton.userChannels.size(); ++k) {
+                    const cr2::Skeleton::UserChannel& c = skeleton.userChannels[k];
+                    if (std::isnan(user[k]) || c.material != vm.material.hash) continue;
+                    std::vector<float>& v = vm.material.params[c.param];
+                    if (v.size() <= c.component) v.resize(size_t(c.component) + 1, 0.0f);
+                    v[c.component] = user[k];
+                }
+            }
         }
         const std::vector<cr2::Mat34> world = skeleton.world(p);
         std::vector<cr2::Mat34> skin(world.size());
@@ -259,11 +280,18 @@ struct Viewer {
             for (uint32_t i = 0; i < m.vertexCount; ++i) {
                 const float* sp = &m.position[size_t(i) * 3];
                 const float* sn = m.normal.empty() ? nullptr : &m.normal[size_t(i) * 3];
-                float op[3] = {0, 0, 0}, on[3] = {0, 0, 0};
+                const float* st = m.tangent.empty() ? nullptr : &m.tangent[size_t(i) * 3];
+                const float* sb = m.binormal.empty() ? nullptr : &m.binormal[size_t(i) * 3];
+                float op[3] = {0, 0, 0}, on[3] = {0, 0, 0}, ot[3] = {0, 0, 0}, ob[3] = {0, 0, 0};
                 auto add = [&](const cr2::Mat34& M, float w) {
+                    auto rot = [&](const float* v, float* o, int r) {
+                        o[r] += w * (M.m[r * 4] * v[0] + M.m[r * 4 + 1] * v[1] + M.m[r * 4 + 2] * v[2]);
+                    };
                     for (int r = 0; r < 3; ++r) {
                         op[r] += w * (M.m[r * 4] * sp[0] + M.m[r * 4 + 1] * sp[1] + M.m[r * 4 + 2] * sp[2] + M.m[r * 4 + 3]);
-                        if (sn) on[r] += w * (M.m[r * 4] * sn[0] + M.m[r * 4 + 1] * sn[1] + M.m[r * 4 + 2] * sn[2]);
+                        if (sn) rot(sn, on, r);
+                        if (st) rot(st, ot, r);
+                        if (sb) rot(sb, ob, r);
                     }
                 };
                 if (m.joints.empty()) {
@@ -275,9 +303,19 @@ struct Viewer {
                         if (w != 0.0f && slot < pal.size() && pal[slot]) add(*pal[slot], w);
                     }
                 }
+                // (normalised, as the game's vertex shaders do)
+                auto unit = [](float* v) {
+                    const float l = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+                    if (l > 0) v[0] /= l, v[1] /= l, v[2] /= l;
+                };
+                unit(on);
+                unit(ot);
+                unit(ob);
                 uint8_t* o = &vm.vertices[size_t(i) * cr2::kVertexStride];
                 std::memcpy(o, op, 12);
                 if (sn) std::memcpy(o + 24, on, 12);
+                if (st) std::memcpy(o + 36, ot, 12);
+                if (sb) std::memcpy(o + 48, ob, 12);
             }
             dev->updateVertices(vm.gpu, vm.vertices);
         }
@@ -289,6 +327,10 @@ struct Viewer {
         const float yr = yaw * 3.14159265f / 180, pr = pitch * 3.14159265f / 180, d = radius * 2.6f * zoom;
         const float eye[3] = {centre[0] + d * std::cos(pr) * std::sin(yr), centre[1] + d * std::sin(pr),
                               centre[2] + d * std::cos(pr) * std::cos(yr)};
+        cr2::SceneLighting l = lighting;
+        std::memcpy(l.camera, eye, sizeof l.camera);
+        l.time = time;
+        dev->setLighting(l);
         const Mat4 mvp = multiply(perspective(0.7f, float(w) / float(std::max(h, 1)), radius * 0.01f * zoom, radius * 20 * zoom + d),
                                   lookAt(eye, centre));
         // the materials' render states; opaque meshes first, then those blending
@@ -300,8 +342,12 @@ struct Viewer {
             b->material.state(0x7c, 0, bb);
             return ba < bb;
         });
+        const char* only = SDL_getenv("CR2_MESHES"); // (debugging: "1,3" draws meshes 1 and 3 only)
         for (const ViewMesh* mp : order) {
             const ViewMesh& m = *mp;
+            if (only && !std::strstr((std::string(",") + only + ",").c_str(),
+                                     (',' + std::to_string(mp - meshes.data()) + ',').c_str()))
+                continue;
             cr2::DrawState st;
             cr2::MeshShading sh;
             uint32_t v = 0, v2 = 0;
@@ -323,9 +369,15 @@ struct Viewer {
             st.depthWrite = v != 0;
             m.material.state(0x81, 1, v);
             st.depthTest = v != 0;
-            st.minLinear = st.magLinear = true;
-            sh.texMode = m.texture ? 4 : -1; // modulate the vertex colour
+            // each texture with its own sampler (the material's texture entries)
+            st.sampling = cr2::sampling(m.material.sampler(0x32));
+            sh.texMode = m.texture ? 4 : -1; // (the built-in Figure shaders: modulate the vertex colour)
             sh.lit = m.lit;
+            cr2::applyMaterial(m.material, shaders->features(m.material.shaderKey), sh); // (the game's shading: keyed materials)
+            sh.normalMap = m.normalMap;
+            sh.normalSampling = cr2::sampling(m.material.sampler(0x35));
+            sh.extraMap = m.extraMap;
+            sh.extraSampling = cr2::sampling(m.material.sampler(m.material.textures.count(0x48) ? 0x48 : 0x43));
             dev->drawMesh(m.gpu, m.texture, mvp.m, sh, st);
         }
     }
@@ -343,7 +395,7 @@ bool saveBmp(const char* path, const std::vector<uint8_t>& rgba, int w, int h) {
 } // namespace
 
 int main(int argc, char** argv) {
-    std::string data, model, capture, animName, renderer = "vulkan";
+    std::string data, model, capture, animName, renderer = "vulkan", lights = "d0101c";
     int width = 1280, height = 800;
     float yaw = 30, pitch = 15, startTime = 0;
     for (int i = 1; i < argc; ++i) {
@@ -358,6 +410,7 @@ int main(int argc, char** argv) {
         else if (a == "--yaw" && next) yaw = float(std::atof(next)), ++i;
         else if (a == "--pitch" && next) pitch = float(std::atof(next)), ++i;
         else if (a == "--renderer" && next) renderer = next, ++i;
+        else if (a == "--lights" && next) lights = next, ++i;
     }
     if (data.empty()) {
         std::fprintf(stderr, "cr2view --data <archive> [--model name] [--anim name] [--time s] [--size WxH] [--yaw deg] "
@@ -405,6 +458,11 @@ int main(int argc, char** argv) {
     }
     if (!dev) return std::fprintf(stderr, "no renderer could start\n"), 1;
     v.dev = dev.get();
+    v.shaders = std::make_unique<cr2::ShaderLibrary>(v.archive);
+    if (lights != "none") {
+        if (v.loadLights(lights)) SDL_Log("lights: %s", lights.c_str());
+        else SDL_Log("lights: %s has none (the engine's defaults)", lights.c_str());
+    }
     v.load(start);
     if (!animName.empty()) {
         const std::string want = animName.size() > 5 && animName.compare(animName.size() - 5, 5, ".anim") == 0 ? animName : animName + ".anim";

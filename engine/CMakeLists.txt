@@ -22,6 +22,7 @@ add_library(cr2core STATIC
     src/assets/image.cpp
     src/assets/geom.cpp
     src/assets/skeleton.cpp
+    src/gfx/material.cpp
     src/script/vm.cpp
 )
 target_include_directories(cr2core PUBLIC src)
@@ -56,7 +57,7 @@ if(Vulkan_FOUND AND GLSLC)
     foreach(s quad.vert quad.frag mesh.vert mesh.frag)
         add_custom_command(OUTPUT ${SHADER_OUT}/${s}.inc
             COMMAND ${GLSLC} -O -mfmt=c -I ${SHADER_DIR} ${SHADER_DIR}/${s} -o ${SHADER_OUT}/${s}.inc
-            DEPENDS ${SHADER_DIR}/${s} ${SHADER_DIR}/common.glsl
+            DEPENDS ${SHADER_DIR}/${s} ${SHADER_DIR}/common.glsl ${SHADER_DIR}/shading.glsl ${SHADER_DIR}/shade_flags.h
             COMMENT "glslc ${s}")
         list(APPEND SHADER_INCS ${SHADER_OUT}/${s}.inc)
     endforeach()
@@ -64,7 +65,7 @@ if(Vulkan_FOUND AND GLSLC)
     foreach(s quad.vert quad.frag mesh.vert mesh.frag)
         add_custom_command(OUTPUT ${SHADER_OUT}/scene_${s}.inc
             COMMAND ${GLSLC} -O -mfmt=c -DSCENE=1 -I ${SHADER_DIR} ${SHADER_DIR}/${s} -o ${SHADER_OUT}/scene_${s}.inc
-            DEPENDS ${SHADER_DIR}/${s} ${SHADER_DIR}/common.glsl
+            DEPENDS ${SHADER_DIR}/${s} ${SHADER_DIR}/common.glsl ${SHADER_DIR}/shading.glsl ${SHADER_DIR}/shade_flags.h
             COMMENT "glslc ${s} (scene)")
         list(APPEND SHADER_INCS ${SHADER_OUT}/scene_${s}.inc)
     endforeach()
@@ -117,12 +118,28 @@ else()
     message(STATUS "Renderer: OpenGL only (Vulkan loader or glslc not found)")
 endif()
 
+# The shaders' shared GLSL as C++ strings, for the GL device (Vulkan's are compiled by glslc)
+set(GLSL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/gfx/shaders)
+set(GLSL_OUT ${CMAKE_CURRENT_BINARY_DIR}/glsl)
+file(MAKE_DIRECTORY ${GLSL_OUT})
+set(GLSL_INCS)
+foreach(f shade_flags.h shading.glsl)
+    add_custom_command(OUTPUT ${GLSL_OUT}/${f}.inc
+        COMMAND ${CMAKE_COMMAND} -DIN=${GLSL_DIR}/${f} -DOUT=${GLSL_OUT}/${f}.inc -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake
+        DEPENDS ${GLSL_DIR}/${f} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake
+        COMMENT "embed ${f}")
+    list(APPEND GLSL_INCS ${GLSL_OUT}/${f}.inc)
+endforeach()
+add_custom_target(cr_glsl DEPENDS ${GLSL_INCS})
+
 set(VIEWER_SOURCES src/viewer/main.cpp src/gfx/gl.cpp src/gfx/gl_device.cpp src/gfx/vk_device.cpp)
 if(CR_VULKAN)
     list(APPEND VIEWER_SOURCES src/gfx/vk_fsr3.cpp src/gfx/vk_dlss.cpp)
 endif()
 add_executable(cr2view ${VIEWER_SOURCES})
 target_link_libraries(cr2view PRIVATE cr2core SDL3::SDL3)
+add_dependencies(cr2view cr_glsl)
+target_include_directories(cr2view PRIVATE ${GLSL_OUT})
 if(CR_VULKAN)
     add_dependencies(cr2view cr_shaders)
     target_include_directories(cr2view PRIVATE ${SHADER_OUT})

@@ -24,7 +24,7 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] Textures: every `img` decodes in all three releases (PVRTC, ETC1, DXT1 / DXT3, the plain
       formats; `cr2tool images`), and agrees across them
 - [x] Meshes (`geom`): the layout, vertex formats and materials; all parse (`tools/geom.py`)
-- [ ] The rest: `skel` / `anim`, `name`, `dat` (the text), `phys`, `shad` (GLSL ES), `emta`
+- [ ] The rest: `name`, `phys`, `emta`
 - [x] The scripts surveyed (docs/SCRIPTS.md): Squirrel 2.2.4 bytecode, all 139 parsed and
       disassembled (`tools/nut.py`); the native API they call - 23 tables, 219 functions - read
       out of the Android library (`tools/sq_bindings.py`)
@@ -34,7 +34,7 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [ ] The native API (219 functions) for real
 - [x] A model viewer (`cr2view`): any figure of any of the three releases, textured; rendered with
       Vulkan 1.3 by default, OpenGL 3.3 where Vulkan can't start (`--renderer opengl`) - CR1:U's
-      device layer, with CR2's vertices (normals, a light) and materials
+      device layer, with CR2's vertices and the game's shading
 - [x] Skeletons (`skel`: Sony Edge Animation's, ported) and the meshes' inverse bind matrices
 - [x] Animations (`anim`): Edge Animation's frame sets and keyframes, decoded and checked
       (`tools/anim.py`)
@@ -43,7 +43,13 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       culling, depth writes)
 - [x] The text (`message\*.dat`): eight languages, voice ids, the window's commands
       (`tools/msg.py`)
-- [ ] The game's own shaders (lighting, normal maps), effects
+- [x] The game's own shading: its generated GLSL shaders (`shad`, one per material shader key) as
+      one shader, the same formulas - lights from the maps' light figures, hemisphere ambient,
+      the vertex colours' occlusion, specular, velvet, CLUT toon shading, normal maps, fog, alpha
+      test, light-map masks, scrolling textures; the materials' wrap modes and filters; the
+      animations' user channels (material colours: the UI's fades). `cr2tool shaders` checks the
+      key decoder against every shader's source
+- [ ] Shading left out: point lights, overlays, distortion, billboards (effects)
 - [ ] Engine: the field, events, battles, menus
 
 ## What you need
@@ -60,8 +66,8 @@ One or more of:
 
 | | |
 |---|---|
-| `cr2view --data <archive> [--model name] [--anim name --time s] [--renderer vulkan\|opengl] [--capture out.bmp]` | the model viewer: drag to turn, the wheel to zoom, Left / Right for the other models, Up / Down for the figure's animations, Space to pause |
-| `cr2tool check / scripts / run / images / models / compare-models / animations / pose` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared |
+| `cr2view --data <archive> [--model name] [--anim name --time s] [--lights figure\|none] [--renderer vulkan\|opengl] [--capture out.bmp]` | the model viewer: drag to turn, the wheel to zoom, Left / Right for the other models, Up / Down for the figure's animations, Space to pause |
+| `cr2tool check / scripts / run / images / models / compare-models / animations / pose / shaders` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared, the shader keys against their GLSL |
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
 | `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |
 | `tools/geom.py` | a mesh file's meshes and materials, a check of them all, a flat-shaded preview |

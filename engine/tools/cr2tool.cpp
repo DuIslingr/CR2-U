@@ -17,6 +17,9 @@
 //   cr2tool pose <archive> <figure> <anim> <frame>   the animation's pose at a frame (joint: R, T, S)
 //   cr2tool images <archive> [pattern [out dir]]     every texture decodes (formats counted);
 //                                                    with a folder, those matching as .tga
+//   cr2tool shaders <archive>                        the materials' shaders: the features their
+//                                                    GLSL has, and where the key decoder (gfx/
+//                                                    material.cpp) disagrees with it, per bit
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -28,6 +31,7 @@
 #include "assets/image.hpp"
 #include "assets/skeleton.hpp"
 #include "assets/mvgl.hpp"
+#include "gfx/material.hpp"
 #include "script/vm.hpp"
 
 namespace {
@@ -40,7 +44,8 @@ int usage() {
                  "cr2tool images <archive> [pattern [out dir]]\n"
                  "cr2tool models <archive>\n"
                  "cr2tool compare-models <archive> <archive>\n"
-                 "cr2tool animations <archive>\n");
+                 "cr2tool animations <archive>\n"
+                 "cr2tool shaders <archive>\n");
     return 2;
 }
 
@@ -154,7 +159,7 @@ int images(const char* path, const char* pattern, const char* outDir) {
             continue;
         }
         ++ok;
-        ++formats[img.format];
+        ++formats[img.format + (img.bottomUp ? " (bottom-up)" : "")];
         if (outDir) {
             std::string n = e.name.substr(e.name.rfind('\\') + 1);
             n = n.substr(0, n.size() - 4);
@@ -162,7 +167,7 @@ int images(const char* path, const char* pattern, const char* outDir) {
         }
     }
     std::printf("%zu textures decode, %zu bad%s\n", ok, bad, outDir ? (", " + std::to_string(written) + " written").c_str() : "");
-    for (const auto& [k, n] : formats) std::printf("  %-20s %d\n", k.c_str(), n);
+    for (const auto& [k, n] : formats) std::printf("  %-32s %d\n", k.c_str(), n);
     return bad ? 1 : 0;
 }
 
@@ -195,6 +200,75 @@ int models(const char* path) {
     for (const auto& [n, k] : missingNames)
         if (shown++ < 12) std::printf("  missing %s x%d\n", n.c_str(), k);
     return bad ? 1 : 0;
+}
+
+// The shaders' GLSL against the key decoder: per SHADE_* bit (and feature left out), what the
+// source says (featuresFromGlsl) and what the key says (decodeShaderKey), for every key the
+// materials name
+int shaders(const char* path) {
+    cr2::MvglArchive a;
+    if (!openArchive(a, path)) return 1;
+    static const char* kShade[] = {"on", "texture", "normal map", "lit", "DirLamp01", "hemisphere", "CLUT", "specular",
+                                   "spec vertex alpha", "obscure", "obscure spec", "tint", "tint alpha", "velvet", "fuzzy",
+                                   "alpha test", "fog", "light map", "scroll", "offset", "spec map alpha"};
+    static const char* kUnsupported[] = {"(point light)", "(overlay)", "(distortion)", "(uv1)", "(billboard)"};
+    constexpr int kShadeBits = int(sizeof kShade / sizeof kShade[0]), kUnsupportedBits = 5;
+    std::map<std::array<uint32_t, 4>, int> keys;
+    size_t materials = 0, builtIn = 0, alphaNoRef = 0, extraClash = 0;
+    std::vector<uint8_t> data;
+    cr2::ShaderLibrary library(a);
+    for (const auto& e : a.entries()) {
+        if (e.name.size() < 5 || e.name.compare(e.name.size() - 5, 5, ".geom") != 0) continue;
+        cr2::Geom g;
+        if (!a.read(e, data) || !cr2::parseGeom(data, g)) continue;
+        for (const auto& m : g.materials) {
+            ++materials;
+            const cr2::ShaderFeatures f = library.features(m.shaderKey);
+            if (!f.shade) {
+                ++builtIn;
+                continue;
+            }
+            ++keys[m.shaderKey];
+            uint32_t ref;
+            if ((f.shade & SHADE_ALPHA_TEST) && !m.state(0x78, 0, ref)) ++alphaNoRef;
+            if ((f.shade & SHADE_CLUT) && (f.shade & SHADE_LIGHT_MAP)) ++extraClash;
+        }
+    }
+    size_t checked = 0, noSource = 0, wrongKeys = 0;
+    size_t have[kShadeBits + kUnsupportedBits] = {}, wrong[kShadeBits + kUnsupportedBits] = {};
+    for (const auto& [key, uses] : keys) {
+        char name[64];
+        std::snprintf(name, sizeof name, "shaders\\%08x_%08x_%08x_%08x", key[0], key[1], key[2], key[3]);
+        std::vector<uint8_t> fpData, vpData;
+        const bool read = a.read(std::string(name) + "_fp.shad", fpData) && a.read(std::string(name) + "_vp.shad", vpData);
+        const std::string fp(fpData.begin(), fpData.end()), vp(vpData.begin(), vpData.end());
+        if (!read || fp.find("gl_FragColor") == std::string::npos) { // (the Vita's: compiled programs)
+            ++noSource;
+            continue;
+        }
+        ++checked;
+        const cr2::ShaderFeatures src = cr2::featuresFromGlsl(vp, fp), dec = cr2::decodeShaderKey(key);
+        bool bad = false;
+        for (int k = 0; k < kShadeBits + kUnsupportedBits; ++k) {
+            const bool s = k < kShadeBits ? (src.shade >> k & 1) : (src.unsupported >> (k - kShadeBits) & 1);
+            const bool d = k < kShadeBits ? (dec.shade >> k & 1) : (dec.unsupported >> (k - kShadeBits) & 1);
+            have[k] += s;
+            if (s != d) ++wrong[k], bad = true;
+        }
+        wrongKeys += bad;
+    }
+    std::printf("%zu materials: %zu with built-in Figure shaders (key 0), the rest %zu keys; %zu keys' GLSL read, "
+                "%zu without (the Vita's are compiled: their keys decoded)\n",
+                materials, builtIn, keys.size(), checked, noSource);
+    std::printf("  the GLSL has:");
+    for (int k = 1; k < kShadeBits + kUnsupportedBits; ++k)
+        std::printf("%s %s %zu", k > 1 ? "," : "", k < kShadeBits ? kShade[k] : kUnsupported[k - kShadeBits], have[k]);
+    std::printf("\n  the key decoder (Android / Vita layout) disagrees with the GLSL on %zu keys", wrongKeys);
+    for (int k = 0; k < kShadeBits + kUnsupportedBits; ++k)
+        if (wrong[k]) std::printf(" - %s %zu", k < kShadeBits ? kShade[k] : kUnsupported[k - kShadeBits], wrong[k]);
+    std::printf("\n  alpha-tested materials without an alpha_func state (AlphaRef 0.5): %zu; CLUT + light map: %zu\n",
+                alphaNoRef, extraClash);
+    return extraClash ? 1 : 0;
 }
 
 int compareModels(const char* pa, const char* pb) {
@@ -352,6 +426,7 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[1], "animations")) return animations(argv[2]);
     if (!std::strcmp(argv[1], "pose") && argc > 5) return pose(argv[2], argv[3], argv[4], float(std::atof(argv[5])));
     if (!std::strcmp(argv[1], "compare-models") && argc > 3) return compareModels(argv[2], argv[3]);
+    if (!std::strcmp(argv[1], "shaders")) return shaders(argv[2]);
     if (!std::strcmp(argv[1], "images")) return images(argv[2], argc > 3 ? argv[3] : nullptr, argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "run") && argc > 3) return run(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     return usage();

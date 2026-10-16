@@ -226,6 +226,17 @@ void decodeBc(const uint8_t* src, int w, int h, int bc, bool swizzled, uint8_t* 
         }
 }
 
+// A GXT's rows are top-first; the meshes' texture coordinates are the GL releases' (v = 0 the
+// first row of a bottom-up picture, the PVRs). Turned bottom-up like those, the same coordinates
+// reach the same texels.
+static void glRowOrder(Image& img) {
+    const size_t row = size_t(img.width) * 4;
+    for (int y = 0; y < img.height / 2; ++y)
+        std::swap_ranges(img.rgba.begin() + std::ptrdiff_t(size_t(y) * row), img.rgba.begin() + std::ptrdiff_t(size_t(y + 1) * row),
+                         img.rgba.begin() + std::ptrdiff_t(size_t(img.height - 1 - y) * row));
+    img.bottomUp = true;
+}
+
 bool decodeImg(const std::vector<uint8_t>& f, Image& out, std::string* error) {
     out = Image();
     if (f.size() >= 0x34 && rd32(f.data()) == 0x34 && std::memcmp(&f[0x2c], "PVR!", 4) == 0) { // legacy PVR
@@ -331,6 +342,7 @@ bool decodeImg(const std::vector<uint8_t>& f, Image& out, std::string* error) {
             if (avail < size_t((w + 3) / 4) * size_t((h + 3) / 4) * (bc == 1 ? 8 : 16)) return fail(error, "GXT BC data truncated");
             decodeBc(d, w, h, bc, swizzled, out.rgba.data());
             out.format = "GXT UBC" + std::to_string(bc);
+            glRowOrder(out);
             return true;
         }
         int bytes;
@@ -350,6 +362,7 @@ bool decodeImg(const std::vector<uint8_t>& f, Image& out, std::string* error) {
             }
         out.alphaOnly = bytes == 1;
         out.format = bytes == 4 ? "GXT U8U8U8U8" : bytes == 2 ? "GXT U8U8" : "GXT U8";
+        glRowOrder(out);
         return true;
     }
     return fail(error, "not a PVR / GXT texture");

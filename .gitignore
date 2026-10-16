@@ -11,6 +11,7 @@
 !/engine/
 /engine/*
 !/engine/CMakeLists.txt
+!/engine/cmake/
 !/engine/src/
 !/engine/tools/
 !/engine/third_party/

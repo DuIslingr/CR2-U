@@ -66,7 +66,10 @@
     X(void, CullFace, (GLenum mode)) \
     X(void, FrontFace, (GLenum mode)) \
     X(void, Uniform1f, (GLint loc, GLfloat v)) \
-    X(void, Uniform3f, (GLint loc, GLfloat x, GLfloat y, GLfloat z))
+    X(void, Uniform3f, (GLint loc, GLfloat x, GLfloat y, GLfloat z)) \
+    X(void, BindBufferBase, (GLenum target, GLuint index, GLuint buffer)) \
+    X(GLuint, GetUniformBlockIndex, (GLuint p, const GLchar* name)) \
+    X(void, UniformBlockBinding, (GLuint p, GLuint block, GLuint binding))
 
 namespace gl {
 

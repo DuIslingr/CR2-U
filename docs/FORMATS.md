@@ -85,6 +85,13 @@ average (each release's own lossy compression), orientation and alpha alike.
 PVR v3's channels of 8 bits each are stored byte by byte in order; its packed ones (4444, 5551)
 from the top bit down.
 
+Row order: every Android PVR and all but 2 of the iPad's are stored bottom row first (the GL
+releases upload the rows as stored, so texture v = 0 is the picture's bottom); every GXT top row
+first. The meshes' texture coordinates are the same in all three releases, so the decoder turns
+the GXTs bottom-up: the same coordinates then reach the same texels everywhere.
+
+How a texture is sampled is the material's (its texture entry's flags, below), not the file's.
+
 ## Meshes (`geom`)
 
 `tools/geom.py` (`info`, `check`, `render`) and `engine/src/assets/geom.cpp` (`cr2tool models`):
@@ -109,10 +116,12 @@ range (±32) where the Vita's don't (a whole number of repeats: the same samplin
 | +0x00 u32 | version (0x3c / 0x50) |
 | +0x04 u16 | meshes |
 | +0x06 u16 | materials |
+| +0x08 u16 | lights (below) |
 | +0x10 u16 | relocations (the list at +0x48: offsets of pointers to make absolute) |
 | +0x18 | the bounds |
 | +0x30 u32 | the meshes (0x54 bytes each) |
 | +0x34 u32 | the materials |
+| +0x38 u32 | the lights (0x34 bytes each) |
 | +0x40 u32 | the inverse bind matrices, one per skeleton joint: 3x4 row-major (0x30 bytes) on Android / the Vita, 4x4 column-major (0x40) on the iPad |
 
 | Mesh | |
@@ -135,14 +144,29 @@ normalised shorts each), 5 / 6 Texcoord0 / 1 (2 shorts, divided by 1024 in the v
 9 Color (4 normalised bytes), 10 / 11 blend indices / weights (bytes). Skinning: a palette of 56
 joints (`MatrixPalette[56*3]`).
 
-A material: u32 hash, ..., +0x14 u8 parameters, +0x15 u8 render states, then 0x14-byte entries:
-u8 parameter, u8 kind (0 texture, 1 / 3 / 4 a float / vec3 / vec4, 100 a render state), u16, then
-the texture's name (12 characters: `images\<name>.img`) or the values. Parameters seen: 0x32
-diffuse map, 0x35 normal map, 0x43 alpha map (the UI's: an A8 texture beside an opaque colour
-one, `hud_logoTtlC` + `hud_logoTtlA`), 0x44 / 0x48 textures not identified yet, 0x33 colour
-(vec4), 0x36 / 0x38 / 0x39 / 0x41 / 0x42 floats, 0x3e / 0x3f / 0x40 vec3s. The UI is figures
-too: the title screen is `title.geom` (7 textured quads, its own skeleton) played with
-`title_in` / `title_wait` / `title_loop` / `title_out`.
+A material: u32 hash, +0x04..+0x13 its **shader key** (4 u32: below), +0x14 u8 parameters, +0x15
+u8 render states, then 0x14-byte entries: u8 parameter, u8 kind (0 texture, 1..4 that many
+floats, 100 a render state), u16, then the texture's name (12 characters: `images\<name>.img`)
+and at +0x10 its sampler flags, or the values. The parameter ids index MVGL's shader parameter
+table (48-byte entries of a name and its size, in the library): 0x32 ColorSampler, 0x33
+DiffuseColor, 0x35 NormalSampler, 0x36 Bumpiness, 0x38 SpecularStrength, 0x39 SpecularPower,
+0x3e SurfaceColor, 0x3f FuzzySpecColor, 0x40 SubColor, 0x41 RollOff, 0x42 VelvetStrength, 0x43
+LightSampler, 0x44 OverlayColorSampler, 0x47 OverlayStrength, 0x48 CLUTSampler, 0x54 Time, 0x55
+ScrollSpeedSet1, 0x58 ScrollSpeedSet2, 0x5e OffsetSet1, 0x61 OffsetSet2, 0x64
+DistortionStrength (and, set by the engine, 0x09 / 0x0b DirLamp01Color / Dir, 0x2e AmbientColor,
+0x2f SkyDir, 0x31 GroundColor, 0x53 CameraPosition, 0x65 FogParams, 0x69 FogColor, 0x6a
+AlphaRef). The UI is figures too: the title screen is `title.geom` (7 textured quads, its own
+skeleton) played with `title_in` / `title_wait` / `title_loop` / `title_out`; its colour comes
+from LightSampler (an A8 mask beside an opaque colour texture: `hud_logoTtlC` + `hud_logoTtlA`)
+and its DiffuseColor from the animations (user channels, below).
+
+A texture entry's sampler flags (`Texture::Build` copies them to the texture; `FinishInitialize`
+sets them): bits 0-2 wrap S, 3-5 wrap T (the table at 0x53b6a4 in the Android library: 2
+GL_MIRRORED_REPEAT, 3 GL_CLAMP_TO_EDGE, else GL_REPEAT), 6-8 the min filter's function
+(`AdjustTextureFilter`: 1, 3, 4 nearest, else linear; with mips, the mipmapped forms), 9-11 the
+mag filter (the table at 0x53b688: 1 nearest, else linear). All three releases agree: 1579
+repeat / repeat, 1359 mirrored / repeat (the characters: their meshes mirror the left half's
+texture coordinates past u = 0), 123 mirrored both, 117 + 97 clamped both, 26 mixed.
 
 A render state's entry holds 4 u32 GL values; the ids are `RenderContext`'s table (its names, in
 order from 0x78): `alpha_func` (func, ref as a float - GREATER), `alpha_test_enable`,
@@ -152,6 +176,68 @@ order from 0x78): `alpha_func` (func, ref as a float - GREATER), `alpha_test_ena
 a material leaves out keep the defaults: no alpha test, no blending, back faces culled, depth test
 and writes on. The textures' alpha is not transparency unless the material tests or blends (the
 characters' carries other data).
+
+### Lights
+
+A figure can carry lights (`Figure::SetupLights`, `RenderContaindLights`): +0 u32 the joint
+whose name hash it is (that joint places it), +4 u16 type (0 point, 2 ambient, 3 directional, 4
+fog), +6 u16 which of its kind (DirLamp01..03, PointLamp01..07), then floats from +8:
+
+| Type | +0x08 | +0x0c | +0x10.. | +0x1c | +0x20.. |
+|---|---|---|---|---|---|
+| directional | intensity | | colour (4) | | |
+| point | intensity | range | colour | | |
+| ambient | intensity | | sky colour (3) | | ground colour (3; 0 in every map) |
+| fog | far | near | colour (3) | alpha | |
+
+The engine's uniforms: DirLamp01Dir = the joint's +Z axis, normalised (the direction towards the
+light), DirLamp01Color = intensity x colour; AmbientColor / GroundColor = intensity x the colours,
+SkyDir = the joint's position, normalised ((0, 1, 0) at the origin); FogParams = (far / (far -
+near), -1 / (far - near), alpha), FogColor. Without a light figure, RenderContext's defaults: the
+light (0.531, -0.758, 0.379) at 0.5 grey, ambient 0.5, ground 0.3, sky (0, -1, 0), fog (1.5,
+-0.005, 1) white. The maps' lights are figures of their own: `<map>c` lights the characters (118
+with ambient + directional + fog, ...), `<map>b` battles, `*_evt_light` events.
+
+## Shaders (`shad`) and shading
+
+Every material with a non-zero shader key draws with the GLSL ES 1.00 pair
+`shaders\<%08x_%08x_%08x_%08x>_vp.shad` / `_fp.shad` (`Figure::SetupMaterials`: the key's words
+printed in order; Android 219 keys, the iPad 204 (233 pairs in its archive), the Vita the same
+219 as Android, compiled - its files are GXP programs). Key 0 (668 materials) uses MVGL's
+built-in `Figure<attributes>` shaders, in the library: texture x vertex colour x DiffuseColor.
+
+The pairs are generated from the key, so they share one vocabulary: about 60 distinct fragment
+lines in 103 distinct fragment programs. `engine/src/gfx/shaders/shading.glsl` is all of them as
+one, chosen by bits (`shade_flags.h`), the same formulas in the same order:
+
+- colour = ColorSampler (or 1) x DiffuseColor; LightSampler's alpha replaces the texture's
+  first; the vertex colour tints rgb or rgba
+- lit (130 keys): colour x (light x obscure + ambient) + specular, with light = N.L (clamped) x
+  DirLamp01Color, or a CLUT: CLUTSampler at (N.L / 2 + 1/2, N.H) gives the light (rgb) and the
+  specular's power (a); ambient flat (AmbientColor) or a hemisphere: mix(GroundColor,
+  AmbientColor, (N.SkyDir + 1) / 2); specular = SpecularStrength (or the vertex alpha, or on the
+  iPad the normal map's alpha) x Schlick's d / (SpecularPower (1 - d) + d) of d = N.H x the light;
+  velvet: light x SurfaceColor + SubColor x VelvetStrength x (smoothstep(-RollOff, 1, N.L) -
+  smoothstep(0, 1, N.L)), and with specular a rim (1 - N.V) x FuzzySpecColor x VelvetStrength
+- **obscure**: the vertex colour's red, on the light only (and the specular where the key says) -
+  the characters' vertex colours are this, ambient occlusion, not a tint
+- the normal map bumps N by (rgb - 1/2) x Bumpiness along the tangent and binormal
+- fog: mix by clamp(1 - (FogParams.x + depth x FogParams.y)) x FogParams.z; alpha test: the
+  texture's alpha < AlphaRef discarded (the material's alpha_func reference)
+- texture coordinates + OffsetSet1 + fract(ScrollSpeedSet1 x Time)
+
+Left out so far: point lights (2 keys), overlays (3), distortion (16), the second texture
+coordinate set (18) and billboards (25): effects. Android's / the Vita's key bits (word 0 first):
+word 0 - 0x1 DirLamp01, 0x4 PointLamp01, 0x20 hemisphere, 0x40 flat ambient, 0x80 CLUT, 0x100
+specular, 0xe00 its strength from the vertex alpha, 0x4000 obscure, 0x8000 the vertex colour
+tints, 0x10000 ColorSampler, 0x20000 NormalSampler, 0x80000 overlay; word 1 - 0x4000 velvet,
+0x10000 the tint includes alpha, 0x01000000 alpha test, 0x02000000 ScrollSpeedSet1,
+0x04000000 ScrollSpeedSet2, 0x10000000 OffsetSet1, 0x20000000 distortion; word 2 - 0x1 uv1, 0x4
+billboard, 0x10 fog, 0x700 LightSampler, 0x8000 skinned (0x10000 two weights). Combinations:
+obscure on the specular = 0x100 and 0x4000, the rim = 0x100 and word 1's 0x4000. `cr2tool
+shaders`: on Android the decoder agrees with every key's GLSL, bit for bit. The iPad's older
+generator lays words 1 and 2 out differently (alpha test 0x00800000, fog 0x8, ...), so its
+shaders are read from their GLSL; the Vita's keys, Android's, are decoded.
 
 Name prefixes: `d` dungeon maps (832), `eff` effects (281), `t` towns (148), `obj` objects (72),
 `m` monsters (64), `cam_z` cameras (63), `c` characters (42), `v` vistas (36), `gmk` gimmicks.
@@ -170,6 +256,8 @@ name). The skeletons are the same bytes in all three releases.
 | +0x14 u16 | hierarchy groups |
 | +0x18 | self-relative offset: the base pose, a JointTransform per joint (0x30 bytes: rotation quaternion x y z w, translation x y z + pad, scale x y z + pad) |
 | +0x20 | self-relative offset: joint name hashes (u32 each) |
+| +0x24 | self-relative offset: the user channels' names (u32 each): parameter id << 4 \| component (0x330..0x333: DiffuseColor r g b a) |
+| +0x28 | self-relative offset: the user channels' targets (u32 each): a material's hash |
 | +0x40 | the hierarchy: groups of 4 (joint, parent) u16 pairs, parents first (groups padded with repeats); parent & 0x7fff >= 0x4000: a root (the figure's root transform); bit 0x8000 clear: scale compensation |
 
 World matrices (`edgeAnimLocalJointsToWorldMatrices3x4`): world = parent world * local, except
@@ -212,6 +300,11 @@ equals the base; 1,078 constant rotations are identity, one equals the base's), 
 evaluated over an identity pose is composed onto the base as `edgeAnimBlendJointsRelative` does:
 rotation base * delta (Hamilton product), translation base + delta, scale base * delta. Each
 figure has a `<figure>.anim` with no channels (892 of them: the base layer).
+
+User channels are floats (constant ones at +0x48, animated ones' initial values after the
+scales', their keys after the scale keys aligned to 4) and absolute: MVGL's are material
+parameters (the skeleton's user channel tables) - the UI's fades and colours (`title`'s
+DiffuseColor is 0.01 placeholders in the file, the animations set it).
 
 Between the keys P and Q around frame i + f: t = (i - P + f) / (Q - P); rotations slerp on the
 short arc (lerp from a dot of 0.999), the rest lerp; channels without keys in the set run from

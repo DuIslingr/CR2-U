@@ -15,15 +15,15 @@ matching helpers (0x06 CALL: `StartCall`, 0x11 ARITH: `ARITH_OP`, 0x13 RETURN, 0
 0x30 CLOSURE: `CLOSURE_OP`, 0x33 FOREACH: `FOREACH_OP`, 0x3b CLASS: `CLASS_OP`, ...).
 
 Each script carries the whole helper library compiled in - its `main` defines `SetVar`, `GetVar`,
-`FlgOn`, `Flg`, `Msg_Open`, `Msg`, `WaitFrame`, `PlaySE`, `PlayBGM`, `CameraMove`, `ModelAnim`,
+`FlgOn`, `Flg`, `Msg_Open`, `Msg`, `WaitMessage`, `PlaySE`, `PlayBGM`, `CameraMove`, `ModelAnim`,
 `Cutin_Start`, `BattleIn`, `ReserveShop`, ... (some 300 of them; even the title's script is
 155 KB) - then its own functions, so the scripts can be read and run on their own.
 
 ## The native API
 
-`Cr3BindNativeClosure` binds 24 tables into the root table (`tools/sq_bindings.py` lists them
-from the Android library's decompilation: 219 functions, each with the native function it calls
-and its argument types):
+`Cr3BindNativeClosure` calls 24 bind functions: 23 tables into the root table, and the vector
+classes (`tools/sq_bindings.py` lists them from the Android library's decompilation: 219
+functions, each with the native function it calls and its argument types):
 
 | Table | Functions | What for |
 |---|---|---|
@@ -50,5 +50,26 @@ and its argument types):
 
 (`Cr3BindVectorStruct` adds the vector classes `tagCr3Vector3` / `tagCr3Vector4`.)
 
-So the port can run the scripts unchanged on a Squirrel 2.2.4 VM - the library is public, zlib
-licence - with these 219 functions implemented natively.
+`BindNativeClosure` adds one root function, `WaitFrame(n)`: the calling script's state becomes 3
+(waiting) with a count of n, and the VM suspends (`sq_suspendvm`) - each script runs as a
+coroutine the manager wakes again. The scripts' other waits (`WaitMessage`, `WaitTouch`, ...)
+are helpers looping on a native check and `WaitFrame(1)`.
+
+## Running them
+
+The engine runs the scripts on Squirrel 2.2.4 itself (`engine/third_party/squirrel2`,
+`engine/src/script/vm.cpp`), as the game does:
+
+- The game's compiler was 32-bit: every `SQInteger` in the stream is 4 bytes. Squirrel 2.2.4
+  makes `SQInteger` 64-bit on 64-bit hosts and reads the stream at that width, so the loader
+  first rewrites the stream with those fields widened (`Widener`: the fields of
+  `SQFunctionProto::Load`; instructions, floats and object types keep their sizes).
+- A script's `main` defines its functions; the one the game calls is named after the script
+  (its source name: `D01_01_0101_evt` for `script\d01_01_0101_evt.nut`, `title`, `credit`).
+- `engine/src/script/native_api.inc` (`tools/gen_native_api.py`) lists the 219 functions; those
+  not implemented yet are stubs that count their calls.
+
+`cr2tool scripts <archive>` loads every script and runs its `main` (all 139, in all three
+releases); `cr2tool run <archive> <script>` then calls the script's function with every native
+a stub, listing what it reached - an event plays as far as its first message (scene, animators,
+camera, lights, the window opened, the message set) and then waits on `EvtWindow.CheckMessage`.

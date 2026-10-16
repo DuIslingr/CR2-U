@@ -24,9 +24,12 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [ ] The formats: `img` (PVR v2 on the iPad), `geom` / `skel` / `anim` (models), `name`, `dat`,
       `phys`, `shad` (GLSL ES), `emta`, `message`
 - [x] The scripts surveyed (docs/SCRIPTS.md): Squirrel 2.2.4 bytecode, all 139 parsed and
-      disassembled (`tools/nut.py`); the native API they call - 24 tables, 219 functions - read
+      disassembled (`tools/nut.py`); the native API they call - 23 tables, 219 functions - read
       out of the Android library (`tools/sq_bindings.py`)
-- [ ] The script VM (Squirrel 2.2.4) and the native API
+- [x] The script VM: the game's own Squirrel 2.2.4 (`engine/third_party/squirrel2`); every
+      script loads and runs its `main` in all three releases (`cr2tool scripts`), events run up to
+      their first wait with the native API stubbed (`cr2tool run`)
+- [ ] The native API (219 functions) for real
 - [ ] Engine: a model viewer first, then the field, events, battles, menus
 
 ## What you need
@@ -54,11 +57,12 @@ One or more of:
 
 | Path | Purpose |
 |---|---|
+| `engine/` | the C++17 engine (`cr2core`) and `cr2tool` (`cmake -S engine -B engine/build && cmake --build engine/build`) |
 | `docs/` | format and engine notes |
 | `tools/` | analysis / extraction tools; they work on your own copy |
 | `re/`, `extracted/` | (not in the repository) local RE output and decoded assets - never commit or share |
 
 ## Licence
 
-GPL-2.0-or-later (`LICENSE`). Chaos Rings II is © Square Enix; this project is not affiliated with
+GPL-2.0-or-later (`LICENSE`); the bundled libraries keep their own (`THIRD_PARTY.md`). Chaos Rings II is © Square Enix; this project is not affiliated with
 or endorsed by Square Enix or Media.Vision.

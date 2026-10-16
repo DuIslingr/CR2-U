@@ -71,17 +71,17 @@ def main(argv):
             if m and not m.group(1).startswith(('local_', 'PTR_', 'puVar', 'pvVar', 'pSVar', 'DAT_')):
                 native = m.group(1)
                 continue
-            m = re.match(r'FUN_[0-9a-f]+\(&\w+,(?:"([^"]*)"|&DAT_([0-9a-f]+)),&\w+,(.*)\);$', line)
+            m = re.match(r'FUN_[0-9a-f]+\(&\w+,(?:"([^"]*)"|&DAT_([0-9a-f]+)),&\w+,(.*)\);?$', line)
             if m and native:
                 nm = m.group(1) or lib_string(lib, int(m.group(2), 16)) or 'DAT_' + m.group(2)
                 pending.append((nm, native, signature(m.group(3))))
                 native = None
                 continue
-            m = re.match(r'sq_pushstring\(\w+,(?:"([^"]*)"|&DAT_([0-9a-f]+)),0xffffffff\);$', line)
+            m = re.match(r'sq_pushstring\(\w+,(?:"([^"]*)"|&DAT_([0-9a-f]+)),0xffffffff\);?$', line)
             if m:
                 name = m.group(1) or lib_string(lib, int(m.group(2), 16)) or 'DAT_' + m.group(2)
                 continue
-            m = re.match(r'sq_newclosure\(\w+,(.*),1\);$', line)
+            m = re.match(r'sq_newclosure\(\w+,(.*),1\);?$', line)
             if m and name and native:
                 pending.append((name, native, signature(m.group(1))))
                 native = name = None

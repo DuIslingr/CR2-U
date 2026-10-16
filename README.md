@@ -37,6 +37,10 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] A model viewer (`cr2view`): any figure of any of the three releases, textured; rendered with
       Vulkan 1.3 by default, OpenGL 3.3 where Vulkan can't start (`--renderer opengl`) - CR1:U's
       device layer, with CR2's vertices and the game's shading
+- [x] The output: any resolution up to 3840 x 2160 (16:9 presets, or the window's own shape),
+      shown at its shape in any window (letterboxed); AMD FSR 3.1 temporal upscaling (native AA,
+      quality, balanced, performance, ultra performance; Vulkan) with the scene's motion vectors -
+      skinned figures, the camera, the fields' scrolling paintings - and the UI drawn after it
 - [x] Skeletons (`skel`: Sony Edge Animation's, ported) and the meshes' inverse bind matrices
 - [x] Animations (`anim`): Edge Animation's frame sets and keyframes, decoded and checked
       (`tools/anim.py`)
@@ -87,6 +91,8 @@ One or more of:
 | | |
 |---|---|
 | `cr2view --data <archive> [--model name] [--anim name --time s] [--lights figure\|none] [--renderer vulkan\|opengl] [--capture out.bmp]` | the model viewer: drag to turn, the wheel to zoom, Left / Right for the other models, Up / Down for the figure's animations, Space to pause |
+| `cr2view --data <archive> --event <function> [--vista map] [--page s]` | an event: Return or a click turns a message's page |
+| `cr2view ... [--resolution WxH] [--upscaler off\|fsr3] [--quality native\|quality\|balanced\|performance\|ultra] [--sharpness 0..1] [--size WxH] [--run s]` | the output in any mode: frames of a resolution up to 3840 x 2160 (F1 steps through the window's size and 720p .. 2160p), FSR 3.1 (F2 steps through its modes), the window's size; a capture `--run`s that long first |
 | `cr2view --data <archive> --field <map> [--model c001] [--at point] [--binary file] [--walk sx,sy,s]` | a field: the arrow keys run the character (Shift walks) on the floors and against the walls; the maps' table comes from the executable beside the iPad's / Vita's archive, or `--binary` (Android: `lib/armeabi-v7a/libChaosRings2.so`) |
 | `cr2tool check / scripts / run / images / models / compare-models / animations / pose / shaders / walk / exits / fieldscript` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared, the shader keys against their GLSL, the field player on every map, every map's exits, every map's entry script |
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |

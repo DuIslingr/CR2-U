@@ -231,6 +231,7 @@ FieldFrame FieldMap::frame(int w, int h, const float* focus) const {
         bx = sx * 0.4f, by = sy * 0.4f;
     }
     out.scroll[0] = sx, out.scroll[1] = sy;
+    out.zNear = near_, out.zFar = far_, out.fovY = fovY_;
     // (the game keeps the offsets as ints)
     const float ox = std::trunc(sx), oy = std::trunc(sy);
     out.scene = info_.noBackground ? vp : mat4Multiply(screen(scale3d, ox / W, oy / H), vp);

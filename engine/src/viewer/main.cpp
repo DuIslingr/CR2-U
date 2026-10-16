@@ -17,19 +17,28 @@
 // screen's fades - 20 updates a second. A message's pages turn on Return or a click (or by
 // themselves after --page seconds; 0 never). --time runs the event that far first.
 //
+// The output: --resolution WxH (up to 3840 x 2160; F1 steps through the window's own size and the
+// 16:9 ones) renders frames of that size, shown in the window at their shape (letterboxed; GL
+// draws into the window, the resolution's shape letterboxed in it). --upscaler fsr3 (F2 steps
+// through its modes) renders the scene smaller - --quality native (AA at full size), quality
+// (1.5x), balanced (1.7x), performance (2x), ultra (3x) - and AMD FSR 3.1 resolves it into the
+// frame, with --sharpness (0..1, 0.3) for its RCAS pass; Vulkan only.
+//
 // Vulkan by default, OpenGL where Vulkan can't start (or with --renderer opengl).
 //
 //   cr2view --data <CRDB.ios.mvgl | main.212...obb | CRDB.psp2.mvgl> [--model <name>]
 //           [--anim <name>] [--time s] [--size WxH] [--yaw deg] [--pitch deg]
 //           [--lights <figure> | none] [--field <map> [--at <point>] [--binary <file>]
 //           [--walk sx,sy,seconds]] [--event <function> [--vista <map>] [--page s]]
+//           [--resolution WxH] [--upscaler off|fsr3 [--quality q] [--sharpness s]] [--run s]
 //           [--renderer vulkan|opengl] [--capture out.bmp]
 //
 // Models: drag to turn, the wheel to zoom, Left / Right (or PageUp / PageDown) for the archive's
 // other models, Up / Down for the figure's animations. Fields: the arrow keys (or WASD) run,
 // with Shift walk, on the map's floors and against its walls;
 // PageUp / PageDown for the character's animations. Space pauses, Esc quits. --capture draws
-// one frame (at --time) to a BMP and exits.
+// one frame (at --time; --run plays that many seconds more first, 60 frames a second) to a BMP
+// and exits.
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -282,6 +291,7 @@ struct Viewer {
     // the model viewer's figure: the archive's model `index`
     bool load(size_t index) {
         current = index;
+        dev->resetHistory();
         const std::string& name = models[index];
         std::string err;
         if (!loadFigure(name, fig, &err)) {
@@ -477,9 +487,34 @@ struct Viewer {
         dev->drawQuad(*t, v, proj.data(), kWhite);
     }
 
-    void draw(int w, int h) {
-        dev->beginFrame(w, h);
-        dev->setViewport(0, 0, float(w), float(h));
+    // The output: a chosen resolution (0 x 0: the window's), and the temporal upscaler (Vulkan)
+    int resW = 0, resH = 0;
+    cr2::UpscaleSettings upscale;
+    int screenX = 0, screenY = 0, screenW = 1, screenH = 1; // the game's screen in the frame
+
+    // A frame of fw x fh: the game's screen all of it (an offscreen device's frames are the
+    // chosen resolution, letterboxed into the window when shown), or - drawing straight into the
+    // window (GL) - the resolution's shape letterboxed in it. The scene (smaller while an
+    // upscaler is on), then the UI over the resolved frame at full size.
+    void draw(int fw, int fh) {
+        dev->beginFrame(fw, fh);
+        screenX = screenY = 0, screenW = fw, screenH = fh;
+        if (!dev->offscreen() && resW > 0 && resH > 0) {
+            if (int64_t(resW) * fh > int64_t(fw) * resH) screenH = std::max(int(int64_t(fw) * resH / resW), 1);
+            else screenW = std::max(int(int64_t(fh) * resW / resH), 1);
+            screenX = (fw - screenW) / 2, screenY = (fh - screenH) / 2;
+        }
+        int rw = fw, rh = fh;
+        dev->sceneSize(fw, fh, rw, rh);
+        const float kx = float(rw) / float(fw), ky = float(rh) / float(fh);
+        dev->setViewport(screenX * kx, screenY * ky, screenW * kx, screenH * ky);
+        drawScene(screenW, screenH);
+        dev->endScene();
+        dev->setViewport(float(screenX), float(screenY), float(screenW), float(screenH));
+        if (eventMode) drawEventUi();
+    }
+
+    void drawScene(int w, int h) {
         if (eventMode) {
             drawEvent(w, h);
             return;
@@ -487,6 +522,7 @@ struct Viewer {
         if (fieldMode) {
             // FldMain's order: the background (and midground), the 3D figures, the foreground
             const cr2::FieldFrame fr = field.frame(w, h, player);
+            dev->setCamera(fr.zNear, fr.zFar, fr.fovY * 3.14159265f / 180);
             cr2::SceneLighting l = field.lighting();
             std::memcpy(l.camera, fr.camera, sizeof l.camera);
             l.time = time;
@@ -506,9 +542,9 @@ struct Viewer {
         std::memcpy(l.camera, eye, sizeof l.camera);
         l.time = time;
         dev->setLighting(l);
-        const Mat4 mvp = cr2::mat4Multiply(
-            perspective(0.7f, float(w) / float(std::max(h, 1)), fig.radius * 0.01f * zoom, fig.radius * 20 * zoom + d),
-            lookAt(eye, fig.centre));
+        const float zn = fig.radius * 0.01f * zoom, zf = fig.radius * 20 * zoom + d;
+        dev->setCamera(zn, zf, 0.7f);
+        const Mat4 mvp = cr2::mat4Multiply(perspective(0.7f, float(w) / float(std::max(h, 1)), zn, zf), lookAt(eye, fig.centre));
         drawFigure(fig, mvp.data());
     }
 
@@ -581,6 +617,7 @@ struct Viewer {
         }
         fieldMode = true;
         exitsArmed = false;
+        dev->resetHistory();
         controller = std::make_unique<cr2::CharacterController>(field.collision());
         controller->setPosition({player[0], player[1] + 0.17f, player[2]}); // (dropped onto the floor)
         for (int k = 0; k < 30; ++k) walk(1.0f / 60.0f, 0, 0, false);
@@ -635,6 +672,7 @@ struct Viewer {
             return false;
         }
         eventMode = true;
+        dev->resetHistory();
         stepEvent(); // (the update the game starts it in)
         status = function + " in " + map;
         SDL_Log("event %s: vista %s, %zu scene models", function.c_str(), map.c_str(), event->scene().models().size());
@@ -707,6 +745,13 @@ struct Viewer {
         cr2::Mat34 cw;
         float fov = 45, zn = 0.1f, zf = 100;
         if (event->sceneShown() && event->scene().camera(cw, fov, zn, zf)) {
+            // a cut (the camera jumps between frames): the upscaler's history says nothing of it
+            const float* lp = lastCamera.m;
+            const float moved = std::hypot(cw.m[3] - lp[3], cw.m[7] - lp[7], cw.m[11] - lp[11]);
+            const float turned = cw.m[2] * lp[2] + cw.m[6] * lp[6] + cw.m[10] * lp[10]; // the view axes' cosine
+            if (moved > 0.05f * std::max(zn * 20, 0.1f) || turned < 0.97f) dev->resetHistory();
+            lastCamera = cw;
+            dev->setCamera(zn, zf, fov * 3.14159265f / 180);
             const Mat4 world = cr2::mat4FromMat34(cw);
             const Mat4 vp = cr2::mat4Multiply(perspective(fov * 3.14159265f / 180, float(w) / float(std::max(h, 1)), zn, zf),
                                               cr2::mat4RigidInverse(world));
@@ -721,7 +766,12 @@ struct Viewer {
             for (size_t i = 0; i < models.size() && i < eventFigures.size(); ++i)
                 if (models[i].visible) drawFigure(eventFigures[i], vp.data());
         }
-        // the fade over it all
+    }
+
+    cr2::Mat34 lastCamera;
+
+    // the event's UI, over the resolved scene: the fade over it all
+    void drawEventUi() {
         const cr2::EventFade& fd = event->fade();
         if (fd.alpha > 0 && white.id) {
             static const float kScreen[24] = {-1, -1, 0, 0, 1, -1, 1, 0, 1, 1, 1, 1, -1, -1, 0, 0, 1, 1, 1, 1, -1, 1, 0, 1};
@@ -742,6 +792,25 @@ bool saveBmp(const char* path, const std::vector<uint8_t>& rgba, int w, int h) {
     return ok;
 }
 
+// The output resolutions F1 steps through: the window's own size, then 16:9 up to 3840 x 2160
+const int kResolutions[][2] = {{0, 0}, {1280, 720}, {1600, 900}, {1920, 1080}, {2560, 1440}, {3200, 1800}, {3840, 2160}};
+constexpr int kMaxResW = 3840, kMaxResH = 2160;
+
+// FSR 3.1's quality modes (the output / render ratio per axis; native AA renders at full size)
+struct Quality {
+    const char* name;
+    float ratio;
+};
+const Quality kQualities[] = {{"native", 1.0f}, {"quality", 1.5f}, {"balanced", 1.7f}, {"performance", 2.0f}, {"ultra", 3.0f}};
+
+std::string upscaleName(const cr2::UpscaleSettings& u) {
+    if (u.mode == cr2::Upscaler::Off) return "off";
+    std::string q = "x" + std::to_string(u.ratio);
+    for (const Quality& k : kQualities)
+        if (k.ratio == u.ratio) q = k.name;
+    return std::string(u.mode == cr2::Upscaler::Fsr3 ? "FSR 3.1 " : "DLSS ") + q;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -749,7 +818,11 @@ int main(int argc, char** argv) {
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
     std::string eventName, vista = "null";
     float page = 3.0f;
-    int width = 1280, height = 800;
+    int width = 0, height = 0;    // the window (--size; else the resolution's, fitted to the display)
+    int resW = 0, resH = 0;       // --resolution: the output frames (else the window's)
+    std::string upscaler = "off", quality = "quality";
+    float sharpness = 0.3f;
+    float runSeconds = 0; // --run: a capture plays this long first, 60 frames a second
     float yaw = 30, pitch = 15, startTime = 0;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -771,11 +844,32 @@ int main(int argc, char** argv) {
         else if (a == "--event" && next) eventName = next, ++i;
         else if (a == "--vista" && next) vista = next, ++i;
         else if (a == "--page" && next) page = float(std::atof(next)), ++i;
+        else if (a == "--resolution" && next) std::sscanf(next, "%dx%d", &resW, &resH), ++i;
+        else if (a == "--upscaler" && next) upscaler = next, ++i;
+        else if (a == "--quality" && next) quality = next, ++i;
+        else if (a == "--run" && next) runSeconds = float(std::atof(next)), ++i;
+        else if (a == "--sharpness" && next) sharpness = std::clamp(float(std::atof(next)), 0.0f, 1.0f), ++i;
+    }
+    if (resW || resH) {
+        if (resW < 320 || resH < 180 || resW > kMaxResW || resH > kMaxResH)
+            return std::fprintf(stderr, "--resolution: 320x180 up to %dx%d\n", kMaxResW, kMaxResH), 2;
+    }
+    cr2::UpscaleSettings upscale;
+    upscale.sharpness = sharpness;
+    if (upscaler == "fsr3" || upscaler == "fsr") upscale.mode = cr2::Upscaler::Fsr3;
+    else if (upscaler == "dlss") upscale.mode = cr2::Upscaler::Dlss;
+    else if (upscaler != "off") return std::fprintf(stderr, "--upscaler: off, fsr3 or dlss\n"), 2;
+    {
+        const auto q = std::find_if(std::begin(kQualities), std::end(kQualities), [&](const Quality& k) { return quality == k.name; });
+        if (q == std::end(kQualities)) return std::fprintf(stderr, "--quality: native, quality, balanced, performance or ultra\n"), 2;
+        upscale.ratio = q->ratio;
     }
     if (data.empty()) {
         std::fprintf(stderr, "cr2view --data <archive> [--model name] [--anim name] [--time s] [--size WxH] [--yaw deg] "
                              "[--pitch deg] [--lights figure|none] [--field map [--at point] [--binary file]] "
-                             "[--event function [--vista map] [--page s]] [--renderer vulkan|opengl] [--capture out.bmp]\n");
+                             "[--event function [--vista map] [--page s]] [--resolution WxH] [--upscaler off|fsr3|dlss "
+                             "[--quality native|quality|balanced|performance|ultra] [--sharpness 0..1]] "
+                             "[--renderer vulkan|opengl] [--capture out.bmp]\n");
         return 2;
     }
     Viewer v;
@@ -799,6 +893,16 @@ int main(int argc, char** argv) {
     v.yaw = yaw, v.pitch = pitch;
 
     if (!SDL_Init(SDL_INIT_VIDEO)) return std::fprintf(stderr, "SDL: %s\n", SDL_GetError()), 1;
+    // The window: --size, else a capture's the resolution itself, else the resolution's shape
+    // fitted to 90% of the display (the frames stay the resolution, scaled into it)
+    if (!width || !height) {
+        width = resW ? resW : 1280, height = resW ? resH : 800;
+        SDL_Rect usable{};
+        if (capture.empty() && SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &usable) && usable.w > 0 && usable.h > 0) {
+            const float fit = std::min({1.0f, 0.9f * float(usable.w) / float(width), 0.9f * float(usable.h) / float(height)});
+            width = std::max(int(float(width) * fit), 320), height = std::max(int(float(height) * fit), 180);
+        }
+    }
     // The device: Vulkan unless asked otherwise or it can't start, then OpenGL
     std::unique_ptr<cr2::RenderDevice> dev;
     SDL_Window* win = nullptr;
@@ -820,6 +924,13 @@ int main(int argc, char** argv) {
     }
     if (!dev) return std::fprintf(stderr, "no renderer could start\n"), 1;
     v.dev = dev.get();
+    v.resW = resW, v.resH = resH;
+    if (upscale.mode != cr2::Upscaler::Off) {
+        const std::string why = dev->upscalerProblem(upscale.mode);
+        if (!why.empty()) SDL_Log("upscaler %s: %s - off", upscaler.c_str(), why.c_str()), upscale.mode = cr2::Upscaler::Off;
+    }
+    v.upscale = upscale;
+    dev->setUpscaler(upscale);
     v.shaders = std::make_unique<cr2::ShaderLibrary>(v.archive);
     if (!fieldName.empty()) {
         if (!v.loadField(fieldName, at, binary, data)) return 1;
@@ -846,10 +957,42 @@ int main(int argc, char** argv) {
     v.pose();
     SDL_Log("%s%s", v.status.c_str(), v.animStatus().c_str());
 
+    // a frame's size: the resolution where the device draws offscreen, else the window's
+    auto frameSize = [&](int& w, int& h) {
+        SDL_GetWindowSizeInPixels(win, &w, &h);
+        if (dev->offscreen() && v.resW > 0 && v.resH > 0) w = v.resW, h = v.resH;
+    };
+    auto describe = [&]() {
+        int w = 0, h = 0;
+        frameSize(w, h);
+        // (the device's sceneSize follows the mode it last ran: this is the one set)
+        const float r = v.upscale.mode == cr2::Upscaler::Off ? 1.0f : std::clamp(v.upscale.ratio, 1.0f, 3.0f);
+        const int rw = std::max(int(float(w) / r), 1), rh = std::max(int(float(h) / r), 1);
+        char buf[160];
+        std::snprintf(buf, sizeof buf, "%dx%d%s, upscaler %s (scene %dx%d)", w, h, v.resW ? "" : " (the window's)", upscaleName(v.upscale).c_str(), rw, rh);
+        return std::string(buf);
+    };
+    SDL_Log("output: %s", describe().c_str());
+
     int code = 0;
     if (!capture.empty()) { // one frame to a file
         int w = 0, h = 0;
-        SDL_GetWindowSizeInPixels(win, &w, &h);
+        frameSize(w, h);
+        // (a temporal upscaler first gathers a still frame's history: its jitter's phases)
+        const int warmup = v.upscale.mode != cr2::Upscaler::Off ? 32 : 0;
+        for (int k = 0; k < warmup; ++k) {
+            v.draw(w, h);
+            dev->endFrame(false);
+        }
+        // --run: frames as the window would show them, the event and animations going on
+        for (int k = 0; k < int(runSeconds * 60.0f + 0.5f); ++k) {
+            v.time += 1.0f / 60.0f;
+            if (v.eventMode) v.updateEvent(1.0f / 60.0f);
+            if (v.fieldMode) v.walk(1.0f / 60.0f, walkX, walkY, true); // (on in --walk's direction)
+            v.pose();
+            v.draw(w, h);
+            dev->endFrame(false);
+        }
         v.draw(w, h);
         dev->endFrame(false);
         std::vector<uint8_t> px;
@@ -867,6 +1010,31 @@ int main(int argc, char** argv) {
                     const SDL_Keycode k = e.key.key;
                     if (k == SDLK_ESCAPE) running = false;
                     if (k == SDLK_SPACE) v.paused = !v.paused;
+                    // F1: the next resolution; F2: the upscaler's next mode (off, FSR 3.1 native
+                    // AA .. ultra performance)
+                    if (k == SDLK_F1) {
+                        size_t i = 0;
+                        while (i < std::size(kResolutions) && (kResolutions[i][0] != v.resW || kResolutions[i][1] != v.resH)) ++i;
+                        i = (i + 1) % std::size(kResolutions);
+                        v.resW = kResolutions[i][0], v.resH = kResolutions[i][1];
+                        dev->resetHistory();
+                        SDL_Log("output: %s", describe().c_str());
+                        continue;
+                    }
+                    if (k == SDLK_F2) {
+                        cr2::UpscaleSettings u = v.upscale;
+                        size_t q = 0;
+                        while (q < std::size(kQualities) && kQualities[q].ratio != u.ratio) ++q;
+                        if (u.mode == cr2::Upscaler::Off) u.mode = cr2::Upscaler::Fsr3, u.ratio = kQualities[0].ratio;
+                        else if (q + 1 < std::size(kQualities)) u.ratio = kQualities[q + 1].ratio;
+                        else u.mode = cr2::Upscaler::Off;
+                        const std::string why = dev->upscalerProblem(u.mode);
+                        if (!why.empty()) SDL_Log("upscaler: %s", why.c_str()), u.mode = cr2::Upscaler::Off;
+                        v.upscale = u;
+                        dev->setUpscaler(u);
+                        SDL_Log("output: %s", describe().c_str());
+                        continue;
+                    }
                     if (v.eventMode) {
                         if (k == SDLK_RETURN || k == SDLK_KP_ENTER) v.event->advance();
                         continue;
@@ -909,10 +1077,10 @@ int main(int argc, char** argv) {
             }
             if (v.fig.animLoaded && v.time > v.fig.anim.duration()) v.time = std::fmod(v.time, std::max(v.fig.anim.duration(), 0.05f));
             v.pose();
-            SDL_SetWindowTitle(win, ("CR2-U viewer (" + std::string(cr2::backendName(dev->windowFlags() & SDL_WINDOW_VULKAN ? cr2::Backend::Vulkan : cr2::Backend::OpenGL)) + ") - " +
-                                     v.status + v.animStatus()).c_str());
+            SDL_SetWindowTitle(win, ("CR2-U viewer (" + std::string(cr2::backendName(dev->windowFlags() & SDL_WINDOW_VULKAN ? cr2::Backend::Vulkan : cr2::Backend::OpenGL)) + ", " +
+                                     describe() + ") - " + v.status + v.animStatus()).c_str());
             int w = 0, h = 0;
-            SDL_GetWindowSizeInPixels(win, &w, &h);
+            frameSize(w, h);
             v.draw(w, h);
             dev->endFrame(true);
         }

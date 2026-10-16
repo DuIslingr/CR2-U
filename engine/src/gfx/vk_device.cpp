@@ -1,5 +1,6 @@
 // Vulkan 1.3 device. Frames render into an offscreen colour + depth target with dynamic
-// rendering, then blit to the swapchain (or stay for readPixels). GL behaviour is matched
+// rendering - any size, the window's or a chosen resolution - then blit to the swapchain, kept
+// to their shape (letterboxed), or stay for readPixels. GL behaviour is matched
 // where the game relies on it:
 // - clip space: matrices arrive GL-style; depth is remapped to 0..1 and the viewport height
 //   is negative, so images and triangle winding come out as in GL;
@@ -700,11 +701,26 @@ public:
             VkImage dst = swapImages_[image];
             barrier(cmd_, dst, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0,
                     VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+            // The frame keeps its shape in the window: scaled to fit, centred, black bars around
+            const int sw = int(swapExtent_.width), sh = int(swapExtent_.height);
+            int dw = sw, dh = sh;
+            if (int64_t(targetW_) * sh > int64_t(sw) * targetH_) dh = std::max(int(int64_t(sw) * targetH_ / targetW_), 1);
+            else dw = std::max(int(int64_t(sh) * targetW_ / targetH_), 1);
+            const int dx = (sw - dw) / 2, dy = (sh - dh) / 2;
+            if (dw != sw || dh != sh) {
+                const VkClearColorValue black{{0, 0, 0, 1}};
+                const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                vkCmdClearColorImage(cmd_, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
+                barrier(cmd_, dst, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+            }
             VkImageBlit blit{};
             blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
             blit.srcOffsets[1] = {targetW_, targetH_, 1};
             blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-            blit.dstOffsets[1] = {int32_t(swapExtent_.width), int32_t(swapExtent_.height), 1};
+            blit.dstOffsets[0] = {dx, dy, 0};
+            blit.dstOffsets[1] = {dx + dw, dy + dh, 1};
             vkCmdBlitImage(cmd_, colorImage_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            1, &blit, VK_FILTER_LINEAR);
             barrier(cmd_, dst, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -781,6 +797,13 @@ public:
         ScenePushConstants pc{};
         toVulkanClip(proj, pc.base.matrix);
         std::memcpy(pc.base.color, rgba, sizeof pc.base.color);
+        if (inScene_) {
+            // Quad n of this texture: its matrix last frame (the fields' paintings scroll)
+            const uint64_t id = uint64_t(1) << 63 | uint64_t(tex.id) << 20 | drawCounts_[0x80000000u | tex.id]++;
+            std::memcpy(historyNext_[id].matrix, pc.base.matrix, sizeof pc.base.matrix);
+            const auto it = history_.find(id);
+            std::memcpy(pc.prevMatrix, it != history_.end() ? it->second.matrix : pc.base.matrix, sizeof pc.prevMatrix);
+        }
         pushConstants(pc);
         bindTexture(0, tex.id - 1, 15); // clamp, linear
         vkCmdBindVertexBuffers(cmd_, 0, 1, &buf, &off);

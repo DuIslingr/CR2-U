@@ -4,10 +4,16 @@
 layout(location = 0) in vec2 aPos;
 layout(location = 1) in vec2 aUV;
 layout(location = 0) out vec2 vUV;
+#ifdef SCENE
+layout(location = 2) out vec4 vCur;  // (the fields' paintings scroll: their motion is their
+layout(location = 3) out vec4 vPrev; //  matrix's since last frame)
+#endif
 void main() {
     vUV = aUV;
     gl_Position = pc.matrix * vec4(aPos, 0.0, 1.0);
 #ifdef SCENE
+    vCur = gl_Position;
+    vPrev = pc.prevMatrix * vec4(aPos, 0.0, 1.0);
     gl_Position.xy += pc.motion.xy * gl_Position.w;
 #endif
 }

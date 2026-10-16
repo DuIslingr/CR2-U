@@ -38,6 +38,7 @@ struct FieldFrame {
     Mat4 midground{}, foreground{};
     float camera[3] = {0, 0, 0}; // the 3D camera's position (CameraPosition)
     float scroll[2] = {0, 0};    // FldMap +0x30 / +0x34: the screen offset, in its units
+    float zNear = 1, zFar = 5000, fovY = 45; // the 3D camera's projection (fovY in degrees)
 };
 
 class FieldMap {

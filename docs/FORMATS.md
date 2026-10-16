@@ -167,3 +167,35 @@ parent's own local scale (its translation the parent's whole matrix). Skinning m
 column: `MatrixPalette`'s rows. `tools/skel.py check`: in every release, 73.7% of the joints the
 meshes skin to have base pose * inverse bind = identity - the base pose is the bind pose but where
 a figure's is posed otherwise (effects and map pieces mostly: theirs is animated).
+
+### Animations
+
+Every animation in the game uses Edge's fixed formats (no packing specs at +0x4c; the decoder for
+packed ones - per-channel bit specs: sign, exponent and mantissa widths per component - is in the
+library but unused). From `_edgeAnimEvaluate` and the frame search it calls:
+
+| Header | |
+|---|---|
+| +0x00 | `EA04` (`40AE` as bytes) |
+| +0x04 f, +0x08 f | duration (s), sample rate (20 Hz) |
+| +0x0c u16 | header size |
+| +0x0e u16, +0x10 u16, +0x12 u16 | joints, frames, frame sets |
+| +0x16..+0x24 u16 | channel counts: constant rotation, translation, scale, user; animated rotation, translation, scale, user |
+| +0x34, +0x38 | self-relative: the frame sets' DMA array (u16, u16 size, u32 offset) and info (u16 start frame, u16 count) |
+| +0x3c..+0x48 | self-relative: the constant rotation / translation / scale / user data |
+| +0x60 | each channel's joint (u16), in the counts' order; the first table padded to 8 entries, the others to 4 |
+
+A rotation is 6 bytes, the smallest three of a unit quaternion: three 15-bit values, (v - 16383.5)
+/ 23169.768, the dropped one's index in the low 2 bits (rebuilt as sqrt(1 - the others' squares));
+a translation or scale 3 little-endian floats.
+
+A frame set covers its local frames 0 .. count: 8 u16 sizes (initial rotation, translation, scale,
+user; key rotation, translation, scale, user - padded to 4), the initial values (local frame 0),
+one keyframe bit per animated channel per frame (frames 1 .. count, MSB first; rotation channels,
+then translation, scale, user), the keys (each channel's in turn), and - aligned to 16 - the next
+set's header and initial values (local frame count + 1), so a set reaches the next one alone.
+Between the keys P and Q around frame i + f: t = (i - P + f) / (Q - P); rotations slerp on the
+short arc (lerp from a dot of 0.999), the rest lerp; channels without keys in the set run from
+the initial value to the next set's. `tools/anim.py check`: in all three releases every frame set
+is as its sizes say, every driven rotation is unit length, and all 10742..12340 boundaries are
+continuous to 1e-8 (the Vita splits its animations into more frame sets).

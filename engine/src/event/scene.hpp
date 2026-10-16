@@ -50,12 +50,16 @@ public:
 
     // a frame's time passing: the moves, the camera and the lights advance
     void update(float dt);
+    // `lead` seconds on from the last update (a frame drawn between the game's updates: less
+    // than 0.05 s; the timelines are linear in time, so this is where they will be): a model's
+    // place, the camera, the lights
+    Mat34 placeAt(const EventModel& m, float lead) const;
 
     // the camera now: its world matrix (looking down -Z), vertical field of view (degrees), near, far
     // (VistaCamera::Init: near at least 0.05, far five times - at most 5000 - but for two events')
-    bool camera(Mat34& world, float& fovY, float& zn, float& zf) const;
+    bool camera(Mat34& world, float& fovY, float& zn, float& zf, float lead = 0) const;
     // the lights now (the light figure's, posed); false: none
-    bool lights(SceneLighting& out) const;
+    bool lights(SceneLighting& out, float lead = 0) const;
 
 private:
     struct Figure {
@@ -66,6 +70,7 @@ private:
         std::vector<Mat34> world(float t) const;
     };
     void place(EventModel& m);
+    Mat34 locator(const std::string& name, float sceneTime) const;
     bool loaded_ = false;
     std::string name_;
     Figure scene_, camera_, light_;

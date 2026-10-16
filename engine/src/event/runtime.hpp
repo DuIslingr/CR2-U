@@ -10,6 +10,7 @@
 // script (ScriptManager::Update: a WaitFrame(n) - WaitProcessor - counts n updates down, then the
 // script resumes), the windows, the fade. tick() is one of those updates.
 
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <string>
@@ -29,6 +30,11 @@ struct EventFade {
     float alpha = 0, target = 0, step = 0;
     void start(int colour, int frames, float from, float to);
     void update();
+    // the opacity `fraction` (0..1) of an update on from the last
+    float at(float fraction) const {
+        const float d = step * std::clamp(fraction, 0.0f, 1.0f);
+        return alpha < target ? std::min(alpha + d, target) : std::max(alpha - d, target);
+    }
 };
 
 class EventRuntime {

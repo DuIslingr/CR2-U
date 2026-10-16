@@ -103,7 +103,9 @@ models' locators: `ev_v001`, `ev_v206_00`, ...), `<event>_camera` (an animated c
 (TestApp::onUpdate: no sooner than 0.05 s after the last; the skip button runs 5 updates a
 frame), in GameMain::Update's order: the scene (EvtScene::Update, the camera, the lights), the
 scripts (ScriptManager::Update: a `WaitFrame(n)` counts n updates down - WaitProcessor - and the
-script resumes), the windows, the fade (Cr3Fade::Update). The scripts drive:
+script resumes), the windows, the fade (Cr3Fade::Update). The engine draws 60 frames a second
+over those updates: its timelines being linear in time, a frame between updates shows the
+camera, the moves, the animations and the fades where they are by then. The scripts drive:
 
 - **the scene** (`EvtScene`): `Init(event)`, `Visible(model, on)`, `ChangeAnimator(model,
   "e826", loop)` (the model plays `<figure>e826`, its figure the name up to `_NN`),

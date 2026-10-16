@@ -17,10 +17,11 @@
 //   cr2tool pose <archive> <figure> <anim> <frame>   the animation's pose at a frame (joint: R, T, S)
 //   cr2tool images <archive> [pattern [out dir]]     every texture decodes (formats counted);
 //                                                    with a folder, those matching as .tga
-//   cr2tool walk <archive> <executable> [map]       the field player (field/character.hpp) on every
-//                                                    map's floors: dropped at each pop point (else
-//                                                    defaultPos), run 4 s in 8 directions - on a
-//                                                    floor throughout, never through a wall
+//   cr2tool walk <archive> <executable> [map]       the field player (field/character.hpp, in the
+//                                                    game's updates) on every map's floors: dropped
+//                                                    at each pop point (else defaultPos), run 4 s in
+//                                                    8 directions - on a floor throughout, never
+//                                                    beyond a wall
 //   cr2tool exits <archive> <executable>             every map's exits: the map each leads to (the
 //                                                    pop point's first five letters) is there and
 //                                                    has that point
@@ -545,9 +546,23 @@ int walk(const char* path, const char* binary, const char* only) {
         ++maps;
         const cr2::CollisionWorld& w = field.collision();
         auto floorBelow = [&](const cr2::Vec3& p) { return !w.surfaceBelow(p, 0.5f).empty(); };
-        auto throughWall = [&](const cr2::Vec3& from, const cr2::Vec3& to) {
-            cr2::CollisionWorld::Hit h;
-            return w.sweep(from, to, 0.001f, {0, 1, 0}, -2.0f, h) && std::fabs(h.normal[1]) < 0.7f;
+        // along the controller's own path in an update (playerStep): up a step, across at that
+        // height, down - not the straight line, which cuts the corners of the steps it climbs down.
+        // A hit: the wall's plane (a point on it, its normal towards where the player came from)
+        auto throughWall = [&](const cr2::Vec3& from, const cr2::Vec3& to, cr2::Vec3* at = nullptr, cr2::Vec3* normal = nullptr) {
+            const float up = 0.01f; // (the step height)
+            const float across = std::max(from[1], to[1]) + up;
+            const cr2::Vec3 path[4] = {from, {from[0], across, from[2]}, {to[0], across, to[2]}, to};
+            for (int k = 0; k < 3; ++k) {
+                cr2::CollisionWorld::Hit h;
+                if (w.sweep(path[k], path[k + 1], 0.001f, {0, 1, 0}, -2.0f, h) && std::fabs(h.normal[1]) < 0.7f) {
+                    if (at)
+                        for (int c = 0; c < 3; ++c) (*at)[c] = path[k][c] + (path[k + 1][c] - path[k][c]) * h.fraction;
+                    if (normal) *normal = h.normal;
+                    return true;
+                }
+            }
+            return false;
         };
         // from where the game puts the player: each pop point (an exit's arrival), else defaultPos
         std::vector<std::pair<std::string, cr2::Vec3>> starts;
@@ -558,7 +573,7 @@ int walk(const char* path, const char* binary, const char* only) {
         for (const auto& [from, at] : starts) {
             cr2::CharacterController c(w);
             c.setPosition({at[0], at[1] + 0.17f, at[2]});
-            for (int k = 0; k < 60; ++k) c.setVelocity({0, 0, 0}), c.step();
+            for (int k = 0; k < 60; ++k) c.update({0, 0, 0}); // (3 s of the game's updates)
             const cr2::Vec3 rest = c.position();
             ++points;
             if (!(c.onGround() && floorBelow(rest))) {
@@ -573,13 +588,30 @@ int walk(const char* path, const char* binary, const char* only) {
                 const float ang = float(dir) * 0.785398f;
                 const cr2::Vec3 v{0.48f * std::sin(ang), 0, 0.48f * std::cos(ang)};
                 bool off = false, tunnel = false;
-                for (int k = 0; k < 240; ++k) {
+                // a crossing counts when the player stays beyond the wall's plane: the next 10 updates
+                // all past it (Bullet's controller jitters in creases at the game's step, its centre
+                // dipping past a wall and straight back)
+                bool pending = false;
+                int pendingFor = 0;
+                cr2::Vec3 wallAt{}, wallNormal{};
+                auto beyond = [&](const cr2::Vec3& p) {
+                    return (p[0] - wallAt[0]) * wallNormal[0] + (p[1] - wallAt[1]) * wallNormal[1] + (p[2] - wallAt[2]) * wallNormal[2] < -0.002f;
+                };
+                for (int k = 0; k < 80; ++k) { // (4 s of the game's updates)
                     const cr2::Vec3 before = c.position();
-                    c.setVelocity(v);
-                    c.step();
+                    c.update(v);
                     if (!off && !floorBelow(c.position())) off = true;
-                    if (!tunnel && throughWall({before[0], before[1], before[2]}, c.position())) tunnel = true;
+                    if (pending) {
+                        if (!beyond(c.position())) pending = false; // (back)
+                        else if (++pendingFor >= 10) tunnel = true, pending = false;
+                    } else if (!tunnel && throughWall(before, c.position(), &wallAt, &wallNormal)) {
+                        pending = beyond(c.position()), pendingFor = 0;
+                    }
                 }
+                if (pending) tunnel = true;
+                if (tunnel && std::getenv("CR2_WALK_DEBUG"))
+                    std::printf("    the wall at (%.4f %.4f %.4f), normal (%.3f %.3f %.3f); ends (%.4f %.4f %.4f)\n", wallAt[0], wallAt[1],
+                                wallAt[2], wallNormal[0], wallNormal[1], wallNormal[2], c.position()[0], c.position()[1], c.position()[2]);
                 const cr2::Vec3 end = c.position();
                 offFloor += off;
                 tunnels += tunnel;

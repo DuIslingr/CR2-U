@@ -3,9 +3,15 @@
 // CharacterController wraps (FldPlayer::Init: a 0.02-radius sphere, steps of 0.01; gravity 29.4,
 // fall speed 55, slopes to 45 degrees - Bullet's defaults, never changed), ported: each step up
 // (the step height), across (sliding along what it meets, Bullet's way) and down (onto a
-// walkable floor, or falling), after pushing out of anything it overlaps. FldPlayer::Update gives
-// it a velocity each frame (setVelocityForTimeInterval for 0.05 s: walking 0.09 units a second,
-// running 0.48) and the world steps it at a fixed 1/60 s.
+// walkable floor, or falling), after pushing out of anything it overlaps. The game updates 20
+// times a second; each update FldPlayer::Update gives it a velocity (direction x speed x dt x 60,
+// dt 0.05: setVelocityForTimeInterval for 0.05 s) and FldMain steps the world once
+// (stepSimulation(dt, 1 substep, 1/60): one 1/60 s step, the rest of the 0.05 s dropped) - so it
+// moves the speed's units a second (walking 0.09, running 0.48) while its gravity runs at a third
+// of real time. Here that 1/60 s of the world's time is three steps of 1/180 s, one each 1/60 s
+// of real time - the same speed and gravity, the walls met as finely as the speed allows (at the
+// game's one big step Bullet's sphere can wedge past a wall's plane in a crease) and a position
+// for each of 60 frames a second. update() is one of the game's updates, all three at once.
 
 #include "field/collision.hpp"
 
@@ -21,6 +27,20 @@ public:
     void setVelocity(const Vec3& v);
     // one world step (btKinematicCharacterController::updateAction: preStep, playerStep)
     void step(float dt = 1.0f / 60.0f);
+    // the move FldPlayer::Update asks for (units a second, along the ground): its velocity for
+    // the update (direction x speed x dt x 60)
+    void move(const Vec3& unitsPerSecond) {
+        setVelocity({unitsPerSecond[0] * kUpdate * 60, 0, unitsPerSecond[2] * kUpdate * 60});
+    }
+    // a third of the world's 1/60 s step an update takes
+    void substep() { step(1.0f / (60.0f * kSubsteps)); }
+    // one of the game's updates (0.05 s): moving at `unitsPerSecond`, the world's 1/60 s
+    void update(const Vec3& unitsPerSecond) {
+        move(unitsPerSecond);
+        for (int k = 0; k < kSubsteps; ++k) substep();
+    }
+    static constexpr float kUpdate = 0.05f;
+    static constexpr int kSubsteps = 3;
     bool onGround() const { return verticalVelocity_ == 0 && verticalOffset_ == 0; }
 
     float radius = 0.02f, stepHeight = 0.01f;

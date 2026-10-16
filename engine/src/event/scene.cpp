@@ -72,11 +72,20 @@ EventModel* EventScene::model(const std::string& name) {
     return nullptr;
 }
 
+Mat34 EventScene::locator(const std::string& name, float sceneTime) const {
+    const auto it = locators_.find(lower(name));
+    if (it == locators_.end()) return Mat34();
+    const std::vector<Mat34> w = scene_.world(sceneTime);
+    return size_t(it->second) < w.size() ? w[size_t(it->second)] : Mat34();
+}
+
 void EventScene::place(EventModel& m) {
-    const auto it = locators_.find(lower(m.name));
-    if (it == locators_.end()) return;
-    const std::vector<Mat34> w = scene_.world(m.sceneTime);
-    if (size_t(it->second) < w.size()) m.place = w[size_t(it->second)];
+    if (locators_.count(lower(m.name))) m.place = locator(m.name, m.sceneTime);
+}
+
+Mat34 EventScene::placeAt(const EventModel& m, float lead) const {
+    if (!m.moving || lead <= 0 || !locators_.count(lower(m.name))) return m.place;
+    return locator(m.name, std::min(m.sceneTime + lead, m.moveEnd));
 }
 
 void EventScene::setMove(const std::string& name, float from, float to) {
@@ -111,11 +120,11 @@ void EventScene::update(float dt) {
     lightTime_ = std::min(lightTime_ + dt, std::max(lightEnd_, lightTime_));
 }
 
-bool EventScene::camera(Mat34& world, float& fovY, float& zn, float& zf) const {
+bool EventScene::camera(Mat34& world, float& fovY, float& zn, float& zf, float lead) const {
     if (!hasCamera_) return false;
     const GeomCamera& c = camera_.geom.cameras[0];
     const int j = camera_.skel.joint(c.hash);
-    const std::vector<Mat34> w = camera_.world(cameraTime_);
+    const std::vector<Mat34> w = camera_.world(std::min(cameraTime_ + lead, std::max(cameraEnd_, cameraTime_)));
     if (j < 0 || size_t(j) >= w.size()) return false;
     world = w[size_t(j)];
     fovY = c.fovY;
@@ -125,13 +134,14 @@ bool EventScene::camera(Mat34& world, float& fovY, float& zn, float& zf) const {
     return true;
 }
 
-bool EventScene::lights(SceneLighting& out) const {
+bool EventScene::lights(SceneLighting& out, float lead) const {
     if (!hasLight_) return false;
     // (the light figure posed at its time: the lights' joints carry their directions)
     Skeleton posed = light_.skel;
     if (light_.animated) {
         const float frames = float(std::max(light_.anim.frames() - 1, 1));
-        posed.basePose = light_.anim.poseAbsolute(light_.skel.basePose, std::clamp(lightTime_ * light_.anim.sampleRate(), 0.0f, frames));
+        const float t = std::min(lightTime_ + lead, std::max(lightEnd_, lightTime_));
+        posed.basePose = light_.anim.poseAbsolute(light_.skel.basePose, std::clamp(t * light_.anim.sampleRate(), 0.0f, frames));
     }
     return lightsFromFigure(light_.geom, posed, out);
 }

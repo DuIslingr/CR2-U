@@ -259,7 +259,13 @@ slopes), the figure drawn 0.02 below its centre. `FldPlayer::Update` turns the s
 drag from where it started, over the virtual screen's size, x 0.01: under 0.0002 idle, under
 0.0005 walking, else running) into a direction along the ground from the camera and passes
 `direction x speed x dt x 60` (walking 0.09, running 0.48) to `setVelocityForTimeInterval` for
-0.05 s; the world steps once a frame at a fixed 1/60 s - so 0.09 and 0.48 units a second.
+0.05 s each of the game's 20 updates a second, and FldMain steps the world once
+(`stepSimulation(dt, 1, 1/60)`: one substep of 1/60 s, the rest of the 0.05 s dropped) - so 0.09
+and 0.48 units a second, the world's gravity at a third of real time. The engine takes that 1/60 s
+of world time as three 1/180 s steps, one each 1/60 s of real time: the same speeds and gravity,
+a position for each of 60 frames a second, and the walls met finely (at the game's one step of
+0.024 units the sphere can wedge past a wall's plane in a crease: `cr2tool walk` finds 2 runs of
+4032 that end beyond a wall, none in three steps).
 
 Exits: `<map>p.phys`'s bodies, each named for the pop point it leads to - the destination map is
 the name's first five characters (`FldMap::GetFieldMapNumFromPopPointName`), the arrival a joint of

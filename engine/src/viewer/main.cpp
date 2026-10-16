@@ -24,13 +24,18 @@
 // (1.5x), balanced (1.7x), performance (2x), ultra (3x) - and AMD FSR 3.1 resolves it into the
 // frame, with --sharpness (0..1, 0.3) for its RCAS pass; Vulkan only.
 //
+// Frames: 60 a second (--fps; 0 as many as the display shows). The game itself updates 20 times
+// a second (its scripts, fades, physics); the frames between show its timelines where they are
+// by then - an event's camera, moves, animations and fades - and the field's player between its
+// last two updates.
+//
 // Vulkan by default, OpenGL where Vulkan can't start (or with --renderer opengl).
 //
 //   cr2view --data <CRDB.ios.mvgl | main.212...obb | CRDB.psp2.mvgl> [--model <name>]
 //           [--anim <name>] [--time s] [--size WxH] [--yaw deg] [--pitch deg]
 //           [--lights <figure> | none] [--field <map> [--at <point>] [--binary <file>]
 //           [--walk sx,sy,seconds]] [--event <function> [--vista <map>] [--page s]]
-//           [--resolution WxH] [--upscaler off|fsr3 [--quality q] [--sharpness s]] [--run s]
+//           [--resolution WxH] [--upscaler off|fsr3 [--quality q] [--sharpness s]] [--run s] [--fps n]
 //           [--renderer vulkan|opengl] [--capture out.bmp]
 //
 // Models: drag to turn, the wheel to zoom, Left / Right (or PageUp / PageDown) for the archive's
@@ -163,8 +168,12 @@ struct Viewer {
     float stepClock = 0;
 
     // FldPlayer::Update: the stick (screen right / up, -1..1) as a direction along the ground from
-    // the camera's view, walking (0.09 units a second) or running (0.48), the controller stepped
-    // at the world's fixed 1/60 s; the figure stands 0.02 below the controller's sphere
+    // the camera's view, walking (0.09 units a second) or running (0.48). The game's update (20 a
+    // second) is the controller's three substeps (character.hpp), one each 1/60 s - the stick read
+    // at each - with the exits checked at the update's end as the game does. A frame between
+    // substeps shows the player between the last two; the figure stands 0.02 below the sphere.
+    float playerPrev[3] = {0, 0, 0}, playerCur[3] = {0, 0, 0};
+    int substep = 0;
     void walk(float dt, float sx, float sy, bool run) {
         if (!controller) return;
         cr2::Vec3 right, forward;
@@ -173,22 +182,30 @@ struct Viewer {
         const float l = std::sqrt(dir[0] * dir[0] + dir[2] * dir[2]);
         const float speed = l > 0 ? (run ? 0.48f : 0.09f) : 0.0f;
         if (l > 0) dir = {dir[0] / l * speed, 0, dir[2] / l * speed}, heading = std::atan2(dir[0], dir[2]);
-        stepClock = std::min(stepClock + dt, 4.0f / 60.0f);
-        for (; stepClock >= 1.0f / 60.0f; stepClock -= 1.0f / 60.0f) {
-            controller->setVelocity(dir);
-            controller->step();
+        constexpr float kSub = cr2::CharacterController::kUpdate / cr2::CharacterController::kSubsteps; // (1/60 s)
+        stepClock = std::min(stepClock + dt, 15 * kSub);
+        std::string exitTo;
+        for (; stepClock >= kSub && exitTo.empty(); stepClock -= kSub) {
+            std::memcpy(playerPrev, playerCur, sizeof playerCur);
+            controller->move(dir);
+            controller->substep();
+            const cr2::Vec3& p = controller->position();
+            playerCur[0] = p[0], playerCur[1] = p[1] - 0.02f, playerCur[2] = p[2];
+            if (++substep < cr2::CharacterController::kSubsteps) continue;
+            substep = 0;
+            // an exit: the area changes to the map its pop point names (FldMain::ChangeAreaExecute)
+            const std::string exit = field.exitTouched(p, controller->radius);
+            if (exit.empty()) exitsArmed = true;
+            else if (exitsArmed && exit.size() >= 5) exitTo = exit;
         }
-        const cr2::Vec3& p = controller->position();
-        player[0] = p[0], player[1] = p[1] - 0.02f, player[2] = p[2];
         playMotion(fig, speed == 0 ? "fn01" : run ? "ff02" : "ff01");
-        // an exit: the area changes to the map its pop point names (FldMain::ChangeAreaExecute)
-        const std::string exit = field.exitTouched(p, controller->radius);
-        if (exit.empty()) {
-            exitsArmed = true;
-        } else if (exitsArmed && exit.size() >= 5) {
-            SDL_Log("exit %s", exit.c_str());
-            enterMap(exit.substr(0, 5), exit);
+        if (!exitTo.empty()) {
+            SDL_Log("exit %s", exitTo.c_str());
+            enterMap(exitTo.substr(0, 5), exitTo);
+            return;
         }
+        const float a = std::clamp(stepClock / kSub, 0.0f, 1.0f);
+        for (int c = 0; c < 3; ++c) player[c] = playerPrev[c] + (playerCur[c] - playerPrev[c]) * a;
     }
 
     bool decode(const std::string& name, cr2::Image& img) {
@@ -620,7 +637,12 @@ struct Viewer {
         dev->resetHistory();
         controller = std::make_unique<cr2::CharacterController>(field.collision());
         controller->setPosition({player[0], player[1] + 0.17f, player[2]}); // (dropped onto the floor)
-        for (int k = 0; k < 30; ++k) walk(1.0f / 60.0f, 0, 0, false);
+        for (int k = 0; k < 10; ++k) controller->update({0, 0, 0});
+        const cr2::Vec3& p = controller->position();
+        player[0] = p[0], player[1] = p[1] - 0.02f, player[2] = p[2];
+        std::memcpy(playerPrev, player, sizeof player);
+        std::memcpy(playerCur, player, sizeof player);
+        stepClock = 0, substep = 0;
         std::string exits;
         for (const std::string& e : field.exitNames()) exits += " " + e;
         SDL_Log("%zu gimmicks, %zu with figures; layers bg [%s] fg [%s]", field.gimmicks().size(), gimmicks.size(), field.backgroundImage().c_str(), field.foregroundImage().c_str());
@@ -710,6 +732,9 @@ struct Viewer {
         }
     }
 
+    // a frame between the event's updates: how far past the last one it is (none once it ended)
+    float eventLead() const { return eventEnded ? 0.0f : eventClock; }
+
     void updateEvent(float dt) {
         eventClock = std::min(eventClock + dt, 0.25f);
         for (; eventClock >= cr2::EventRuntime::kTick; eventClock -= cr2::EventRuntime::kTick) stepEvent();
@@ -736,15 +761,15 @@ struct Viewer {
             const uint32_t faceMaterial = cr2::nameHash(("j" + m.figure.substr(1, 3) + "face").c_str());
             for (ViewMesh& vm : f.meshes)
                 vm.texture = texture(face != event->faces().end() && vm.baseMaterial.hash == faceMaterial ? face->second : vm.baseMaterial.diffuse());
-            f.place = m.place;
-            pose(f, m.animTime, m.loop);
+            f.place = event->scene().placeAt(m, eventLead());
+            pose(f, m.animTime + eventLead(), m.loop);
         }
     }
 
     void drawEvent(int w, int h) {
         cr2::Mat34 cw;
         float fov = 45, zn = 0.1f, zf = 100;
-        if (event->sceneShown() && event->scene().camera(cw, fov, zn, zf)) {
+        if (event->sceneShown() && event->scene().camera(cw, fov, zn, zf, eventLead())) {
             // a cut (the camera jumps between frames): the upscaler's history says nothing of it
             const float* lp = lastCamera.m;
             const float moved = std::hypot(cw.m[3] - lp[3], cw.m[7] - lp[7], cw.m[11] - lp[11]);
@@ -757,7 +782,7 @@ struct Viewer {
                                               cr2::mat4RigidInverse(world));
             // VistaMain::Draw: the vista light figure's lights for the map and the models
             cr2::SceneLighting l = lighting;
-            event->scene().lights(l);
+            event->scene().lights(l, eventLead());
             l.camera[0] = world[12], l.camera[1] = world[13], l.camera[2] = world[14];
             l.time = time;
             dev->setLighting(l);
@@ -773,11 +798,12 @@ struct Viewer {
     // the event's UI, over the resolved scene: the fade over it all
     void drawEventUi() {
         const cr2::EventFade& fd = event->fade();
-        if (fd.alpha > 0 && white.id) {
+        const float alpha = fd.at(eventLead() / cr2::EventRuntime::kTick);
+        if (alpha > 0 && white.id) {
             static const float kScreen[24] = {-1, -1, 0, 0, 1, -1, 1, 0, 1, 1, 1, 1, -1, -1, 0, 0, 1, 1, 1, 1, -1, 1, 0, 1};
             const Mat4 id = cr2::mat4Identity();
             const float* c = fadeColours[std::clamp(fd.colour, 0, 3)];
-            const float rgba[4] = {c[0], c[1], c[2], fd.alpha};
+            const float rgba[4] = {c[0], c[1], c[2], alpha};
             dev->drawQuad(white, kScreen, id.data(), rgba);
         }
     }
@@ -823,6 +849,7 @@ int main(int argc, char** argv) {
     std::string upscaler = "off", quality = "quality";
     float sharpness = 0.3f;
     float runSeconds = 0; // --run: a capture plays this long first, 60 frames a second
+    int fps = 60;         // --fps: the frame rate the window aims at (0: as fast as the display shows them)
     float yaw = 30, pitch = 15, startTime = 0;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -847,6 +874,7 @@ int main(int argc, char** argv) {
         else if (a == "--resolution" && next) std::sscanf(next, "%dx%d", &resW, &resH), ++i;
         else if (a == "--upscaler" && next) upscaler = next, ++i;
         else if (a == "--quality" && next) quality = next, ++i;
+        else if (a == "--fps" && next) fps = std::clamp(std::atoi(next), 0, 1000), ++i;
         else if (a == "--run" && next) runSeconds = float(std::atof(next)), ++i;
         else if (a == "--sharpness" && next) sharpness = std::clamp(float(std::atof(next)), 0.0f, 1.0f), ++i;
     }
@@ -1002,6 +1030,12 @@ int main(int argc, char** argv) {
     } else {
         bool running = true, dragging = false;
         Uint64 last = SDL_GetTicksNS();
+        // --fps: each frame starts no sooner than its slot (the display's vsync may hold it longer)
+        const Uint64 period = fps > 0 ? Uint64(1000000000) / Uint64(fps) : 0;
+        Uint64 nextFrame = last, fpsSince = last;
+        int fpsFrames = 0, totalFrames = 0;
+        float measured = 0;
+        const Uint64 started = last;
         while (running) {
             SDL_Event e;
             while (SDL_PollEvent(&e)) {
@@ -1064,8 +1098,18 @@ int main(int argc, char** argv) {
                     v.zoom = std::clamp(v.zoom * (e.wheel.y > 0 ? 0.9f : 1.1f), 0.05f, 20.0f);
                 }
             }
+            if (period) {
+                const Uint64 t = SDL_GetTicksNS();
+                if (t < nextFrame) SDL_DelayPrecise(nextFrame - t);
+                nextFrame = std::max(nextFrame + period, SDL_GetTicksNS() - period); // (no catching up after a stall)
+            }
             const Uint64 now = SDL_GetTicksNS();
             const float dt = float(double(now - last) / 1e9);
+            ++fpsFrames, ++totalFrames;
+            if (now - fpsSince >= 500000000) {
+                measured = float(double(fpsFrames) * 1e9 / double(now - fpsSince));
+                fpsFrames = 0, fpsSince = now;
+            }
             if (!v.paused) v.time += dt;
             last = now;
             if (v.eventMode && !v.paused) v.updateEvent(dt);
@@ -1078,12 +1122,15 @@ int main(int argc, char** argv) {
             if (v.fig.animLoaded && v.time > v.fig.anim.duration()) v.time = std::fmod(v.time, std::max(v.fig.anim.duration(), 0.05f));
             v.pose();
             SDL_SetWindowTitle(win, ("CR2-U viewer (" + std::string(cr2::backendName(dev->windowFlags() & SDL_WINDOW_VULKAN ? cr2::Backend::Vulkan : cr2::Backend::OpenGL)) + ", " +
-                                     describe() + ") - " + v.status + v.animStatus()).c_str());
+                                     describe() + ", " + std::to_string(int(measured + 0.5f)) + " fps) - " + v.status + v.animStatus()).c_str());
             int w = 0, h = 0;
             frameSize(w, h);
             v.draw(w, h);
             dev->endFrame(true);
         }
+        const double secs = double(SDL_GetTicksNS() - started) / 1e9;
+        SDL_Log("%d frames in %.1f s: %.1f a second (aiming at %s)", totalFrames, secs, totalFrames / std::max(secs, 1e-3),
+                fps ? std::to_string(fps).c_str() : "the display's rate");
     }
     v.unload(v.fig);
     v.unload(v.mapFigure);

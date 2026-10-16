@@ -59,10 +59,10 @@ Counts are the iPad's (Android / Vita alike unless noted).
 
 | Type | Files | What it is |
 |---|---|---|
-| `anim` | 3514 | animation; magic `EA04` (`40AE` as bytes) |
+| `anim` | 3514 | an Edge Animation animation; magic `EA04` (`40AE` as bytes) |
 | `img` | 1873 (Android 1605, Vita 1950) | a texture: the iPad a legacy PVR file, Android PVR v3, the Vita GXT (below) |
 | `geom` | 1724 | a figure's meshes and materials (below) |
-| `skel` | 1724 | skeleton; magic `ES02` |
+| `skel` | 1724 | an Edge Animation skeleton; magic `ES02` (below) |
 | `name` | 1259 | a string table: count, ?, then offsets to NUL-terminated names (node / camera names) |
 | `dat` | 880 | tables: offsets then records (`message\*.dat`: 874 of them, the text) |
 | `shad` | 466 | a GLSL ES shader's source (`shaders\<4 hex words>_fp` / `_vp`) |
@@ -113,6 +113,7 @@ range (±32) where the Vita's don't (a whole number of repeats: the same samplin
 | +0x18 | the bounds |
 | +0x30 u32 | the meshes (0x54 bytes each) |
 | +0x34 u32 | the materials |
+| +0x40 u32 | the inverse bind matrices, one per skeleton joint: 3x4 row-major (0x30 bytes) on Android / the Vita, 4x4 column-major (0x40) on the iPad |
 
 | Mesh | |
 |---|---|
@@ -124,7 +125,8 @@ range (±32) where the Vita's don't (a whole number of repeats: the same samplin
 | +0x14 u32 | vertices |
 | +0x18 u32 | indices (all of them drawn; some skinned meshes have more vertices than indices) |
 | +0x24, +0x28 | vertex data, index data |
-| +0x2c | the mesh's node: u32 (an index; the skeleton's) |
+| +0x00 u16 | the matrix palette's size |
+| +0x2c | the palette: that many u32 joint indices (a rigid mesh: one) |
 | +0x34 | attribute descriptors, 8 bytes each: u8 semantic, u8 normalised, u16 components, u16 GL type, u16 offset |
 | +0x38 | bounds: centre (3 floats), half extents (3; not exact), radius (+0x50) |
 
@@ -141,3 +143,27 @@ diffuse map, 0x35 normal map, 0x33 colour (vec4), 0x36 / 0x38 / 0x39 / 0x41 / 0x
 
 Name prefixes: `d` dungeon maps (832), `eff` effects (281), `t` towns (148), `obj` objects (72),
 `m` monsters (64), `cam_z` cameras (63), `c` characters (42), `v` vistas (36), `gmk` gimmicks.
+
+## Skeletons (`skel`) and animations (`anim`)
+
+MVGL animates with Sony's **Edge Animation** (the PS3 SDK's library, ported: `edgeAnimProcessBlendTree`,
+`_edgeAnimEvaluate`, `edgeAnimLocalJointsToWorldMatrices3x4`, ... are in the Android library by
+name). The skeletons are the same bytes in all three releases.
+
+| Skeleton | |
+|---|---|
+| +0x00 | `ES02` (`20SE` as bytes), u32 size |
+| +0x10 u16 | joints |
+| +0x12 u16 | user channels |
+| +0x14 u16 | hierarchy groups |
+| +0x18 | self-relative offset: the base pose, a JointTransform per joint (0x30 bytes: rotation quaternion x y z w, translation x y z + pad, scale x y z + pad) |
+| +0x20 | self-relative offset: joint name hashes (u32 each) |
+| +0x40 | the hierarchy: groups of 4 (joint, parent) u16 pairs, parents first (groups padded with repeats); parent & 0x7fff >= 0x4000: a root (the figure's root transform); bit 0x8000 clear: scale compensation |
+
+World matrices (`edgeAnimLocalJointsToWorldMatrices3x4`): world = parent world * local, except
+that with compensation the child's rotation and scale use the parent's columns divided by the
+parent's own local scale (its translation the parent's whole matrix). Skinning matrices
+(`Figure::Pose`) = world * the geom's inverse bind, 3x4 row-major, the translation in the 4th
+column: `MatrixPalette`'s rows. `tools/skel.py check`: in every release, 73.7% of the joints the
+meshes skin to have base pose * inverse bind = identity - the base pose is the bind pose but where
+a figure's is posed otherwise (effects and map pieces mostly: theirs is animated).

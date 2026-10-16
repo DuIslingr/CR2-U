@@ -33,7 +33,8 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       their first wait with the native API stubbed (`cr2tool run`)
 - [ ] The native API (219 functions) for real
 - [x] A model viewer (`cr2view`): any figure of any of the three releases, textured
-- [ ] Skeletons and animation (`skel`, `anim`), the game's own shaders and materials
+- [x] Skeletons (`skel`: Sony Edge Animation's, ported) and the meshes' inverse bind matrices
+- [ ] Animations (`anim`: Edge Animation's compressed format), the game's own shaders and materials
 - [ ] Engine: the field, events, battles, menus
 
 ## What you need
@@ -55,6 +56,7 @@ One or more of:
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
 | `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |
 | `tools/geom.py` | a mesh file's meshes and materials, a check of them all, a flat-shaded preview |
+| `tools/skel.py` | Edge skeletons: base pose, hierarchy, world matrices; `check` against the inverse binds |
 | `tools/sq_bindings.py` | the scripts' native API, from the Android library's decompilation |
 | `tools/re_setup.sh` | Ghidra groundwork in `re/` (never committed): the Android library (x86 and armv7, named), the iPad and Vita builds named from it |
 | `tools/vita_self.py` | the Vita's eboot (a fake-signed SELF) to an ELF plus its imports |

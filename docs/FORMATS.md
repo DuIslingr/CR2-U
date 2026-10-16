@@ -60,7 +60,7 @@ Counts are the iPad's (Android / Vita alike unless noted).
 | Type | Files | What it is |
 |---|---|---|
 | `anim` | 3514 | animation; magic `EA04` (`40AE` as bytes) |
-| `img` | 1873 (Android 1605, Vita 1950) | a texture: iPad a PVR v2 file (52-byte header, `PVR!` at 0x2c; PVRTC 2 / 4 bpp mostly, flags 0x18 / 0x19, some RGBA4444 / 5551 / 8888 / 565 0x10..0x13); Android PVR v3 (`PVR\x03`; `rgba` 8888 / 4444, `la` 88, ...) and a few v2; Vita GXT (as CR1 / Omega's Vita releases) |
+| `img` | 1873 (Android 1605, Vita 1950) | a texture: the iPad a legacy PVR file, Android PVR v3, the Vita GXT (below) |
 | `geom` | 1724 | a figure's meshes and materials (below) |
 | `skel` | 1724 | skeleton; magic `ES02` |
 | `name` | 1259 | a string table: count, ?, then offsets to NUL-terminated names (node / camera names) |
@@ -87,11 +87,22 @@ from the top bit down.
 
 ## Meshes (`geom`)
 
-`tools/geom.py` (`info`, `check`, `render`); every file parses in all three releases, all indices
-within their meshes' vertices. From `MVGL::Draw::Figure::Build`, `BuildMesh` and `DrawMesh`.
+`tools/geom.py` (`info`, `check`, `render`) and `engine/src/assets/geom.cpp` (`cr2tool models`):
+every file parses in all three releases, all indices within their meshes' vertices; the textures
+the materials name are all in the archive but 10 references on the iPad (3 names). From `MVGL::Draw::Figure::Build`, `BuildMesh` and `DrawMesh`.
 
-The iPad's files are version 0x3c, Android's and the Vita's 0x50 (byte for byte the same in those
-two): the newer header is 0x10 bytes longer, so every offset moves by 0x10; the records are alike.
+The iPad's files are version 0x3c, Android's and the Vita's 0x50: the newer header is 0x10 bytes
+longer, so every offset moves by 0x10; the records are alike. The Vita's keep Android's layout
+but in GXM terms: index type 0 (U16) and primitive 0 (the indices are still the same strips),
+attribute types SceGxmAttributeFormat (0 U8, 1 S8, 2 U16, 3 S16, 4..7 their normalised forms, 8
+F16, 9 F32): positions F32, normals / tangents / binormals / texcoords / weights F16 (texcoords
+final, not 1024ths), colours and joints U8. Some say a vertex stride 2 bytes over what their
+attributes use and pack their vertices at the used size - the 427 proxy meshes (`p` files: 24 for
+22) and one more - while 347 others are padded to the stride they say; only the positions tell
+(read at the wrong stride they leave the mesh's bounding sphere). Decoded (`cr2tool
+compare-models`), the iPad's and Android's agree exactly in the 1716 files where both have the
+same meshes, Android's and the Vita's to 0.0005 in normals; Android's texcoords wrap at the 16-bit
+range (±32) where the Vita's don't (a whole number of repeats: the same sampling).
 
 | Header | |
 |---|---|
@@ -115,6 +126,7 @@ two): the newer header is 0x10 bytes longer, so every offset moves by 0x10; the 
 | +0x24, +0x28 | vertex data, index data |
 | +0x2c | the mesh's node: u32 (an index; the skeleton's) |
 | +0x34 | attribute descriptors, 8 bytes each: u8 semantic, u8 normalised, u16 components, u16 GL type, u16 offset |
+| +0x38 | bounds: centre (3 floats), half extents (3; not exact), radius (+0x50) |
 
 Semantics (the shaders' attributes): 1 Position (3 floats), 2 Normal, 3 Tangent, 4 Binormal (3
 normalised shorts each), 5 / 6 Texcoord0 / 1 (2 shorts, divided by 1024 in the vertex shader),

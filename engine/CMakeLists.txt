@@ -20,6 +20,7 @@ target_compile_options(squirrel2 PRIVATE $<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w -fno
 add_library(cr2core STATIC
     src/assets/mvgl.cpp
     src/assets/image.cpp
+    src/assets/geom.cpp
     src/script/vm.cpp
 )
 target_include_directories(cr2core PUBLIC src)

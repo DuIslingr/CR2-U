@@ -7,14 +7,20 @@
 //   cr2tool run <archive> <script> [function]        loads one script, runs main, then its
 //                                                    function (default: the script's name) with
 //                                                    every native a stub; the stubs it reached
+//   cr2tool models <archive>                         every mesh file parses; the textures its
+//                                                    materials name are in the archive
+//   cr2tool compare-models <archive> <archive>       the mesh files both have, decoded: the
+//                                                    largest differences in positions, uvs, normals
 //   cr2tool images <archive> [pattern [out dir]]     every texture decodes (formats counted);
 //                                                    with a folder, those matching as .tga
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <map>
 #include <string>
 #include <vector>
 
+#include "assets/geom.hpp"
 #include "assets/image.hpp"
 #include "assets/mvgl.hpp"
 #include "script/vm.hpp"
@@ -26,7 +32,9 @@ int usage() {
                  "cr2tool check <archive>\n"
                  "cr2tool scripts <archive> [name]\n"
                  "cr2tool run <archive> <script> [function]\n"
-                 "cr2tool images <archive> [pattern [out dir]]\n");
+                 "cr2tool images <archive> [pattern [out dir]]\n"
+                 "cr2tool models <archive>\n"
+                 "cr2tool compare-models <archive> <archive>\n");
     return 2;
 }
 
@@ -152,12 +160,78 @@ int images(const char* path, const char* pattern, const char* outDir) {
     return bad ? 1 : 0;
 }
 
+int models(const char* path) {
+    cr2::MvglArchive a;
+    if (!openArchive(a, path)) return 1;
+    size_t ok = 0, bad = 0, meshes = 0, vertices = 0, triangles = 0, textures = 0, missing = 0;
+    std::map<std::string, int> missingNames;
+    std::vector<uint8_t> data;
+    for (const auto& e : a.entries()) {
+        if (e.name.size() < 5 || e.name.compare(e.name.size() - 5, 5, ".geom") != 0) continue;
+        cr2::Geom g;
+        std::string err;
+        if (!a.read(e, data, &err) || !cr2::parseGeom(data, g, &err)) {
+            ++bad;
+            std::printf("bad %s: %s\n", e.name.c_str(), err.c_str());
+            continue;
+        }
+        ++ok;
+        for (const auto& m : g.meshes) meshes++, vertices += m.vertexCount, triangles += m.triangles().size() / 3;
+        for (const auto& mat : g.materials)
+            for (const auto& [id, name] : mat.textures) {
+                ++textures;
+                if (!a.contains("images\\" + name + ".img")) ++missing, ++missingNames[name];
+            }
+    }
+    std::printf("%zu mesh files parse, %zu bad: %zu meshes, %zu vertices, %zu triangles; %zu texture references, %zu not in the archive\n",
+                ok, bad, meshes, vertices, triangles, textures, missing);
+    int shown = 0;
+    for (const auto& [n, k] : missingNames)
+        if (shown++ < 12) std::printf("  missing %s x%d\n", n.c_str(), k);
+    return bad ? 1 : 0;
+}
+
+int compareModels(const char* pa, const char* pb) {
+    cr2::MvglArchive a, b;
+    if (!openArchive(a, pa) || !openArchive(b, pb)) return 1;
+    size_t files = 0, alike = 0, shapeDiffers = 0;
+    double dPos = 0, dUv = 0, dNorm = 0;
+    std::string worstPos, worstUv, worstNorm;
+    std::vector<uint8_t> da, db;
+    for (const auto& e : a.entries()) {
+        if (e.name.size() < 5 || e.name.compare(e.name.size() - 5, 5, ".geom") != 0 || !b.contains(e.name)) continue;
+        cr2::Geom ga, gb;
+        if (!a.read(e, da) || !b.read(e.name, db) || !cr2::parseGeom(da, ga) || !cr2::parseGeom(db, gb)) continue;
+        ++files;
+        bool same = ga.meshes.size() == gb.meshes.size();
+        for (size_t i = 0; same && i < ga.meshes.size(); ++i) {
+            const auto &ma = ga.meshes[i], &mb = gb.meshes[i];
+            if (ma.vertexCount != mb.vertexCount || ma.strip != mb.strip) { same = false; break; }
+            auto cmp = [](const std::vector<float>& x, const std::vector<float>& y, double& worst, std::string& at, const std::string& name) {
+                if (x.size() != y.size()) return;
+                for (size_t k = 0; k < x.size(); ++k)
+                    if (std::abs(double(x[k]) - y[k]) > worst) worst = std::abs(double(x[k]) - y[k]), at = name;
+            };
+            cmp(ma.position, mb.position, dPos, worstPos, e.name);
+            cmp(ma.uv, mb.uv, dUv, worstUv, e.name);
+            cmp(ma.normal, mb.normal, dNorm, worstNorm, e.name);
+        }
+        same ? ++alike : ++shapeDiffers;
+    }
+    std::printf("%zu mesh files in both: %zu with the same meshes, vertex counts and strips, %zu not\n", files, alike, shapeDiffers);
+    std::printf("  largest differences: position %.6f (%s), uv %.6f (%s), normal %.6f (%s)\n", dPos, worstPos.c_str(), dUv,
+                worstUv.c_str(), dNorm, worstNorm.c_str());
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     if (argc < 3) return usage();
     if (!std::strcmp(argv[1], "check")) return check(argv[2]);
     if (!std::strcmp(argv[1], "scripts")) return scripts(argv[2], argc > 3 ? argv[3] : nullptr);
+    if (!std::strcmp(argv[1], "models")) return models(argv[2]);
+    if (!std::strcmp(argv[1], "compare-models") && argc > 3) return compareModels(argv[2], argv[3]);
     if (!std::strcmp(argv[1], "images")) return images(argv[2], argc > 3 ? argv[3] : nullptr, argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "run") && argc > 3) return run(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     return usage();

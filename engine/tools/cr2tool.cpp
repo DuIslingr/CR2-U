@@ -21,9 +21,13 @@
 //                                                    map's floors: dropped at defaultPos, run 4 s
 //                                                    in 8 directions - on a floor throughout, never
 //                                                    through a wall
+//   cr2tool exits <archive> <executable>             every map's exits: the map each leads to (the
+//                                                    pop point's first five letters) is there and
+//                                                    has that point
 //   cr2tool shaders <archive>                        the materials' shaders: the features their
 //                                                    GLSL has, and where the key decoder (gfx/
 //                                                    material.cpp) disagrees with it, per bit
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -52,7 +56,8 @@ int usage() {
                  "cr2tool compare-models <archive> <archive>\n"
                  "cr2tool animations <archive>\n"
                  "cr2tool shaders <archive>\n"
-                 "cr2tool walk <archive> <executable> [map]\n");
+                 "cr2tool walk <archive> <executable> [map]\n"
+                 "cr2tool exits <archive> <executable>\n");
     return 2;
 }
 
@@ -276,6 +281,58 @@ int shaders(const char* path) {
     std::printf("\n  alpha-tested materials without an alpha_func state (AlphaRef 0.5): %zu; CLUT + light map: %zu\n",
                 alphaNoRef, extraClash);
     return extraClash ? 1 : 0;
+}
+
+bool readTable(const char* binary, std::vector<cr2::MapInfo>& table) {
+    std::vector<uint8_t> bin;
+    if (std::FILE* f = std::fopen(binary, "rb")) {
+        std::fseek(f, 0, SEEK_END);
+        bin.resize(size_t(std::ftell(f)));
+        std::fseek(f, 0, SEEK_SET);
+        bin.resize(std::fread(bin.data(), 1, bin.size(), f));
+        std::fclose(f);
+    }
+    if (cr2::findMapTable(bin, table)) return true;
+    std::fprintf(stderr, "%s: no maps' table\n", binary);
+    return false;
+}
+
+int exits(const char* path, const char* binary) {
+    cr2::MvglArchive a;
+    std::vector<cr2::MapInfo> table;
+    if (!openArchive(a, path) || !readTable(binary, table)) return 1;
+    std::map<std::string, cr2::FieldMap> loaded;
+    auto load = [&](const std::string& name) -> cr2::FieldMap* {
+        if (auto it = loaded.find(name); it != loaded.end()) return &it->second;
+        const auto row = std::find_if(table.begin(), table.end(), [&](const cr2::MapInfo& m) { return m.name == name; });
+        if (row == table.end()) return nullptr;
+        cr2::FieldMap& f = loaded[name];
+        if (!f.load(a, *row)) {
+            loaded.erase(name);
+            return nullptr;
+        }
+        return &f;
+    };
+    size_t maps = 0, total = 0, good = 0;
+    std::map<std::string, int> elsewhere; // exits to what isn't a field (events, the world map)
+    for (const cr2::MapInfo& info : table) {
+        cr2::FieldMap* f = load(info.name);
+        if (!f) continue;
+        ++maps;
+        for (const std::string& e : f->exitNames()) {
+            ++total;
+            cr2::FieldMap* to = e.size() >= 5 ? load(e.substr(0, 5)) : nullptr;
+            float p[3];
+            if (to && to->point(e, p)) {
+                ++good;
+            } else {
+                ++elsewhere[e];
+                std::printf("  %s: exit %s - %s\n", info.name.c_str(), e.c_str(), to ? "the map has no such point" : "not a field map");
+            }
+        }
+    }
+    std::printf("%zu maps, %zu exits: %zu lead to a field map's point, %zu elsewhere\n", maps, total, good, total - good);
+    return 0;
 }
 
 int walk(const char* path, const char* binary, const char* only) {
@@ -505,6 +562,7 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[1], "pose") && argc > 5) return pose(argv[2], argv[3], argv[4], float(std::atof(argv[5])));
     if (!std::strcmp(argv[1], "compare-models") && argc > 3) return compareModels(argv[2], argv[3]);
     if (!std::strcmp(argv[1], "shaders")) return shaders(argv[2]);
+    if (!std::strcmp(argv[1], "exits") && argc > 3) return exits(argv[2], argv[3]);
     if (!std::strcmp(argv[1], "walk") && argc > 3) return walk(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "images")) return images(argv[2], argc > 3 ? argv[3] : nullptr, argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "run") && argc > 3) return run(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);

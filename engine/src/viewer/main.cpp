@@ -160,6 +160,14 @@ struct Viewer {
         const cr2::Vec3& p = controller->position();
         player[0] = p[0], player[1] = p[1] - 0.02f, player[2] = p[2];
         playMotion(fig, speed == 0 ? "fn01" : run ? "ff02" : "ff01");
+        // an exit: the area changes to the map its pop point names (FldMain::ChangeAreaExecute)
+        const std::string exit = field.exitTouched(p, controller->radius);
+        if (exit.empty()) {
+            exitsArmed = true;
+        } else if (exitsArmed && exit.size() >= 5) {
+            SDL_Log("exit %s", exit.c_str());
+            enterMap(exit.substr(0, 5), exit);
+        }
     }
 
     bool decode(const std::string& name, cr2::Image& img) {
@@ -481,14 +489,15 @@ struct Viewer {
         drawFigure(fig, mvp.data());
     }
 
-    // The field: the map's table row (from the game's executable), its layers and figures, the
-    // character at `at`
-    bool loadField(const std::string& map, const std::string& at, const std::string& binary, const std::string& dataPath) {
+    // The maps' table from the game's executable (--binary, or beside the iPad's / Vita's archive)
+    std::vector<cr2::MapInfo> table;
+    std::string tableFrom;
+    bool exitsArmed = false; // (an exit counts once the character has left them all since arriving)
+
+    bool loadTable(const std::string& binary, const std::string& dataPath) {
         std::vector<std::string> candidates;
         if (!binary.empty()) candidates.push_back(binary);
         for (const std::string& c : cr2::mapTableCandidates(dataPath)) candidates.push_back(c);
-        std::vector<cr2::MapInfo> table;
-        std::string from;
         for (const std::string& c : candidates) {
             SDL_IOStream* io = SDL_IOFromFile(c.c_str(), "rb");
             if (!io) continue;
@@ -496,17 +505,19 @@ struct Viewer {
             const bool read = !bytes.empty() && SDL_ReadIO(io, bytes.data(), bytes.size()) == bytes.size();
             SDL_CloseIO(io);
             if (read && cr2::findMapTable(bytes, table)) {
-                from = c;
-                break;
+                tableFrom = c;
+                return true;
             }
         }
-        if (table.empty()) {
-            SDL_Log("the maps' table: not found beside %s - give the game's executable with --binary", dataPath.c_str());
-            return false;
-        }
+        SDL_Log("the maps' table: not found beside %s - give the game's executable with --binary", dataPath.c_str());
+        return false;
+    }
+
+    // A map: its table row, layers and figures, the character dropped at the point `at`
+    bool enterMap(const std::string& map, const std::string& at) {
         const auto row = std::find_if(table.begin(), table.end(), [&](const cr2::MapInfo& m) { return m.name == map; });
         if (row == table.end()) {
-            SDL_Log("%s: not one of the %zu maps (%s)", map.c_str(), table.size(), from.c_str());
+            SDL_Log("%s: not one of the %zu maps (%s)", map.c_str(), table.size(), tableFrom.c_str());
             return false;
         }
         std::string err;
@@ -514,6 +525,8 @@ struct Viewer {
             SDL_Log("%s: %s", map.c_str(), err.c_str());
             return false;
         }
+        unload(mapFigure);
+        mapFigure = ViewFigure();
         if (!field.figureName().empty() && !loadFigure(field.figureName() + ".geom", mapFigure, &err))
             SDL_Log("%s: %s", field.figureName().c_str(), err.c_str());
         if (!field.point(at, player)) {
@@ -521,15 +534,22 @@ struct Viewer {
             for (const std::string& n : field.pointNames()) SDL_Log("  %s", n.c_str());
         }
         fieldMode = true;
+        exitsArmed = false;
         controller = std::make_unique<cr2::CharacterController>(field.collision());
         controller->setPosition({player[0], player[1] + 0.17f, player[2]}); // (dropped onto the floor)
         for (int k = 0; k < 30; ++k) walk(1.0f / 60.0f, 0, 0, false);
-        SDL_Log("field %s (table from %s): variant %d, layers %s%s%s%s, %zu collision triangles, at %s (%.3f %.3f %.3f)",
-                map.c_str(), from.c_str(), row->variant, field.backgroundImage().empty() ? "" : "bg ",
+        std::string exits;
+        for (const std::string& e : field.exitNames()) exits += " " + e;
+        SDL_Log("field %s (table from %s): variant %d, layers %s%s%s%s, %zu collision triangles, exits%s, at %s (%.3f %.3f %.3f)",
+                map.c_str(), tableFrom.c_str(), row->variant, field.backgroundImage().empty() ? "" : "bg ",
                 field.midgroundImage().empty() ? "" : "mg ", field.foregroundImage().empty() ? "" : "fg ",
-                field.figureName().empty() ? "" : "+ 3D figure", field.collision().triangles(), at.c_str(), player[0], player[1],
-                player[2]);
+                field.figureName().empty() ? "" : "+ 3D figure", field.collision().triangles(), exits.empty() ? " none" : exits.c_str(),
+                at.c_str(), player[0], player[1], player[2]);
         return true;
+    }
+
+    bool loadField(const std::string& map, const std::string& at, const std::string& binary, const std::string& dataPath) {
+        return loadTable(binary, dataPath) && enterMap(map, at);
     }
 };
 
@@ -631,6 +651,7 @@ int main(int argc, char** argv) {
     }
     if (v.fieldMode && animName.empty()) v.playMotion(v.fig, "fn01");
     for (float t = 0; v.fieldMode && t < walkSeconds; t += 1.0f / 60.0f) v.walk(1.0f / 60.0f, walkX, walkY, true);
+    if (v.fieldMode && walkSeconds > 0) SDL_Log("after --walk: %s at (%.3f %.3f %.3f)", v.field.info().name.c_str(), v.player[0], v.player[1], v.player[2]);
     v.time = startTime;
     v.pose();
     SDL_Log("%s%s", v.status.c_str(), v.animStatus().c_str());

@@ -56,8 +56,14 @@ public:
     bool point(const std::string& name, float* pos) const;
     std::vector<std::string> pointNames() const;
 
-    // The walls and floors (<map>c.phys's solid bodies)
+    // The walls and floors (<map>c.phys's solid bodies, and <map>p.phys's exits)
     const CollisionWorld& collision() const { return collision_; }
+    // The exits (<map>p.phys's bodies): each is named for the pop point it leads to - the map is
+    // its first five characters (FldMap::GetFieldMapNumFromPopPointName), the point a joint of that
+    // map's <map>p figure (FldMain::ChangeAreaExecute)
+    std::vector<std::string> exitNames() const;
+    // The exit a sphere at `centre` touches ("" none): touching one changes the area
+    std::string exitTouched(const Vec3& centre, float radius) const;
     // The camera's right and forward directions along the ground (unit, y 0): the player's
     // input turns into a direction with them (FldPlayer::Update)
     void groundAxes(Vec3& right, Vec3& forward) const;
@@ -78,6 +84,11 @@ private:
     std::vector<std::string> names_; // the joints' names (from the .name files), for pointNames
     SceneLighting lighting_;
     CollisionWorld collision_;
+    struct Exit {
+        std::string pop;
+        CollisionWorld volume;
+    };
+    std::vector<Exit> exits_;
     Mat4 cameraWorld_ = mat4Identity();
     float fovY_ = 45, near_ = 1, far_ = 5000;
 };

@@ -56,7 +56,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] Field collision: the maps' Bullet scenes (`phys`) and the player as Bullet's kinematic
       character controller, ported - `cr2tool walk`: on every map of all three releases the
       character lands on a floor and runs in 8 directions without leaving it or passing a wall
-- [ ] Field exits, NPCs, gimmicks, the HUD
+- [x] Field exits: touching one loads the map it leads to, at its pop point (`cr2tool exits`: all
+      427 lead somewhere real)
+- [ ] NPCs, gimmicks, the HUD, the fades and sounds between areas
 - [ ] Engine: events, battles, menus
 
 ## What you need
@@ -75,7 +77,7 @@ One or more of:
 |---|---|
 | `cr2view --data <archive> [--model name] [--anim name --time s] [--lights figure\|none] [--renderer vulkan\|opengl] [--capture out.bmp]` | the model viewer: drag to turn, the wheel to zoom, Left / Right for the other models, Up / Down for the figure's animations, Space to pause |
 | `cr2view --data <archive> --field <map> [--model c001] [--at point] [--binary file] [--walk sx,sy,s]` | a field: the arrow keys run the character (Shift walks) on the floors and against the walls; the maps' table comes from the executable beside the iPad's / Vita's archive, or `--binary` (Android: `lib/armeabi-v7a/libChaosRings2.so`) |
-| `cr2tool check / scripts / run / images / models / compare-models / animations / pose / shaders / walk` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared, the shader keys against their GLSL, the field player on every map |
+| `cr2tool check / scripts / run / images / models / compare-models / animations / pose / shaders / walk / exits` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared, the shader keys against their GLSL, the field player on every map, every map's exits |
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
 | `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |
 | `tools/geom.py` | a mesh file's meshes and materials, a check of them all, a flat-shaded preview |

@@ -261,6 +261,14 @@ drag from where it started, over the virtual screen's size, x 0.01: under 0.0002
 `direction x speed x dt x 60` (walking 0.09, running 0.48) to `setVelocityForTimeInterval` for
 0.05 s; the world steps once a frame at a fixed 1/60 s - so 0.09 and 0.48 units a second.
 
+Exits: `<map>p.phys`'s bodies, each named for the pop point it leads to - the destination map is
+the name's first five characters (`FldMap::GetFieldMapNumFromPopPointName`), the arrival a joint of
+that map's `<map>p` figure (`FldMain::ChangeAreaExecute`): d0101's `d0103_p1` leads to d0103's
+point `d0103_p1`. They are solid (contact response on: the player stops at them) and the contact
+(within Bullet's breaking threshold, 0.02 - the controller rests up to a step short of what stops
+it) changes the area (`CollisionEventExec`: a sound, a fade). `cr2tool exits`: all 427 exits of
+the 217 maps lead to a map that has the point.
+
 The player (`FldPlayer::CreatePlayer`): `c<id>` with the motions `c<id>` + `fn01` (idle), `ff01`
 (walk), `ff02` (run), `fj01..03` (jumps), `fp01..06` (the character's own).
 

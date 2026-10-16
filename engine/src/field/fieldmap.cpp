@@ -115,6 +115,20 @@ bool FieldMap::load(const MvglArchive& a, const MapInfo& info, std::string* erro
     std::string err;
     if (a.read(info.name + "c.phys", phys) && parsePhys(phys, scene, &err)) collision_.addScene(scene);
     else if (!err.empty()) return fail(error, info.name + "c.phys: " + err);
+    if (a.read(info.name + "p.phys", phys) && parsePhys(phys, scene, &err)) {
+        collision_.addScene(scene);
+        for (const PhysBody& b : scene.bodies) {
+            PhysScene one = scene;
+            one.bodies = {b};
+            one.bodies[0].contactResponse = true;
+            Exit e;
+            e.pop = b.name;
+            e.volume.addScene(one);
+            exits_.push_back(std::move(e));
+        }
+    } else if (!err.empty()) {
+        return fail(error, info.name + "p.phys: " + err);
+    }
     // the camera (InitCamera): near halved (at least 0.1), far five times (at most 5000)
     if (c_.cameras.empty()) return fail(error, info.name + "c: no camera");
     const GeomCamera& cam = c_.cameras[0];
@@ -142,6 +156,21 @@ bool FieldMap::point(const std::string& name, float* pos) const {
 }
 
 std::vector<std::string> FieldMap::pointNames() const { return names_; }
+
+std::vector<std::string> FieldMap::exitNames() const {
+    std::vector<std::string> out;
+    for (const Exit& e : exits_) out.push_back(e.pop);
+    return out;
+}
+
+std::string FieldMap::exitTouched(const Vec3& centre, float radius) const {
+    // Bullet keeps a contact while the surfaces are within its breaking threshold (0.02,
+    // gContactBreakingThreshold) - and its character controller comes to rest up to a step short
+    // of what stops it, so that is how the exits are touched
+    for (const Exit& e : exits_)
+        if (!e.volume.overlaps(centre, radius + 0.02f).empty()) return e.pop;
+    return "";
+}
 
 void FieldMap::groundAxes(Vec3& right, Vec3& forward) const {
     auto flat = [](float x, float z) {

@@ -132,6 +132,12 @@ struct ViewFigure {
     float centre[3] = {0, 0, 0}, radius = 1;
     cr2::Mat34 place; // in the world (the skinning matrices are place * world * inverse bind)
     bool absolute = false; // its animation alone in slot 0 (map figures): not a motion over the base
+    // a cross-fade (EvtMotionManager's two slots): the animation it fades from, where in it, how
+    // far the fade is (1: none)
+    std::string blendName;
+    cr2::Animation blendAnim;
+    bool blendLoaded = false, blendAbsolute = false, blendLoop = true;
+    float blendTime = 0, blendWeight = 1;
     size_t vertices = 0, triangles = 0;
 };
 
@@ -366,6 +372,29 @@ struct Viewer {
             std::vector<float> user(f.skeleton.userChannels.size(), std::nanf(""));
             p = f.absolute ? f.anim.poseAbsolute(f.skeleton.basePose, fr, f.anim.hasUserChannels() ? &user : nullptr)
                            : f.anim.poseOver(f.skeleton.basePose, fr, f.anim.hasUserChannels() ? &user : nullptr);
+            if (f.blendWeight < 1 && f.blendLoaded) { // (fading in from the motion before)
+                const float bframes = float(std::max(f.blendAnim.frames() - 1, 1));
+                float bfr = f.blendTime * f.blendAnim.sampleRate();
+                if (bfr > bframes) bfr = f.blendLoop ? std::fmod(bfr, bframes) : bframes;
+                const std::vector<cr2::JointTransform> from = f.blendAbsolute ? f.blendAnim.poseAbsolute(f.skeleton.basePose, bfr)
+                                                                              : f.blendAnim.poseOver(f.skeleton.basePose, bfr);
+                const float w = std::clamp(f.blendWeight, 0.0f, 1.0f);
+                for (size_t j = 0; j < p.size() && j < from.size(); ++j) {
+                    cr2::JointTransform& to = p[j];
+                    const cr2::JointTransform& a = from[j];
+                    float dot = 0;
+                    for (int c = 0; c < 4; ++c) dot += a.rotation[c] * to.rotation[c];
+                    const float sgn = dot < 0 ? -1.0f : 1.0f;
+                    float len = 0;
+                    for (int c = 0; c < 4; ++c) to.rotation[c] = a.rotation[c] * (1 - w) + to.rotation[c] * sgn * w, len += to.rotation[c] * to.rotation[c];
+                    len = len > 0 ? 1.0f / std::sqrt(len) : 1.0f;
+                    for (int c = 0; c < 4; ++c) to.rotation[c] *= len;
+                    for (int c = 0; c < 3; ++c) {
+                        to.translation[c] = a.translation[c] + (to.translation[c] - a.translation[c]) * w;
+                        to.scale[c] = a.scale[c] + (to.scale[c] - a.scale[c]) * w;
+                    }
+                }
+            }
             for (ViewMesh& vm : f.meshes) {
                 vm.material = vm.baseMaterial;
                 for (size_t k = 0; k < user.size() && k < f.skeleton.userChannels.size(); ++k) {
@@ -750,12 +779,28 @@ struct Viewer {
             ViewFigure& f = eventFigures[i];
             const cr2::EventModel& m = models[i];
             if (!m.visible || f.meshes.empty()) continue;
+            // its motion (ChangeAnimator: relative to the base pose), else its own animation alone
+            // in slot 0 (absolute: an effect's)
             const std::string want = (m.animation.empty() ? m.figure : m.animation) + ".anim";
             const auto it = std::find(f.anims.begin(), f.anims.end(), want);
             if (it != f.anims.end() && (!f.animLoaded || f.anims[f.animIndex] != want)) {
                 const float keep = time;
                 loadAnim(f, size_t(it - f.anims.begin()));
                 time = keep;
+            }
+            f.absolute = m.animation.empty();
+            // a ChangeAnimatorBlend's fade from the motion before
+            f.blendWeight = 1;
+            if (m.blendSeconds > 0 && m.animTime + eventLead() < m.blendSeconds && !m.blendFrom.empty()) {
+                const std::string from = m.blendFrom + ".anim";
+                if (from != f.blendName) {
+                    std::vector<uint8_t> d;
+                    f.blendName = from;
+                    f.blendLoaded = archive.read(from, d) && f.blendAnim.parse(d) && f.blendAnim.joints() == int(f.skeleton.basePose.size());
+                }
+                f.blendAbsolute = m.blendFrom == m.figure;
+                f.blendTime = m.blendFromTime + m.animTime + eventLead();
+                f.blendWeight = (m.animTime + eventLead()) / m.blendSeconds;
             }
             // EvtModel::ChangeTexture_Face: the j<NNN>face material's colour texture
             const auto face = event->faces().find(m.face);
@@ -796,16 +841,29 @@ struct Viewer {
 
     cr2::Mat34 lastCamera;
 
-    // The message window (VistaConversationWindowMenu): the vstWin figure - a black band across
-    // the screen's foot, the name line (vstWin_talk slides it in) - in the interface's space (the
-    // hud_camera2D camera: orthographic, 0.96 x 0.64 units, 3:2), fitted to the screen and
-    // centred; on screens wider than 3:2 the figure stretches across (SetScale aspect / 1.5). Its
-    // joints type<size>_<align><slot> place the text (Cr3UtilSearchTextPosition: size S 28, M 32
-    // pixels of a 1000-a-unit layout, drawn 4 smaller; L left, C centred, R right): 01 the name,
-    // 11 / 12 a page's two lines, 21 / 22 centred ones.
+    // The message windows, in the interface's space (the hud_camera2D camera: orthographic,
+    // 0.96 x 0.64 units, 3:2), fitted to the screen and centred. A window is a figure whose joints
+    // type<size>_<align><NN> place its text (Cr3UtilSearchTextPosition: size S 28, M 32, else 64
+    // pixels of a 1000-a-unit layout, drawn 4 smaller; L left, C centred, R right) - slot k the
+    // joint numbered by the window's table - and call_sendCsr_loop* its page cursor:
+    // - the vista's (VistaConversationWindowMenu, vstWin): a black band across the screen's foot
+    //   and the name line (vstWin_talk slides it in), stretched across screens wider than 3:2
+    //   (SetScale aspect / 1.5); slots 01 the name, 11 / 12 a page's lines, 21 / 22 centred ones;
+    // - the narration (NarrationWindowMenu, narrationPos): no figure of its own - the text over the
+    //   screen (the fade's black, as the scripts have it), slot k numbered k + 1 in its centred
+    //   column (EvtWindow::ShowMessage: a line's slot its place on the page; NarrationWindowMenu
+    //   ::SetStringData: column C).
     cr2::TextRasterizer font;
-    ViewFigure vstWin;
-    std::vector<std::string> vstWinJoints;
+    struct WindowLayout {
+        ViewFigure fig;
+        std::vector<std::string> joints;
+        bool stretch = false; // (across a wide screen)
+        bool nameTag = false; // (the name in slot 0, a page's lines from slot 1)
+        std::vector<std::string> slots; // slot -> the joint's number
+        std::string cursorJoint;
+    };
+    WindowLayout vistaWindow, narrationWindow;
+    ViewFigure pageCursor; // sendCsr_loop: once the page is typed
     struct TextQuad {
         cr2::Texture tex;
         float x = 0, y = 0, w = 0, h = 0; // UI units: the quad's left, centre, size
@@ -813,19 +871,34 @@ struct Viewer {
         std::vector<float> pen;           // each character's left edge and the end, in UI units
         int from = -1;                    // the page's characters before it (-1: shown whole - the name)
     };
-    ViewFigure pageCursor;                // sendCsr_loop: once the page is typed
     std::vector<TextQuad> textQuads;
     std::string shownText; // (what textQuads were made for)
     int shownPx = 0;
 
-    void loadMessageWindow(const std::string& fontPath) {
+    void loadWindow(WindowLayout& w, const char* figure) {
         std::string err;
-        if (!loadFigure("vstwin.geom", vstWin, &err)) SDL_Log("message window: %s", err.c_str());
-        if (!loadFigure("sendcsr_loop.geom", pageCursor, &err)) SDL_Log("page cursor: %s", err.c_str());
+        if (!loadFigure(std::string(figure) + ".geom", w.fig, &err)) SDL_Log("window %s: %s", figure, err.c_str());
         std::vector<uint8_t> d;
-        if (archive.read("vstwin.name", d)) vstWinJoints = cr2::parseJointNames(d);
+        if (archive.read(std::string(figure) + ".name", d)) w.joints = cr2::parseJointNames(d);
+        for (const std::string& j : w.joints)
+            if (j.compare(0, 17, "call_sendCsr_loop") == 0) w.cursorJoint = j;
+    }
+
+    void loadMessageWindow(const std::string& fontPath) {
+        loadWindow(vistaWindow, "vstwin");
+        vistaWindow.stretch = vistaWindow.nameTag = true;
+        vistaWindow.slots = {"01", "11", "12", "21", "22"};
+        loadWindow(narrationWindow, "narrationpos");
+        for (int k = 1; k <= 30; ++k) {
+            char n[4];
+            std::snprintf(n, sizeof n, "%02d", k);
+            narrationWindow.slots.push_back(n);
+        }
+        std::string err;
+        if (!loadFigure("sendcsr_loop.geom", pageCursor, &err)) SDL_Log("page cursor: %s", err.c_str());
         if (!fontPath.empty() && !font.load(fontPath, &err)) SDL_Log("font: %s", err.c_str());
-        SDL_Log("message window: %zu meshes; font %s", vstWin.meshes.size(), font.loaded() ? font.path().c_str() : "none (no text)");
+        SDL_Log("message windows: vista %zu meshes, narration %zu joints; font %s", vistaWindow.fig.meshes.size(),
+                narrationWindow.joints.size(), font.loaded() ? font.path().c_str() : "none (no text)");
     }
 
     // the interface's projection over a w x h screen: UI units to clip space (z: the camera's
@@ -839,104 +912,115 @@ struct Viewer {
         return m;
     }
 
-    // a joint of the window's figure, posed, in UI units
-    bool vstWinJoint(const char* name, float& x, float& y) {
-        const auto it = std::find(vstWinJoints.begin(), vstWinJoints.end(), name);
-        if (it == vstWinJoints.end() || !vstWin.skinned) return false;
-        std::vector<cr2::JointTransform> p = vstWin.skeleton.basePose;
-        if (vstWin.animLoaded) p = vstWin.anim.poseOver(vstWin.skeleton.basePose, 0);
-        const std::vector<cr2::Mat34> w = vstWin.skeleton.world(p, vstWin.place);
-        const size_t j = size_t(it - vstWinJoints.begin());
+    // a joint of a window's figure, posed, in UI units
+    bool windowJoint(const WindowLayout& wl, const std::string& name, float& x, float& y) {
+        const auto it = std::find(wl.joints.begin(), wl.joints.end(), name);
+        if (it == wl.joints.end() || !wl.fig.skinned) return false;
+        std::vector<cr2::JointTransform> p = wl.fig.skeleton.basePose;
+        if (wl.fig.animLoaded) p = wl.fig.anim.poseOver(wl.fig.skeleton.basePose, 0);
+        const std::vector<cr2::Mat34> w = wl.fig.skeleton.world(p, wl.fig.place);
+        const size_t j = size_t(it - wl.joints.begin());
         if (j >= w.size()) return false;
         x = w[j].m[3], y = w[j].m[7];
         return true;
     }
 
-    void drawMessageWindow(int w, int h) {
-        if (!event->windowOpen() || vstWin.meshes.empty()) return;
-        // the figure: stretched across a wide screen; the name line in while someone speaks
+    // a slot's text joint (type?_?NN, NN the slot's number)
+    std::string slotJoint(const WindowLayout& wl, size_t slot) {
+        if (slot >= wl.slots.size()) return {};
+        for (const std::string& j : wl.joints)
+            if (j.size() == 9 && j.compare(0, 4, "type") == 0 && j.compare(7, 2, wl.slots[slot]) == 0) return j;
+        return {};
+    }
+
+    void drawWindow(WindowLayout& wl, bool showsMessage, int w, int h) {
         const float aspect = float(w) / float(std::max(h, 1));
-        vstWin.place = cr2::Mat34();
-        if (aspect >= 1.5f) vstWin.place.m[0] = aspect / 1.5f;
-        const std::string speaker = event->messageShown() ? event->speakerName() : std::string();
-        const std::string want = speaker.empty() ? "vstwin_io.anim" : "vstwin_talk.anim";
-        const auto anim = std::find(vstWin.anims.begin(), vstWin.anims.end(), want);
-        if (anim != vstWin.anims.end() && (!vstWin.animLoaded || vstWin.anims[vstWin.animIndex] != want)) {
-            const float keep = time;
-            loadAnim(vstWin, size_t(anim - vstWin.anims.begin()));
-            time = keep;
+        wl.fig.place = cr2::Mat34();
+        if (wl.stretch && aspect >= 1.5f) wl.fig.place.m[0] = aspect / 1.5f;
+        const std::string speaker = showsMessage && wl.nameTag ? event->speakerName() : std::string();
+        if (wl.nameTag) { // (the vista's: the name line in while someone speaks)
+            const std::string want = speaker.empty() ? "vstwin_io.anim" : "vstwin_talk.anim";
+            const auto anim = std::find(wl.fig.anims.begin(), wl.fig.anims.end(), want);
+            if (anim != wl.fig.anims.end() && (!wl.fig.animLoaded || wl.fig.anims[wl.fig.animIndex] != want)) {
+                const float keep = time;
+                loadAnim(wl.fig, size_t(anim - wl.fig.anims.begin()));
+                time = keep;
+            }
         }
-        pose(vstWin, 0);
+        pose(wl.fig, 0);
         const Mat4 proj = uiProjection(w, h);
-        const Mat4 view = cr2::mat4Multiply(proj, [] { Mat4 v = cr2::mat4Identity(); v[14] = -0.881f; return v; }()); // (CAM_hud2D's z)
+        Mat4 camera = cr2::mat4Identity();
+        camera[14] = -0.881f; // (CAM_hud2D's z)
+        const Mat4 view = cr2::mat4Multiply(proj, camera);
         cr2::SceneLighting l;
         dev->setLighting(l);
-        drawFigure(vstWin, view.data());
+        if (!wl.fig.meshes.empty()) drawFigure(wl.fig, view.data());
+        if (!showsMessage) return;
         // the page's text: made again when it changes (or the screen's scale does)
         const float k = std::min(float(w) / 0.96f, float(h) / 0.64f);
         const int px = int(k + 0.5f);
-        std::string key;
-        if (event->messageShown() && event->page() < int(event->message().pages.size())) {
-            key = speaker + "\n" + std::to_string(event->page()) + "\n";
-            for (const cr2::TextLine& ln : event->message().pages[size_t(event->page())].lines) key += ln.text + "\n";
-        }
+        std::string key = std::to_string(event->messageWindow()) + "\n" + speaker + "\n" + std::to_string(event->page()) + "\n";
+        for (const cr2::TextLine& ln : event->message().pages[size_t(event->page())].lines) key += ln.text + "\n";
         if (key != shownText || px != shownPx) {
             for (TextQuad& q : textQuads) dev->destroy(q.tex);
             textQuads.clear();
             shownText = key, shownPx = px;
-            if (!key.empty() && font.loaded()) {
-                int typedBefore = 0; // (the page's characters before the line: it types after them)
-                auto add = [&](const std::string& text, const char* joint, int size, bool centred, int colour, bool whole) {
-                    int chars = 0;
-                    for (unsigned char c : text) chars += (c & 0xc0) != 0x80;
-                    const int from = whole ? -1 : typedBefore;
-                    if (!whole) typedBefore += chars;
-                    float jx, jy;
-                    if (text.empty() || !vstWinJoint(joint, jx, jy)) return;
-                    const int drawn = size - 4; // (SetTextRender: the size less 4)
-                    const int rasterPx = std::max(1, int(float(drawn) / 1000.0f * k + 0.5f));
-                    int tw = 0, th = 0;
-                    std::vector<float> pen;
-                    cr2::Image img = font.render(text, rasterPx, tw, th, &pen);
-                    if (img.rgba.empty()) return;
-                    TextQuad q;
-                    q.tex = dev->upload(img);
-                    q.from = from;
-                    const float unitsPerPx = float(drawn) / 1000.0f / float(rasterPx);
-                    for (float p : pen) q.pen.push_back(p * unitsPerPx);
-                    q.w = float(tw) * unitsPerPx, q.h = float(th) * unitsPerPx;
-                    // SetTextOffsetData: left - the joint less half the size; centred - on it; the
-                    // line's middle (size - height) / 2 from the joint
-                    q.x = centred ? jx - q.w / 2 : jx - float(drawn) / 2000.0f;
-                    q.y = jy + (float(drawn) / 1000.0f - q.h) / 2;
-                    cr2::textColour(colour, q.rgb);
-                    textQuads.push_back(q);
-                };
-                const std::vector<cr2::TextLine>& lines = event->message().pages[size_t(event->page())].lines;
-                add(speaker, "typeS_L01", 28, false, 0, true);
+            int typedBefore = 0; // (the page's characters before the line: it types after them)
+            auto add = [&](const std::string& text, size_t slot, int colour, bool whole) {
+                int chars = 0;
+                for (unsigned char c : text) chars += (c & 0xc0) != 0x80;
+                const int from = whole ? -1 : typedBefore;
+                if (!whole) typedBefore += chars;
+                const std::string joint = slotJoint(wl, slot);
+                float jx, jy;
+                if (text.empty() || joint.empty() || !font.loaded() || !windowJoint(wl, joint, jx, jy)) return;
+                const int size = joint[4] == 'M' ? 32 : joint[4] == 'S' ? 28 : 64;
+                const bool centred = joint[6] == 'C', right = joint[6] == 'R';
+                const int drawn = size - 4; // (SetTextRender: the size less 4)
+                const int rasterPx = std::max(1, int(float(drawn) / 1000.0f * k + 0.5f));
+                int tw = 0, th = 0;
+                std::vector<float> pen;
+                cr2::Image img = font.render(text, rasterPx, tw, th, &pen);
+                if (img.rgba.empty()) return;
+                TextQuad q;
+                q.tex = dev->upload(img);
+                q.from = from;
+                const float unitsPerPx = float(drawn) / 1000.0f / float(rasterPx);
+                for (float p : pen) q.pen.push_back(p * unitsPerPx);
+                q.w = float(tw) * unitsPerPx, q.h = float(th) * unitsPerPx;
+                // SetTextOffsetData: left - the joint less half the size; centred - on it; right -
+                // ending there; the line's middle (size - height) / 2 from the joint
+                q.x = centred ? jx - q.w / 2 : right ? jx - q.w + float(drawn) / 2000.0f : jx - float(drawn) / 2000.0f;
+                q.y = jy + (float(drawn) / 1000.0f - q.h) / 2;
+                cr2::textColour(colour, q.rgb);
+                textQuads.push_back(q);
+            };
+            const std::vector<cr2::TextLine>& lines = event->message().pages[size_t(event->page())].lines;
+            if (wl.nameTag) {
+                add(speaker, 0, 0, true);
                 const bool centred = !lines.empty() && lines[0].centred;
-                static const char* const kLeft[] = {"typeM_L11", "typeM_L12"}, *const kCentre[] = {"typeM_C21", "typeM_C22"};
-                for (size_t i = 0; i < lines.size() && i < 2; ++i)
-                    add(lines[i].text, centred ? kCentre[i] : kLeft[i], 32, centred, lines[i].colour, false);
+                for (size_t i = 0; i < lines.size() && i < 2; ++i) add(lines[i].text, (centred ? 3 : 1) + i, lines[i].colour, false);
+            } else {
+                for (size_t i = 0; i < lines.size(); ++i) add(lines[i].text, i, lines[i].colour, false);
             }
         }
         for (const TextQuad& q : textQuads) {
             // as far as it has typed (MenuText: the characters shown so far, the rest cut off)
-            float w = q.w;
+            float tw = q.w;
             if (q.from >= 0 && !q.pen.empty()) {
                 const int n = std::clamp(event->revealed() - q.from, 0, int(q.pen.size()) - 1);
                 if (n == 0) continue;
-                w = std::min(q.w, q.pen[size_t(n)]);
+                tw = std::min(q.w, q.pen[size_t(n)]);
             }
-            const float u1 = q.w > 0 ? w / q.w : 1;
-            const float x0 = q.x, x1 = q.x + w, y0 = q.y - q.h / 2, y1 = q.y + q.h / 2; // (rows top first: v 0 at the top)
+            const float u1 = q.w > 0 ? tw / q.w : 1;
+            const float x0 = q.x, x1 = q.x + tw, y0 = q.y - q.h / 2, y1 = q.y + q.h / 2; // (rows top first: v 0 at the top)
             const float v[24] = {x0, y0, 0, 1, x1, y0, u1, 1, x1, y1, u1, 0, x0, y0, 0, 1, x1, y1, u1, 0, x0, y1, 0, 0};
             const float rgba[4] = {q.rgb[0], q.rgb[1], q.rgb[2], 1};
             dev->drawQuad(q.tex, v, proj.data(), rgba);
         }
-        // the page cursor at call_sendCsr_loop, looping, once the page is typed
+        // the page cursor, looping, once the page is typed
         float cx, cy;
-        if (event->messageShown() && event->typed() && !pageCursor.meshes.empty() && vstWinJoint("call_sendCsr_loop", cx, cy)) {
+        if (event->typed() && !pageCursor.meshes.empty() && !wl.cursorJoint.empty() && windowJoint(wl, wl.cursorJoint, cx, cy)) {
             pageCursor.place = cr2::Mat34();
             pageCursor.place.m[3] = cx, pageCursor.place.m[7] = cy;
             pose(pageCursor, time);
@@ -944,9 +1028,9 @@ struct Viewer {
         }
     }
 
-    // the event's UI, over the resolved scene: the message window, the fade over it all
+    // the event's UI, over the resolved scene: the fade, then the windows over it (their depths
+    // in front of the fade windows')
     void drawEventUi() {
-        drawMessageWindow(screenW, screenH);
         const cr2::EventFade& fd = event->fade();
         const float alpha = fd.at(eventLead() / cr2::EventRuntime::kTick);
         if (alpha > 0 && white.id) {
@@ -956,6 +1040,11 @@ struct Viewer {
             const float rgba[4] = {c[0], c[1], c[2], alpha};
             dev->drawQuad(white, kScreen, id.data(), rgba);
         }
+        const bool message = event->messageShown() && event->page() < int(event->message().pages.size());
+        if (event->windowOpen(cr2::EventRuntime::Vista))
+            drawWindow(vistaWindow, message && event->messageWindow() == cr2::EventRuntime::Vista, screenW, screenH);
+        if (event->windowOpen(cr2::EventRuntime::Narration))
+            drawWindow(narrationWindow, message && event->messageWindow() == cr2::EventRuntime::Narration, screenW, screenH);
     }
 };
 
@@ -1293,7 +1382,8 @@ int main(int argc, char** argv) {
     v.unload(v.fig);
     v.unload(v.mapFigure);
     v.unload(v.vistaMap);
-    v.unload(v.vstWin);
+    v.unload(v.vistaWindow.fig);
+    v.unload(v.narrationWindow.fig);
     v.unload(v.pageCursor);
     for (auto& q : v.textQuads) dev->destroy(q.tex);
     for (ViewFigure& g : v.eventFigures) v.unload(g);

@@ -108,7 +108,11 @@ over those updates: its timelines being linear in time, a frame between updates 
 camera, the moves, the animations and the fades where they are by then. The scripts drive:
 
 - **the scene** (`EvtScene`): `Init(event)`, `Visible(model, on)`, `ChangeAnimator(model,
-  "e826", loop)` (the model plays `<figure>e826`, its figure the name up to `_NN`),
+  "e826", loop)` (the model plays `<figure>e826`, its figure the name up to `_NN`, a motion
+  relative to its base pose), `ChangeAnimatorBlend(model, "e007", loop, frames)` (the same,
+  faded in from the motion before over the frames: EvtMotionManager's two slots),
+  `PlayEffect` / `PlayEffectLoop(model)` (shown, its own animation - alone in slot 0, absolute -
+  from the start, once or looping: an effect's, `eff284`),
   `SetFaceTexture(slot, image)` / `ChangeModelFace(model, slot)` (the colour texture of the
   model's `j<NNN>face` material: EvtModel::ChangeTexture_Face), `SetDrawSkip`, `Terminate`;
 - **the timelines** (`VistaEvent`, in the scene's frames - 20 a second): `SetMove(model, from,
@@ -117,7 +121,9 @@ camera, the moves, the animations and the fades where they are by then. The scri
   VistaCamera::Init, but for D11_06_0102 and D12_03_0106a). `ExecutionStart` /
   `ExecutionEndStart` wait for the player's slash (`WaitPlayerSlash`: `CheckExecution` each
   frame);
-- **the window** (`EvtWindow`): `LoadSharedTextData(name)` (`message\<name>.dat`),
+- **the windows** (`EvtWindow`): Cr3Event's seven - 0 a cut-in (portraits), 1 the vista's, 2 / 3
+  announcements, 4 a tutorial's, 5 the system's, 6 the narration - `Open(n)`, `SetMessage(n,
+  message)`; `LoadSharedTextData(name)` (`message\<name>.dat`),
   `LoadSharedNameData('name_tag')`, `Open`, `SetMessage(window, n)`, then `CheckMessage` each
   frame until the player has read it (`WaitMessage`), `Close` - the window drawn as the game's
   (FORMATS.md, the interface), its lines typing a character an update;

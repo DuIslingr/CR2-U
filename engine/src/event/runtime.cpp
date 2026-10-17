@@ -65,8 +65,27 @@ void EventRuntime::bind() {
             m->animation = m->figure + c.string(1);
             m->loop = c.boolean(2, true);
             m->animTime = 0;
+            m->blendSeconds = 0;
         }
     });
+    // ChangeAnimatorBlend(model, "e007", loop, frames): the same, faded in from the motion before
+    vm.setNative("EvtScene", "ChangeAnimatorBlend", [this](NativeCall& c) {
+        if (EventModel* m = scene_.model(c.string(0))) {
+            m->blendFrom = m->animation.empty() ? m->figure : m->animation;
+            m->blendFromTime = m->animTime;
+            m->blendSeconds = float(std::max(c.integer(3), 0)) * kTick;
+            m->animation = m->figure + c.string(1);
+            m->loop = c.boolean(2, true);
+            m->animTime = 0;
+        }
+    });
+    // PlayEffect / PlayEffectLoop (Cr3EvtScenePlayEffect): shown, its own animation from the start,
+    // once or looping
+    auto effect = [this](NativeCall& c, bool loop) {
+        if (EventModel* m = scene_.model(c.string(0))) m->visible = true, m->animTime = 0, m->loop = loop, m->blendSeconds = 0;
+    };
+    vm.setNative("EvtScene", "PlayEffect", [effect](NativeCall& c) { effect(c, false); });
+    vm.setNative("EvtScene", "PlayEffectLoop", [effect](NativeCall& c) { effect(c, true); });
     vm.setNative("EvtScene", "SetFaceTexture", [this](NativeCall& c) { faces_[c.integer(0)] = c.string(1); });
     vm.setNative("EvtScene", "ChangeModelFace", [this](NativeCall& c) {
         if (EventModel* m = scene_.model(c.string(0))) m->face = c.integer(1, -1);
@@ -88,10 +107,16 @@ void EventRuntime::bind() {
     vm.setNative("EvtWindow", "LoadMessageData", textData);
     vm.setNative("EvtWindow", "LoadSharedNameData", nameData);
     vm.setNative("EvtWindow", "LoadNameData", nameData);
-    vm.setNative("EvtWindow", "Open", [this](NativeCall&) { windowOpen_ = true; });
-    vm.setNative("EvtWindow", "Close", [this](NativeCall&) { windowOpen_ = false, message_ = 0; });
-    vm.setNative("EvtWindow", "UnloadAll", [this](NativeCall&) { windowOpen_ = false, message_ = 0; });
+    // (a window argument of null: the vista's, Cr3Work 2's usual value)
+    vm.setNative("EvtWindow", "Open", [this](NativeCall& c) { openWindows_.insert(c.integer(0, Vista)); });
+    vm.setNative("EvtWindow", "Close", [this](NativeCall& c) {
+        const int w = c.integer(0, Vista);
+        openWindows_.erase(w);
+        if (w == messageWindow_) message_ = 0;
+    });
+    vm.setNative("EvtWindow", "UnloadAll", [this](NativeCall&) { openWindows_.clear(), message_ = 0; });
     vm.setNative("EvtWindow", "SetMessage", [this](NativeCall& c) {
+        messageWindow_ = c.integer(0, Vista);
         message_ = c.integer(1);
         parsed_ = parseMessage(text_.message(message_, language));
         page_ = 0, pageTime_ = 0, revealed_ = 0;
@@ -119,7 +144,7 @@ bool EventRuntime::start(const std::string& function) {
     fade_ = EventFade();
     faces_.clear();
     text_ = TextData(), names_ = TextData();
-    windowOpen_ = false, message_ = page_ = revealed_ = 0, pageTime_ = 0;
+    openWindows_.clear(), messageWindow_ = Vista, message_ = page_ = revealed_ = 0, pageTime_ = 0;
     execution_ = false;
     terminated_ = drawSkip_ = false;
     wait_ = frame_ = 0, battle_ = -1;

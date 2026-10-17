@@ -76,11 +76,12 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       their locators with their animations and faces, the animated camera and lights, the fades,
       the messages' pages (`cr2view --event D01_01_0101_evt --vista d0151b`; `cr2tool play all`:
       all 70 event scripts play to their end in all three releases)
-- [x] The vista's message window: the game's own interface figure, fitted as the game fits it
+- [x] The events' message windows - the vista's and the narration's: the game's own interface
+      figures, fitted as the game fits them
       (checked against the reference video within a pixel), the speaker's name, the lines typing
       in your release's font (`--font`: Android's TypeBank faces, the Vita's; else a system
       font; FreeType), the page cursor
-- [ ] The other windows (narration, portraits' cut-ins, items), field events (talking / tapping,
+- [ ] The other windows (portraits' cut-ins, announcements, tutorials, items), field events (talking / tapping,
       event boxes), the HUD, the fades and sounds between areas
 - [ ] Engine: events, battles, menus
 

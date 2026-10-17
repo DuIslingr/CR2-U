@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 
 #include "assets/mvgl.hpp"
@@ -58,8 +59,12 @@ public:
     // the face textures EvtScene.SetFaceTexture set (slot -> image)
     const std::map<int, std::string>& faces() const { return faces_; }
 
-    // the message window: open (EvtWindow.Open), the message on it (SetMessage) and its page
-    bool windowOpen() const { return windowOpen_; }
+    // the message windows (Cr3Event's: 0 cut-in, 1 vista, 2 / 3 announcements, 4 tutorial, 5 system,
+    // 6 narration): which are open (EvtWindow.Open), which the message is on (SetMessage's first)
+    enum Window { CutIn = 0, Vista = 1, AnnounceA = 2, AnnounceB = 3, Tutorial = 4, System = 5, Narration = 6 };
+    bool windowOpen() const { return !openWindows_.empty(); }
+    bool windowOpen(int w) const { return openWindows_.count(w) != 0; }
+    int messageWindow() const { return messageWindow_; }
     bool messageShown() const { return message_ > 0; }
     const ParsedMessage& message() const { return parsed_; }
     int page() const { return page_; }
@@ -93,7 +98,8 @@ private:
     EventFade fade_;
     std::map<int, std::string> faces_;
     TextData text_, names_;
-    bool windowOpen_ = false;
+    std::set<int> openWindows_;
+    int messageWindow_ = Vista;
     int message_ = 0, page_ = 0, revealed_ = 0;
     float pageTime_ = 0;
     ParsedMessage parsed_;

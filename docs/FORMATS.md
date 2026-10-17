@@ -464,3 +464,11 @@ name's bar) - stretched across screens wider than 3:2 (SetScale aspect / 1.5); i
 speaker's name (`typeS_L01`), `11` / `12` a page's lines (`typeM_L11`, `L12`), `21` / `22`
 centred ones; `sendCsr_loop` the page cursor at `call_sendCsr_loop`. A line types a character an
 update (MenuText::Step: + speed, EvtWindow::UpdatePage's 1 - 0 while skipping); the name at once.
+
+The narration (NarrationWindowMenu): `narrationPos`, no meshes - ten rows 0.048 apart, columns
+`typeM_C01`..`C10` (x 0), `L11`..`L20` (-0.368), `R21`..`R30` (0.368), the cursor at
+`call_sendCsr_loop50` - its text over the screen (the scripts fade it to black first). A page's
+line i takes slot i (EvtWindow::ShowMessage; with a name tag, i + 1), always in the centred
+column (SetStringData's alignment 1); the messages put blank lines first to set where it sits
+(the prologue's: four, then the line at C05, the screen's middle). The windows' depths put them
+in front of the fade windows' (GetWindowDepth: their z).

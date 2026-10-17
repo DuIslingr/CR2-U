@@ -26,6 +26,10 @@ struct EventModel {
     std::string animation;
     bool loop = true;
     float animTime = 0;
+    // ChangeAnimatorBlend: the motion it fades from (its animation, how far into it) over
+    // blendSeconds (EvtMotionManager's two slots, linear)
+    std::string blendFrom;
+    float blendFromTime = 0, blendSeconds = 0;
     // its place on its locator: the scene's time, and where a move ends (SetMove)
     float sceneTime = 0, moveEnd = 0;
     bool moving = false;

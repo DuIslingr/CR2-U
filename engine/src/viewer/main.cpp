@@ -4492,10 +4492,12 @@ struct Viewer {
         if (optionsOpen) return drawOptions(view, proj, w, h);
         if (campUse) return drawItemUse(view, proj, w, h);
         const float t = uiClock - campStart;
+        if (campList == 17) return drawEquipment(view, proj, w, h);
         if (campList) { // (the list, its tab - the items' 7, the sopia's 9 - and its own back)
             const std::vector<ListRow> rows = campRows();
             listRows = rows;
             const int focused = rows.empty() ? -1 : rows[size_t(std::clamp(campCursor, 0, int(rows.size()) - 1))].id;
+            if (campList == 18) drawSopiaWindows(focused, t, view, proj, w, h); // (InterfaceMain 0xf / 0x10: its windows beside it)
             drawSkillList(rows, focused, t, view, w, h, campList == 16 ? 7 : 9, -1);
             return;
         }
@@ -4812,9 +4814,315 @@ struct Viewer {
         campUse = item == 36 ? 3 : 1;
     }
 
+    // The sopia's windows (CampSopiaStatusMenu, sopiaWin_io: its picture - sopiaPic with
+    // sopiaPic_NNN, its number, 26..29 as 301 / 303 / 305 / 307, past 7 + 193 - at call_sopiaPic,
+    // its name at typeM_C2, its level (cost_id at the level + 6 / 20 s), its kind's sign (kinds 1 2
+    // 3 4 -> 2 1 4 3), the next level's bar and EXP (cmpNxBar_per; 5 at the most); CampSopiaSkillMenu,
+    // skillWin_io: its five levels' command or auto skill - "???" (menu name 0x3d) past its level)
+    void drawSopiaWindows(int sopia, float t, const Mat4& view, const Mat4& proj, int w, int h) {
+        const cr2::BattleData::Sopia* so = sopia > 0 ? battleData.sopia(sopia) : nullptr;
+        UiFig& sw = uiFig("sopiawin_io");
+        sw.fig.place = cr2::Mat34();
+        poseUi(sw, "sopiawin_io", t);
+        drawFigure(sw.fig, view.data());
+        UiFig& kw = uiFig("skillwin_io");
+        kw.fig.place = cr2::Mat34();
+        poseUi(kw, "skillwin_io", t);
+        drawFigure(kw.fig, view.data());
+        float x, y;
+        if (uiJoint(kw, "call_status_fr11", x, y)) drawStatusSign(11, x, y, proj);
+        if (uiJoint(sw, "call_status_fr12", x, y)) drawStatusSign(12, x, y, proj);
+        if (uiJoint(sw, "call_status_fr03", x, y)) drawStatusSign(3, x, y, proj);
+        if (!so) return;
+        const int level = sopia < 32 ? std::max(int(game.sopiaLevel[sopia]), 0) : 1;
+        if (uiJoint(sw, "call_sopiaPic", x, y)) {
+            const int n = sopia == 26 ? 301 : sopia == 27 ? 303 : sopia == 28 ? 305 : sopia == 29 ? 307 : sopia > 7 ? sopia + 193 : sopia;
+            char tn[24];
+            std::snprintf(tn, sizeof tn, "sopiaPic_%03d", n);
+            UiFig& pic = uiFig("sopiapic");
+            pic.fig.place = cr2::Mat34();
+            pic.fig.place.m[3] = x, pic.fig.place.m[7] = y;
+            poseUi(pic, "sopiapic", 0);
+            if (cr2::Texture* tex = texture(tn))
+                for (ViewMesh& vm : pic.fig.meshes) vm.texture = tex;
+            drawFigure(pic.fig, view.data());
+        }
+        if (uiJoint(sw, "typeM_C2", x, y)) drawUiText(so->name[1], 24, x, y, w, h);
+        if (uiJoint(sw, "call_cost_id", x, y)) {
+            UiFig& co = uiFig("cost_id");
+            co.fig.place = cr2::Mat34();
+            co.fig.place.m[3] = x, co.fig.place.m[7] = y;
+            poseUi(co, "cost_id", float(level + 6) / 20.0f);
+            drawFigure(co.fig, view.data());
+        }
+        static const int kKindSign[5] = {0, 2, 1, 4, 3};
+        if (so->kind >= 1 && so->kind <= 4 && uiJoint(sw, "call_enchant_id", x, y)) drawEnchant(kKindSign[so->kind], x, y, proj);
+        const bool monster = so->growth != 0;
+        const int lo = level > 0 ? cr2::sopiaExp(monster, level) : 0, hi = level < 5 ? cr2::sopiaExp(monster, level + 1) : lo;
+        const int exp = sopia < 32 ? game.sopiaExp[sopia] : 0;
+        if (uiJoint(sw, "call_cmpNxBar_per", x, y)) {
+            UiFig& bar = uiFig("cmpnxbar_per");
+            bar.fig.place = cr2::Mat34();
+            bar.fig.place.m[3] = x, bar.fig.place.m[7] = y;
+            poseUi(bar, "cmpnxbar_per", level >= 5 || hi <= lo ? 5.0f : float(std::clamp((exp - lo) * 100 / (hi - lo), 0, 100)) / 20.0f);
+            drawFigure(bar.fig, view.data());
+        }
+        if (uiJoint(sw, "call_dotNum_id1", x, y)) drawDigits(level >= 5 ? 0 : std::max(hi - exp, 0), 90, 6, x, y, proj);
+        for (int k = 0; k < 5; ++k) {
+            char jn[16];
+            std::snprintf(jn, sizeof jn, "typeS_C%02d", k + 1);
+            if (!uiJoint(kw, jn, x, y)) continue;
+            std::string n;
+            if (k >= level) n = messageText("announcemenuname", 0x3d);
+            else if (so->commands[k] > 0) n = messageText("commandname", so->commands[k]);
+            else if (so->skills[k] > 0) n = messageText("autoskillname", so->skills[k]);
+            drawUiText(n, 22, x, y, w, h);
+        }
+    }
+
+    // The equipment (CampEquipmentListMenu, with CharaStatusWindowBMenu / CharaStatusCapacityMenu
+    // and CampEyeButtonMenu's character buttons - eyeBtnPos, eyeBtn_id at the character's number
+    // / 20 s at call_eyeBtn_id<n>, eyeSlct and eyeCsr_loop on the one chosen; a tap another, 0xb7).
+    // Its view: the weapon, the armour, the accessory (menu name 0x4b, none to wear: half), the
+    // character's own sopia (not to change), Darwin's human sopia (0x4d), the three monster sopia
+    // (0x4e .. 0x50) and the skills (0x54); a row its list - the items of its kind (+0x10: 1 2 3)
+    // had that the character may wear (+0x12's bit), the one worn lit yellow and fixed, those all
+    // worn by others half; the sopia (human: those had past Darwin's own whose flag 0xbe1 + n is
+    // set; monster: +0x10 1 - one of another's taken from them after a question, announce 0x8a);
+    // "Remove" (0x53) when the place holds one. A choice: Cr3UtilChangeEquipItem / Sopia (199).
+    int campEquipChar = 0, campEquipMode = 0, campEquipCursor = 0;
+    int campTakeSopia = 0, campTakeFrom = -1; // (a sopia another wears, asked for)
+    struct EquipRow {
+        int id = 0; // (300 + the mode a view row opens; an item; 400 + a sopia; 399 Remove)
+        std::string name;
+        bool selectable = true, worn = false;
+        int sopia = 0; // (what the sopia windows show for it)
+    };
+    std::string menuName(int id) { return messageText("announcemenuname", id); }
+    std::vector<EquipRow> equipRows() {
+        std::vector<EquipRow> rows;
+        const int ch = campEquipChar;
+        const short* eq = game.equip[ch];
+        auto itemName = [&](int id) { const cr2::BattleData::Item* it = battleData.item(id); return it ? it->name[1] : std::string(); };
+        auto sopiaName = [&](int id) { const cr2::BattleData::Sopia* so = battleData.sopia(id); return so ? so->name[1] : std::string(); };
+        auto owns = [&](int type) {
+            for (int id = 1; id < 300; ++id)
+                if (const cr2::BattleData::Item* it = game.itemCount[id] > 0 ? battleData.item(id) : nullptr)
+                    if (it->type == type && (it->wearers >> ch & 1)) return true;
+            return false;
+        };
+        auto ownsSopia = [&](bool monster) {
+            for (int s = 1; s < 32; ++s)
+                if (game.sopiaOwned >> s & 1u)
+                    if (const cr2::BattleData::Sopia* so = battleData.sopia(s); so && (so->growth == 1) == monster) return true;
+            return false;
+        };
+        if (campEquipMode == 0) {
+            rows.push_back({301, itemName(eq[0])});
+            rows.push_back({302, itemName(eq[1])});
+            if (eq[2] > 0) rows.push_back({303, itemName(eq[2])});
+            else rows.push_back({303, menuName(0x4b), owns(3)});
+            rows.push_back({0, sopiaName(eq[3]), false, false, eq[3]});
+            if (ch == 0) rows.push_back({304, eq[4] > 0 ? sopiaName(eq[4]) : menuName(0x4d), eq[4] > 0 || !humanSopia().empty(), false, eq[4]});
+            for (int s = 0; s < 3; ++s)
+                rows.push_back({305 + s, eq[5 + s] > 0 ? sopiaName(eq[5 + s]) : menuName(0x4e + s), eq[5 + s] > 0 || ownsSopia(true), false, eq[5 + s]});
+            rows.push_back({309, menuName(0x54)});
+        } else if (campEquipMode >= 1 && campEquipMode <= 3) {
+            const int slot = campEquipMode - 1;
+            for (int id = 1; id < 300; ++id) {
+                const cr2::BattleData::Item* it = game.itemCount[id] > 0 ? battleData.item(id) : nullptr;
+                if (!it || it->type != campEquipMode || !(it->wearers >> ch & 1)) continue;
+                int free = game.itemCount[id]; // (Cr3UtilGetNotEquippedItemNumber)
+                for (int c : validChars())
+                    for (int e = 0; e < 3; ++e) free -= game.equip[c][e] == id;
+                EquipRow r{id, it->name[1]};
+                r.worn = eq[slot] == id;
+                r.selectable = !r.worn && free > 0;
+                rows.push_back(r);
+            }
+            if (campEquipMode == 3 && eq[2] > 0) rows.push_back({399, menuName(0x53)});
+        } else if (campEquipMode == 4) {
+            for (int s : humanSopia()) rows.push_back({400 + s, sopiaName(s), eq[4] != s, eq[4] == s, s});
+            if (eq[4] > 0) rows.push_back({399, menuName(0x53)});
+        } else if (campEquipMode >= 5 && campEquipMode <= 7) {
+            for (int s = 1; s < 32; ++s) {
+                const cr2::BattleData::Sopia* so = game.sopiaOwned >> s & 1u ? battleData.sopia(s) : nullptr;
+                if (!so || so->growth != 1) continue;
+                const bool mine = eq[5] == s || eq[6] == s || eq[7] == s;
+                rows.push_back({400 + s, so->name[1], !mine, mine, s});
+            }
+            if (eq[campEquipMode] > 0) rows.push_back({399, menuName(0x53)});
+        } else if (campEquipMode == 9) { // (SetSkillList: what the equipment and the sopia give)
+            for (int e = 0; e < 3; ++e)
+                if (const cr2::BattleData::Item* it = eq[e] > 0 ? battleData.item(eq[e]) : nullptr) {
+                    if (it->command > 0) rows.push_back({0, messageText("commandname", it->command), true});
+                    for (int s : it->skills)
+                        if (s > 0) rows.push_back({0, messageText("autoskillname", s), true});
+                }
+            for (int k = 3; k < 8; ++k)
+                if (const cr2::BattleData::Sopia* so = eq[k] > 0 ? battleData.sopia(eq[k]) : nullptr)
+                    for (int l = 0; l < std::min(int(game.sopiaLevel[eq[k]]), 5); ++l) {
+                        if (so->commands[l] > 0) rows.push_back({0, messageText("commandname", so->commands[l]), true});
+                        else if (so->skills[l] > 0) rows.push_back({0, messageText("autoskillname", so->skills[l]), true});
+                    }
+        }
+        return rows;
+    }
+    // Darwin's human sopia choices (SetHumanSopiaList: the character sopia had, the n-th past the first with flag 0xbe1 + n)
+    std::vector<int> humanSopia() const {
+        std::vector<int> out;
+        int n = 0;
+        for (int s = 1; s < 32; ++s) {
+            const cr2::BattleData::Sopia* so = game.sopiaOwned >> s & 1u ? battleData.sopia(s) : nullptr;
+            if (!so || so->growth != 0) continue;
+            if (n >= 1 && n <= 6 && game.flag(0xbe1 + n)) out.push_back(s);
+            ++n;
+        }
+        return out;
+    }
+    void campEquipPick(int id) {
+        const std::vector<EquipRow> rows = equipRows();
+        const auto r = std::find_if(rows.begin(), rows.end(), [&](const EquipRow& x) { return x.id == id && x.selectable; });
+        if (r == rows.end()) return;
+        short* eq = game.equip[campEquipChar];
+        if (campEquipMode == 0) {
+            if (id == 309 || (id >= 301 && id <= 307)) {
+                audio.playSe(0xb4, false);
+                campEquipMode = id - 300, campEquipCursor = 0, campStart = uiClock;
+            }
+            return;
+        }
+        if (campEquipMode >= 1 && campEquipMode <= 3) {
+            eq[campEquipMode - 1] = static_cast<short>(id == 399 ? 0 : id);
+        } else if (campEquipMode == 4) {
+            eq[4] = static_cast<short>(id == 399 ? 0 : id - 400);
+        } else if (campEquipMode >= 5 && campEquipMode <= 7) {
+            const int s = id == 399 ? 0 : id - 400;
+            for (int c : validChars()) // (another wears it: asked first)
+                if (c != campEquipChar && s > 0)
+                    for (int k = 5; k < 8; ++k)
+                        if (game.equip[c][k] == s) {
+                            audio.playSe(0xb4, false);
+                            campTakeSopia = s, campTakeFrom = c, campUseStart = uiClock;
+                            return;
+                        }
+            eq[campEquipMode] = static_cast<short>(s);
+        } else return;
+        audio.playSe(199, false);
+        clampMp(campEquipChar);
+        SDL_Log("camp: %d equips %d in mode %d", campEquipChar + 1, id, campEquipMode);
+        campEquipMode = 0, campEquipCursor = 0, campStart = uiClock;
+    }
+    void clampMp(int ch) { // (Cr3UtilAdjustment: the MP within the most)
+        if (game.mp[ch] >= 0) game.mp[ch] = std::min(game.mp[ch], statsOf(ch).maxMp);
+    }
+    void campTakeAnswer(bool yes) {
+        if (yes) {
+            for (int k = 5; k < 8; ++k)
+                if (game.equip[campTakeFrom][k] == campTakeSopia) game.equip[campTakeFrom][k] = 0;
+            clampMp(campTakeFrom);
+            game.equip[campEquipChar][campEquipMode] = static_cast<short>(campTakeSopia);
+            clampMp(campEquipChar);
+            audio.playSe(199, false);
+            campEquipMode = 0, campEquipCursor = 0, campStart = uiClock;
+        } else audio.playSe(0xb4, false);
+        campTakeSopia = 0, campTakeFrom = -1;
+    }
+    void campEquipBack() {
+        audio.playSe(0xb5, false);
+        if (campTakeSopia) return campTakeAnswer(false);
+        if (campEquipMode) campEquipMode = 0, campEquipCursor = 0, campStart = uiClock;
+        else campList = 0, campCursor = 0, campStart = uiClock;
+    }
+    void campEquipChange(int dir) { // (another character: the eye buttons, Left / Right)
+        const std::vector<int> chars = validChars();
+        if (chars.empty() || campEquipMode) return;
+        const auto it = std::find(chars.begin(), chars.end(), campEquipChar);
+        const int k = it == chars.end() ? 0 : int(it - chars.begin());
+        campEquipChar = chars[size_t((k + dir + int(chars.size())) % int(chars.size()))];
+        audio.playSe(0xb7, false);
+    }
+    void drawEquipment(const Mat4& view, const Mat4& proj, int w, int h) {
+        const float t = uiClock - campStart;
+        const std::vector<EquipRow> rows = equipRows();
+        campEquipCursor = std::clamp(campEquipCursor, 0, std::max(int(rows.size()) - 1, 0));
+        const EquipRow* focused = rows.empty() ? nullptr : &rows[size_t(campEquipCursor)];
+        // the right: the sopia's windows for a sopia, else the character's with the change the focused item makes
+        const bool sopiaShown = focused && (campEquipMode == 0 ? (focused->id == 0 && focused->sopia > 0) || (focused->id >= 304 && focused->id <= 307)
+                                                               : campEquipMode >= 4 && campEquipMode <= 7);
+        if (sopiaShown) drawSopiaWindows(focused->sopia, t, view, proj, w, h);
+        else {
+            int change[5] = {0, 0, 0, 0, 0}, hpChange = 0, mpChange = 0;
+            if (campEquipMode >= 1 && campEquipMode <= 3 && focused && focused->id != 0) { // (SetEquipStatusParamerter)
+                int eq[8], eq2[8];
+                for (int e = 0; e < 8; ++e) eq[e] = eq2[e] = game.equip[campEquipChar][e];
+                eq2[campEquipMode - 1] = focused->id == 399 ? 0 : focused->id;
+                const int lv = std::max(game.level[campEquipChar], 1);
+                const auto a = cr2::BattleRules::playerStats(battleData, campEquipChar + 1, lv, eq, game.sopiaLevel, game.seed[campEquipChar], game.itemCount);
+                const auto b = cr2::BattleRules::playerStats(battleData, campEquipChar + 1, lv, eq2, game.sopiaLevel, game.seed[campEquipChar], game.itemCount);
+                for (int k = 0; k < 5; ++k) change[k] = b.param[k] - a.param[k];
+                hpChange = b.maxHp - a.maxHp, mpChange = b.maxMp - a.maxMp;
+            }
+            drawStatusB(campEquipChar, hpChange, mpChange, t, view, proj);
+            drawCapacity(campEquipChar, change, t, view, proj, w, h);
+        }
+        // the character buttons
+        if (campEquipMode == 0) {
+            UiFig& pos = uiFig("eyebtnpos");
+            pos.fig.place = cr2::Mat34();
+            poseUi(pos, "eyebtnpos", t);
+            for (int c : validChars()) {
+                float x, y;
+                if (!uiJoint(pos, "call_eyeBtn_id" + std::string(c + 1 < 10 ? "0" : "") + std::to_string(c + 1), x, y)) continue;
+                UiFig& b = uiFig("eyebtn_id");
+                b.fig.place = cr2::Mat34();
+                b.fig.place.m[3] = x, b.fig.place.m[7] = y;
+                poseUi(b, "eyebtn_id", float(c + 1) / 20.0f);
+                drawFigure(b.fig, view.data());
+                float sx, sy, ex, ey;
+                if (uiJoint(b, "tapAreaS01", sx, sy) && uiJoint(b, "tapAreaE01", ex, ey)) tapRects.push_back({7300 + c, sx, sy, ex, ey});
+                if (c == campEquipChar) {
+                    for (const char* f : {"eyeslct", "eyecsr_loop"}) {
+                        float px, py;
+                        if (!uiJoint(b, std::string("call_") + (f[3] == 's' ? "eyeSlct" : "eyeCsr_loop"), px, py)) continue;
+                        UiFig& s = uiFig(f);
+                        s.fig.place = cr2::Mat34();
+                        s.fig.place.m[3] = px, s.fig.place.m[7] = py;
+                        poseUi(s, f, t, true);
+                        drawFigure(s.fig, view.data());
+                    }
+                }
+            }
+        }
+        // the list (its tab - SetListItemParam's ListTag: none for the view, 1 the weapons, 3 the
+        // armour, 5 the accessories, 9 the sopia and the skills)
+        std::vector<ListRow> list;
+        for (const EquipRow& r : rows) {
+            ListRow lr;
+            lr.id = r.id, lr.name = r.name, lr.number = -1, lr.selectable = r.selectable;
+            if (r.id > 0 && r.id < 300)
+                if (const cr2::BattleData::Item* it = battleData.item(r.id)) lr.icon = it->icon, lr.help = it->text[1];
+            list.push_back(lr);
+        }
+        listRows = list;
+        static const int kTabs[10] = {-1, 1, 3, 5, 9, 9, 9, 9, 9, 9};
+        drawSkillList(list, focused ? focused->id : -1, t, view, w, h, kTabs[std::clamp(campEquipMode, 0, 9)], -1);
+        if (campTakeSopia) {
+            const std::string who = menuName(0x29 + campTakeFrom);
+            drawAsk(formatAnnounce(announce(0x8a), {who}), uiClock - campUseStart, view, w, h, 7201, 7202);
+        }
+    }
+
     // a camp button pressed (CampMenu::TouchSimpleRelease: 0xb4; InterfaceMain's camp step by it)
     void campPress(int id) {
         if (campUse) return campUseTap(id);
+        if (campList == 17) {
+            if (id == 100) campEquipBack();
+            else if (campTakeSopia && (id == 7201 || id == 7202)) campTakeAnswer(id == 7201);
+            else if (id >= 7300 && id < 7310 && !campEquipMode) { if (id - 7300 != campEquipChar) audio.playSe(0xb7, false); campEquipChar = id - 7300; }
+            else if (id >= 300 && id < 500) campEquipPick(id);
+            return;
+        }
         if (id == 100) {
             audio.playSe(0xb5, false);
             if (campList) campList = 0, campCursor = 0, campStart = uiClock;
@@ -4823,6 +5131,13 @@ struct Viewer {
         }
         if (campList) return;
         audio.playSe(0xb4, false);
+        if (id == 17) { // (InterfaceMain's camp step 2: the equipment, the first character's)
+            const std::vector<int> chars = validChars();
+            campList = 17, campEquipMode = 0, campEquipCursor = 0, campStart = uiClock;
+            campEquipChar = !chars.empty() ? (std::find(chars.begin(), chars.end(), game.party[0]) != chars.end() ? game.party[0] : chars[0]) : 0;
+            SDL_Log("camp: equipment of %d", campEquipChar + 1);
+            return;
+        }
         if (id == 16 || id == 18) {
             campList = id, campCategory = 0, campCursor = 0, campStart = uiClock;
             SDL_Log("camp: %s - %zu", id == 16 ? "items" : "sopia", campRows().size());
@@ -4852,6 +5167,20 @@ struct Viewer {
             return;
         }
         if (k == SDLK_BACKSPACE) return campPress(100);
+        if (campList == 17) {
+            if (campTakeSopia) {
+                if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) campTakeAnswer(true);
+                else if (k == SDLK_N) campTakeAnswer(false);
+                return;
+            }
+            const std::vector<EquipRow> rows = equipRows();
+            const int n = std::max(int(rows.size()), 1);
+            if (k == SDLK_UP) campEquipCursor = (campEquipCursor + n - 1) % n;
+            else if (k == SDLK_DOWN) campEquipCursor = (campEquipCursor + 1) % n;
+            else if (k == SDLK_LEFT || k == SDLK_RIGHT) campEquipChange(k == SDLK_LEFT ? -1 : 1);
+            else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && !rows.empty()) campEquipPick(rows[size_t(std::clamp(campEquipCursor, 0, n - 1))].id);
+            return;
+        }
         if (campList) {
             const int n = std::max(int(campRows().size()), 1);
             if (k == SDLK_UP) campCursor = (campCursor + n - 1) % n;
@@ -4882,6 +5211,7 @@ struct Viewer {
                 if (r.id > 6000 && r.id <= 6005) fieldTabTap(r.id - 6000);
                 else if (campOpen && optionsTapped(r, x)) {
                 } else if (campOpen && campUse) campUseTap(r.id);
+                else if (campOpen && campList == 17 && r.id >= 1000 && r.id < 5000) campEquipCursor = r.id - 1000;
                 else if (campOpen && campList && r.id >= 1000 && r.id < 5000) campCursor = r.id - 1000; // (a row: the focus)
                 else if (campOpen && campList == 16 && r.id > 0 && r.id < 1000) campPickItem(r.id); // (the focused row: picked)
                 else if (campOpen && r.id >= 0) campPress(r.id);
@@ -4902,7 +5232,8 @@ struct Viewer {
         else if (t == "options") campPress(20);
         else if (t == "category") campCategory = 1 - campCategory, campCursor = 0;
         else if (t.size() > 1 && t[0] == 'u' && std::isdigit(static_cast<unsigned char>(t[1]))) campPickItem(std::atoi(t.c_str() + 1)); // (an item used: uNNN)
-        else if (campUse && (t == "left" || t == "right")) campKey(t == "left" ? SDLK_LEFT : SDLK_RIGHT);
+        else if ((campUse || campList == 17) && (t == "left" || t == "right")) campKey(t == "left" ? SDLK_LEFT : SDLK_RIGHT);
+        else if (campTakeSopia && (t == "yes" || t == "no")) campTakeAnswer(t == "yes");
         else if (campUse && (t == "yes" || t == "no")) campUseTap(t == "yes" ? 7201 : 7202);
         else if (t == "down") campKey(SDLK_DOWN);
         else if (t == "up") campKey(SDLK_UP);

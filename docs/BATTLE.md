@@ -289,6 +289,40 @@ added up, +0x20, over their count) less the monsters' levels added up (+0x26, Bt
 through CheckResult's -50 / -1 / 49 to 40, 50, 60 or 70 in 100 (BtlRand). Away: the battle over
 after 2 s (cr3_battle_post[8] 1); else, after 1 s, the turn the monsters' alone.
 
+## States (BtlStateManager)
+
+Each fighter keeps a list of states (BtlWork +0x2384 + 8 x its number): an id, the turns left (0:
+for good) and the uses left (0: not counted). 0 poison, 1 blind, 2 seal, 3 a turn's, 4 guard, 5..12
+raised and 13..20 lowered Attack, Magic, Defense, Speed, Luck and three more, 21 time stopped,
+22..25 attack / sopia / defend / items sealed, 26.. the special ones (29 strength, 30 provoking,
+32 sure criticals, 33 a magic barrier, 35 revived once, 38..40 EXP / SP / Oz doubled).
+They come with a command (BtlActionCtrl::CalcCommand - kinds 1, 2, 3, 26, 28 states alone, a sure
+"hit"; 0, 4..17, 27, 29, 32 damage, the states after a hit - CalcStatus):
+- CheckBadStatus (BtlCalc::BadStatus: the command's +0x50 + k of 1, or for a physical one the
+  attacker's - its partner's in a pair - auto skill lending it, skill group -1 bit k; the target's
+  resistance +0xfa3 + k halving it, 2 none): the action cancelled (k 3, 50 in 100, 70 in its side's
+  turn break); poison, blind, seal (k 0..2: 80 / 100 - the command's +0x6d turns, else 3; +1 with
+  skill 5, 5); state 3 for a turn (k 4). CheckCureStatus: +0x50 + k of 2 ends it.
+- CheckParamStatus: +0x5c + k of 1 lowers (13 + k; a raise there just undone), 2 raises (5 + k; a
+  lowering undone); CheckSpecialStatus: +0x64's bit b the state 26 + b (0x535c08); both lasting by
+  +0x6c - 1 one use, 2 a turn, 3 +0x6d turns, else for good; CheckAttachTarget: +0x70 1..3 lends
+  that element, 4 takes it.
+What they do: a raised parameter x 1.25, a lowered x 0.75 (GetCharaParam: a use each read); blind
+halves the hit chance (a use); 32 makes a critical sure (a use); a cancelled or time-stopped one
+does not act; a provoking one draws a monster's single attack (CheckProvoke, when only one of the
+two provokes); seals grey the commands (CheckCommandEnable); 38..40 double the result's EXP / SP /
+Oz. At the turn's end (BtlTurnEnd) poison takes ceil(a tenth) of the most HP (one left at least),
+then each standing one's states a turn on (Turn: gone at none left); one down loses them all.
+The signs (GetCharaUIState: 0x536648's states as bits - poison 4, blind 5, seal 6, 12 7, 35 9, 30
+10, 29 11, 33 12, raised 14..18, lowered 19..23, time stopped 24, 11 or 32 bit 8; the sign the bit +
+1) on the targets' buttons from call_enchant_id01 and the party's windows (six at id01, six at
+id07, one at id13, two at id14), 0.04 apart. Each change is announced on the banner (btlMsg,
+AnnouncementWindowMenu), 1.5 s each: "You poisoned %s!" on a monster, "%s has been poisoned!" on
+the party, "Poison does not affect %s!", "%s is hit with status effects!" for several at once,
+the parameters' and the special states' (BtlAnnounce::ShowAnnounceStatus1..3). Not yet: the
+special states' effects past provoking, sure criticals and the result's doubling (counters,
+barriers, revival, strength), the monsters' seals, the regeneration skills (LifePool, ManaPool).
+
 ## The result (BtlResult)
 
 A monster downed adds its rewards (BtlActionCtrl::CheckDead: BtlWork +0xabc EXP, +0xac0 SP,

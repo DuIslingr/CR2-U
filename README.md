@@ -117,12 +117,15 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       party (the sopia's elements and auto skills, the scripts' equipment) - as the reference
       video shows them (`cr2view --battle 222 --fight manual`, `--play`; `--input "solo attack 2
       defend"` gives the choices)
+- [x] States: poison, blind, seal, the action cancelled, raised and lowered parameters, the
+      special ones - taken by the game's chances and resistances, their effects, their turns, the
+      poison at the turn's end, their signs on the party and the targets, their announcements
 - [x] A battle won: "Victory!", the party's victory motion and camera, the result window (the
       EXP and SP gained, the levels, HP, MP and NEXT, the EXP going in, the levels kept), its
       messages - levels gained, the sopia's SP and what they learn, the Oz, the items and sopia
       left (rolled as each monster falls) - as the reference video's first battle
 - [ ] Battles on screen: Options, the advents' list, the awakenings' own scenes, the
-      states (the sopia's buffs and ailments, their signs), the actions' effects past the hits', the battles'
+      the special states' rarer effects, the actions' effects past the hits', the battles'
       tutorials; the states that double a result's EXP / SP / Oz
 - [ ] Treasure boxes, the other windows (announcements, tutorials, items), the HUD, the sounds
       between areas

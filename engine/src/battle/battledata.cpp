@@ -129,6 +129,9 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         c.magic = d[o + 0x49], c.spread = d[o + 0x4a], c.target = d[o + 0x4b], c.element = d[o + 0x4c];
         c.specials = uint16_t(s16(d, o + 0x4e));
         c.kind = d[o + 0x6f];
+        for (int k = 0; k < 5; ++k) c.bad[k] = d[o + 0x50 + size_t(k)];
+        for (int k = 0; k < 8; ++k) c.change[k] = d[o + 0x5c + size_t(k)];
+        c.special = u32(d, o + 0x64), c.durationMode = d[o + 0x6c], c.turns = int8_t(d[o + 0x6d]), c.attach = d[o + 0x70];
         c.awaken = d[o + 0x48];
         c.mp = s16(d, o + 0x42), c.icon = d[o + 0x72];
         commands_.push_back(c);

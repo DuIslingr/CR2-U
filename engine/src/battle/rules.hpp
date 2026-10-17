@@ -47,10 +47,48 @@ struct Fighter {
     int hp = 0, maxHp = 0, mp = 0, maxMp = 0;
     int param[5] = {0, 0, 0, 0, 0}; // Attack, Magic, Defense, Speed, the fifth
     int resist[7] = {0, 0, 0, 0, 0, 0, 0};
+    int stateResist[5] = {0, 0, 0, 0, 0}; // (+0xfa3: poison, blind, seal, cancel, the fifth - 1 halves, 2 none)
     int element = 0;
     unsigned skills[7] = {0, 0, 0, 0, 0, 0, 0}; // (BtlWork +0xfac..+0xfb8: groups -1..5)
     int partner = -1;   // (+0xb02: -1 solo)
     bool guarding = false; // (state 4: this turn)
+    // its states (BtlStateManager, BtlWork +0x2384 + 8 x (its number + 0x470)): each an id, the
+    // turns left (0 for good) and the uses left (0 none counted) - 0 poison, 1 blind, 2 seal, 3 (a
+    // turn's), 5..12 raised and 13..20 lowered parameters (Attack, Magic, Defense, Speed, Luck,
+    // three more), 21 time stopped, 22..25 attack / sopia / defend / items sealed, 26.. special
+    // (30 provoking, 32 sure to strike critically, 35 revived once, 38..40 EXP / SP / Oz doubled)
+    struct State {
+        int id = 0, turns = 0, count = 0;
+    };
+    mutable std::vector<State> states;
+    bool canceled = false; // (+0xf7a: its action this turn cancelled)
+    bool hasState(int id) const {
+        for (const State& s : states)
+            if (s.id == id) return true;
+        return false;
+    }
+    void addState(int id, int turns, int count) { // (Add: a new one, or the one there renewed)
+        for (State& s : states)
+            if (s.id == id) {
+                s.turns = turns, s.count = count;
+                return;
+            }
+        states.push_back({id, turns, count});
+    }
+    void clearState(int id) {
+        for (size_t k = 0; k < states.size(); ++k)
+            if (states[k].id == id) {
+                states.erase(states.begin() + std::ptrdiff_t(k));
+                return;
+            }
+    }
+    void useState(int id) const { // (Decrement: one use - the last ends it)
+        for (size_t k = 0; k < states.size(); ++k)
+            if (states[k].id == id && states[k].count > 0 && --states[k].count == 0) {
+                states.erase(states.begin() + std::ptrdiff_t(k));
+                return;
+            }
+    }
     int attack = 0, pairAttack = 0; // a character's commands
     int sopia[5] = {0, 0, 0, 0, 0};  // a character's sopia equipped (cr3_player_data +0x42..; a new game's)
     const BattleData::Monster* monster = nullptr;
@@ -96,6 +134,9 @@ public:
         int damage = 0;
         int heal = 0, healMp = 0; // (a restore's: BtlCalc::Restore)
         bool revived = false;
+        // the announcements it makes (BtlAnnounce: announcebattle's numbers, each with the one
+        // it names - BtlActionCtrl::CalcStatus's, the turn's end)
+        std::vector<std::pair<int, int>> notes;
     };
     // One turn: the party solo (each its order) or a pair (the first order the pair's), the
     // monsters' own choices, all in their order. Returns the events.
@@ -109,6 +150,9 @@ public:
     void doAction(std::vector<Event>& out);
     void endAction();
     void endTurn();
+    // the turn's end's (BtlTurnEnd): the poison's damage (a tenth of the most HP, one left at
+    // least), as events with `damage` (hit set, no command)
+    const std::vector<Event>& turnEndEvents() const { return turnEnd_; }
 
     // What the battle's script reads and sets (Cr3Battle: BtlWork)
     // SetParamI / GetParamI's ids: 10 + 7k (k the fighter: 0, 1 the party) HP (-1: its maximum), 11 + 7k
@@ -209,6 +253,9 @@ private:
     // the script's
     int charge_ = 0, ints_[5] = {0, 0, 0, 0, 0}, commandActor_ = -1;
     int exp_ = 0, sp_ = 0, oz_ = 0;
+    std::vector<Event> turnEnd_;
+    void calcStatus(int actor, int target, const BattleData::Command& c, Event& e);
+    bool badStatus(int actor, int target, const BattleData::Command& c, int k, int breakChance, int chance);
     short drops_[300] = {};
     bool sopiaDrops_[32] = {};
     uint32_t sopiaOwned_ = 0;

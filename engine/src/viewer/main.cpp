@@ -1563,6 +1563,12 @@ struct Viewer {
         case BattleStep::ActionStart:
             if (!battleRules->actionsLeft()) {
                 battleRules->endTurn();
+                if (announceQueue.empty()) commandShown.clear(); // (BtlTurnEnd: ClearAnnounce)
+                for (const cr2::BattleRules::Event& e : battleRules->turnEndEvents()) { // (BtlTurnEnd: the poison's)
+                    showNumber(e.target, e.damage, 20);
+                    SDL_Log("    %s: %d poison", battleRules->fighter(e.target).name.c_str(), e.damage);
+                }
+                if (!battleRules->turnEndEvents().empty()) showEnd = battleClock + 1.2f;
                 SDL_Log("turn over; gauge %d, charge %d; MP %d %d", battleRules->gauge(), battleRules->charge(), battleRules->fighter(0).mp, battleRules->fighter(1).mp);
                 battleStep = BattleStep::TurnBegin;
                 break;
@@ -1709,8 +1715,15 @@ struct Viewer {
         result = BattleResultShow();
         result.stage = 1, result.start = battleClock;
         result.exp = battleRules->expGained(), result.sp = battleRules->spGained(), result.oz = battleRules->ozGained();
-        // CheckBonus: ExpUp / SpUp / OzUp (skill 3, 0 / 1 / 2) of either +20 in 100 (the states
-        // doubling them: not yet)
+        // CheckBonus: the party's states 38 / 39 / 40 double the EXP / SP / Oz; ExpUp / SpUp / OzUp
+        // (skill 3, 0 / 1 / 2) of either +20 in 100
+        for (int k = 0; k < 2; ++k) {
+            const cr2::Fighter& f = battleRules->fighter(k);
+            if (!f.present) continue;
+            if (f.hasState(38)) result.exp *= 2;
+            if (f.hasState(39)) result.sp *= 2;
+            if (f.hasState(40)) result.oz *= 2;
+        }
         auto bonus = [&](int bit, int& v) {
             for (int k = 0; k < 2; ++k)
                 if (battleRules->fighter(k).present && battleRules->fighter(k).has(3, bit)) {
@@ -1784,6 +1797,27 @@ struct Viewer {
                 SDL_Log("result: EXP %d, SP %d, Oz %d", result.exp, result.sp, result.oz);
             }
         }
+    }
+    // a number at a fighter's DummyDP01 (its bind pose's), as the hits' (DamageInfo00)
+    void showNumber(int f, int value, int set) {
+        const int u = f >= 0 && f < 5 ? fighterUnit[f] : -1;
+        if (u < 0) return;
+        const BattleUnit& bu = battleUnits[size_t(u)];
+        float p[3] = {bu.fig.place.m[3], bu.fig.place.m[7] + 0.15f, bu.fig.place.m[11]};
+        const int dj = bu.fig.skeleton.joint(cr2::nameHash("DummyDP01"));
+        if (dj >= 0) {
+            const std::vector<cr2::Mat34> ww = bu.fig.skeleton.world(bu.fig.skeleton.basePose, bu.fig.place);
+            if (size_t(dj) < ww.size()) p[0] = ww[size_t(dj)].m[3], p[1] = ww[size_t(dj)].m[7], p[2] = ww[size_t(dj)].m[11];
+        }
+        const float* mm = battleVP.data();
+        const float cw = mm[3] * p[0] + mm[7] * p[1] + mm[11] * p[2] + mm[15];
+        if (cw <= 0) return;
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        DamageShown ds;
+        ds.value = value, ds.set = set, ds.start = battleClock;
+        ds.x = (mm[0] * p[0] + mm[4] * p[1] + mm[8] * p[2] + mm[12]) / cw * float(screenW) * 0.5f / k;
+        ds.y = (mm[1] * p[0] + mm[5] * p[1] + mm[9] * p[2] + mm[13]) / cw * float(screenH) * 0.5f / k;
+        damageShown.push_back(ds);
     }
     void beginShowAction(const ShowAction& a) {
         showStart = battleClock, showHitDone = false;
@@ -1861,8 +1895,15 @@ struct Viewer {
     }
 
     // the fight's time going on: the next action (or turn), the hits as they land
+    std::deque<std::string> announceQueue;
+    float announceAt = -10;
     void updateBattleShow() {
         if (!battleRules || battleFight == 0) return;
+        if (!announceQueue.empty() && battleClock - announceAt > 1.5f) { // (each 1.5 s on the banner)
+            commandShown = announceQueue.front(), commandShownStart = announceAt = battleClock;
+            SDL_Log("    announce: %s", commandShown.c_str());
+            announceQueue.pop_front();
+        }
         stepBattleShow();
         if (showIndex >= showActions.size()) return;
         const ShowAction& a = showActions[showIndex];
@@ -1876,10 +1917,14 @@ struct Viewer {
                 if (u < 0) continue;
                 BattleUnit& bu = battleUnits[size_t(u)];
                 const bool restore = e.heal > 0 || e.healMp > 0 || e.revived;
-                if (e.hit && !restore) playMotion(bu, "bd01", battleClock);
+                const cr2::BattleData::Command* sc = battleData.command(e.command);
+                const bool statusOnly = sc && (sc->kind == 1 || sc->kind == 3 || sc->kind == 26 || sc->kind == 28); // (no number, no blow)
+                for (const auto& [id, who] : e.notes) // (the announcements: on the banner, in turn - BtlAnnounce)
+                    announceQueue.push_back(formatAnnounce(announce(id), {battleRules->fighter(who).name}));
+                if (e.hit && !restore && !statusOnly) playMotion(bu, "bd01", battleClock);
                 if (e.revived) bu.hidden = false;
                 const cr2::BattleData::Command* hc = battleData.command(e.command);
-                if (e.hit || restore || !(hc && hc->kind == 2)) { // (the number at its DummyDP01 - else its middle - on the screen, in UI units; none for a guard)
+                if (!statusOnly && (e.hit || restore || !(hc && hc->kind == 2))) { // (the number at its DummyDP01 - else its middle - on the screen, in UI units; none for a guard)
                     float p[3] = {bu.fig.place.m[3], bu.fig.place.m[7] + 0.15f, bu.fig.place.m[11]};
                     const int dj = bu.fig.skeleton.joint(cr2::nameHash("DummyDP01"));
                     if (dj >= 0) {
@@ -2615,6 +2660,21 @@ struct Viewer {
     // a fighter's element sign (BtlInterfaceCtrl::GetCharaUIState: elements 1..3 bits 1..3, any
     // other bit 0 - SetStatusIcon's bit k sign k + 1)
     static int elementSign(const cr2::Fighter& f) { return f.element >= 1 && f.element <= 3 ? f.element + 1 : 1; }
+    // its states' signs after the element's (GetCharaUIState: 0x536648's states as bits - poison 4,
+    // blind 5, seal 6, 12 7, 35 9, 30 10, 29 11, 33 12, raised Attack .. Luck 14..18, lowered 19..23,
+    // time stopped 24; 11 or 32 bit 8 - the sign the bit + 1, in the bits' order)
+    static std::vector<int> stateSigns(const cr2::Fighter& f) {
+        static const int kStates[19] = {0, 1, 2, 12, 35, 30, 29, 33, 5, 6, 7, 8, 9, 13, 14, 15, 16, 17, 21};
+        static const int kBits[19] = {4, 5, 6, 7, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24};
+        uint32_t bits = 0;
+        for (int k = 0; k < 19; ++k)
+            if (f.hasState(kStates[k])) bits |= 1u << kBits[k];
+        if (f.hasState(11) || f.hasState(32)) bits |= 1u << 8;
+        std::vector<int> out;
+        for (int b = 4; b < 32; ++b)
+            if (bits >> b & 1u) out.push_back(b + 1);
+        return out;
+    }
     // a line of text at a UI place (centred), made once
     std::map<std::string, TextQuad> uiTexts;
     // `left`: from x (typeS_L: the text's left), else centred on it; `shade` its colour's
@@ -2706,6 +2766,10 @@ struct Viewer {
                     float lx, ly;
                     if (uiJoint(c, "call_dotNum_id30", lx, ly)) drawDigits(fi.level, 120, 3, lx, ly, uiProjection(w, h));
                     if (uiJoint(c, "call_enchant_id00", lx, ly)) drawEnchant(elementSign(fi), lx, ly, uiProjection(w, h)); // (CircleBtn::SetStatusIcon's first)
+                    if (uiJoint(c, "call_enchant_id01", lx, ly)) { // (its states from id01 on, 0.04 apart)
+                        const std::vector<int> signs = stateSigns(fi);
+                        for (size_t k = 0; k < signs.size() && k < 15; ++k) drawEnchant(signs[k], lx + 0.04f * float(k), ly, uiProjection(w, h));
+                    }
                     float hx, hy;
                     if (uiJoint(c, "call_hpBar_per20", hx, hy)) {
                         UiFig& bar = uiFig("btlhpbar_per");
@@ -3071,6 +3135,13 @@ struct Viewer {
             poseUi(info, n + "info", 0);
             float ex, ey;
             if (uiJoint(info, "call_enchant_id00", ex, ey)) drawEnchant(elementSign(f), ex, ey, proj);
+            { // (SetPlayerStatusIcon: the states in turn - six at id01, six at id07, one at id13, two at id14)
+                const std::vector<int> signs = stateSigns(f);
+                static const struct { const char* joint; int first, count; } kSlots[4] = {{"call_enchant_id01", 0, 6}, {"call_enchant_id07", 6, 6}, {"call_enchant_id13", 12, 1}, {"call_enchant_id14", 13, 2}};
+                for (const auto& sl : kSlots)
+                    if (uiJoint(info, sl.joint, ex, ey))
+                        for (int k = 0; k < sl.count && sl.first + k < int(signs.size()); ++k) drawEnchant(signs[size_t(sl.first + k)], ex + 0.04f * float(k), ey, proj);
+            }
             for (const char* what : {"hpNum", "mpNum"}) {
                 UiFig& num = uiFig(n + (std::string(what) == "hpNum" ? "hpnum" : "mpnum"));
                 num.fig.place = cr2::Mat34();

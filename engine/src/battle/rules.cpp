@@ -53,6 +53,7 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
                 if (const BattleData::AutoSkill* a = data_.autoSkill(s)) {
                     for (int g = 0; g < 7; ++g) f.skills[g] |= a->groups[g];
                     for (int r = 0; r < 7; ++r) f.resist[r] = std::max(f.resist[r], a->resist[r]);
+                    for (int r = 0; r < 5; ++r) f.stateResist[r] = std::max(f.stateResist[r], a->stateResist[r]);
                 }
         }
         f.hp = f.maxHp, f.mp = f.maxMp;
@@ -76,6 +77,7 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
                 if (const BattleData::AutoSkill* a = data_.autoSkill(so->skills[k])) {
                     for (int g = 0; g < 7; ++g) f.skills[g] |= a->groups[g];
                     for (int r = 0; r < 7; ++r) f.resist[r] = std::max(f.resist[r], a->resist[r]);
+                    for (int r = 0; r < 5; ++r) f.stateResist[r] = std::max(f.stateResist[r], a->stateResist[r]);
                     if (agree && a->attach) {
                         if (!attach) attach = a->attach;
                         else if (attach != a->attach) agree = false, attach = 0;
@@ -127,6 +129,7 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
         }
         f.hp = f.maxHp;
         for (int r = 0; r < 7; ++r) f.resist[r] = m->resist[r];
+        for (int r = 0; r < 5; ++r) f.stateResist[r] = m->stateResist[r];
         f.element = m->element;
         // SetupEnemySkill: its flags as skill bits
         const uint32_t s = m->skills;
@@ -148,7 +151,15 @@ int BattleRules::outcome() const {
     return !party ? 2 : !monsters ? 1 : 0;
 }
 
-int BattleRules::param(int f, int n) const { return fighters_[size_t(f)].param[n]; }
+// BtlUtilStatus::GetCharaParam: raised (state 5 + n) x 1.25, lowered (13 + n) x 0.75 - a use each
+int BattleRules::param(int f, int n) const {
+    const Fighter& x = fighters_[size_t(f)];
+    const int v = x.param[n];
+    if (n < 0 || n > 4) return v;
+    if (x.hasState(5 + n)) return x.useState(5 + n), v * 125 / 100;
+    if (x.hasState(13 + n)) return x.useState(13 + n), v * 75 / 100;
+    return v;
+}
 
 bool BattleRules::isPairAction(int f) const {
     const Fighter& a = fighters_[size_t(f)];
@@ -163,6 +174,14 @@ bool BattleRules::hit(int actor, int target, const BattleData::Command& c) {
     static const int kChance[6] = {60, 70, 80, 90, 95, 99};
     int chance = kChance[step(speed - param(target, 4))];
     if (c.kind == 15) chance = 75;
+    // blind (state 1, the actor's or its partner's in a pair: CheckCharaStatePair) halves it
+    const Fighter& a = fighters_[size_t(actor)];
+    const bool pairBlind = isPairAction(actor) && fighters_[size_t(a.partner)].hasState(1);
+    if (a.hasState(1) || pairBlind) {
+        a.useState(1);
+        if (isPairAction(actor)) fighters_[size_t(a.partner)].useState(1);
+        chance /= 2;
+    }
     return rand_.below(100) < chance;
 }
 
@@ -174,6 +193,9 @@ bool BattleRules::critical(int actor, int target, const BattleData::Command& c) 
     if (c.magic == 1 && !hasPair(2, 4)) return false;
     if (!(c.specials >> 8 & 1)) return false;
     if (c.specials >> 9 & 1) return true;
+    // state 32 (the actor's, or its partner's in a pair): sure, a use
+    if (a.hasState(32)) return a.useState(32), true;
+    if (isPairAction(actor) && fighters_[size_t(a.partner)].hasState(32)) return fighters_[size_t(a.partner)].useState(32), true;
     auto luck = [&](int f) {
         const Fighter& x = fighters_[size_t(f)];
         return isPairAction(f) ? (x.param[4] + fighters_[size_t(x.partner)].param[4]) / 2 : x.param[4];
@@ -345,6 +367,12 @@ BattleRules::Order BattleRules::enemyChoice(int mi) {
     int partyCount = 0;
     for (int i = 0; i < 2; ++i) partyCount += fighters_[size_t(i)].present;
     if (c->target == 4 || c->target == 7) o.target = m->targetRule[chosen] == 1 ? mi : rand_.below(std::max(partyCount, 1)); // (Target0 / Target1)
+    // CheckProvoke: a single target of the party - the one of the two standing provoking (state
+    // 30), if only one is; a pair struck as one
+    if (o.target >= 0 && o.target < 2 && fighters_[size_t(o.target)].partner < 0) {
+        const bool p0 = fighters_[0].alive && fighters_[0].hasState(30), p1 = fighters_[1].alive && fighters_[1].hasState(30);
+        if (p0 != p1) o.target = p0 ? 0 : 1;
+    }
     if (c->kind == 2) fighters_[size_t(mi)].guarding = true; // (SetCommand: kind 2 guards at once)
     return o;
 }
@@ -352,6 +380,7 @@ BattleRules::Order BattleRules::enemyChoice(int mi) {
 void BattleRules::act(const Order& o, std::vector<Event>& out) {
     Fighter& a = fighters_[size_t(o.actor)];
     if (!a.alive) return;
+    if (a.canceled || a.hasState(21)) return; // (its action cancelled this turn; time stopped)
     const BattleData::Command* c = data_.command(o.command);
     if (!c) return;
     if (c->kind == 2) { // defend
@@ -415,7 +444,21 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
         }
         return;
     }
-    if (c->kind != 0 && c->kind != 7 && c->kind != 5 && c->kind != 12 && c->kind != 27) return; // (states: not yet)
+    // CalcCommand: kinds 1, 2, 3, 26, 28 states alone (a sure "hit", CalcStatus); 0, 4..17, 27,
+    // 29, 32 damage, CalcStatus after a hit
+    if (c->kind == 1 || c->kind == 3 || c->kind == 26 || c->kind == 28) {
+        for (int t : targets) {
+            Fighter& tf = fighters_[size_t(t)];
+            if (!tf.alive) continue;
+            Event e;
+            e.actor = o.actor, e.partner = isPairAction(o.actor) ? a.partner : -1, e.command = o.command, e.target = t;
+            e.hit = true; // (+0xf78: sure)
+            calcStatus(o.actor, t, *c, e);
+            out.push_back(e);
+        }
+        return;
+    }
+    if (!(c->kind == 0 || (c->kind >= 4 && c->kind <= 17) || c->kind == 27 || c->kind == 29 || c->kind == 32)) return;
     for (int t : targets) {
         Fighter& tf = fighters_[size_t(t)];
         if (!tf.alive) continue;
@@ -426,8 +469,10 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
             e.critical = critical(o.actor, t, *c);
             e.damage = damage(o.actor, t, *c, e.critical, &e.weak);
             tf.hp = std::max(tf.hp - e.damage, 0);
+            if (tf.hp > 0) calcStatus(o.actor, t, *c, e);
             if (tf.hp == 0) {
                 tf.alive = false, e.defeated = true;
+                tf.states.clear(), tf.element = tf.monster ? tf.monster->element : tf.element; // (CheckDead: its states gone)
                 if (const BattleData::Monster* m = tf.side == 1 ? data_.monster(tf.id) : nullptr) {
                     exp_ = std::min(exp_ + tf.level * tf.level + m->exp, 9999999);
                     sp_ = std::min(sp_ + m->sp, 9999999);
@@ -471,7 +516,7 @@ void BattleRules::moveGauge(const Event& e, const BattleData::Command& c) {
 }
 
 void BattleRules::beginTurn() {
-    for (Fighter& f : fighters_) f.guarding = false;
+    for (Fighter& f : fighters_) f.guarding = false, f.canceled = false;
     scripted_ = Scripted(); // (BtlCommand::StepInit: none given yet)
     callScript("Turn_Start");
 }
@@ -543,6 +588,25 @@ void BattleRules::endAction() {
 
 void BattleRules::endTurn() {
     callScript("Turn_End");
+    // BtlTurnEnd: the poison's damage (ceil a tenth of the most HP, one left), then each standing
+    // one's states a turn on (BtlStateManager::Turn: those counting turns, gone at none left)
+    turnEnd_.clear();
+    for (int k = 0; k < 5; ++k) {
+        Fighter& f = fighters_[size_t(k)];
+        if (!f.alive || !f.hasState(0)) continue;
+        Event e;
+        e.target = k, e.hit = true, e.damage = (f.maxHp + 9) / 10;
+        f.hp = std::max(f.hp - e.damage, 1);
+        turnEnd_.push_back(e);
+    }
+    for (Fighter& f : fighters_) {
+        if (!f.alive) continue;
+        for (size_t s = 0; s < f.states.size();) {
+            Fighter::State& st = f.states[s];
+            if (st.turns > 0 && --st.turns == 0) f.states.erase(f.states.begin() + std::ptrdiff_t(s));
+            else ++s;
+        }
+    }
     // BtlTurnEnd: a break ends, or one coming begins
     if (break_ == 1 || break_ == 2) break_ = 0, gauge_ = 0;
     else if (break_ == 3) break_ = gauge_ == 4 ? 1 : 2;
@@ -660,6 +724,95 @@ void BattleRules::checkDrops(const Fighter& monster, const BattleData::Monster& 
     const int s = m.sopia;
     if (s > 0 && s < 32 && monster.level >= m.sopiaLevel && !(sopiaOwned_ >> s & 1) && !sopiaDrops_[s] && rand_.below(100) < kChance[i])
         sopiaDrops_[s] = true;
+}
+
+// BtlCalc::BadStatus: whether bad state k (0 poison, 1 blind, 2 seal, 3 the action's cancel, 4 the
+// fifth) takes - the command's (+0x50 + k is 1), or for a physical one the attacker's (its
+// partner's in a pair) auto skill lending it (skill group -1, bit k); `chance` in 100,
+// `breakChance` in its side's turn break; the target resisting halves it, immune none
+bool BattleRules::badStatus(int actor, int target, const BattleData::Command& c, int k, int breakChance, int chance) {
+    const Fighter& a = fighters_[size_t(actor)];
+    const bool inflicts = c.bad[k] == 1;
+    if (!inflicts) {
+        if (c.magic != 0) return false;
+        const bool lent = (a.skills[0] >> k & 1u) || (isPairAction(actor) && (fighters_[size_t(a.partner)].skills[0] >> k & 1u));
+        if (!lent) return false;
+    }
+    if (breakBonus(actor)) chance = breakChance;
+    const int r = fighters_[size_t(target)].stateResist[k];
+    if (r == 2) return false;
+    if (r == 1) chance /= 2;
+    return int(rand_.below(100)) < chance;
+}
+
+// BtlActionCtrl::CalcStatus on one hit (or a states' command's target): CheckBadStatus,
+// CheckCureStatus, CheckParamStatus, CheckSpecialStatus, CheckAttachTarget - each noting its
+// announcement (announcebattle: the one hit's name the %s; a state on the party, one on a monster)
+void BattleRules::calcStatus(int actor, int target, const BattleData::Command& c, Event& e) {
+    Fighter& t = fighters_[size_t(target)];
+    if (!t.alive) return;
+    const Fighter& a = fighters_[size_t(actor)];
+    const bool party = target < 2;
+    const int bonus = (a.has(5, 5) || (isPairAction(actor) && fighters_[size_t(a.partner)].has(5, 5))) ? 1 : 0; // (HasPair 5, 5)
+    auto note = [&](int id) { if (id > 0) e.notes.push_back({id, target}); };
+    // the states' length by the command (+0x6c / +0x6d): one use, a turn, turns, for good
+    auto length = [&](int& turns, int& count) {
+        turns = count = 0;
+        if (c.durationMode == 1) count = 1;
+        else if (c.durationMode == 2) turns = 1;
+        else if (c.durationMode == 3) turns = c.turns + bonus;
+    };
+    int took = 0;
+    // CheckBadStatus: the action cancelled (70 / 50), then poison, blind, seal (100 / 80; the
+    // command's turns, else 3), the fifth for a turn
+    if (badStatus(actor, target, c, 3, 70, 50)) t.canceled = true, ++took, note(party ? 0x1d : 0x18);
+    static const int kBadNote[3][2] = {{0x1e, 0x19}, {0x1f, 0x1a}, {0x20, 0x1b}};
+    for (int k = 0; k < 3; ++k)
+        if (!t.hasState(k)) {
+            if (t.stateResist[k] == 2 && (c.bad[k] == 1)) {
+                note(0x21 + k);
+                continue;
+            }
+            if (badStatus(actor, target, c, k, 100, 80)) {
+                t.addState(k, (c.bad[k] == 1 ? c.turns : 3) + bonus, 0);
+                ++took, note(kBadNote[k][party ? 0 : 1]);
+            }
+        }
+    if (!t.hasState(3) && badStatus(actor, target, c, 4, 100, 80)) t.addState(3, 1, 0), ++took;
+    if (took > 1) { // (ShowAnnounceStatus1: more than one at once)
+        e.notes.erase(std::remove_if(e.notes.begin(), e.notes.end(), [&](const std::pair<int, int>& n) { return n.first >= 0x18 && n.first <= 0x20; }), e.notes.end());
+        note(0x58);
+    }
+    // CheckCureStatus: +0x50 + k of 2 cures it
+    for (int k = 0; k < 3; ++k)
+        if (c.bad[k] == 2 && t.hasState(k)) t.clearState(k);
+    // CheckParamStatus: +0x5c + k - 1 lowers (a raise there undone), 2 raises (a lowering undone)
+    static const int kUp[8] = {0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0, 0x2f, 0x2e}, kDown[8] = {0x31, 0x32, 0x33, 0x34, 0x35, 0, 0, 0},
+                     kBack[8] = {0x36, 0x37, 0x38, 0x39, 0x3a, 0, 0, 0};
+    for (int k = 0; k < 8; ++k) {
+        const int up = 5 + k, down = 13 + k;
+        int turns, count;
+        length(turns, count);
+        if (c.change[k] == 1) {
+            if (t.hasState(up)) t.clearState(up);
+            else if (!t.hasState(down)) t.addState(down, turns, count), note(kDown[k]);
+        } else if (c.change[k] == 2) {
+            if (t.hasState(down)) t.clearState(down), note(kBack[k]);
+            else if (!t.hasState(up)) t.addState(up, turns, count), note(kUp[k]);
+        }
+    }
+    // CheckSpecialStatus: +0x64's bit b the state 26 + b (0x535c08: 29 x 2 strength, 30 provoking,
+    // 32 sure criticals, 33 a magic barrier, 35 revived once, 38..40 EXP / SP / Oz doubled)
+    static const int kSpecialNote[15] = {0, 0, 0, 0x3b, 0x3d, 0, 0x30, 0x3e, 0, 0x3c, 0, 0, 0x26, 0x27, 0x28};
+    for (int b = 0; b < 15; ++b)
+        if (c.special >> b & 1u) {
+            int turns, count;
+            length(turns, count);
+            t.addState(26 + b, turns, count), note(kSpecialNote[b]);
+        }
+    // CheckAttachTarget: +0x70 1..3 lends that element, 4 takes it
+    if (c.attach >= 1 && c.attach <= 3) t.element = c.attach, note(0x41 + c.attach);
+    else if (c.attach == 4) t.element = 0;
 }
 
 void BattleRules::clearStates() {

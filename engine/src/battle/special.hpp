@@ -67,6 +67,9 @@ struct EffectSetting {
     bool billboard, loop; // (turned to the camera; looping)
     unsigned char constrain, kind; // (1 it follows the position, 2 the rotation, 4 the joint's scale)
     unsigned short delay; // (frames: it starts that much later, hidden till then)
+    short pairLocator = 0; // (a pair's action's: 7 the side's middle)
+    short placement = 0;   // (0 placed by its target - SetCommandEffectPosition -, else not)
+    bool scaled = false;   // (scaled to its target)
 };
 const EffectSetting& effectSetting(const std::string& name);
 

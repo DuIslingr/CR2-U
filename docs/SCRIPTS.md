@@ -260,6 +260,13 @@ Check (checkBtn_io) shows PubListMenu: posterIcon with each request's sign at ca
 yet - 28 requests, 42 with flag 201, 50 with 202), a tap its title, the share done in percent_io
 (completed / 50).
 
+A hit's effect (BtlActionCtrl::HitEffect / ShowCommandHitEffect): the command's +0x18 - for an
+attack (+0x49 0) whose element beat the target's (BtlCalc::DamageAttribute's +0xf74) eff218 ..
+eff220 and the sounds 0x8f .. 0x91, for a critical with the plain attack eff106 - made with its
+settings (BtlEffectTable: its delay; SetCommandEffectPosition with 9: on the one hit, following
+its model at the setting's locator - +0x32 for a pair's action - or put there once); a setting
+whose locator is 7 is a group's (HitGroupEffect): once, at that side's middle.
+
 A battle's special scene may be skipped (BtlActionCtrl::ActionAwakeMain / AdventMain): from its
 start (ActionAwake / AdventStandby) until a SetSkipEnable step turns it off, a tap - but for
 coupling 282's command 123 and 221's / 271's 352 - runs ActionAwakeSkip / AdventSkip: the moves,

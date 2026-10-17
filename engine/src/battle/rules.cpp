@@ -290,6 +290,7 @@ bool BattleRules::critical(int actor, int target, const BattleData::Command& c) 
 
 int BattleRules::damage(int actor, int target, const BattleData::Command& c, bool crit, bool* weak) {
     if (weak) *weak = false;
+    lastBurst_ = 0;
     const Fighter& a = fighters_[size_t(actor)];
     const Fighter& t = fighters_[size_t(target)];
     const bool pair = isPairAction(actor);
@@ -322,6 +323,7 @@ int BattleRules::damage(int actor, int target, const BattleData::Command& c, boo
         else if (t.element == kBeats[elem]) {
             m *= 1.5f;
             if (weak) *weak = true; // (+0xf7d)
+            lastBurst_ = elem;      // (+0xf74)
         }
     }
     if (elem >= 1 && elem <= 5) m *= resistFactor(t.resist[elem - 1]);
@@ -612,7 +614,7 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
                 e.blocked = tf.has(5, 11) || (!(c->specials >> 6 & 1u) && tf.has(1, 4) && int(rand_.below(100)) < chance);
             if (e.blocked) e.notes.push_back({c->magic ? 0x46 : 0x45, t}); // ("Neutralized physical / magical damage!")
             if (!e.blocked) e.critical = critical(o.actor, t, *c);
-            if (!e.blocked) e.damage = damage(o.actor, t, *c, e.critical, &e.weak);
+            if (!e.blocked) e.damage = damage(o.actor, t, *c, e.critical, &e.weak), e.burst = lastBurst_;
             tf.hp = std::max(tf.hp - e.damage, 0);
             if (tf.hp > 0) calcStatus(o.actor, t, *c, e);
             if (tf.hp > 0) checkCounter(o, *c, t);

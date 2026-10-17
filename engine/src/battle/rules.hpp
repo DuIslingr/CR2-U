@@ -135,6 +135,7 @@ public:
         int actor = -1, partner = -1, command = 0, target = -1;
         bool hit = false, critical = false, weak = false, defeated = false;
         int damage = 0;
+        int burst = 0; // (+0xf74: the element that beat the target's, 1..3 - HitEffect's eff218 .. eff220)
         int heal = 0, healMp = 0; // (a restore's: BtlCalc::Restore)
         bool revived = false;
         // downed but back (state 33, revived once - BtlActionCtrl::ActionDeadWaitDeadMotion, then
@@ -258,6 +259,7 @@ public:
     bool critical(int actor, int target, const BattleData::Command& c);
 
 private:
+    int lastBurst_ = 0; // (damage()'s: the element that beat the target's)
     bool isPairAction(int f) const;
     Order enemyChoice(int m);
     int orderPoint(int f, int partner) const;

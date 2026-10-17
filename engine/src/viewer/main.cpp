@@ -2284,6 +2284,8 @@ struct Viewer {
         battleUnits.clear();
         for (BattleEffect& fx : battleEffects) unload(*fx.fig);
         battleEffects.clear();
+        for (SceneEffect& fx : commandEffects) unload(*fx.fig);
+        commandEffects.clear();
         for (auto& [id, fx] : scene.effects)
             if (fx.fig) unload(*fx.fig);
         scene = SceneState(), sceneCameras.clear(), battleFade = BattleFade(), battleMapHidden = false, mapColour = Ramp();
@@ -3425,7 +3427,9 @@ struct Viewer {
 
     // an action's hits landing (the targets' damage motion, the sounds, the hit's effect, the
     // numbers); a special scene's later hits (`first` false) the blows alone
+    std::vector<int> groupShown; // (the sides a group's effect has had this action)
     void landHits(const ShowAction& a, bool first) {
+        if (first) groupShown.clear();
         for (const auto& e : a.hits) {
             const int u = fighterUnit[e.target];
             if (u < 0) continue;
@@ -3448,6 +3452,7 @@ struct Viewer {
                     int se = hc0 ? hc0->hitSe : -1;
                     if (se == -1) se = e.critical ? 15 : 12 + int(battleClock * 1000.0f) % 3;
                     else if (e.critical && se != 0) se = 15;
+                    if (hc0 && hc0->magic == 0 && e.burst >= 1 && e.burst <= 3) se = 0x8e + e.burst; // (HitEffect: eff218 .. 220's 0x8f .. 0x91)
                     if (se > 0) battleSe(se);
                 }
                 if (!first) continue; // (a later hit: its blow and sound alone)
@@ -3470,19 +3475,25 @@ struct Viewer {
                     const std::vector<cr2::Mat34> ww = bu.fig.skeleton.world(pp, bu.fig.place);
                     if (size_t(dj) < ww.size()) p[0] = ww[size_t(dj)].m[3], p[1] = ww[size_t(dj)].m[7], p[2] = ww[size_t(dj)].m[11];
                 }
-                // the hit's effect there (BtlActionCtrl::HitEffect / ShowCommandHitEffect: the
-                // command's +0x18 - eff106 for a critical)
+                // the hit's effect on it (BtlActionCtrl::HitEffect / ShowCommandHitEffect: the
+                // command's +0x18 - an attack's (+0x49 0) whose element beat the target's, eff218 ..
+                // eff220; a critical with the plain attack eff106 -, none here for a group's - its
+                // setting's locator 7: HitGroupEffect, once)
                 if (e.hit && !restore) {
                     const cr2::BattleData::Command* ec = battleData.command(a.command);
-                    const std::string fx = e.critical ? "eff106" : ec ? ec->hitEffect : "";
-                    // (at the target's DummyDP01 as its motion has it now: the locators lie at
-                    // the origin in the bind pose)
-                    float at[3] = {p[0], p[1], p[2]};
-                    if (dj >= 0 && !bu.fig.posed.empty()) {
-                        const std::vector<cr2::Mat34> pw = bu.fig.skeleton.world(bu.fig.posed, bu.fig.place);
-                        if (size_t(dj) < pw.size()) at[0] = pw[size_t(dj)].m[3], at[1] = pw[size_t(dj)].m[7], at[2] = pw[size_t(dj)].m[11];
+                    bool plain = e.actor >= 0 && e.actor < 2 && a.command == battleRules->fighter(e.actor).attack; // (a monster's: its +0x4c)
+                    if (e.actor >= 2)
+                        if (const cr2::BattleData::Monster* en = battleData.monster(battleRules->fighter(e.actor).id)) plain = a.command == en->counter;
+                    std::string fx = ec ? ec->hitEffect : "";
+                    if (ec && ec->magic == 0 && e.burst >= 1 && e.burst <= 3) fx = "eff21" + std::to_string(7 + e.burst);
+                    if (e.critical && plain) fx = "eff106";
+                    if (!fx.empty()) {
+                        const cr2::EffectSetting& set = cr2::effectSetting(fx);
+                        const bool pairAct = a.partner >= 0;
+                        if ((pairAct ? set.pairLocator : set.locator) != 7) commandEffect(fx, e.target, pairAct);
+                        else if (std::find(groupShown.begin(), groupShown.end(), e.target < 2 ? 0 : 1) == groupShown.end())
+                            groupShown.push_back(e.target < 2 ? 0 : 1), commandEffect(fx, e.target, pairAct, e.target < 2 ? 0 : 1);
                     }
-                    if (!fx.empty()) spawnEffect(fx, at);
                 }
                 {
                     DamageShown ds;
@@ -3518,6 +3529,7 @@ struct Viewer {
         float start = 0, end = -1; // (battle seconds: hidden before it starts, gone at its end - < 0 none)
         bool shown = true;
         int follows = -1; // (the fighter whose model it has: connect, SetEffectTarget)
+        short locator = -1; // (else its setting's: a pair's action's command effect - +0x32)
         cr2::Mat34 place;
         Ramp alpha;
     };
@@ -3880,36 +3892,84 @@ struct Viewer {
         battleCamera.clear();
         setBattleCamera(battle.camera);
     }
-    void drawSceneEffects(const cr2::Mat34& camera, const Mat4& vp) {
-        for (auto it = scene.effects.begin(); it != scene.effects.end();) {
-            SceneEffect& fx = it->second;
-            const float t = battleClock - fx.start;
-            const bool over = fx.end >= 0 ? battleClock >= fx.end : !fx.set->loop && fx.fig->animLoaded && t > fx.fig->anim.duration();
-            if (over) {
-                unload(*fx.fig);
-                it = scene.effects.erase(it);
-                continue;
-            }
-            ++it;
-            if (!fx.shown || t < 0) continue;
-            cr2::Mat34 place = fx.place;
-            // BtlEffect::Pose: following its model's locator (9 its place, 7 none) and its shift,
-            // its turn; turned to the camera
-            if (BattleUnit* u = unitOf(fx.follows); u && fx.set->constrain & 3) {
-                cr2::Mat34 j = u->fig.place;
-                unscaled(j);
-                if (fx.set->locator == 7) j = cr2::Mat34();
-                else if (fx.set->locator != 9) jointPlace(u->fig, cr2::tposJoint(fx.set->locator), j);
-                if (fx.set->constrain & 1)
-                    for (int c = 0; c < 3; ++c) place.m[c * 4 + 3] = j.m[c * 4 + 3] + fx.set->shift[c];
-                if (fx.set->constrain & 2) setRotation(place, j);
-            }
-            if (fx.set->billboard) setRotation(place, camera);
-            fx.fig->place = place;
-            fx.fig->tint[3] = fx.alpha.at(battleClock);
-            pose(*fx.fig, t, fx.set->loop);
-            drawFigure(*fx.fig, vp.data());
+    // an effect's frame (BtlEffect::Pose): false once it is over (unloaded)
+    bool drawEffect(SceneEffect& fx, const cr2::Mat34& camera, const Mat4& vp) {
+        const float t = battleClock - fx.start;
+        const bool over = fx.end >= 0 ? battleClock >= fx.end : !fx.set->loop && fx.fig->animLoaded && t > fx.fig->anim.duration();
+        if (over) {
+            unload(*fx.fig);
+            return false;
         }
+        if (!fx.shown || t < 0) return true;
+        cr2::Mat34 place = fx.place;
+        // BtlEffect::Pose: following its model's locator (9 its place, 7 none) and its shift,
+        // its turn; turned to the camera
+        const short locator = fx.locator >= 0 ? fx.locator : fx.set->locator;
+        if (BattleUnit* u = unitOf(fx.follows); u && fx.set->constrain & 3) {
+            cr2::Mat34 j = u->fig.place;
+            unscaled(j);
+            if (locator == 7) j = cr2::Mat34();
+            else if (locator != 9) jointPlace(u->fig, cr2::tposJoint(locator), j);
+            if (fx.set->constrain & 1)
+                for (int c = 0; c < 3; ++c) place.m[c * 4 + 3] = j.m[c * 4 + 3] + fx.set->shift[c];
+            if (fx.set->constrain & 2) setRotation(place, j);
+        }
+        if (fx.set->billboard) setRotation(place, camera);
+        fx.fig->place = place;
+        fx.fig->tint[3] = fx.alpha.at(battleClock);
+        pose(*fx.fig, t, fx.set->loop);
+        drawFigure(*fx.fig, vp.data());
+        return true;
+    }
+    void drawSceneEffects(const cr2::Mat34& camera, const Mat4& vp) {
+        for (auto it = scene.effects.begin(); it != scene.effects.end();)
+            it = drawEffect(it->second, camera, vp) ? std::next(it) : scene.effects.erase(it);
+        for (size_t k = 0; k < commandEffects.size();)
+            if (drawEffect(commandEffects[k], camera, vp)) ++k;
+            else commandEffects.erase(commandEffects.begin() + std::ptrdiff_t(k));
+    }
+    // A command's effect (BtlActionCtrl::CreateEffect - its settings' delay - and
+    // SetCommandEffectPosition with 9): on the fighter `target` - following its model at the
+    // setting's locator (a pair's action's +0x32) while the setting follows the position, else
+    // put there once; `side` >= 0: a group's (HitGroupEffect), once at that side's middle
+    std::vector<SceneEffect> commandEffects;
+    void commandEffect(const std::string& name, int target, bool pair, int side = -1) {
+        SceneEffect fx;
+        fx.fig = std::make_unique<ViewFigure>();
+        std::string err;
+        const float keep = time;
+        if (!loadFigure(name + ".geom", *fx.fig, &err)) {
+            SDL_Log("effect %s: %s", name.c_str(), err.c_str());
+            return;
+        }
+        const auto it = std::find(fx.fig->anims.begin(), fx.fig->anims.end(), name + ".anim");
+        if (it != fx.fig->anims.end()) loadAnim(*fx.fig, size_t(it - fx.fig->anims.begin()));
+        time = keep;
+        fx.set = &cr2::effectSetting(name);
+        fx.fig->absolute = fx.set->kind != 2;
+        fx.start = battleClock + float(fx.set->delay) * 0.05f;
+        if (side >= 0) { // (the side's middle: its standing ones' places)
+            float m[3] = {0, 0, 0};
+            int n = 0;
+            for (int f = 0; f < 5; ++f)
+                if (BattleUnit* u = unitOf(f); u && (f < 2 ? 0 : 1) == side && battleRules->fighter(f).alive)
+                    for (int c = 0; c < 3; ++c) m[c] += u->home.m[c * 4 + 3], n += c == 0;
+            if (n == 0) return;
+            for (int c = 0; c < 3; ++c) fx.place.m[c * 4 + 3] = m[c] / float(n) + fx.set->shift[c];
+        } else {
+            fx.locator = pair ? fx.set->pairLocator : fx.set->locator;
+            fx.follows = target;
+            if (!(fx.set->constrain & 1)) { // (BtlEffect::SetTargetPosition: put there once)
+                if (BattleUnit* u = unitOf(target)) {
+                    cr2::Mat34 j = u->fig.place;
+                    unscaled(j);
+                    if (fx.locator != 9 && fx.locator != 7) jointPlace(u->fig, cr2::tposJoint(fx.locator), j);
+                    for (int c = 0; c < 3; ++c) fx.place.m[c * 4 + 3] = j.m[c * 4 + 3] + fx.set->shift[c];
+                }
+                fx.follows = -1;
+            }
+        }
+        commandEffects.push_back(std::move(fx));
     }
 
     void drawBattle(int w, int h) {

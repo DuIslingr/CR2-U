@@ -1708,6 +1708,16 @@ struct Viewer {
             inputNext = uiClock + 0.4f;
             return;
         }
+        if (!inputScript.empty() && uiClock >= inputNext && party.stage && uiClock - party.at > 0.5f) { // (the party: organize, talk, first, second, left, right, pick, back)
+            const std::string t = inputScript.front();
+            static const std::map<std::string, int> kIds = {{"organize", 25}, {"talk", 13}, {"first", 1}, {"second", 2}, {"back", 100}};
+            if (auto i = kIds.find(t); i != kIds.end()) partyTap(i->second);
+            else if (t == "left" || t == "right") partyKey(t == "left" ? SDLK_LEFT : SDLK_RIGHT);
+            else if (t == "pick") partyKey(SDLK_RETURN);
+            inputScript.pop_front();
+            inputNext = uiClock + 0.4f;
+            return;
+        }
         if (!inputScript.empty() && uiClock >= inputNext && shop.stage && uiClock - shop.at > 0.5f) { // (the shop: its buttons by name, the list's, how many, yes / no)
             shopToken(inputScript.front());
             inputScript.pop_front();
@@ -1788,7 +1798,7 @@ struct Viewer {
             }
         } else if (eventMode) {
             updateEvent(dt);
-        } else if (fieldMode && (campOpen || mapOpen || saveStage || world.stage || shop.stage)) { // (FldMain steps 5 .. 7, 10: the camp, the map, saving, the world select - the field held)
+        } else if (fieldMode && (campOpen || mapOpen || saveStage || world.stage || shop.stage || party.stage)) { // (FldMain steps 5 .. 7, 10: the camp, the map, saving, the world select - the field held)
             updateManual(dt);
             if (saveStage == 2 && uiClock - saveStart > 1.0f) saveStage = 0; // (a second, then closed)
             fieldInput();
@@ -1830,6 +1840,12 @@ struct Viewer {
         if (n.shop) { // (FldMain step 0xb: the shop)
             n.shop = false;
             openShop();
+            return;
+        }
+        if (n.party) { // (FldMain step 0xc: the party)
+            n.party = false;
+            party = PartyMenu(), party.stage = 1, party.at = uiClock;
+            SDL_Log("party: open");
             return;
         }
         if (!n.popPoint.empty()) {
@@ -5398,7 +5414,7 @@ struct Viewer {
     float fieldTabAt = -10; // (uiClock: when it last began to open or close)
     bool fieldTabShown() const {
         return fieldMode && !eventMode && !battleMode && script && !script->running() && !campOpen && !mapOpen && !saveStage &&
-               keyLock.stage == 0 && changeStage == 0 && !actionRunning() && world.stage == 0 && shop.stage == 0;
+               keyLock.stage == 0 && changeStage == 0 && !actionRunning() && world.stage == 0 && shop.stage == 0 && party.stage == 0;
     }
     float fieldTabPose(UiFig& tab) {
         const float d = tab.fig.animLoaded ? tab.fig.anim.duration() : 0.0f;
@@ -6421,6 +6437,16 @@ struct Viewer {
             return true;
         }
         if (saveStage == 2) return true;
+        if (party.stage) { // (the party's buttons, faces)
+            const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+            const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+            for (const TapRect& r : tapRects)
+                if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
+                    partyTap(r.id);
+                    break;
+                }
+            return true;
+        }
         if (shop.stage) { // (the shop's buttons, rows, question)
             const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
             const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
@@ -6929,10 +6955,167 @@ struct Viewer {
         buttonLook = keepLook, buttonLevel = keepLevel, buttonFighter = keepFighter;
     }
 
+    // The party (the town's c007: ReserveParty - FldMain step 0xc, FldPartyOrganize;
+    // PartyOrganizationMenu): its console (`console_io`: circle buttons 25 Organize, 13 Talk - the
+    // town's party_talk -, btlBack - the field); organizing (SetSelectActorScene: `partyBtn` on
+    // partyBtn1_io, a circle button for each of the two - its character's frame, + 1, and level -
+    // or none, `partyUnder`, the two's portraits - cutIn00N_L01, 5's cutIn006_L02 - on the cut-in
+    // layouts 4 and 3, btlBack - the town's party_end); a slot picked (SetHeroSelectScene: partyBtn2_io,
+    // its one's button and portrait; SetHeroSelectFaceScene: `faceWin_io` with a `faceBtn` - wearing
+    // faceBtn_00N - at call_faceBtnN for each who can join (flags 1011 + the character) and isn't in
+    // the two, faceSlct on the focused): a face picks that slot's character (cr3_common_data +3 / +4).
+    struct PartyMenu {
+        int stage = 0; // 0 shut, 1 the console, 2 the two, 3 a slot's choice
+        int slot = 0, focus = 0;
+        float at = 0;
+    } party;
+    std::vector<int> partyChoices() const {
+        std::vector<int> c;
+        for (int ch = 0; ch < 7; ++ch)
+            if (game.flag(1011 + ch) && game.party[0] != ch && game.party[1] != ch) c.push_back(ch);
+        return c;
+    }
+    void partyTap(int id) {
+        auto stage = [&](int s) { party.stage = s, party.at = uiClock, party.focus = 0; };
+        if (party.stage == 1) {
+            if (id == 25) audio.playSe(0xb4, false), stage(2);
+            else if (id == 13) audio.playSe(0xb4, false), party.stage = 0, callGimmick("party_talk"); // (FldPartyOrganize 3)
+            else if (id == 100) audio.playSe(0xb5, false), party.stage = 0, pendingBranch = true;    // (2: the field)
+        } else if (party.stage == 2) {
+            if (id == 1 || id == 2) {
+                if (id == 1 && game.flag(0x3fa)) return (void)audio.playSe(0xb6, false); // (the first fixed: flag 0x3fa)
+                audio.playSe(0xb4, false), party.slot = id - 1, stage(3);
+            } else if (id == 100) audio.playSe(0xb5, false), party.stage = 0, callGimmick("party_end"); // (4)
+        } else if (party.stage == 3) {
+            const std::vector<int> c = partyChoices();
+            if (id >= 7000 && id < 7000 + int(c.size())) { // (a face: that one in the slot)
+                game.party[party.slot] = c[size_t(id - 7000)];
+                audio.playSe(0xb4, false);
+                SDL_Log("party: %d, %d", game.party[0], game.party[1]);
+                stage(2);
+            } else if (id == 100) audio.playSe(0xb5, false), stage(2);
+        }
+    }
+    void partyKey(SDL_Keycode k) {
+        if (party.stage == 1) {
+            if (k == SDLK_1) partyTap(25);
+            else if (k == SDLK_2) partyTap(13);
+        } else if (party.stage == 2) {
+            if (k == SDLK_1 || k == SDLK_2) partyTap(int(k - SDLK_1) + 1);
+        } else if (party.stage == 3) {
+            const int n = std::max(int(partyChoices().size()), 1);
+            if (k == SDLK_LEFT || k == SDLK_UP) party.focus = (party.focus + n - 1) % n;
+            else if (k == SDLK_RIGHT || k == SDLK_DOWN) party.focus = (party.focus + 1) % n;
+            else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && !partyChoices().empty()) partyTap(7000 + party.focus);
+        }
+        if (k == SDLK_BACKSPACE) partyTap(100);
+    }
+    void drawParty(const Mat4& view, const Mat4& proj, int w, int h) {
+        const float t = uiClock - party.at;
+        auto keepLook = buttonLook;
+        buttonLook = nullptr;
+        auto back = [&] {
+            UiFig& bk = uiFig("btlback");
+            bk.fig.place = cr2::Mat34();
+            poseUi(bk, "btlback_in", t);
+            drawFigure(bk.fig, view.data());
+            float sx, sy, ex, ey;
+            if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
+        };
+        auto portrait = [&](int layout, int ch) { // (the cut-in windows' portrait of a character)
+            if (ch < 0) return;
+            ViewFigure& f = cutInFigures[size_t(layout)];
+            if (f.meshes.empty()) return;
+            char tex[24];
+            std::snprintf(tex, sizeof tex, ch == 5 ? "cutIn006_L02" : "cutIn00%d_L01", ch + 1);
+            f.place = cr2::Mat34();
+            pose(f, cr2::EventRuntime::kCutInSeconds, false);
+            cr2::Texture* face = texture(tex);
+            for (ViewMesh& vm : f.meshes) vm.texture = face ? face : texture(vm.baseMaterial.diffuse());
+            drawFigure(f, view.data());
+        };
+        auto under = [&] { // (partyUnder: across a wide screen)
+            UiFig& u = uiFig("partyunder");
+            u.fig.place = cr2::Mat34();
+            const float aspect = float(w) / float(std::max(h, 1));
+            if (aspect >= 1.5f) u.fig.place.m[0] = aspect / 1.5f;
+            else u.fig.place.m[7] = -0.04f;
+            poseUi(u, "partyunder", t);
+            drawFigure(u.fig, view.data());
+        };
+        auto slots = [&](const char* anim, bool both) { // (partyBtn: the slots' circle buttons, 1 and 2)
+            UiFig& b = uiFig("partybtn");
+            b.fig.place = cr2::Mat34();
+            poseUi(b, anim, t);
+            drawFigure(b.fig, view.data());
+            int k = 0;
+            for (const std::string& j : b.joints) {
+                if (j.rfind("call_circleBtn_fr", 0) != 0) continue;
+                if (++k > (both ? 2 : 1)) break;
+                const int ch = game.party[both ? k - 1 : party.slot];
+                float x, y;
+                if (!uiJoint(b, j, x, y)) continue;
+                UiFig& c = uiFig("circlebtn_fr");
+                c.fig.place = cr2::Mat34();
+                c.fig.place.m[3] = x, c.fig.place.m[7] = y;
+                poseUi(c, "circlebtn_fr", float(ch >= 0 ? ch + 1 : 0) / 20.0f);
+                for (ViewMesh& vm : c.fig.meshes) { // (the first fixed: not selectable)
+                    vm.material.params[0x33] = both && k == 1 && game.flag(0x3fa) ? std::vector<float>{0.5f, 0.5f, 0.5f, 1.0f} : vm.baseMaterial.params[0x33];
+                    if (vm.material.params[0x33].empty()) vm.material.params.erase(0x33);
+                }
+                drawFigure(c.fig, view.data());
+                float lx, ly;
+                if (ch >= 0 && uiJoint(c, "call_dotNum_id30", lx, ly)) drawDigits(game.level[ch], 120, 3, lx, ly, proj); // (SetLevelNumbers)
+                float sx, sy, ex, ey;
+                if (both && uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) tapRects.push_back({k, sx, sy, ex, ey});
+            }
+        };
+        if (party.stage == 1) { // (console_io to half its length, as ShopSecondMenu's: Initialize's ChangeAnimeTime)
+            UiFig& con = uiFig("console_io");
+            poseUi(con, "console_io", 0);
+            drawCommandMenu("console_io", std::min(t, con.fig.animLoaded ? con.fig.anim.duration() * 0.5f : t), view, {}, {}, w, h, 0, "console_io");
+            back();
+        } else if (party.stage == 2) {
+            portrait(4, game.party[0]), portrait(3, game.party[1]);
+            under(), slots("partybtn1_io", true), back();
+        } else if (party.stage == 3) {
+            portrait(4, game.party[party.slot]);
+            under(), slots("partybtn2_io", false);
+            const std::vector<int> c = partyChoices();
+            UiFig& fw = uiFig("facewin_io");
+            fw.fig.place = cr2::Mat34();
+            poseUi(fw, "facewin_io", t);
+            drawFigure(fw.fig, view.data());
+            party.focus = std::clamp(party.focus, 0, std::max(int(c.size()) - 1, 0));
+            for (size_t k = 0; k < c.size(); ++k) {
+                float x, y;
+                if (!uiJoint(fw, "call_faceBtn" + std::to_string(k + 1), x, y)) continue;
+                UiFig& b = uiFig("facebtn");
+                b.fig.place = cr2::Mat34();
+                b.fig.place.m[3] = x, b.fig.place.m[7] = y;
+                poseUi(b, "facebtn", 0);
+                if (cr2::Texture* tex = texture("faceBtn_00" + std::to_string(c[k] + 1)))
+                    for (ViewMesh& vm : b.fig.meshes) vm.texture = tex;
+                drawFigure(b.fig, view.data());
+                float sx, sy, ex, ey;
+                if (uiJoint(b, "tapAreaS01", sx, sy) && uiJoint(b, "tapAreaE01", ex, ey)) tapRects.push_back({7000 + int(k), sx, sy, ex, ey});
+                if (int(k) == party.focus) {
+                    UiFig& sl = uiFig("faceslct");
+                    sl.fig.place = cr2::Mat34();
+                    sl.fig.place.m[3] = x, sl.fig.place.m[7] = y;
+                    poseUi(sl, "faceslct", t, true);
+                    drawFigure(sl.fig, view.data());
+                }
+            }
+            back();
+        }
+        buttonLook = keepLook;
+    }
+
     void drawFieldUi(int w, int h) {
         if (!fieldMode || battleMode || eventMode) return;
         const bool tabShown = fieldTabShown();
-        if (!campOpen && !tabShown && !mapOpen && !saveStage && !world.stage && !shop.stage) return;
+        if (!campOpen && !tabShown && !mapOpen && !saveStage && !world.stage && !shop.stage && !party.stage) return;
         const Mat4 proj = uiProjection(w, h);
         Mat4 camera = cr2::mat4Identity();
         camera[14] = -0.881f;
@@ -6945,6 +7128,7 @@ struct Viewer {
         else if (saveStage) tapRects.clear(), drawSave(view, proj, w, h);
         else if (world.stage) tapRects.clear(), drawWorldSelect(view, w, h);
         else if (shop.stage) tapRects.clear(), drawShop(view, proj, w, h);
+        else if (party.stage) tapRects.clear(), drawParty(view, proj, w, h);
         else {
             tapRects.clear();
             if (game.tabEnable) drawFieldTab(view); // (Cr3TabMenu.SetEnable)
@@ -7513,6 +7697,10 @@ int main(int argc, char** argv) {
                     }
                     if (v.campOpen) { // (the camp: Up / Down and Return, Backspace back)
                         v.campKey(k);
+                        continue;
+                    }
+                    if (v.party.stage) { // (the party: 1 / 2, Left / Right, Return, Backspace)
+                        v.partyKey(k);
                         continue;
                     }
                     if (v.shop.stage) { // (the shop: 1 .. 4 its buttons, Up / Down, Left / Right, Return, Backspace; Y / N)

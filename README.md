@@ -164,6 +164,8 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       their prices, how many, the Oz (`--input buy` / `sell` / `talk`, then `items` / `weapons` /
       `armour` / `accessories`, `up` / `down` / `char`, `pick`, `more` / `less`, `yes` / `no`, `back`;
       `--oz n` for tests)
+- [x] The party: the town's organizing - the two, their portraits, who can join, a face for a
+      slot (`--input organize` / `talk`, `first` / `second`, `left` / `right`, `pick`, `back`)
 - [x] The field's HUD: the tab, the character change (its button, the leader darkened and the other
       lit in its place; the leader's figure the field's character - `ChangeModel`); the
       announcements' window (annoWin, as the tutorials')

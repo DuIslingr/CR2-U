@@ -226,6 +226,17 @@ at +0x28 (an equipment's greyed with none spare of those worn); then how many (C
 the whole price) and the question (announce 0x70 / 0x71: the count held): yes - the items and
 the Oz (SE 200). (The equipment's stat comparison and the buy / sell sign: not yet.)
 
+The party (the town's c007, with flags 1010 and 1917: `ReserveParty` - FldMain step 0xc,
+FldPartyOrganize; PartyOrganizationMenu): its console (`console_io`, to half its length: 13 Talk
+- the town's `party_talk` -, 25 Party, btlBack - the field); the two (SetSelectActorScene:
+`partyBtn` on partyBtn1_io, a circle button each - its character's frame, + 1, and level; the
+first not selectable with flag 0x3fa -, `partyUnder`, their portraits - cutIn00N_L01, character
+5's cutIn006_L02 - on the cut-in layouts 4 and 3, btlBack - the town's `party_end`); a slot's
+(SetHeroSelectScene, partyBtn2_io; SetHeroSelectFaceScene: `faceWin_io` with a `faceBtn` -
+faceBtn_00N - at call_faceBtnN for each who can join, flags 1011 + the character, and isn't in
+the two; `faceSlct` on the focused): a face puts that character in the slot (cr3_common_data +3
+/ +4).
+
 Questions (EvtWindow.ShowYesNoButton: BattleYNChoice's `choice_io` with the circle buttons 11
 yes and 12 no; SE 0xb4) wait for an answer: `CheckYesNoButton` 0 until then, 1 yes, 2 no, and
 HideYesNoButton takes them away - the scripts' `ShowYesNoButton()` loops on it (the sealed

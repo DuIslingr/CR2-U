@@ -458,6 +458,8 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
         static const int kCost[3] = {100, 200, 300};
         charge_ = std::max(charge_ - kCost[c->awaken - 1], 0);
     }
+    // an advent's: all of it (ActionAdventStandby, the same switch)
+    if (o.actor < 2 && c->awaken == 4 && !scriptSwitch(42)) charge_ = 0;
     // state 29, a magic barrier (BtlActionCtrl::ActionSopiaLaunch, ActionSopiaMirror*): a sopia
     // on one holding it - or its partner - unless it pierces (+0x4e bit 3) turns back on the
     // caster (and its partner; the caster's side for one on all), a use of it on each holding it

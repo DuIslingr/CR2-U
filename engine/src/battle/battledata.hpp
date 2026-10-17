@@ -78,8 +78,8 @@ public:
         int attachSelf = 0; // +0x71 an element it lends the one acting (CheckAttachSelf: 1..3; 4 none)
         // its sounds (BtlSound): +0x68 the voice's kind (Cr3VoiceTable; PlayVoiceCommand) after +0x6a
         // updates (x 0.05 s); BtlSound::PlaySE numbers - +0x74 at the hit (-1 one of 12..14, 15 on a
-        // critical: PlayHitSE), +0x78 the shot's, +0x7a after it
-        int voice = 0, voiceDelay = 0, hitSe = 0, shotSe = 0, postSe = 0;
+        // critical: PlayHitSE), +0x76 its launch's (PlayLaunchSE), +0x78 the shot's, +0x7a after it
+        int voice = 0, voiceDelay = 0, hitSe = 0, launchSe = 0, shotSe = 0, postSe = 0;
         uint32_t special = 0;
         int mp = 0;          // +0x42: its MP (BtlUtilStatus::CalcUseMp)
         int icon = 0;        // +0x72: its icon (mainIcon_id's frame)
@@ -92,6 +92,7 @@ public:
         int id = 0;
         std::string name[2];
         int growth = 0, startLevel = 1, element = 0;
+        int advent = 0; // +0x14: the advent it lets the pair call (BtlCommand::CheckCommandAdventAvailable: 136..141)
         int commands[5] = {}, skills[5] = {};
     };
     // an item (GetItemDataPointer, from 1): what it adds worn (Cr3UpdatePlayerData)

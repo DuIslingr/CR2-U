@@ -11,3 +11,13 @@ static const struct { short command; int flag; } kAwake[8][3] = {
     {{121, 9999}, {123, 9999}, {-1, -1}},
 };
 static const int kAwakeCost[3] = {100, 200, 300}; // (levels 1, 2, 3)
+// kAdvent[n]: its story flag, the sopia's advent number, the charge it needs, its command by
+// the charge level (1..3; -1 none)
+static const struct { int flag, sopia, charge; short command[3]; } kAdvent[6] = {
+    {3016, 136, 100, {136, 391, 392}},
+    {3017, 137, 100, {137, 393, 394}},
+    {3018, 138, 100, {138, 395, 396}},
+    {3019, 139, 100, {139, 397, 398}},
+    {3020, 140, 100, {140, 399, 400}},
+    {3021, 141, 300, {-1, -1, 141}},
+};

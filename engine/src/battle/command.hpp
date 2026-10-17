@@ -5,8 +5,7 @@
 // pair - and for a command on one, its target (BattleSelectMenu: the target buttons). Back goes up
 // a step (from the second's command menu to the first's). Over, the turn's orders.
 //
-// What isn't here yet: Sopia, Items, Awake / Advent (their lists), Options - their
-// buttons are there, not selectable.
+// Each list (Sopia, Items, Awake, Advent) its own menu; Options the viewer's.
 #include <functional>
 #include <vector>
 #include "battle/rules.hpp"
@@ -18,7 +17,7 @@ public:
         Items = 16, Sopia = 18, Options = 20, Solo = 26, Pair = 27, Escape = 28, Awake = 29, Advent = 30, Attack = 31,
         Defend = 33, TargetFirst = 43, // (43..47: the target buttons)
     };
-    enum class Menu { First, Command, Sopia, Items, Awake, Target, Done };
+    enum class Menu { First, Command, Sopia, Items, Awake, Advent, Target, Done };
     struct Shown {
         int id = 0;
         bool selectable = true;
@@ -56,6 +55,16 @@ public:
     bool pickAwakening(int command);
     // an awakening's cost (its command's level, +0x48: 1 100, 2 200, 3 300)
     static int awakeCost(int level);
+    // the advents the pair can call (SetCommandAdventList: each whose story flag is set, a sopia
+    // either of the two wears in its first two places giving its number - +0x14 - and the charge
+    // at its least; its command by the charge level, min(charge / 100, 3) - a -1 there shown, not
+    // selectable). An advent takes all the charge (ActionAdventStandby).
+    struct AdventEntry {
+        int command = -1, level = 1;
+        bool selectable = false;
+    };
+    std::vector<AdventEntry> advents() const;
+    bool pickAdvent(int command);
     Menu menu() const { return menu_; }
     int actor() const { return actor_; }   // whose command is being chosen (0, 1; the pair's: 0)
     bool pairTurn() const { return pair_; }

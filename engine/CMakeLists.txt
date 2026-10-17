@@ -42,6 +42,7 @@ add_library(cr2core STATIC
     src/battle/camera.cpp
     src/battle/script.cpp
     src/battle/command.cpp
+    src/battle/special.cpp
     src/audio/sounddata.cpp
     third_party/stb/stb_vorbis.c
 )

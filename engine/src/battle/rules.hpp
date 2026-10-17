@@ -10,8 +10,8 @@
 // startAction (Command_Start), doAction (Dead for each one downed), endAction (Command_End), and
 // endTurn (Turn_End) - playTurn does them all, the script's calls finishing at once.
 //
-// The charge gauge (+0x28, 0..300) fills by the hits (BtlActionCtrl::UpdateChargeGauge). What isn't
-// here yet: its use (awakening and advent), states other than guarding, sopia (magic) and items, escape, the auto skills sopia give.
+// The charge gauge (+0x28, 0..300) fills by the hits (BtlActionCtrl::UpdateChargeGauge); an
+// awakening takes 100..300 of it by its level, an advent all of it.
 
 #include <algorithm>
 #include <cstdint>
@@ -173,6 +173,7 @@ public:
     int paramI(int id) const;
     void setParamI(int id, int value);
     int charge() const { return charge_; }       // +0x28: the charge gauge, 0..300
+    void setCharge(int c) { charge_ = std::clamp(c, 0, 300); } // (tests)
     // what the monsters downed give (BtlActionCtrl::CheckDead: BtlWork +0xabc EXP, +0xac0 SP,
     // +0xac4 Oz - each its GetMonsterEXP / SP / OZ, at most 9999999)
     // and what they leave (BtlActionCtrl::CheckDropItem / CheckDropSopia at each one down -

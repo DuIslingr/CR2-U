@@ -140,6 +140,18 @@ on a single foe goes on to its target. The charge is spent as it acts (ActionAwa
 not with the script's switch 42 on: the prologue (221) sets it, and its Battle_Start the flags
 3001 / 3002 for the length of the battle.
 
+The advents (BtlCommand::CheckCommandAdvent / CheckCommandAdventAvailable / SetCommandAdventList /
+StepAdventLoop; four more tables beside the awakenings', the same tool): in a pair's turn, with the
+charge less what is set aside at 100 or more (CheckCommand), the menu shows Advent (+0x3f) in
+place of Awake. Each of the six is offered when its story flag (3016 .. 3021) is set, a sopia
+either of the pair wears in its first two places (cr3_player_data +0x42 / +0x44) carries its
+number (the sopia's +0x14: Gale Roar's 136 .. Divine Punishment's 141 - sopia 2 .. 7), and the
+charge is at its least (100; the sixth 300). Its command goes by the charge level, min(charge /
+100, 3): 136 / 391 / 392, 137 / 393 / 394, 138 / 395 / 396, 139 / 397 / 398, 140 / 399 / 400, and the
+sixth's -1 / -1 / 141 (a -1 shown, not selectable). The list: the command's name, the level its
+number, its +0x72 the icon (the tab 13 "Advent", the mark 13 "Charge Lv."). An advent takes all
+the charge (ActionAdventStandby: +0x28 to 0, again not with switch 42).
+
 The sopia (BtlCommand::GetSopia / GetPairSopia / SetCommandSopiaList / StepSopiaLoop): a sopia
 record (0x2c bytes, GetSopiaDataPointer; the header's +0x1c, count +0x40) gives a command at each
 level from +0x18 (s16, 0 where a level gives none: Marie's Banish at 1, Healing Hand at 3); +0x12
@@ -171,7 +183,8 @@ scrlBar, scrlWin, scrlBtn ...): scrlBar (scrlBar_io) the frame; a scrlBtn (scrlB
 apart (GetColumnSpacing), centred on the focused one, two either side (PartsPose) - its name
 (typeS_L00; half grey not selectable), its number (DotNumId2 set 90 at call_dotNum_id01: the MP,
 the awakening's level), its icon (mainIcon_id at call_mainIcon_id11, its frame / 20 s: the
-command's +0x72; 71 "Awake", 70 "Advent"), the number's mark (cost_id at call_cost_id13: 12
+command's +0x72 - the awakenings' 70, the advents' 71, whose frames lie swapped, 70's "Awake" at
+3.55 s as the reference video shows it, as 28 / 29's do), the number's mark (cost_id at call_cost_id13: 12
 "MP/", 13 "Charge Lv."), the focused one's sBtnSlct (call_sBtnSlct14); the tab (ListTag:
 tabWin_io, tabName_id at call_tabName_id01 at frame 9 "Sopia", 11 "Awake", 13 "Advent"); scrlBack
 to go back. The focused row's help over them (scrlWin, scrlWin_io: the command's or item's +0xc,
@@ -185,6 +198,72 @@ two lines, the thumb the bar's length).
 
 A turn the script reserves (ReserveCommand) is played without the menus (BtlCommand::StepEvent):
 the first battle with an advent (226) gives the pair Gale Roar so.
+
+## Special scenes (BtlSpecialCommandList)
+
+An awakening, an advent or a monster's special plays a scene of its own in place of the
+command's motion. SetActionTable picks it: a switch on the command (tools/gen_special_table.py
+compiles the decompilation's ifs and gotos as they stand and runs them) - by whether its +0x48 is
+set (the party's: awakenings 121 .. 142 -> BuildAwake 0 .. 14, the advents 136 .. 141 and 391 ..
+400 -> BuildAdvent 0 .. 5) or not (the monsters' specials, 321 .. 359, 415, 455 -> BuildAwake 15 ..
+39). BuildAwake / BuildAdvent build each in code - a run of AddXxx calls, which the tool reads by
+running each case through a small ARM interpreter over the library's code (-> specialtable.inc).
+A step: its time (seconds from the scene's start), the handler it calls (the number its AddXxx
+stores: BtlActionCtrl's table at +0x608 - 0 SetMotion .. 34 SetSkipEnable; AddCommand's its
+argument), its arguments as a BtlDict ("id", "name", "shift.x" ...).
+
+ActionSpecialCommand runs every step whose time the scene's clock (+0x30) has reached, in the
+list's order, each once; the scene is over once all have run (the last a WaitTime, 17). The steps:
+
+| op | step | what it does |
+|---|---|---|
+| 0 | SetMotion (id, blend) | the actor's motion (BtlMotionTable's number) |
+| 2 | SetRotation (target) | the actor back at its dpos (SetPosRot) |
+| 3 | SetVisibility (id, visible) | 0 the actor's side (the monsters' standing), 1 the other side, 3 its partner, 4 the map |
+| 4 | SetAlpha (id, start, end, time) | 0 the party, else the monsters standing: their opacity from start to end over the time |
+| 5 | SetColor (target, start, end, time) | 3 the party, 4 the monsters, 7 the map: their colour (StartDiffuseAnimation) |
+| 6 | SetEffect (id, name, time, show, connect, start) | an effect (or a summoned figure, s401 ..) in slot id (+0x46: per actor): its settings' delay (+0x3e frames) on top of start; time > 0 its end (SetEndTime); connect: the actor's model its own |
+| 7 | SetEffectTarget (id, target) | its model the actor's (1) or the target's (2) |
+| 8 / 9 | SetEffectPosition / Rotation (id, target, apos, dpos, tpos, shift) | where it is: GetPosition / GetRotation (below) plus the shift (a Vector3; the rotation's degrees about y) |
+| 10 | SetEffectAnimation (id, name) | its figure's animation `<figure><name>` (the summons' bz01) |
+| 11 | SetEffectAlpha (id, start, end, time) | its opacity |
+| 12 | SetCamera (name) | BtlCameraCtrl::Start: the camera of that name in a loaded camera figure, from its start, its frame reset ("GetSet..." the pattern's) |
+| 13 / 14 | SetCameraPosition / Rotation (target, apos, dpos, tpos, shift) | the camera figure's place and turn |
+| 15 | SetTargetCamera | the target's camera |
+| 16 | LoadCamera (name) | LoadSpecialCamera: the figure `cam_z01_j001_00` .. (six at most) |
+| 18 | Hit (finish) | BtlActionCtrl::Hit: the next of the action's hits |
+| 19 / 20 / 21 | Dash / Return / ReturnDirection (time) | to the aPos by the target and back, over the time |
+| 22 | PlaySE (id, delay) | BtlSound::PlaySE (-1 the command's launch sound, +0x76; -2 its hit's, -3 its shot's, -4 the post's); a delay: CreatePlaySEJob |
+| 23 | PlayEventSE (id) | Cr3UtilSoundPlaySE: the clip itself |
+| 24 | Fade (mode, frames) | Cr3Fade: 0 in from white, 1 out to white, 2 in from black, 3 out to black |
+| 25 .. 33 | (AddCommand) | the few scenes' own (Dawin3's offsets, Lesika's stand-by, the glass fragments) |
+
+BuildAwakeFromMotionTable(figure, motion) adds, from the motion table: a Hit at each hit time
+(finish where the next is none), a Dash at the move's start (its length the time), a Return at
+the second move's, a ReturnDirection at the turn's.
+
+ActionSpecialGetPosition (r2 target, r3 apos, then dpos, tpos on the stack): with apos, target 1
+the aPos joint the actor strikes the target from (GetAposName(actor, target), battleapos), 2 the
+other way; with dpos, the battledpos joint of the actor (1) or the target (2: its pair's place in
+a pair); else target 3 the party's middle (BtlWork +0xad0, CalcPlayersCenterPosition), 4 the
+monsters' (+0xae0 - CalcMonstersCenterPosition divides their sum by the party's count), 1 / 2
+the actor's / target's joint by tpos (BtlTposTable: 0 RootLocator, 1..4 DummyEP01..04, 5 / 6
+DummyDP01 / 02, 7 DummyCPS, 8 DummyCP; 9 the model's own place), 0 nothing. GetRotation the same,
+turns.
+
+An effect's settings (BtlEffectTable: 166 entries of 0x50 bytes, by name, else "common"): +0x10
+a shift, +0x30 the locator it follows of its model (as tpos; 9 the model's place, 7 none), +0x36
+turned to the camera, +0x37 looping, +0x39 what it follows (1 the position, 2 the rotation, 4 the
+joint's scale), +0x3b its kind (2 a summoned figure), +0x3e the delay. BtlEffect::Pose follows
+the model only with those bits set: connect alone places nothing.
+
+An awakening (action_table_awake): ActionAwakeStandby takes its charge, sets the command's motion
+(bz01 ..), builds the scene and runs it; ActionAwakeCleanup deletes its effects, unloads the
+cameras. An advent (action_table_advent): ActionAdventLaunch - the pair's motion 17 (bm01), the
+launch effect, one of the two's voice, the launch sound - for 1.25 s, ActionAdventHide fades the
+pair out over 1 s and hides them, ActionAdventStandby (the status windows off, the scene), the
+scene, ActionAdventCleanup (its effects gone, the pair shown at full opacity, the windows back).
+A tap skips a scene while its skip is on (SetSkipEnable; BtlMain::IsEnabled(0x104)): not here.
 
 ## The monsters' choice (BtlEnemy)
 
@@ -221,8 +300,9 @@ DamageInfo01: `bonus` with damageinfodata02's animator - 0 `bonus_miss` for a mi
 "1342 Critical!". The hit's effect (BtlActionCtrl::HitEffect -> ShowCommandHitEffect):
 the command's +0x18 (Slash `eff105`; `eff106` for a critical) - an effNNN figure playing its
 animation once at the one hit, at its DummyDP01 as its motion has it (the locators lie at the
-origin in the bind pose), turned to the camera; the effect table's other placements
-(BtlEffectTable, built by a static initializer) not yet. An animator's material channels (beside a figure's own animation) add to the
+origin in the bind pose), turned to the camera. The effects' settings (BtlEffectTable, built by a
+static initializer: tools/gen_effect_table.py -> engine/src/battle/effecttable.inc) the special
+scenes' (below) follow; the hits' still always turned to the camera. An animator's material channels (beside a figure's own animation) add to the
 material's value: bonus_crtcl's fade -1 .. 0 about 1, brkInfo's colour -0.5 .. +0.43 .. 0 about its
 0.99 (a flash, then the cream "Even" / "Player" / "Enemy").
 

@@ -57,6 +57,7 @@
 #include <set>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "assets/geom.hpp"
@@ -71,6 +72,7 @@
 #include "battle/command.hpp"
 #include "battle/rules.hpp"
 #include "battle/script.hpp"
+#include "battle/special.hpp"
 #include "event/runtime.hpp"
 #include "viewer/audio.hpp"
 #include "field/character.hpp"
@@ -194,6 +196,9 @@ struct ViewFigure {
     float blendTime = 0, blendWeight = 1;
     size_t vertices = 0, triangles = 0;
     std::vector<cr2::JointTransform> posed; // (the pose last drawn)
+    // its colour and opacity over its materials' (BtlModel::StartDiffuseAnimation /
+    // StartAlphaAnimation: the special scenes'); short of 1 opaque meshes drawn blended
+    float tint[4] = {1, 1, 1, 1};
 };
 
 void packVertex(uint8_t* o, const float* p, const float* n, const float* uv, const float* c, const float* t, const float* b) {
@@ -641,6 +646,7 @@ struct Viewer {
 
     // A figure's meshes with their materials' render states; opaque meshes first, then those blending
     void drawFigure(const ViewFigure& f, const float* mvp) {
+        if (f.tint[3] <= 0) return;
         std::vector<const ViewMesh*> order;
         for (const ViewMesh& m : f.meshes) order.push_back(&m);
         std::stable_sort(order.begin(), order.end(), [](const ViewMesh* a, const ViewMesh* b) {
@@ -682,6 +688,9 @@ struct Viewer {
             sh.texMode = m.texture ? 4 : -1; // (the built-in Figure shaders: modulate the vertex colour)
             sh.lit = m.lit;
             cr2::applyMaterial(m.material, shaders->features(m.material.shaderKey), sh); // (the game's shading: keyed materials)
+            for (int c = 0; c < 4; ++c) sh.color[c] *= f.tint[c];
+            if (f.tint[3] < 1 && !st.blend)
+                st.blend = true, st.blendSrc = cr2::blendCode(kGlSrcAlpha, false), st.blendDst = cr2::blendCode(kGlOneMinusSrcAlpha, true);
             sh.normalMap = m.normalMap;
             sh.normalSampling = cr2::sampling(m.material.sampler(0x35));
             sh.extraMap = m.extraMap;
@@ -1072,6 +1081,15 @@ struct Viewer {
     cr2::BattleData battleData;
     cr2::BattleSetup battle;
     ViewFigure battleMap;
+    struct Ramp { // (a value from `from` to `to` over `time` s from `start`: StartAlphaAnimation's)
+        float from = 1, to = 1, start = 0, time = 0;
+        float at(float t) const {
+            if (t <= start) return from;
+            if (time <= 0 || t >= start + time) return to;
+            return from + (to - from) * (t - start) / time;
+        }
+        void begin(float t, float f, float e, float d) { from = f, to = e, start = t, time = d; }
+    };
     struct BattleUnit {
         ViewFigure fig;
         std::string figure;      // ("j001", "m206")
@@ -1083,6 +1101,8 @@ struct Viewer {
         float motionStart = 0;
         bool loop = true;
         bool hidden = false;
+        bool sceneHidden = false; // (a special scene's: SetVisibility)
+        Ramp alpha, colour;       // (its opacity, its brightness: SetAlpha, SetColor)
         // the frame its target camera is in (StepBattleIn_Setup's: its DummyCP on its stance's
         // first frame there), once found
         cr2::Mat34 targetFrame;
@@ -1152,6 +1172,9 @@ struct Viewer {
         battleUnits.clear();
         for (BattleEffect& fx : battleEffects) unload(*fx.fig);
         battleEffects.clear();
+        for (auto& [id, fx] : scene.effects)
+            if (fx.fig) unload(*fx.fig);
+        scene = SceneState(), sceneCameras.clear(), battleFade = BattleFade(), battleMapHidden = false, mapColour = Ramp();
         std::string log;
         auto add = [&](const cr2::BattleSetup::Unit& su) {
             BattleUnit u;
@@ -1205,8 +1228,11 @@ struct Viewer {
     // the battle's camera now: the named camera's joint in whichever figure has it
     bool battleView(cr2::Mat34& world, float& fovY, float& zn, float& zf) {
         const uint32_t h = cr2::nameHash(battleCamera.c_str());
-        for (const CameraFigure& c : battleCameras)
-            for (const cr2::GeomCamera& gc : c.geom.cameras) {
+        std::vector<const CameraFigure*> figures = {&battleCameras[0], &battleCameras[1]};
+        for (const auto& [name, c] : sceneCameras) figures.push_back(&c); // (a scene's loaded ones)
+        for (const CameraFigure* cp : figures)
+            for (const cr2::GeomCamera& gc : cp->geom.cameras) {
+                const CameraFigure& c = *cp;
                 if (gc.hash != h) continue;
                 const int j = c.skel.joint(h);
                 if (j < 0) continue;
@@ -1252,7 +1278,12 @@ struct Viewer {
     void poseBattle() {
         pose(battleMap, battleClock);
         poseBattleShow();
+        const float mc = mapColour.at(battleClock);
+        for (int c = 0; c < 3; ++c) battleMap.tint[c] = mc;
         for (BattleUnit& u : battleUnits) {
+            const float k = u.colour.at(battleClock);
+            for (int c = 0; c < 3; ++c) u.fig.tint[c] = k;
+            u.fig.tint[3] = u.alpha.at(battleClock);
             if (!u.fig.skinned) continue;
             float t = battleClock - u.motionStart;
             if (!u.loop) { // (once, then its stance)
@@ -1347,8 +1378,8 @@ struct Viewer {
         menuStart = battleClock, menuCursor = 0;
         using CI = cr2::CommandInput;
         if (commandInput.menu() == CI::Menu::First) setBattleCamera(battle.camera);
-        else if (commandInput.menu() == CI::Menu::Command || commandInput.menu() == CI::Menu::Awake || commandInput.menu() == CI::Menu::Sopia ||
-                 commandInput.menu() == CI::Menu::Items)
+        else if (commandInput.menu() == CI::Menu::Command || commandInput.menu() == CI::Menu::Awake || commandInput.menu() == CI::Menu::Advent ||
+                 commandInput.menu() == CI::Menu::Sopia || commandInput.menu() == CI::Menu::Items)
             setBattleCamera(fighterUnit[1] < 0 ? 0x1c : commandInput.pairTurn() ? 0x1d : commandInput.actor() == 0 ? 0x1a : 0x1b);
         // (the sopia's and the items' lists the first time - flags 61, 62: their tutorials first)
         if (commandInput.menu() == CI::Menu::Sopia) battleTutorial("Tutorial_ComSopia", 61);
@@ -1439,7 +1470,9 @@ struct Viewer {
         else if (t.size() > 1 && t[0] == 'a' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickAwakening(std::atoi(t.c_str() + 1));
         else if (t.size() > 1 && t[0] == 's' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickSopia(std::atoi(t.c_str() + 1));
         else if (t.size() > 1 && t[0] == 'i' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickItem(std::atoi(t.c_str() + 1));
+        else if (t.size() > 1 && t[0] == 'v' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickAdvent(std::atoi(t.c_str() + 1));
         else if (t == "awake") ok = commandInput.press(cr2::CommandInput::Awake);
+        else if (t == "advent") ok = commandInput.press(cr2::CommandInput::Advent);
         else if (!t.empty() && std::isdigit(static_cast<unsigned char>(t[0]))) ok = commandInput.pick(std::atoi(t.c_str()));
         else
             for (const auto& [n, id] : kNames)
@@ -1461,6 +1494,11 @@ struct Viewer {
                 if (a.selectable) out.push_back(a.command);
             return out;
         }
+        if (commandInput.menu() == cr2::CommandInput::Menu::Advent) {
+            for (const auto& a : commandInput.advents())
+                if (a.selectable) out.push_back(a.command);
+            return out;
+        }
         if (commandInput.menu() == cr2::CommandInput::Menu::Sopia) {
             for (const auto& sc : commandInput.sopiaCommands())
                 if (sc.selectable) out.push_back(sc.command);
@@ -1479,6 +1517,7 @@ struct Viewer {
         audio.playSe(0xb4, false); // (the buttons' decide: Cr3UtilSoundPlaySE 0xb4)
         if (commandInput.menu() == cr2::CommandInput::Menu::Target) commandInput.pick(idOrFighter);
         else if (commandInput.menu() == cr2::CommandInput::Menu::Awake) commandInput.pickAwakening(idOrFighter);
+        else if (commandInput.menu() == cr2::CommandInput::Menu::Advent) commandInput.pickAdvent(idOrFighter);
         else if (commandInput.menu() == cr2::CommandInput::Menu::Sopia) commandInput.pickSopia(idOrFighter);
         else if (commandInput.menu() == cr2::CommandInput::Menu::Items) commandInput.pickItem(idOrFighter);
         else if (commandInput.menu() == cr2::CommandInput::Menu::First && idOrFighter == cr2::CommandInput::Options) {
@@ -1522,7 +1561,13 @@ struct Viewer {
         const int clip = cr2::SoundData::voiceClip(battleUnits[size_t(u)].figure, kind);
         if (clip >= 0) voiceJobs.push_back({battleClock + delay, clip});
     }
+    std::vector<VoiceJob> seJobs; // (BtlSound::CreatePlaySEJob: an effect's clip later)
     void updateBattleSounds() {
+        for (size_t k = 0; k < seJobs.size();)
+            if (battleClock >= seJobs[k].at) {
+                audio.playSe(seJobs[k].clip, false);
+                seJobs.erase(seJobs.begin() + std::ptrdiff_t(k));
+            } else ++k;
         for (size_t k = 0; k < voiceJobs.size();)
             if (battleClock >= voiceJobs[k].at) {
                 audio.stopAllVoices(0);
@@ -1641,6 +1686,7 @@ struct Viewer {
     bool battleScriptRunning() const { return battleScript && battleScriptOk && battleScript->running(); }
 
     std::vector<std::pair<int, int>> stateArg; // (--state fighter:state)
+    int chargeArg = -1;                        // (--charge: the gauge to begin with)
     void startFight(int mode, uint32_t seed) {
         battleFight = mode;
         battleRules = std::make_unique<cr2::BattleRules>(battleData, seed);
@@ -1663,10 +1709,11 @@ struct Viewer {
         for (int id = 1; id < 300; ++id) battleRules->setItemCount(id, game.itemCount[id]); // (BtlWork +0x52)
         // the music (BtlMainCtrl::StepBattleIn: the encounter's +0 - but with story flag 0x7f7, the
         // script's own)
-        voiceJobs.clear(), pendingBgm = 0;
+        voiceJobs.clear(), seJobs.clear(), pendingBgm = 0;
         if (const cr2::BattleData::Coupling* cp = battleData.coupling(battle.coupling); cp && !game.flag(0x7f7)) audio.playBgm(cp->music, 0);
         for (const auto& [f, id] : stateArg) // (--state: one use of it, tests)
             if (f >= 0 && f < 5) battleRules->fighter(f).states.push_back({id, 0, 1});
+        if (chargeArg >= 0) battleRules->setCharge(chargeArg); // (--charge, tests)
         battleRules->setSopiaOwned(game.sopiaOwned); // (the drops: a sopia not had yet)
         battleRules->script = [this](const std::string& f) {
             if (battleScript && battleScriptOk && battleScript->own() && !(battleScriptOk = battleScript->call(f)))
@@ -2133,14 +2180,9 @@ struct Viewer {
             const std::vector<cr2::Mat34> ww = bu.fig.skeleton.world(bu.fig.skeleton.basePose, bu.fig.place);
             if (size_t(dj) < ww.size()) p[0] = ww[size_t(dj)].m[3], p[1] = ww[size_t(dj)].m[7], p[2] = ww[size_t(dj)].m[11];
         }
-        const float* mm = battleVP.data();
-        const float cw = mm[3] * p[0] + mm[7] * p[1] + mm[11] * p[2] + mm[15];
-        if (cw <= 0) return;
-        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
         DamageShown ds;
         ds.value = value, ds.set = set, ds.start = battleClock;
-        ds.x = (mm[0] * p[0] + mm[4] * p[1] + mm[8] * p[2] + mm[12]) / cw * float(screenW) * 0.5f / k;
-        ds.y = (mm[1] * p[0] + mm[5] * p[1] + mm[9] * p[2] + mm[13]) / cw * float(screenH) * 0.5f / k;
+        for (int c = 0; c < 3; ++c) ds.at[c] = p[c];
         damageShown.push_back(ds);
     }
     void beginShowAction(const ShowAction& a) {
@@ -2152,6 +2194,10 @@ struct Viewer {
             showHitAt = 0, showCamera2 = -1;
             showEnd = battleClock + 1.5f;
             if (c) SDL_Log("  %s: %s - not done", battleRules->fighter(a.actor).name.c_str(), c->name[1].c_str());
+            return;
+        }
+        if (c && startScene(a, *c)) { // (an awakening's, an advent's, a monster's special: its scene)
+            SDL_Log("  %s: %s", battleRules->fighter(a.actor).name.c_str(), c->name[1].c_str());
             return;
         }
         std::string motion = c ? c->motion : "bb01";
@@ -2239,92 +2285,481 @@ struct Viewer {
         }
         stepBattleShow();
         if (showIndex >= showActions.size()) return;
+        updateScene();
         const ShowAction& a = showActions[showIndex];
         const float s = battleClock - showStart;
         // the hits
-        if (!showHitDone && s >= showHitAt) {
+        if (!scene.active && !showHitDone && s >= showHitAt) {
             showHitDone = true;
             if (showCamera2 >= 0) setBattleCamera(showCamera2);
-            for (const auto& e : a.hits) {
-                const int u = fighterUnit[e.target];
-                if (u < 0) continue;
-                BattleUnit& bu = battleUnits[size_t(u)];
-                const bool restore = e.heal > 0 || e.healMp > 0 || e.revived;
-                const cr2::BattleData::Command* sc = battleData.command(e.command);
-                const bool statusOnly = e.failed || (sc && (sc->kind == 1 || sc->kind == 3 || sc->kind == 26 || sc->kind == 28)); // (no number, no blow)
-                for (const auto& [id, who] : e.notes) // (the announcements: on the banner, in turn - BtlAnnounce)
-                    announceQueue.push_back(formatAnnounce(announce(id), {battleRules->fighter(who).name}));
-                if (e.hit && !restore && !statusOnly) playMotion(bu, "bd01", battleClock);
-                // its sounds (BtlSound::PlayHitSE: the command's +0x74 - -1 one of 12..14 -, 15 on a
-                // critical, none on a miss or a block; PlayVoiceAttack - the actor's 11 a blow, 12 a
-                // critical, 13 a kill, 15 the battle's last, 14 nothing done -; the one struck's
-                // PlayVoiceDamage 3 / CriticalDamage 4 (a quarter of its HP left or less), NoDamage 7,
-                // Dead 5; the healed's HealHp 8, revived's Revive 10)
-                if (!statusOnly && !restore && e.actor >= 0) {
-                    const cr2::BattleData::Command* hc0 = battleData.command(a.command);
-                    if (e.hit && !e.blocked) {
-                        int se = hc0 ? hc0->hitSe : -1;
-                        if (se == -1) se = e.critical ? 15 : 12 + int(battleClock * 1000.0f) % 3;
-                        else if (e.critical && se != 0) se = 15;
-                        if (se > 0) battleSe(se);
-                    }
-                    if (&e == &a.hits.front())
-                        battleVoice(e.actor, !e.hit || e.blocked ? 14 : e.defeated ? (battleRules->outcome() == 1 ? 15 : 13) : e.critical ? 12 : e.damage > 0 ? 11 : 14);
-                    const cr2::Fighter& tf = battleRules->fighter(e.target);
-                    if (e.hit && !e.blocked)
-                        battleVoice(e.target, e.defeated ? 5 : e.damage <= 0 ? 7 : tf.hp * 100 / std::max(tf.maxHp, 1) < 26 ? 4 : 3, 0.5f);
-                } else if (restore) {
-                    battleVoice(e.target, e.revived ? 10 : 8, 0.3f);
-                }
-                if (e.revived) bu.hidden = false;
-                const cr2::BattleData::Command* hc = battleData.command(e.command);
-                if (!statusOnly && (e.hit || restore || !(hc && hc->kind == 2))) { // (the number at its DummyDP01 - else its middle - on the screen, in UI units; none for a guard)
-                    float p[3] = {bu.fig.place.m[3], bu.fig.place.m[7] + 0.15f, bu.fig.place.m[11]};
-                    const int dj = bu.fig.skeleton.joint(cr2::nameHash("DummyDP01"));
-                    if (dj >= 0) {
-                        std::vector<cr2::JointTransform> pp = bu.fig.skeleton.basePose;
-                        const std::vector<cr2::Mat34> ww = bu.fig.skeleton.world(pp, bu.fig.place);
-                        if (size_t(dj) < ww.size()) p[0] = ww[size_t(dj)].m[3], p[1] = ww[size_t(dj)].m[7], p[2] = ww[size_t(dj)].m[11];
-                    }
-                    // the hit's effect there (BtlActionCtrl::HitEffect / ShowCommandHitEffect: the
-                    // command's +0x18 - eff106 for a critical)
-                    if (e.hit && !restore) {
-                        const cr2::BattleData::Command* ec = battleData.command(a.command);
-                        const std::string fx = e.critical ? "eff106" : ec ? ec->hitEffect : "";
-                        // (at the target's DummyDP01 as its motion has it now: the locators lie at
-                        // the origin in the bind pose)
-                        float at[3] = {p[0], p[1], p[2]};
-                        if (dj >= 0 && !bu.fig.posed.empty()) {
-                            const std::vector<cr2::Mat34> pw = bu.fig.skeleton.world(bu.fig.posed, bu.fig.place);
-                            if (size_t(dj) < pw.size()) at[0] = pw[size_t(dj)].m[3], at[1] = pw[size_t(dj)].m[7], at[2] = pw[size_t(dj)].m[11];
-                        }
-                        if (!fx.empty()) spawnEffect(fx, at);
-                    }
-                    const float* mm = battleVP.data();
-                    const float cw = mm[3] * p[0] + mm[7] * p[1] + mm[11] * p[2] + mm[15];
-                    if (cw > 0) {
-                        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
-                        DamageShown ds;
-                        ds.value = e.damage, ds.set = e.weak ? 40 : 20, ds.start = battleClock; // (the restores: HP green 50, MP 60)
-                        if (restore) ds.value = e.heal > 0 || e.healMp == 0 ? e.heal : e.healMp, ds.set = e.heal > 0 || e.healMp == 0 ? 50 : 60;
-                        else if (!e.hit) ds.value = -1, ds.mark = 0;
-                        else if (e.critical) ds.mark = 2;
-                        ds.x = (mm[0] * p[0] + mm[4] * p[1] + mm[8] * p[2] + mm[12]) / cw * float(screenW) * 0.5f / k;
-                        ds.y = (mm[1] * p[0] + mm[5] * p[1] + mm[9] * p[2] + mm[13]) / cw * float(screenH) * 0.5f / k;
-                        damageShown.push_back(ds);
-                    }
-                }
-                {
-                    const cr2::BattleData::Command* ec = battleData.command(e.command);
-                    const std::string what = ec && ec->kind == 2 ? std::string("defends")
-                                             : restore ? (e.revived ? "revived, " : "") + std::string("+") + std::to_string(e.heal) + " HP" + (e.healMp ? " +" + std::to_string(e.healMp) + " MP" : "")
-                                             : e.hit ? std::to_string(e.damage) + (e.critical ? " critical" : "") + (e.defeated ? ", down" : "") : "missed";
-                    SDL_Log("    %s -> %s: %s (%.1f s)", battleRules->fighter(e.actor).name.c_str(), battleRules->fighter(e.target).name.c_str(), what.c_str(), battleClock);
-                }
-            }
+            landHits(a, true);
         }
         for (const auto& e : a.hits)
             if (e.defeated && showHitDone && s > showHitAt + 0.6f && fighterUnit[e.target] >= 0) battleUnits[size_t(fighterUnit[e.target])].hidden = true;
+    }
+
+    // an action's hits landing (the targets' damage motion, the sounds, the hit's effect, the
+    // numbers); a special scene's later hits (`first` false) the blows alone
+    void landHits(const ShowAction& a, bool first) {
+        for (const auto& e : a.hits) {
+            const int u = fighterUnit[e.target];
+            if (u < 0) continue;
+            BattleUnit& bu = battleUnits[size_t(u)];
+            const bool restore = e.heal > 0 || e.healMp > 0 || e.revived;
+            const cr2::BattleData::Command* sc = battleData.command(e.command);
+            const bool statusOnly = e.failed || (sc && (sc->kind == 1 || sc->kind == 3 || sc->kind == 26 || sc->kind == 28)); // (no number, no blow)
+            if (first)
+                for (const auto& [id, who] : e.notes) // (the announcements: on the banner, in turn - BtlAnnounce)
+                    announceQueue.push_back(formatAnnounce(announce(id), {battleRules->fighter(who).name}));
+            if (e.hit && !restore && !statusOnly) playMotion(bu, "bd01", battleClock);
+            // its sounds (BtlSound::PlayHitSE: the command's +0x74 - -1 one of 12..14 -, 15 on a
+            // critical, none on a miss or a block; PlayVoiceAttack - the actor's 11 a blow, 12 a
+            // critical, 13 a kill, 15 the battle's last, 14 nothing done -; the one struck's
+            // PlayVoiceDamage 3 / CriticalDamage 4 (a quarter of its HP left or less), NoDamage 7,
+            // Dead 5; the healed's HealHp 8, revived's Revive 10)
+            if (!statusOnly && !restore && e.actor >= 0) {
+                const cr2::BattleData::Command* hc0 = battleData.command(a.command);
+                if (e.hit && !e.blocked) {
+                    int se = hc0 ? hc0->hitSe : -1;
+                    if (se == -1) se = e.critical ? 15 : 12 + int(battleClock * 1000.0f) % 3;
+                    else if (e.critical && se != 0) se = 15;
+                    if (se > 0) battleSe(se);
+                }
+                if (!first) continue; // (a later hit: its blow and sound alone)
+                if (&e == &a.hits.front())
+                    battleVoice(e.actor, !e.hit || e.blocked ? 14 : e.defeated ? (battleRules->outcome() == 1 ? 15 : 13) : e.critical ? 12 : e.damage > 0 ? 11 : 14);
+                const cr2::Fighter& tf = battleRules->fighter(e.target);
+                if (e.hit && !e.blocked)
+                    battleVoice(e.target, e.defeated ? 5 : e.damage <= 0 ? 7 : tf.hp * 100 / std::max(tf.maxHp, 1) < 26 ? 4 : 3, 0.5f);
+            } else if (restore && first) {
+                battleVoice(e.target, e.revived ? 10 : 8, 0.3f);
+            }
+            if (!first) continue;
+            if (e.revived) bu.hidden = false;
+            const cr2::BattleData::Command* hc = battleData.command(e.command);
+            if (!statusOnly && (e.hit || restore || !(hc && hc->kind == 2))) { // (the number at its DummyDP01 - else its middle - on the screen, in UI units; none for a guard)
+                float p[3] = {bu.fig.place.m[3], bu.fig.place.m[7] + 0.15f, bu.fig.place.m[11]};
+                const int dj = bu.fig.skeleton.joint(cr2::nameHash("DummyDP01"));
+                if (dj >= 0) {
+                    std::vector<cr2::JointTransform> pp = bu.fig.skeleton.basePose;
+                    const std::vector<cr2::Mat34> ww = bu.fig.skeleton.world(pp, bu.fig.place);
+                    if (size_t(dj) < ww.size()) p[0] = ww[size_t(dj)].m[3], p[1] = ww[size_t(dj)].m[7], p[2] = ww[size_t(dj)].m[11];
+                }
+                // the hit's effect there (BtlActionCtrl::HitEffect / ShowCommandHitEffect: the
+                // command's +0x18 - eff106 for a critical)
+                if (e.hit && !restore) {
+                    const cr2::BattleData::Command* ec = battleData.command(a.command);
+                    const std::string fx = e.critical ? "eff106" : ec ? ec->hitEffect : "";
+                    // (at the target's DummyDP01 as its motion has it now: the locators lie at
+                    // the origin in the bind pose)
+                    float at[3] = {p[0], p[1], p[2]};
+                    if (dj >= 0 && !bu.fig.posed.empty()) {
+                        const std::vector<cr2::Mat34> pw = bu.fig.skeleton.world(bu.fig.posed, bu.fig.place);
+                        if (size_t(dj) < pw.size()) at[0] = pw[size_t(dj)].m[3], at[1] = pw[size_t(dj)].m[7], at[2] = pw[size_t(dj)].m[11];
+                    }
+                    if (!fx.empty()) spawnEffect(fx, at);
+                }
+                {
+                    DamageShown ds;
+                    ds.value = e.damage, ds.set = e.weak ? 40 : 20, ds.start = battleClock; // (the restores: HP green 50, MP 60)
+                    if (restore) ds.value = e.heal > 0 || e.healMp == 0 ? e.heal : e.healMp, ds.set = e.heal > 0 || e.healMp == 0 ? 50 : 60;
+                    else if (!e.hit) ds.value = -1, ds.mark = 0;
+                    else if (e.critical) ds.mark = 2;
+                    for (int c = 0; c < 3; ++c) ds.at[c] = p[c];
+                    damageShown.push_back(ds);
+                }
+            }
+            {
+                const cr2::BattleData::Command* ec = battleData.command(e.command);
+                const std::string what = ec && ec->kind == 2 ? std::string("defends")
+                                         : restore ? (e.revived ? "revived, " : "") + std::string("+") + std::to_string(e.heal) + " HP" + (e.healMp ? " +" + std::to_string(e.healMp) + " MP" : "")
+                                         : e.hit ? std::to_string(e.damage) + (e.critical ? " critical" : "") + (e.defeated ? ", down" : "") : "missed";
+                SDL_Log("    %s -> %s: %s (%.1f s)", battleRules->fighter(e.actor).name.c_str(), battleRules->fighter(e.target).name.c_str(), what.c_str(), battleClock);
+            }
+        }
+    }
+
+    // The special scenes - the awakenings, the advents, the monsters' specials (BtlActionCtrl::
+    // ActionAwakeStandby, ActionAdventLaunch .. Cleanup, ActionSpecialCommand; battle/special.hpp):
+    // each step once the scene's clock reaches it, in the list's order, the scene over once all
+    // have run - its effects in their slots, its cameras loaded and started where it puts them,
+    // the fighters hidden, shown, faded and tinted, the screen faded, its sounds; its hits the
+    // action's (landHits: the numbers at the first). An advent first has the pair call it (the
+    // motion bm01, its launch sound and a voice, 1.25 s - ActionAdventLaunch / LaunchWait) and fade
+    // away (1 s, ActionAdventHide / HideWait); the HUD is gone till it is over (SetBattleStatusDisplay)
+    struct SceneEffect {
+        std::unique_ptr<ViewFigure> fig;
+        const cr2::EffectSetting* set = nullptr;
+        float start = 0, end = -1; // (battle seconds: hidden before it starts, gone at its end - < 0 none)
+        bool shown = true;
+        int follows = -1; // (the fighter whose model it has: connect, SetEffectTarget)
+        cr2::Mat34 place;
+        Ramp alpha;
+    };
+    struct SceneState {
+        bool active = false, advent = false;
+        float start = 0; // (battle seconds: the scene's clock's 0)
+        std::vector<cr2::SpecialStep> steps;
+        std::vector<bool> done;
+        int actor = -1, partner = -1, target = -1, hits = 0;
+        std::map<int, SceneEffect> effects; // (by slot, +0x46's)
+    } scene;
+    std::vector<std::pair<std::string, CameraFigure>> sceneCameras; // (LoadSpecialCamera's)
+    struct BattleFade {
+        int colour = 0; // (0 black, 1 white: Cr3Fade's)
+        Ramp alpha{0, 0, 0, 0};
+    } battleFade;
+    bool battleMapHidden = false;
+    Ramp mapColour;
+
+    BattleUnit* unitOf(int f) {
+        const int u = f >= 0 && f < 5 ? fighterUnit[f] : -1;
+        return u >= 0 ? &battleUnits[size_t(u)] : nullptr;
+    }
+    static void unscaled(cr2::Mat34& m) {
+        for (int c = 0; c < 3; ++c) {
+            const float l = std::sqrt(m.m[c] * m.m[c] + m.m[4 + c] * m.m[4 + c] + m.m[8 + c] * m.m[8 + c]);
+            if (l > 0) m.m[c] /= l, m.m[4 + c] /= l, m.m[8 + c] /= l;
+        }
+    }
+    // a figure's joint in the world as it was last posed (false: none)
+    bool jointPlace(const ViewFigure& f, const char* joint, cr2::Mat34& out) {
+        const int j = joint ? f.skeleton.joint(cr2::nameHash(joint)) : -1;
+        if (j < 0) return false;
+        const std::vector<cr2::Mat34> w = f.skeleton.world(f.posed.empty() ? f.skeleton.basePose : f.posed, f.place);
+        if (size_t(j) >= w.size()) return false;
+        out = w[size_t(j)];
+        unscaled(out);
+        return true;
+    }
+    // ActionSpecialGetPosition / GetRotation: a place a scene names - `target` 1 its actor, 2 its
+    // target (0 none; 3 the party's middle, 4 the monsters' - BtlWork +0xad0 / +0xae0, the latter
+    // CalcMonstersCenterPosition's sum over the party's count); by `apos` the aPos joint the one
+    // goes to to strike the other, by `dpos` its battledpos place, else its joint `tpos`
+    // (BtlTposTable's; 9 the model's own place)
+    cr2::Mat34 scenePlace(int target, bool apos, bool dpos, int tpos) {
+        cr2::Mat34 out;
+        const int a = scene.actor, b = scene.target;
+        if (apos) {
+            cr2::Mat34 m;
+            if (a >= 0 && b >= 0 && (target == 1 || target == 2) && aposPlace(target == 1 ? aposName(a, b) : aposName(b, a), m)) out = m;
+            return out;
+        }
+        BattleUnit* u = target == 1 ? unitOf(a) : target == 2 ? unitOf(b) : nullptr;
+        if (dpos) {
+            if (u) out = u->home;
+            return out;
+        }
+        if (target == 3 || target == 4) {
+            int party = 0;
+            float sum[3] = {0, 0, 0};
+            for (int f = 0; f < 5; ++f) {
+                BattleUnit* fu = unitOf(f);
+                if (f < 2 && fu) ++party;
+                if (!fu || (f < 2) != (target == 3)) continue;
+                for (int c = 0; c < 3; ++c) sum[c] += fu->fig.place.m[c * 4 + 3];
+            }
+            for (int c = 0; c < 3; ++c) out.m[c * 4 + 3] = party > 0 ? sum[c] / float(party) : 0.0f;
+            return out;
+        }
+        if (!u) return out;
+        if (tpos == 9 || !jointPlace(u->fig, cr2::tposJoint(tpos), out)) {
+            out = u->fig.place;
+            unscaled(out);
+        }
+        return out;
+    }
+    static cr2::Mat34 turnY(float degrees) {
+        const float r = degrees * 3.14159265f / 180.0f, c = std::cos(r), s = std::sin(r);
+        cr2::Mat34 m;
+        m.m[0] = c, m.m[2] = s, m.m[8] = -s, m.m[10] = c;
+        return m;
+    }
+    static void setRotation(cr2::Mat34& m, const cr2::Mat34& from) {
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c) m.m[r * 4 + c] = from.m[r * 4 + c];
+    }
+
+    // the action's scene, if its command has one (SetActionTable), begun: its steps (those of
+    // BuildAwakeFromMotionTable - the motion table's hits, the dash and the way back - in its
+    // place); false none
+    bool startScene(const ShowAction& a, const cr2::BattleData::Command& c) {
+        bool advent = false;
+        const cr2::SpecialScene* sc = cr2::specialScene(a.command, c.awaken != 0, &advent);
+        if (!sc) return false;
+        endScene();
+        scene.active = true, scene.advent = advent;
+        scene.actor = a.actor, scene.partner = a.partner, scene.target = a.hits.empty() ? -1 : a.hits.front().target;
+        scene.steps.clear(), scene.hits = 0;
+        for (int k = 0; k < sc->count; ++k) {
+            const cr2::SpecialStep& st = sc->steps[k];
+            if (st.op != cr2::kSpecialMotionTable) {
+                scene.steps.push_back(st);
+                continue;
+            }
+            cr2::MotionTimes t;
+            if (!st.s || !cr2::motionTimes(st.s, st.i[0], t)) continue;
+            auto add = [&](short op, float at, float f0, int i0) {
+                cr2::SpecialStep x{};
+                x.op = op, x.time = at, x.f[0] = f0, x.i[0] = i0;
+                scene.steps.push_back(x);
+            };
+            for (int h = 0; h < 10; ++h) // (each a hit, the last whose next is none - the 10th's "next" the turn's start)
+                if (t.hit[h] > 0) add(cr2::kSpecialHit, t.hit[h], 0, !((h < 9 ? t.hit[h + 1] : t.turnStart) > 0));
+            if (t.moveStart > 0) add(cr2::kSpecialDash, t.moveStart, t.moveEnd - t.moveStart, 0);
+            if (t.move2Start > 0) add(cr2::kSpecialReturn, t.move2Start, t.move2End - t.move2Start, 0);
+            if (t.turnStart > 0) add(cr2::kSpecialReturnDirection, t.turnStart, t.turnEnd - t.turnStart, 0);
+        }
+        scene.done.assign(scene.steps.size(), false);
+        const float lead = advent ? 2.25f : 0.0f;
+        scene.start = showStart = battleClock + lead;
+        showHitDone = false, showCamera2 = -1, showEnd = 1e9f; // (till it is over)
+        showHitAt = 0;
+        for (Move& m : showMoves) m = Move();
+        if (advent) { // (the pair calls it: bm01, its launch sound, one of the two's voice; then gone)
+            for (int f : {a.actor, a.partner})
+                if (BattleUnit* bu = unitOf(f)) {
+                    playMotion(*bu, "bm01", battleClock);
+                    bu->alpha.begin(battleClock + 1.25f, 1, 0, 1.0f);
+                }
+            if (c.launchSe > 0) battleSe(c.launchSe);
+        } else if (BattleUnit* bu = unitOf(a.actor)) { // (ActionAwakeStandby: its command's motion)
+            playMotion(*bu, c.motion, battleClock);
+        }
+        SDL_Log("  scene: %s %d steps", advent ? "advent" : "awakening", int(scene.steps.size()));
+        return true;
+    }
+    // its effect in slot `id` (null: none)
+    SceneEffect* sceneEffect(int id) {
+        const auto it = scene.effects.find(id);
+        return it != scene.effects.end() && it->second.fig ? &it->second : nullptr;
+    }
+    void runStep(const cr2::SpecialStep& st) {
+        using namespace cr2;
+        BattleUnit* actorUnit = unitOf(scene.actor);
+        const bool party = scene.actor >= 0 && scene.actor < 2;
+        switch (st.op) {
+        case kSpecialSetMotion:
+            if (actorUnit) playMotion(*actorUnit, motionName(st.i[0]), battleClock);
+            break;
+        case kSpecialSetPosition: // (SetPosRot: back at its dpos)
+        case kSpecialSetRotation:
+            for (Move& m : showMoves) m.active = false;
+            if (actorUnit) actorUnit->fig.place = actorUnit->home;
+            break;
+        case kSpecialSetVisibility: { // (0 its side, 1 the other's - the monsters' standing -, 3 its partner, 4 the map)
+            const bool v = st.i[1] != 0;
+            if (st.i[0] == 4) battleMapHidden = !v;
+            for (int f = 0; f < 5; ++f) {
+                BattleUnit* u = unitOf(f);
+                if (!u) continue;
+                const bool own = (f < 2) == party;
+                const bool pick = st.i[0] == 0 ? own : st.i[0] == 1 ? !own : st.i[0] == 3 ? own && f != scene.actor : false;
+                if (pick && (f < 2 || battleRules->fighter(f).alive)) u->sceneHidden = !v;
+            }
+            break;
+        }
+        case kSpecialSetAlpha: // (0 the party, else the monsters standing)
+            for (int f = 0; f < 5; ++f)
+                if (BattleUnit* u = unitOf(f); u && (f < 2) == (st.i[0] == 0) && (f < 2 || battleRules->fighter(f).alive))
+                    u->alpha.begin(battleClock, st.f[0], st.f[1], st.f[2]);
+            break;
+        case kSpecialSetColor: // (3 the party, 4 the monsters, 7 the map)
+            if (st.i[0] == 7) mapColour.begin(battleClock, st.f[0], st.f[1], st.f[2]);
+            for (int f = 0; f < 5; ++f)
+                if (BattleUnit* u = unitOf(f); u && ((st.i[0] == 3 && f < 2) || (st.i[0] == 4 && f >= 2)))
+                    u->colour.begin(battleClock, st.f[0], st.f[1], st.f[2]);
+            break;
+        case kSpecialSetEffect: { // (CreateEffect: its settings' delay on its start; connect: the actor's model)
+            if (!st.s) break;
+            SceneEffect fx;
+            fx.fig = std::make_unique<ViewFigure>();
+            std::string err;
+            const float keep = time;
+            if (!loadFigure(std::string(st.s) + ".geom", *fx.fig, &err)) {
+                SDL_Log("scene effect %s: %s", st.s, err.c_str());
+                break;
+            }
+            const auto it = std::find(fx.fig->anims.begin(), fx.fig->anims.end(), std::string(st.s) + ".anim");
+            if (it != fx.fig->anims.end()) loadAnim(*fx.fig, size_t(it - fx.fig->anims.begin()));
+            time = keep;
+            fx.set = &effectSetting(st.s);
+            fx.fig->absolute = fx.set->kind != 2; // (a summoned one's motions over its pose)
+            fx.shown = st.i[1] != 0;
+            fx.follows = st.i[2] ? scene.actor : -1;
+            fx.start = battleClock + st.f[1] + float(fx.set->delay) * 0.05f;
+            fx.end = st.f[0] > 0 ? battleClock + st.f[0] : -1;
+            if (const auto old = scene.effects.find(st.i[0]); old != scene.effects.end() && old->second.fig) unload(*old->second.fig);
+            scene.effects[st.i[0]] = std::move(fx);
+            break;
+        }
+        case kSpecialSetEffectTarget:
+            if (SceneEffect* fx = sceneEffect(st.i[0])) fx->follows = st.i[1] == 1 ? scene.actor : st.i[1] == 2 ? scene.target : fx->follows;
+            break;
+        case kSpecialSetEffectPosition:
+            if (SceneEffect* fx = sceneEffect(st.i[0])) {
+                const Mat34 p = scenePlace(st.i[1], st.i[2] != 0, st.i[3] != 0, st.i[4]);
+                for (int c = 0; c < 3; ++c) fx->place.m[c * 4 + 3] = p.m[c * 4 + 3] + st.v[c];
+            }
+            break;
+        case kSpecialSetEffectRotation:
+            if (SceneEffect* fx = sceneEffect(st.i[0])) setRotation(fx->place, scenePlace(st.i[1], st.i[2] != 0, st.i[3] != 0, st.i[4]) * turnY(st.f[0]));
+            break;
+        case kSpecialSetEffectAnimation:
+            if (SceneEffect* fx = sceneEffect(st.i[0]); fx && st.s) {
+                std::string base = fx->fig->name;
+                if (base.size() > 5) base.resize(base.size() - 5); // (".geom")
+                const auto it = std::find(fx->fig->anims.begin(), fx->fig->anims.end(), base + st.s + ".anim");
+                if (it != fx->fig->anims.end()) {
+                    const float keep = time;
+                    loadAnim(*fx->fig, size_t(it - fx->fig->anims.begin()));
+                    time = keep;
+                    fx->start = std::max(fx->start, battleClock);
+                }
+            }
+            break;
+        case kSpecialSetEffectAlpha:
+            if (SceneEffect* fx = sceneEffect(st.i[0])) fx->alpha.begin(battleClock, st.f[0], st.f[1], st.f[2]);
+            break;
+        case kSpecialLoadCamera: {
+            if (!st.s) break;
+            std::string n = st.s;
+            for (char& ch : n) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+            CameraFigure c;
+            std::vector<uint8_t> d;
+            if (archive.read(n + ".geom", d)) cr2::parseGeom(d, c.geom);
+            if (archive.read(n + ".skel", d)) cr2::parseSkeleton(d, c.skel);
+            c.animated = archive.read(n + ".anim", d) && c.anim.parse(d) && c.anim.joints() == int(c.skel.basePose.size());
+            if (c.geom.cameras.empty()) SDL_Log("scene camera %s: none", st.s);
+            sceneCameras.emplace_back(st.s, std::move(c));
+            break;
+        }
+        case kSpecialSetCamera: // (BtlCameraCtrl::Start: from its start, in place; "GetSet..." the pattern's own)
+            if (!st.s) break;
+            battleCamera.clear();
+            if (std::strncmp(st.s, "GetSet", 6) == 0) setBattleCamera(battle.camera);
+            else setBattleCamera(std::string(st.s));
+            break;
+        case kSpecialSetCameraPosition: {
+            const Mat34 p = scenePlace(st.i[0], st.i[1] != 0, st.i[2] != 0, st.i[3]);
+            for (int c = 0; c < 3; ++c) battleCameraPlace.m[c * 4 + 3] = p.m[c * 4 + 3] + st.v[c];
+            break;
+        }
+        case kSpecialSetCameraRotation:
+            setRotation(battleCameraPlace, scenePlace(st.i[0], st.i[1] != 0, st.i[2] != 0, st.i[3]) * turnY(st.f[0]));
+            break;
+        case kSpecialSetTargetCamera:
+            targetCameraFighter = -1;
+            setTargetCamera(scene.target);
+            break;
+        case kSpecialHit: // (Hit: the next of the action's hits - the numbers at the first)
+            if (showIndex < showActions.size()) {
+                if (scene.hits == 0) showHitDone = true, showHitAt = battleClock - showStart;
+                landHits(showActions[showIndex], scene.hits == 0);
+            }
+            ++scene.hits;
+            break;
+        case kSpecialDash: // (SetMovePosition: to its aPos by the target over the time)
+            if (actorUnit && scene.target >= 0 && aposPlace(aposName(scene.actor, scene.target), showMoves[0].to)) {
+                Move& m = showMoves[0];
+                m.unit = fighterUnit[scene.actor], m.active = true;
+                m.start = st.time, m.end = st.time + std::max(st.f[0], 0.0f), m.back = -1, m.backEnd = -1;
+            }
+            break;
+        case kSpecialReturn:
+            if (showMoves[0].active) showMoves[0].back = st.time, showMoves[0].backEnd = st.time + std::max(st.f[0], 0.0f);
+            break;
+        case kSpecialPlaySE: { // (-1 the command's launch sound, -2 its hit's, -3 its shot's, -4 the post's; a delay: later)
+            const BattleData::Command* c = showIndex < showActions.size() ? battleData.command(showActions[showIndex].command) : nullptr;
+            int n = st.i[0];
+            if (n == -1) n = c ? c->launchSe : 0;
+            else if (n == -2) n = c && c->hitSe > 0 ? c->hitSe : 12;
+            else if (n == -3) n = c ? c->shotSe : 0;
+            else if (n == -4) n = c ? c->postSe : 0;
+            const int clip = n > 0 ? SoundData::battleSe(n) : -1;
+            if (clip < 0) break;
+            if (st.f[0] > 0) seJobs.push_back({battleClock + st.f[0], clip});
+            else audio.playSe(clip, false);
+            break;
+        }
+        case kSpecialPlayEventSE: // (Cr3UtilSoundPlaySE: the clip itself)
+            audio.playSe(st.i[0], false);
+            break;
+        case kSpecialFade: { // (Cr3Fade: 0 in from white, 1 out to white, 2 in from black, 3 out to black; frames of 0.05 s)
+            const bool in = st.i[0] == 0 || st.i[0] == 2;
+            battleFade.colour = st.i[0] < 2 ? 1 : 0;
+            battleFade.alpha.begin(battleClock, in ? 1.0f : 0.0f, in ? 0.0f : 1.0f, float(st.i[1]) * 0.05f);
+            break;
+        }
+        default: break; // (WaitTime; the skip's switch; the few scenes' own offsets)
+        }
+    }
+    void updateScene() {
+        if (!scene.active) return;
+        const float t = battleClock - scene.start;
+        bool all = true;
+        for (size_t k = 0; k < scene.steps.size(); ++k) {
+            if (scene.done[k]) continue;
+            if (t < scene.steps[k].time) {
+                all = false;
+                continue;
+            }
+            scene.done[k] = true;
+            runStep(scene.steps[k]);
+        }
+        if (all) endScene();
+    }
+    // ActionAwakeCleanup / ActionAdventCleanup: its effects and cameras gone, all shown again at full
+    // opacity, the HUD back, the battle's camera
+    void endScene() {
+        if (!scene.active) return;
+        scene.active = false;
+        for (auto& [id, fx] : scene.effects)
+            if (fx.fig) unload(*fx.fig);
+        scene.effects.clear();
+        sceneCameras.clear();
+        for (BattleUnit& u : battleUnits) u.sceneHidden = false, u.alpha = Ramp(), u.colour = Ramp();
+        battleMapHidden = false, mapColour = Ramp();
+        battleFade = BattleFade();
+        for (Move& m : showMoves) m.active = false;
+        if (!scene.hits && showIndex < showActions.size()) { // (one without a hit of its own)
+            showHitDone = true, showHitAt = battleClock - showStart;
+            landHits(showActions[showIndex], true);
+        }
+        showEnd = battleClock + 0.3f;
+        battleCamera.clear();
+        setBattleCamera(battle.camera);
+    }
+    void drawSceneEffects(const cr2::Mat34& camera, const Mat4& vp) {
+        for (auto it = scene.effects.begin(); it != scene.effects.end();) {
+            SceneEffect& fx = it->second;
+            const float t = battleClock - fx.start;
+            const bool over = fx.end >= 0 ? battleClock >= fx.end : !fx.set->loop && fx.fig->animLoaded && t > fx.fig->anim.duration();
+            if (over) {
+                unload(*fx.fig);
+                it = scene.effects.erase(it);
+                continue;
+            }
+            ++it;
+            if (!fx.shown || t < 0) continue;
+            cr2::Mat34 place = fx.place;
+            // BtlEffect::Pose: following its model's locator (9 its place, 7 none) and its shift,
+            // its turn; turned to the camera
+            if (BattleUnit* u = unitOf(fx.follows); u && fx.set->constrain & 3) {
+                cr2::Mat34 j = u->fig.place;
+                unscaled(j);
+                if (fx.set->locator == 7) j = cr2::Mat34();
+                else if (fx.set->locator != 9) jointPlace(u->fig, cr2::tposJoint(fx.set->locator), j);
+                if (fx.set->constrain & 1)
+                    for (int c = 0; c < 3; ++c) place.m[c * 4 + 3] = j.m[c * 4 + 3] + fx.set->shift[c];
+                if (fx.set->constrain & 2) setRotation(place, j);
+            }
+            if (fx.set->billboard) setRotation(place, camera);
+            fx.fig->place = place;
+            fx.fig->tint[3] = fx.alpha.at(battleClock);
+            pose(*fx.fig, t, fx.set->loop);
+            drawFigure(*fx.fig, vp.data());
+        }
     }
 
     void drawBattle(int w, int h) {
@@ -2344,10 +2779,16 @@ struct Viewer {
         l.time = time;
         dev->setLighting(l);
         battleVP = vp;
-        drawFigure(battleMap, vp.data());
+        for (DamageShown& d : damageShown) // (the numbers made since the last frame: on the screen by this one's camera)
+            if (!d.placed) {
+                d.placed = true;
+                if (!battleUi(d.at, d.x, d.y)) d.start = -100; // (behind it: not shown)
+            }
+        if (!battleMapHidden) drawFigure(battleMap, vp.data());
         for (const BattleUnit& u : battleUnits)
-            if (!u.hidden) drawFigure(u.fig, vp.data());
+            if (!u.hidden && !u.sceneHidden) drawFigure(u.fig, vp.data());
         drawEffects(cw, vp);
+        drawSceneEffects(cw, vp);
     }
 
     // The battle's effects (BtlEffectCtrl / BtlEffect: an effNNN figure playing its animation once,
@@ -3098,7 +3539,21 @@ struct Viewer {
     struct DamageShown {
         int value = 0, set = 20, mark = -1; // (the value -1: the mark alone)
         float x = 0, y = 0, start = 0;
+        // where it is in the world: its place on the screen the next frame drawn's (the camera
+        // as it is then - a scene's may cut at the hit)
+        float at[3] = {0, 0, 0};
+        bool placed = false;
     };
+    // a point of the battle on the screen in UI units (false: behind the camera)
+    bool battleUi(const float* p, float& x, float& y) const {
+        const float* mm = battleVP.data();
+        const float cw = mm[3] * p[0] + mm[7] * p[1] + mm[11] * p[2] + mm[15];
+        if (cw <= 0) return false;
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        x = (mm[0] * p[0] + mm[4] * p[1] + mm[8] * p[2] + mm[12]) / cw * float(screenW) * 0.5f / k;
+        y = (mm[1] * p[0] + mm[5] * p[1] + mm[9] * p[2] + mm[13]) / cw * float(screenH) * 0.5f / k;
+        return true;
+    }
     std::vector<DamageShown> damageShown;
     std::string commandShown;
     float commandShownStart = -10;
@@ -3182,7 +3637,9 @@ struct Viewer {
     // call_tabName_id posed at the list's frame / 20 s)
     // `tagFrame` / `costIcon`: BattleSkillListMenu::SetListItemParam's by the list - the sopia 9
     // ("Sopia") / 12 ("MP"), the awakenings 11 ("Awake") / 13 ("Charge Lv."), the advents 13 / 13
-    // (as the frames read; their main icons 71 "Awake", 70 "Advent")
+    // (as the frames read). A row's icon is its command's +0x72 - mainicon_id at icon / 20 s, but
+    // for two pairs whose frames lie swapped: 28 / 29, and 70 (the awakenings': its frame "Awake",
+    // as the reference video shows) / 71 (the advents')
     void drawSkillList(const std::vector<ListRow>& rows, int focused, float t, const Mat4& view, int w, int h, int tagFrame, int costIcon) {
         UiFig& bar = uiFig("scrlbar");
         bar.fig.place = cr2::Mat34();
@@ -3240,7 +3697,7 @@ struct Viewer {
                 UiFig& ic = uiFig("mainicon_id");
                 ic.fig.place = cr2::Mat34();
                 ic.fig.place.m[3] = x, ic.fig.place.m[7] = y;
-                poseUi(ic, "mainicon_id", r.icon == 0x1c ? 1.45f : r.icon == 0x1d ? 1.4f : float(r.icon) / 20.0f);
+                poseUi(ic, "mainicon_id", r.icon == 0x1c ? 1.45f : r.icon == 0x1d ? 1.4f : r.icon == 70 ? 3.55f : r.icon == 71 ? 3.5f : float(r.icon) / 20.0f);
                 drawFigure(ic.fig, view.data());
             }
             if (costIcon >= 0 && uiJoint(b, "call_cost_id13", x, y)) { // (the number's mark: "MP" ...)
@@ -3552,6 +4009,17 @@ struct Viewer {
             listRows = rows;
             drawSkillList(rows, cursor, t, view, w, h, 7, -1);
             return;
+        } else if (commandInput.menu() == CI::Menu::Advent) {
+            // the advents (SetCommandAdventList / AddCommandAdvent: the charge level its number, the
+            // command's +0x72 its icon) on the skill list - "Advent", "Charge Lv."
+            std::vector<ListRow> rows;
+            for (const auto& a : commandInput.advents()) {
+                const cr2::BattleData::Command* c = a.command > 0 ? battleData.command(a.command) : nullptr;
+                rows.push_back({a.command, c ? c->name[1] : "-", a.level, c ? c->icon : 71, a.selectable, c ? c->text[1] : ""});
+            }
+            listRows = rows;
+            drawSkillList(rows, cursor, t, view, w, h, 13, 13);
+            return;
         } else if (commandInput.menu() == CI::Menu::Awake || commandInput.menu() == CI::Menu::Sopia) {
             // the awakenings (AddCommandAwake: the level its number) or the sopia (AddCommandSopia:
             // its MP) on the skill list
@@ -3559,7 +4027,7 @@ struct Viewer {
             if (commandInput.menu() == CI::Menu::Awake)
                 for (const auto& a : commandInput.awakenings()) {
                     const cr2::BattleData::Command* c = battleData.command(a.command);
-                    rows.push_back({a.command, c ? c->name[1] : "?", a.level, 71, a.selectable, c ? c->text[1] : ""});
+                    rows.push_back({a.command, c ? c->name[1] : "?", a.level, c ? c->icon : 70, a.selectable, c ? c->text[1] : ""});
                 }
             else
                 for (const auto& sc : commandInput.sopiaCommands()) {
@@ -3706,7 +4174,7 @@ struct Viewer {
             drawOptionsAsk(view, w, h);
             return;
         }
-        for (int k = 0; k < 2; ++k) {
+        for (int k = 0; k < 2 && !scene.active; ++k) { // (a scene's: SetBattleStatusDisplay off)
             const cr2::Fighter& f = battleRules->fighter(k);
             if (!f.present) continue;
             const std::string n = k == 0 ? "pc01" : "pc02";
@@ -3765,44 +4233,47 @@ struct Viewer {
                     drawDigits(std::string(what) == "hpNum" ? hp : f.mp, 90, std::string(what) == "hpNum" ? 5 : 4, x, y, proj);
             }
         }
-        // the charge gauge (BreakWindowMenu::Update -> ChargeGaugeWindow::SetChargeGaugeParameter
-        // with charge / 10, 0..30: chggauge played towards that / 20 s - 1.5 s full - forwards or
-        // back, at its own speed)
-        const float chargeT = float(std::clamp(shownCharge(), 0, 300) / 10) / 20.0f;
-        const float step = std::max(battleClock - chargeShownAt, 0.0f);
-        chargeShownAt = battleClock;
-        chargeShown = chargeShown < chargeT ? std::min(chargeShown + step, chargeT) : std::max(chargeShown - step, chargeT);
-        UiFig& cg = uiFig("chggauge");
-        cg.fig.place = cr2::Mat34();
-        poseUi(cg, "chggauge", chargeShown);
-        drawFigure(cg.fig, view.data());
-        // the break gauge
-        UiFig& bw = uiFig("brkwin");
-        bw.fig.place = cr2::Mat34();
-        poseUi(bw, "brkwin", 0);
-        drawFigure(bw.fig, view.data());
-        UiFig& bg = uiFig("brkgauge");
-        bg.fig.place = cr2::Mat34();
-        poseUi(bg, "brkgauge", float(shownGauge() + 4) * 0.5f);
-        drawFigure(bg.fig, view.data());
-        UiFig& bi = uiFig("brkinfo");
-        bi.fig.place = cr2::Mat34();
-        const int g = shownGauge();
-        poseUi(bi, g > 0 ? "brkinfopl_io" : g < 0 ? "brkinfoen_io" : "brkinfoev_io", 5.0f);
-        drawFigure(bi.fig, view.data());
-        if (const char* m = SDL_getenv("CR2_MENU")) drawCommandMenu(std::string("btlbtn") + m + "_io", 10.0f, view, {}); // (debugging)
-        if (choosing) drawChoosing(view, w, h);
-        // the command's name
-        if (!commandShown.empty() && (battleClock - commandShownStart < 3.0f || announceHeld)) {
-            UiFig& m = uiFig("btlmsg");
-            m.fig.place = cr2::Mat34();
-            poseUi(m, "btlmsg_in", battleClock - commandShownStart);
-            drawFigure(m.fig, view.data());
-            float x, y;
-            if (uiJoint(m, "typeM_C01", x, y)) drawUiText(commandShown, 28, x, y, w, h);
+        if (!scene.active) { // (the gauges, the menus, the banner: not over a scene)
+            // the charge gauge (BreakWindowMenu::Update -> ChargeGaugeWindow::SetChargeGaugeParameter
+            // with charge / 10, 0..30: chggauge played towards that / 20 s - 1.5 s full - forwards or
+            // back, at its own speed)
+            const float chargeT = float(std::clamp(shownCharge(), 0, 300) / 10) / 20.0f;
+            const float step = std::max(battleClock - chargeShownAt, 0.0f);
+            chargeShownAt = battleClock;
+            chargeShown = chargeShown < chargeT ? std::min(chargeShown + step, chargeT) : std::max(chargeShown - step, chargeT);
+            UiFig& cg = uiFig("chggauge");
+            cg.fig.place = cr2::Mat34();
+            poseUi(cg, "chggauge", chargeShown);
+            drawFigure(cg.fig, view.data());
+            // the break gauge
+            UiFig& bw = uiFig("brkwin");
+            bw.fig.place = cr2::Mat34();
+            poseUi(bw, "brkwin", 0);
+            drawFigure(bw.fig, view.data());
+            UiFig& bg = uiFig("brkgauge");
+            bg.fig.place = cr2::Mat34();
+            poseUi(bg, "brkgauge", float(shownGauge() + 4) * 0.5f);
+            drawFigure(bg.fig, view.data());
+            UiFig& bi = uiFig("brkinfo");
+            bi.fig.place = cr2::Mat34();
+            const int g = shownGauge();
+            poseUi(bi, g > 0 ? "brkinfopl_io" : g < 0 ? "brkinfoen_io" : "brkinfoev_io", 5.0f);
+            drawFigure(bi.fig, view.data());
+            if (const char* m = SDL_getenv("CR2_MENU")) drawCommandMenu(std::string("btlbtn") + m + "_io", 10.0f, view, {}); // (debugging)
+            if (choosing) drawChoosing(view, w, h);
+            // the command's name
+            if (!commandShown.empty() && (battleClock - commandShownStart < 3.0f || announceHeld)) {
+                UiFig& m = uiFig("btlmsg");
+                m.fig.place = cr2::Mat34();
+                poseUi(m, "btlmsg_in", battleClock - commandShownStart);
+                drawFigure(m.fig, view.data());
+                float x, y;
+                if (uiJoint(m, "typeM_C01", x, y)) drawUiText(commandShown, 28, x, y, w, h);
+            }
         }
         // the damage
         for (const DamageShown& d : damageShown) {
+            if (!d.placed) continue;
             const float age = battleClock - d.start;
             if (age < 0 || age > (d.mark >= 0 ? 1.45f : 1.2f)) continue;
             if (d.mark >= 0) {
@@ -3870,6 +4341,16 @@ struct Viewer {
         dev->clearDepth(); // (the scene's depths behind all of it: a near camera's ground too)
         drawBalloons(screenW, screenH);
         drawBattleHud(screenW, screenH);
+        if (battleMode && white.id) { // (a special scene's: Cr3Fade over the battle)
+            const float alpha = battleFade.alpha.at(battleClock);
+            if (alpha > 0) {
+                static const float kScreen[24] = {-1, -1, 0, 0, 1, -1, 1, 0, 1, 1, 1, 1, -1, -1, 0, 0, 1, 1, 1, 1, -1, 1, 0, 1};
+                const Mat4 id = cr2::mat4Identity();
+                const float* c = fadeColours[std::clamp(battleFade.colour, 0, 3)];
+                const float rgba[4] = {c[0], c[1], c[2], alpha};
+                dev->drawQuad(white, kScreen, id.data(), rgba);
+            }
+        }
         cr2::EventRuntime* ev = activeEvents();
         if (!ev || !eventDrawingReady) return;
         const cr2::EventFade& fd = ev->fade();
@@ -3947,6 +4428,8 @@ int main(int argc, char** argv) {
     int fightMode = 0;
     std::string inputArg; // (--input: the commands chosen, as tokens)
     std::vector<int> flagsArg;
+    std::vector<std::tuple<int, int, int>> equipArg;
+    int chargeArg = -1;
     std::vector<std::pair<int, int>> stateArg;
     std::vector<std::pair<int, int>> sopiaArg;
     bool skipBattlesOpt = false;
@@ -3992,6 +4475,12 @@ int main(int argc, char** argv) {
         else if (a == "--state" && next) { // (a state a fighter has to begin with: fighter:state, tests)
             int f = 0, id = 0;
             if (std::sscanf(next, "%d:%d", &f, &id) == 2) stateArg.push_back({f, id});
+            ++i;
+        }
+        else if (a == "--charge" && next) chargeArg = std::atoi(next), ++i; // (the charge gauge to begin with: tests)
+        else if (a == "--equip" && next) { // (a character's equipment slot: character:slot:id - 3..7 its sopia; tests)
+            int c = 0, slot = 0, item = 0;
+            if (std::sscanf(next, "%d:%d:%d", &c, &slot, &item) == 3) equipArg.push_back({c, slot, item});
             ++i;
         }
         else if (a == "--party" && next) std::sscanf(next, "%d,%d", &battleParty[0], &battleParty[1]), ++i;
@@ -4123,6 +4612,8 @@ int main(int argc, char** argv) {
     for (int f : flagsArg) v.game.setFlag(f, true);
     for (const auto& [id, level] : sopiaArg)
         if (id >= 0 && id < 32) v.game.sopiaLevel[id] = static_cast<signed char>(level);
+    for (const auto& [c, slot, item] : equipArg)
+        if (c >= 1 && c <= 9 && slot >= 0 && slot < 8) v.game.equip[c - 1][slot] = static_cast<short>(item);
     if (!fieldName.empty()) {
         if (!v.loadField(fieldName, at, binary, data, callEntry)) return 1;
     } else if (lights != "none") {
@@ -4131,6 +4622,7 @@ int main(int argc, char** argv) {
     }
     v.load(start);
     v.stateArg = stateArg;
+    v.chargeArg = chargeArg;
     if (battleId > 0 && !v.startBattle(battleId, battleParty)) return 1;
     // the commands: chosen on the screen in a window (--fight manual, or --play), or given (--input)
     v.manualCommands = fightMode == 3 || !inputArg.empty() || (capture.empty() && !playFrom.empty());

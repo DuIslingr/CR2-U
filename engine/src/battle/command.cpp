@@ -35,11 +35,19 @@ std::vector<CommandInput::Shown> CommandInput::buttons() const {
         out.push_back({Sopia, r.scriptSwitch(44) && !me.hasState(2) && !me.hasState(23)});
         out.push_back({Items, r.scriptSwitch(45) && !items().empty() && !me.hasState(25)});
         out.push_back({Defend, r.scriptSwitch(46) && !me.hasState(24)});
-        // CheckCommandAwake: Awake when one of the party has an awakening it can pay for
-        bool awake = false;
-        for (int k = 0; k < 2; ++k)
-            for (const Awakening& a : awakeningsOf(k)) awake |= a.selectable;
-        if (awake) out.push_back({Awake, true});
+        // CheckCommand: with the charge less what this turn has set aside at 100 or more, a pair's
+        // Advent when one can be called (CheckCommandAdvent), else Awake when one of the party has
+        // an awakening it can pay for (CheckCommandAwake)
+        if (r.charge() - reserved() >= 100) {
+            if (pair_) {
+                if (!advents().empty()) out.push_back({Advent, true});
+            } else {
+                bool awake = false;
+                for (int k = 0; k < 2; ++k)
+                    for (const Awakening& a : awakeningsOf(k)) awake |= a.selectable;
+                if (awake) out.push_back({Awake, true});
+            }
+        }
     }
     return out;
 }
@@ -177,6 +185,41 @@ bool CommandInput::pickAwakening(int command) {
     return false;
 }
 
+std::vector<CommandInput::AdventEntry> CommandInput::advents() const {
+    std::vector<AdventEntry> out;
+    if (!rules_ || !pair_) return out;
+    const BattleRules& r = *rules_;
+    const int charge = r.charge() - reserved();
+    for (const auto& e : kAdvent) {
+        if (!(flag_ && flag_(e.flag)) || charge < e.charge) continue;
+        bool worn = false; // (CheckCommandAdventAvailable: either one's sopia in its first two places)
+        for (int k = 0; k < 2 && !worn; ++k) {
+            const Fighter& f = r.fighter(k);
+            for (int slot = 0; slot < 2 && f.present; ++slot) {
+                const BattleData::Sopia* so = f.sopia[slot] > 0 ? r.data().sopia(f.sopia[slot]) : nullptr;
+                worn = worn || (so && so->advent == e.sopia);
+            }
+        }
+        if (!worn) continue;
+        AdventEntry a;
+        a.level = std::min(charge / 100, 3);
+        a.command = e.command[a.level - 1];
+        a.selectable = a.command > 0 && r.data().command(a.command) != nullptr;
+        out.push_back(a);
+    }
+    return out;
+}
+
+bool CommandInput::pickAdvent(int command) {
+    if (menu_ != Menu::Advent) return false;
+    for (const AdventEntry& a : advents())
+        if (a.command == command && a.selectable) {
+            toTarget(command, rules_->charge() - reserved()); // (StepAdventLoop: all of it)
+            return true;
+        }
+    return false;
+}
+
 void CommandInput::commandMenu(int actor) {
     menu_ = Menu::Command, actor_ = actor;
 }
@@ -199,6 +242,10 @@ bool CommandInput::press(int id) {
     }
     if (id == Awake) {
         menu_ = Menu::Awake;
+        return true;
+    }
+    if (id == Advent) { // (StepAdvent: the list)
+        menu_ = Menu::Advent;
         return true;
     }
     if (id == Sopia) { // (StepSopia: the list)
@@ -238,6 +285,7 @@ void CommandInput::back() {
     switch (menu_) {
     case Menu::Target: menu_ = pendingFrom_, pendingItem_ = 0; break;
     case Menu::Awake:
+    case Menu::Advent:
     case Menu::Items:
     case Menu::Sopia: menu_ = Menu::Command; break;
     case Menu::Command: // (StepCommandLoop: the second's back to the first's, else the first menu)

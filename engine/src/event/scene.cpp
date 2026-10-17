@@ -142,6 +142,32 @@ void EventScene::update(float dt) {
     }
     cameraTime_ = std::min(cameraTime_ + dt, std::max(cameraEnd_, cameraTime_));
     lightTime_ = std::min(lightTime_ + dt, std::max(lightEnd_, lightTime_));
+    if (quake_.on) { // (VistaMain::Update: the quake's time; VistaMain::Pose: the camera moved)
+        if ((quake_.time += dt) >= quake_.seconds) {
+            quake_.time = quake_.seconds;
+            if (quake_.to <= 0) return quakeStop();
+        }
+        Mat34 w;
+        float fov, zn, zf;
+        const Quake keep = quake_;
+        quake_.on = false; // (the camera's own place: without the quake's offset)
+        const bool have = camera(w, fov, zn, zf);
+        quake_ = keep;
+        if (!have) return;
+        float a = (quake_.from + (quake_.to - quake_.from) * (quake_.seconds > 0 ? quake_.time / quake_.seconds : 1)) * quake_.width;
+        if (quake_.parity == 0) a = -a;
+        for (int k = 0; k < 3; ++k) quake_.offset[k] += w.m[k * 4 + 1] * a; // (its up axis)
+        quake_.parity = (quake_.parity + 1) % 2;
+    }
+}
+
+void EventScene::quake(float width, float fromPercent, float toPercent, int frames) {
+    quake_.on = true, quake_.width = width, quake_.from = fromPercent * 0.01f, quake_.to = toPercent * 0.01f;
+    quake_.seconds = float(frames) * 0.05f, quake_.time = 0, quake_.parity = 0;
+}
+
+void EventScene::quakeStop() {
+    quake_ = Quake();
 }
 
 bool EventScene::camera(Mat34& world, float& fovY, float& zn, float& zf, float lead) const {
@@ -151,6 +177,7 @@ bool EventScene::camera(Mat34& world, float& fovY, float& zn, float& zf, float l
     const std::vector<Mat34> w = camera_.world(std::min(cameraTime_ + lead, std::max(cameraEnd_, cameraTime_)));
     if (j < 0 || size_t(j) >= w.size()) return false;
     world = w[size_t(j)];
+    if (quake_.on) world.m[3] += quake_.offset[0], world.m[7] += quake_.offset[1], world.m[11] += quake_.offset[2];
     fovY = c.fovY;
     zn = c.near, zf = c.far;
     if (name_ != "d11_06_0102_evt" && name_ != "d12_03_0106a_evt") zn = std::max(zn, 0.05f), zf = std::min(zf * 5, 5000.0f);

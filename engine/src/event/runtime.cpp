@@ -95,6 +95,8 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     });
     vm.setNative("EvtScene", "SetPosDirect", [this](NativeCall& c) { scene_.pin(c.string(0), c.number(1), c.number(2), c.number(3)); });
     vm.setNative("EvtScene", "SetPosLocator", [this](NativeCall& c) { scene_.pinTo(c.string(0), c.string(1)); });
+    vm.setNative("VistaEvent", "CameraQuake", [this](NativeCall& c) { scene_.quake(c.number(0), c.number(1), c.number(2), c.integer(3)); });
+    vm.setNative("VistaEvent", "CameraQuakeStop", [this](NativeCall&) { scene_.quakeStop(); });
     vm.setNative("EvtScene", "SetFaceTexture", [this](NativeCall& c) { faces_[c.integer(0)] = c.string(1); });
     vm.setNative("EvtScene", "ChangeModelFace", [this](NativeCall& c) {
         if (EventModel* m = scene_.model(c.string(0))) m->face = c.integer(1, -1);

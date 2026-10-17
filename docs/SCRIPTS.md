@@ -422,7 +422,9 @@ camera, the moves, the animations and the fades where they are by then. The scri
   `FG` / `MG` / `3D`, which the field's drawing now honours);
 - **the timelines** (`VistaEvent`, in the scene's frames - 20 a second): `SetMove(model, from,
   to)` (the model along its locator), `CameraMove(from, to)` / `LightMove` (to + 1: the frame's
-  end). The vista camera's near plane is at least 0.05, its far 5 x the camera's (at most 5000;
+  end), `CameraQuake(width, from %, to %, frames)` / `CameraQuakeStop` (EvtUtilVistaCameraQuake,
+  VistaMain::Pose: each update the camera moved along its own up axis by width x the rate - from ..
+  to over the frames, then held, or stopped when it ends at 0 - one way, then back). The vista camera's near plane is at least 0.05, its far 5 x the camera's (at most 5000;
   VistaCamera::Init, but for D11_06_0102 and D12_03_0106a). `ExecutionStart` /
   `ExecutionEndStart` wait for the player's slash (`WaitPlayerSlash`: `CheckExecution` each
   frame);

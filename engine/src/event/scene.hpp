@@ -62,6 +62,11 @@ public:
     void pin(const std::string& model, float x, float y, float z);
     void pinTo(const std::string& model, const std::string& other);
     void cameraMove(float from, float to);
+    // VistaEvent.CameraQuake(width, from %, to %, frames) (EvtUtilVistaCameraQuake; VistaMain::Pose):
+    // each update the camera moved along its up axis by width x the rate - from .. to over the
+    // frames, then the last, or stopped when that is 0 -, one way then back; CameraQuakeStop
+    void quake(float width, float fromPercent, float toPercent, int frames);
+    void quakeStop();
     void lightMove(float from, float to);
 
     // a frame's time passing: the moves, the camera and the lights advance
@@ -92,6 +97,12 @@ private:
     Mat34 locator(const std::string& name, float sceneTime) const;
     bool loaded_ = false;
     std::string name_;
+    struct Quake {
+        bool on = false;
+        float width = 0, from = 0, to = 0, seconds = 0, time = 0;
+        int parity = 0;
+        float offset[3] = {0, 0, 0};
+    } quake_;
     Figure scene_, camera_, light_;
     bool hasCamera_ = false, hasLight_ = false;
     std::map<std::string, int> locators_; // ev_<name> -> joint

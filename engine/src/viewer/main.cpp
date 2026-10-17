@@ -63,6 +63,7 @@
 #include "assets/mvgl.hpp"
 #include "assets/skeleton.hpp"
 #include "battle/battledata.hpp"
+#include "battle/camera.hpp"
 #include "battle/motion.hpp"
 #include "battle/rules.hpp"
 #include "event/runtime.hpp"
@@ -978,7 +979,15 @@ struct Viewer {
         bool animated = false;
     } battleCameras[2];
     std::string battleCamera;
-    float battleClock = 0;
+    float battleClock = 0, battleCameraStart = 0; // (the camera's animation runs from its start)
+    void setBattleCamera(const std::string& name) {
+        if (name.empty() || name == battleCamera) return;
+        battleCamera = name, battleCameraStart = battleClock;
+        dev->resetHistory(); // (a cut)
+    }
+    void setBattleCamera(int number) {
+        if (const char* n = cr2::battleCameraName(number)) setBattleCamera(std::string(n));
+    }
 
     bool startBattle(int id, const int party[2]) {
         std::vector<uint8_t> d;
@@ -1065,7 +1074,7 @@ struct Viewer {
                 std::vector<cr2::JointTransform> p = c.skel.basePose;
                 if (c.animated) {
                     const float frames = float(std::max(c.anim.frames() - 1, 1));
-                    p = c.anim.poseAbsolute(c.skel.basePose, std::clamp(battleClock * c.anim.sampleRate(), 0.0f, frames));
+                    p = c.anim.poseAbsolute(c.skel.basePose, std::clamp((battleClock - battleCameraStart) * c.anim.sampleRate(), 0.0f, frames));
                 }
                 const std::vector<cr2::Mat34> w = c.skel.world(p);
                 if (size_t(j) >= w.size()) continue;
@@ -1128,6 +1137,7 @@ struct Viewer {
     size_t showIndex = 0;
     float showStart = 0; // (battle seconds)
     float showHitAt = 0, showEnd = 0;
+    int showCamera2 = -1;
     bool showHitDone = false;
     struct Move {
         int unit = -1;
@@ -1182,6 +1192,9 @@ struct Viewer {
         std::vector<uint8_t> d;
         if (archive.read("battleapos.skel", d) && cr2::parseSkeleton(d, battleApos)) battleAposWorld = battleApos.world(battleApos.basePose);
         showActions.clear(), showIndex = 0;
+        // the opening: Cam_Start_<pattern>_00 (BtlMainCtrl::StepBattleIn), then the turns
+        setBattleCamera(battle.startCamera);
+        showEnd = battleClock + 3.0f;
         SDL_Log("fight: %s", mode == 2 ? "pair" : "solo");
     }
 
@@ -1211,10 +1224,13 @@ struct Viewer {
     // the next action (or turn) once the last is over
     void stepBattleShow() {
         if (!battleRules || battleFight == 0) return;
-        if (showIndex < showActions.size() && battleClock < showEnd) return;
+        if (battleClock < showEnd) return;
         if (showIndex < showActions.size()) ++showIndex;
         if (showIndex >= showActions.size()) {
-            if (battleRules->outcome()) return;
+            if (battleRules->outcome()) {
+                setBattleCamera(battle.camera);
+                return;
+            }
             // a turn: the party attacking the first monster standing
             const bool pair = battleFight == 2;
             std::vector<cr2::BattleRules::Order> orders;
@@ -1238,7 +1254,10 @@ struct Viewer {
                 showActions.back().hits.push_back(e);
             }
             SDL_Log("turn %d: %zu actions; gauge %d", battleRules->turn(), showActions.size(), battleRules->gauge());
-            if (showActions.empty()) return;
+            if (showActions.empty()) {
+                setBattleCamera(battle.camera);
+                return;
+            }
         }
         beginShowAction(showActions[showIndex]);
     }
@@ -1270,6 +1289,29 @@ struct Viewer {
             if (f == a.actor) showHitAt = t.hit[0] >= 0 ? t.hit[0] : length * 0.5f;
         }
         showEnd = battleClock + std::max(length, 0.5f) + 0.3f;
+        // its cameras (BtlActionCtrl::SetAttackCamera1 / 2): by the party - its kind (0 / 1 the
+        // one, 2 alone, 3 a pair), the pattern's base and the target, one of two at random, the
+        // next at the hit; by a monster - the base, which it is and its target (3 a pair)
+        showCamera2 = -1;
+        if (target >= 0) {
+            const int base = cr2::cameraPattern(battle.pattern);
+            const bool targetPair = battleRules->fighter(target).partner >= 0;
+            if (a.actor < 2) {
+                const bool alone = fighterUnit[1 - a.actor] < 0;
+                const int kind = a.partner >= 0 ? 3 : alone ? 2 : a.actor;
+                const int n = battle.pattern == 11 && targetPair ? 21 : base + target - 2;
+                int cam = cr2::cameraAttackToEnemy(kind, n);
+                if (cam >= 0) {
+                    cam += int(battleClock * 1000.0f) % 2 * 2; // (BtlRand(2): either)
+                    setBattleCamera(cam);
+                    showCamera2 = cam + 1;
+                }
+            } else {
+                const int cam = cr2::cameraAttackFromEnemy(base + a.actor - 2, targetPair ? 3 : target);
+                if (cam >= 0) setBattleCamera(cam);
+            }
+            SDL_Log("    camera %s", battleCamera.c_str());
+        }
         if (c) SDL_Log("  %s: %s", battleRules->fighter(a.actor).name.c_str(), c->name[1].c_str());
     }
 
@@ -1298,6 +1340,7 @@ struct Viewer {
         // the hits
         if (!showHitDone && s >= showHitAt) {
             showHitDone = true;
+            if (showCamera2 >= 0) setBattleCamera(showCamera2);
             for (const auto& e : a.hits) {
                 const int u = fighterUnit[e.target];
                 if (u < 0) continue;

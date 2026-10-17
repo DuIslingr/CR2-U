@@ -100,8 +100,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       222 pair` plays a battle by them (break gauge, sopia, items, states: not yet)
 - [x] Battles playing (`cr2view --battle 222 --fight pair`): each turn's actions as the game moves
       them - the command's motion, to the target's attack place and back on BtlMotionTable's
-      times, the damage motion at the hit, the downed gone
-- [ ] Battles on screen: the commands to choose, the actions' cameras and effects, the numbers,
+      times, the damage motion at the hit, the downed gone; the game's cameras - the opening's
+      sweep, each attack's two shots, the monsters', the commands'
+- [ ] Battles on screen: the commands to choose, the actions' effects, the numbers,
       the windows
 - [ ] Treasure boxes, the other windows (announcements, tutorials, items), the HUD, the sounds
       between areas
@@ -134,6 +135,7 @@ One or more of:
 | `tools/msg.py` | the text: `check` every message, `show` one in your terminal |
 | `tools/anim.py` | Edge animations: evaluate a pose at any frame; `check` every animation |
 | `tools/skel.py` | Edge skeletons: base pose, hierarchy, world matrices; `check` against the inverse binds |
+| `tools/gen_camera_table.py` | the battle cameras' table (BtlCameraTable and their names) from the decompilation and the library, as `engine/src/battle/cameratable.inc` |
 | `tools/gen_motion_table.py` | the battle motions' timing table (BtlMotionTable, built in the game's code) from the decompilation, as `engine/src/battle/motiontable.inc` |
 | `tools/sq_bindings.py` | the scripts' native API, from the Android library's decompilation |
 | `tools/re_setup.sh` | Ghidra groundwork in `re/` (never committed): the Android library (x86 and armv7, named), the iPad and Vita builds named from it |

@@ -38,6 +38,7 @@ add_library(cr2core STATIC
     src/battle/battledata.cpp
     src/battle/rules.cpp
     src/battle/motion.cpp
+    src/battle/camera.cpp
 )
 target_include_directories(cr2core PUBLIC src)
 target_link_libraries(cr2core PUBLIC squirrel2)

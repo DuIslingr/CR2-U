@@ -131,3 +131,12 @@ move back, ten hit times from +0x1c, the turn, the effect. Where the attacker go
 pPairB>`, by the party a monster's `aPos_<pSoloA | pSoloB | pPair><s, ssL, m, msL ...>`; the
 fighters' indices +0xb48 / +0xb4c, +0xb50 / +0xb54 into BtlAposTable's names). Darwin's Slash
 (`j001bo01`): there over frames 4 - 10, the hit at 11, back over 25 - 32.
+
+The cameras: BtlCameraTable, also built in code (tools/gen_camera_table.py ->
+engine/src/battle/cameratable.inc), numbers into btl_camera_name_table (462 names: the joints of
+BattleCamera_move - 55 animated cameras on one timeline, each run from its start - and _nomove).
+An attack by the party (SetAttackCamera1): GetAttackToEnemy(kind - 0 / 1 which, 2 alone, 3 a pair
+-, the pattern's base (GetPatternToCamera) + the target - 2; Hpair's pair 21), + 0 or 2 at random,
+and at the hit the next number (SetAttackCamera2: `Cam_BtlPair_SSS1_00`, `..._01`); by a monster
+GetAttackFromEnemy(the base + which - 2, its target: 0, 1, 3 a pair) (`Cam_Btlenemy_SSS2_20`). The
+battle opens on `Cam_Start_<pattern>_00` and the commands are chosen under `Cam_Getset_..._00`.

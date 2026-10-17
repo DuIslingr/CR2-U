@@ -101,6 +101,15 @@ void bindGameState(ScriptVM& vm, GameState& state) {
         for (int k = 0; k < 3; ++k) state.bgColor[k] = c.number(k);
     });
     vm.setNative("Cr3System", "ReserveLibrary", [&next](NativeCall&) { next.library = true; });
+    vm.setNative("Cr3System", "ReserveCamp", [&next](NativeCall&) { next.camp = true; });
+    vm.setNative("Cr3System", "ReservePUB", [&next](NativeCall&) { next.pub = true; });
+    vm.setNative("Cr3System", "ReserveTitle", [&next](NativeCall&) { next.title = true; });
+    vm.setNative("Cr3System", "ChangeDungeon", [&next](NativeCall& c) { next.changeDungeon = c.integer(0), next.changeArea = c.integer(1); });
+    vm.setNative("Cr3System", "ChangeArea", [&next, &state](NativeCall& c) { next.changeDungeon = state.dungeon, next.changeArea = c.integer(0); });
+    // the Oz (Cr3UtilSetOZ: held at 0 .. 9,999,999) and the encounters' switch
+    vm.setNative("Cr3System", "OZSet", [&state](NativeCall& c) { state.oz = std::clamp(c.integer(0), 0, 9999999); });
+    vm.setNative("Cr3System", "OZCheck", [&state](NativeCall& c) { c.result(state.oz); });
+    vm.setNative("Cr3System", "SetEncountEnable", [&state](NativeCall& c) { state.encountEnable = c.boolean(0); });
     vm.setNative("Cr3System", "ReserveCredit", [&next](NativeCall& c) { next.credit = c.integer(0); }); // (FldUtilReserveCredit)
     vm.setNative("InterfaceWindow", "SetArchiveID", [&state](NativeCall& c) { state.libraryArchive = c.integer(0); });
     vm.setNative("InterfaceWindow", "GetLibraryID", [&state](NativeCall& c) { c.result(state.libraryId); });

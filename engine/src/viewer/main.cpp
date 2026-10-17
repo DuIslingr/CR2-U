@@ -1873,22 +1873,45 @@ struct Viewer {
     bool playMode = false;
     std::string returnMap;
     float returnPlayer[3] = {0, 0, 0}, returnHeading = 0;
+    // FldMain::BranchAfterEvent's order: an area change, a battle, a vista, then the world select,
+    // the camp, the shop, the party, the pub, the chapter select, the library, the title
     void branchAfterField() {
         cr2::GameState::Next& n = game.next;
+        if (!n.popPoint.empty()) {
+            const std::string pp = n.popPoint;
+            n.popPoint.clear();
+            SDL_Log("play: to %s", pp.c_str());
+            enterMap(pp.substr(0, 5), pp);
+            return;
+        }
+        if (n.changeDungeon >= 0 && n.changeArea >= 0) { // (ChangeDungeon / ChangeArea: the area's own entry place)
+            char map[16]; // (the town dungeon 0: t01NN; else dDDNN - the area from 0)
+            if (n.changeDungeon == 0) std::snprintf(map, sizeof map, "t01%02d", n.changeArea + 1);
+            else std::snprintf(map, sizeof map, "d%02d%02d", n.changeDungeon, n.changeArea + 1);
+            n.changeDungeon = n.changeArea = -1;
+            SDL_Log("play: to %s", map);
+            enterMap(map, "");
+            return;
+        }
+        if (n.battle >= 0) {
+            returnMap = field.info().name, std::memcpy(returnPlayer, player, sizeof player), returnHeading = heading;
+            return skipBattle();
+        }
+        if (n.vista) {
+            returnMap = field.info().name, std::memcpy(returnPlayer, player, sizeof player), returnHeading = heading;
+            n.vista = false;
+            SDL_Log("play: vista %s in %s", n.vistaFunction.c_str(), n.vistaMap.c_str());
+            if (!startVista(n.vistaFunction, n.vistaMap)) returnToField(-1);
+            return;
+        }
         if (n.worldSelect) { // (FldMain step 10: the world select, then WarpTask)
             n.worldSelect = false;
             openWorldSelect();
             return;
         }
-        if (n.chapter) { // (FldMain step 0xe: the chapter select)
-            n.chapter = false;
-            openChapterSelect();
-            return;
-        }
-        if (n.library) { // (FldMain step 0xf: the library)
-            n.library = false;
-            openLibrary();
-            return;
+        if (n.camp) { // (FldMain step 5: the camp)
+            n.camp = false;
+            return openCamp();
         }
         if (n.shop) { // (FldMain step 0xb: the shop)
             n.shop = false;
@@ -1901,19 +1924,23 @@ struct Viewer {
             SDL_Log("party: open");
             return;
         }
-        if (!n.popPoint.empty()) {
-            const std::string pp = n.popPoint;
-            n.popPoint.clear();
-            SDL_Log("play: to %s", pp.c_str());
-            enterMap(pp.substr(0, 5), pp);
-        } else if (n.battle >= 0) {
-            returnMap = field.info().name, std::memcpy(returnPlayer, player, sizeof player), returnHeading = heading;
-            skipBattle();
-        } else if (n.vista) {
-            returnMap = field.info().name, std::memcpy(returnPlayer, player, sizeof player), returnHeading = heading;
-            n.vista = false;
-            SDL_Log("play: vista %s in %s", n.vistaFunction.c_str(), n.vistaMap.c_str());
-            if (!startVista(n.vistaFunction, n.vistaMap)) returnToField(-1);
+        if (n.pub) { // (FldMain step 0xd, FldPUB: not in yet - the field again)
+            n.pub = false;
+            SDL_Log("play: the pub (not in yet)");
+        }
+        if (n.chapter) { // (FldMain step 0xe: the chapter select)
+            n.chapter = false;
+            openChapterSelect();
+            return;
+        }
+        if (n.library) { // (FldMain step 0xf: the library)
+            n.library = false;
+            openLibrary();
+            return;
+        }
+        if (n.title) { // (FldMain 0x1d, 2: the title - none here: the options' Title Screen's way)
+            n.title = false;
+            toTitle = true;
         }
     }
     // a battle the flow reached: fought (its party SetBattleParty's, else the party now; the party

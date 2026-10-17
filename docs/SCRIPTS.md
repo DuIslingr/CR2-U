@@ -316,6 +316,13 @@ every event box's function is in its dungeon's script.
 What comes after a field's or an event's script is what it reserved, in `cr3_script_work`
 (FldUtil): `Cr3System.SetVistaFuncName(function)` / `SetVistaMapName(map)` (a vista event),
 `BattleIN(id)` (a battle; `SetBattleParty`), `SetPopPoint(point)` (where the player arrives),
+After a field event the game goes on as FldMain::BranchAfterEvent orders it: an area change
+(`SetPopPoint`, or `Cr3System.ChangeDungeon(d, a)` / `ChangeArea(a)` - the area's own entry
+place), a battle, a vista, then the world select, the camp (`ReserveCamp`), the shop, the party,
+the pub (`ReservePUB`: not in yet), the chapter select, the library, the title (`ReserveTitle`).
+`OZSet(n)` sets the Oz (0 .. 9,999,999), `OZCheck()` reads it; `SetEncountEnable(on)` keeps the
+scripts' encounters switch.
+
 `SetComeFromBattleToField()` / `SetComeFromVistaToField()` (the next area's entry: `evt100` /
 `evt200`). When a field's script ends, FldMain::BranchAfterEvent takes the first reserved of: an
 area change, a battle, a vista, then the world select, the camp, a shop, ..., the title. When a

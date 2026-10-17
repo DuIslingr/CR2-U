@@ -70,6 +70,8 @@ struct GameState {
     float bgColor[3] = {0, 0, 0};
     // the area last entered (FldUtil's: GetDungeonNum - 0 the town - and GetAreaNum, from 0)
     int dungeon = 0, area = 0;
+    // the scripts' encounters switch (Cr3System.SetEncountEnable: cr3_field_data +0x30 - the tab's own is +0x31)
+    bool encountEnable = true;
     TreasureBoxes boxes;
     bool equipReady = false;
     template <class Data> void initEquip(const Data& data, const int* levelExp) {
@@ -128,6 +130,9 @@ struct GameState {
         bool party = false;       // (ReserveParty - FldMain step 0xc)
         bool chapter = false;     // (ReserveChapter - FldMain step 0xe)
         bool library = false;     // (ReserveLibrary - FldMain step 0xf)
+        bool camp = false;        // (ReserveCamp - FldMain step 5)
+        bool pub = false;         // (ReservePUB - FldMain step 0xd)
+        int changeDungeon = -1, changeArea = -1; // (ChangeDungeon(d, a) / ChangeArea(a): FldUtilReserveChange*)
         int credit = -1;          // (ReserveCredit(n): cr3_script_work[0xc] / [0x14] - VistaMain::BranchAfterVista 3, the staff roll)
     } next;
 };

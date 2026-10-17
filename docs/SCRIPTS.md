@@ -144,11 +144,20 @@ A sprint (its marker `obj151` on its place) starts when the leader is within 0.1
 player taps within 128 of the marker (the interface's units x 2048): crouched (`fj01`), then a
 hop to each spot in turn (`fj02`, SE 0x155) on a parabola under 0.98 - rising 0.04 over the higher
 end (Cr3CalculateVelocityArrivesAtHeight: v = sqrt(1.96 h); ...TimeArrivesAtHeight: the later
-root) -, `fj03` ending as it lands and `fj01` 0.2 s before, SE 0x156 at each landing, then idle. A
-high jump hops the same way (the voice 0x8fa with each launch), Darwin's alone: while the
-leader's body touches its place its mark stands on its first spot (Darwin: FieldGimickEffect01Menu's
-`gmk1rng`, its `_io`, `_out` as the jump starts; anyone else: `gmk0rng_io`), and a tap within 128
-of it jumps - for anyone else SE 0xb6. `SkipMessage` shows the page whole
+root) -, `fj03` ending as it lands and `fj01` 0.2 s before, SE 0x156 at each landing, then idle.
+
+The others are each one character's: the high jump Darwin's (0), the mystic 2's, the iai 3's,
+the aim 4's, the hakkei 5's. While the leader's body touches an enabled one's place its mark
+stands on its first spot (FldMain::CollisionAdded; FieldGimickEffect0NMenu's for its own
+character - the high jump's `gmk1rng`, the others' `gmkNrng` with the button `gmkBtn` -, anyone
+else's `gmk0rng_io`), gone as the leader leaves; a tap within 128 of it starts the action
+(FldMain::CheckTouchActionStartOne) - for anyone else SE 0xb6. A high jump hops as a sprint does
+(the voice 0x8fa with each launch). An iai (FldIai) takes the button out (then its guide
+`gmk4csr_loop`) and waits for a slash: a press, then within 10 frames the line from where it
+began must pass the mark - the mark's foot on it, within 128 (Cr3UtilCheckCuttingCircle) - SE
+0x164, the ring out, and the gimmick's own function called (FldMain::CallEvent: `iai01` - its
+flag, its obstacle cut, the action off); else SE 0x165 and the mark anew. (The mystic's, aim's
+and hakkei's games: not yet.) `SkipMessage` shows the page whole
 (the typing skipped); the message stays until a tap or the window's Close.
 
 An area's script runs on the game's 20 updates a second like an event's, and uses the same

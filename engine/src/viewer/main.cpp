@@ -1607,7 +1607,7 @@ struct Viewer {
         keyLock = KeyLock();
         actionMark = ActionMark(), sprint = Sprint(), iai = Iai(), aim = Aim(), hakkei = Hakkei(), mystic = Mystic();
         // the dungeon's script sets the area up (evt000: which gimmicks show, which collide)
-        if (!script) script = std::make_unique<cr2::FieldScript>(archive, game);
+        if (!script) script = std::make_unique<cr2::FieldScript>(archive, game), script->onSave = [this](int k) { scriptSave(k); };
         script->events().autoPage = pageSeconds, script->events().askYesNo = true;
         if (!script->enter(map, field.gimmicks(), entry)) SDL_Log("%s's script: %s", map.c_str(), script->error().c_str());
         if (!playMode && script->running() && !script->runToEnd()) // (--field: the area as its set-up leaves it; --play: as it runs)
@@ -5268,20 +5268,30 @@ struct Viewer {
     // after a second
     int saveStage = 0; // (1 asked, 2 saved)
     float saveStart = 0;
-    static std::string savePath() {
+    static std::string savePath(const char* file = "save1.txt") {
         char* dir = SDL_GetPrefPath("DuIslingr", "CR2-U");
-        std::string p = dir ? std::string(dir) + "save1.txt" : "cr2u-save1.txt";
+        std::string p = dir ? std::string(dir) + file : std::string("cr2u-") + file;
         SDL_free(dir);
         return p;
     }
-    bool writeSave() {
+    // the scripts' saves (Cr3Save, FieldScript::onSave): the game's as the field's Save does, the
+    // continue data (each area's entry - cont.txt, which --continue takes first), that emptied -
+    // only as a game is played (--play / --continue, not a capture's)
+    bool scriptSaves = false;
+    void scriptSave(int kind) {
+        if (!scriptSaves) return;
+        if (kind == 0) writeSave();
+        else if (kind == 1) writeSave("cont.txt");
+        else if (std::FILE* f = std::fopen(savePath("cont.txt").c_str(), "wb")) std::fclose(f); // (DeleteCont: none to continue)
+    }
+    bool writeSave(const char* file = "save1.txt") {
         std::map<std::string, std::string> extra;
         char pos[96];
         std::snprintf(pos, sizeof pos, "%.6f %.6f %.6f %.6f", player[0], player[1], player[2], heading);
         extra["map"] = field.info().name, extra["place"] = pos;
         extra["options"] = std::to_string(optionLanguage) + " " + std::to_string(optionQuality) + " " + std::to_string(optionVolume[0]) + " " +
                            std::to_string(optionVolume[1]) + " " + std::to_string(optionVolume[2]);
-        const std::string text = game.save(extra), path = savePath();
+        const std::string text = game.save(extra), path = savePath(file);
         std::FILE* f = std::fopen(path.c_str(), "wb");
         const bool ok = f && std::fwrite(text.data(), 1, text.size(), f) == text.size();
         if (f) std::fclose(f);
@@ -5291,10 +5301,16 @@ struct Viewer {
     // --continue: the save read back, its map entered there
     bool continueSave(const std::string& binary, const std::string& dataPath) {
         std::string text;
-        if (std::FILE* f = std::fopen(savePath().c_str(), "rb")) {
-            char buf[4096];
-            for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) text.append(buf, n);
-            std::fclose(f);
+        for (const char* file : {"cont.txt", "save1.txt"}) { // (the continue data, else the save)
+            if (std::FILE* f = std::fopen(savePath(file).c_str(), "rb")) {
+                char buf[4096];
+                for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) text.append(buf, n);
+                std::fclose(f);
+            }
+            if (!text.empty()) {
+                SDL_Log("continue: from %s", file);
+                break;
+            }
         }
         std::map<std::string, std::string> extra;
         std::string err;
@@ -6898,6 +6914,7 @@ int main(int argc, char** argv) {
     dev->setUpscaler(upscale);
     v.shaders = std::make_unique<cr2::ShaderLibrary>(v.archive);
     if (!playFrom.empty()) fieldName = playFrom, v.playMode = true;
+    v.scriptSaves = (!playFrom.empty() || continueSave) && capture.empty();
     if (continueSave && fieldName.empty()) fieldName = "d1020"; // (the windows and fonts set up for the field)
     v.skipBattles = skipBattlesOpt; // (a new game: every flag clear)
     if (!fieldName.empty() || !eventName.empty() || battleId > 0) {

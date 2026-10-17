@@ -196,7 +196,10 @@ material's textures `m<its number>a01` / `b01` / `c01` / `d01`, and their normal
 resident effects (FldEffectResident: fifteen made with the field - eff030, eff031, eff041, eff042,
 eff046, eff047, eff048, eff051, eff052, eff056, eff057, eff061, eff062, eff066, eff032) play on the
 leader or a gimmick (`Cr3FieldMapEffectResident.SetPosRot(n, target)`, `SetScale`, `Play(n)`: the
-warp's `WarpEffect` - effect 1 on the player).
+warp's `WarpEffect` - effect 1 on the player). The saves (Cr3Save): `SaveCont` - each area's
+`Field_FadeIn`, the continue data - writes CR2-U's `cont.txt`, `SaveGame` its `save1.txt` (as the
+field's Save), `DeleteCont` empties the continue data (a real save made); `--continue` takes the
+continue data first. Only a game being played saves (`--play` / `--continue`, not a capture).
 
 Questions (EvtWindow.ShowYesNoButton: BattleYNChoice's `choice_io` with the circle buttons 11
 yes and 12 no; SE 0xb4) wait for an answer: `CheckYesNoButton` 0 until then, 1 yes, 2 no, and

@@ -12,6 +12,7 @@
 // in the game's updates (tick()).
 
 #include <array>
+#include <functional>
 #include <map>
 #include <set>
 #include <memory>
@@ -145,6 +146,11 @@ public:
         int serial = 0;
     };
     static const char* residentFigure(int n);
+    // The game's saves (Cr3Save: Cr3Util_Save_GameData - SaveGame, as the field's Save writes it -,
+    // Save_ContData - SaveCont, each area's entry: the continue data -, Delete_ContData; the system
+    // data's and the Commits nothing here): what saves them (0 the game, 1 the continue data, 2 the
+    // continue data gone) - the viewer's
+    std::function<void(int)> onSave;
     const std::map<int, Resident>& residents() const { return residents_; }
     int introDungeon() const { return introDungeon_; }
     int introTick() const { return introTick_; }

@@ -34,6 +34,10 @@ void FieldScript::bind() {
                 return;
             }
     });
+    vm.setNative("Cr3Save", "SaveGame", [this](NativeCall&) { if (onSave) onSave(0); });
+    vm.setNative("Cr3Save", "SaveCont", [this](NativeCall&) { if (onSave) onSave(1); });
+    vm.setNative("Cr3Save", "DeleteCont", [this](NativeCall&) { if (onSave) onSave(2); });
+    for (const char* f : {"SaveSystem", "CommitGame", "CommitCont", "CommitSystem"}) vm.setNative("Cr3Save", f, [](NativeCall&) {});
     vm.setNative("Cr3FieldMapEffectResident", "SetPosRot", [this](NativeCall& c) {
         if (residentFigure(c.integer(0))) residents_[c.integer(0)].target = c.string(1);
     });

@@ -890,7 +890,7 @@ struct Viewer {
             // a fight of the flow over: its last action shown, a moment after
             if (fightingInFlow && battleStep == BattleStep::Over && !battleScriptRunning() && battleClock > showEnd + 1.5f) {
                 fightingInFlow = false;
-                SDL_Log("play: battle %s", battleRules->exited() ? "ended by its script" : battleRules->outcome() == 1 ? "won" : "lost (taken as won: no game over yet)");
+                SDL_Log("play: battle %s", battleRules->exited() ? "ended by its script" : battleRules->escaped() ? "escaped" : battleRules->outcome() == 1 ? "won" : "lost (taken as won: no game over yet)");
                 ++battlesSkipped;
                 afterBattle();
             }
@@ -1426,6 +1426,16 @@ struct Viewer {
                 }
                 if (commandInput.menu() != cr2::CommandInput::Menu::Done) break;
                 choosing = false;
+                if (commandInput.escape()) { // (BtlCommand::StepEscapeLoop: away after 2 s, else the turn the monsters')
+                    const bool away = battleRules->tryEscape();
+                    SDL_Log("escape: %s", away ? "got away" : "failed");
+                    showEnd = battleClock + (away ? 2.0f : 1.0f);
+                    if (away) {
+                        battleStep = BattleStep::Over;
+                        setBattleCamera(battle.camera);
+                        break;
+                    }
+                }
                 battleRules->chooseTurn(commandInput.pairTurn(), commandInput.orders());
                 placeParty(battleRules->fighter(0).partner >= 0);
                 SDL_Log("turn %d (%s)", battleRules->turn() + 1, commandInput.pairTurn() ? "pair" : "solo");

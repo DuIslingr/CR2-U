@@ -5,7 +5,7 @@
 // pair - and for a command on one, its target (BattleSelectMenu: the target buttons). Back goes up
 // a step (from the second's command menu to the first's). Over, the turn's orders.
 //
-// What isn't here yet: Sopia, Items, Awake / Advent (their lists), Escape, Options - their
+// What isn't here yet: Sopia, Items, Awake / Advent (their lists), Options - their
 // buttons are there, not selectable.
 #include <vector>
 #include "battle/rules.hpp"
@@ -37,8 +37,10 @@ public:
     // a target picked (false: not one offered)
     bool pick(int fighter);
     void back();
-    // the turn's orders (Done)
+    // the turn's orders (Done); escape(): Escape chosen in place of them (BtlCommand::StepEscape:
+    // its yes / no asked - taken as yes here)
     const std::vector<BattleRules::Order>& orders() const { return orders_; }
+    bool escape() const { return escape_; }
     static constexpr int kDefend = 5; // (the battle data's command 5: Defend, kind 2)
 private:
     void commandMenu(int actor);
@@ -47,7 +49,7 @@ private:
     bool eventBattle_ = false;
     Menu menu_ = Menu::Done;
     int actor_ = 0;
-    bool pair_ = false;
+    bool pair_ = false, escape_ = false;
     int pending_ = 0; // (the command waiting for its target)
     std::vector<int> targets_;
     std::vector<BattleRules::Order> orders_;

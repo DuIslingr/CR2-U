@@ -477,6 +477,27 @@ void BattleRules::setParamI(int id, int value) {
     }
 }
 
+bool BattleRules::tryEscape() {
+    bool sure = break_ == 1;
+    for (int k = 0; k < 2; ++k)
+        if (fighters_[size_t(k)].alive && fighters_[size_t(k)].has(4, 3)) sure = true;
+    if (!sure) {
+        int levels = 0, count = 0, monsters = 0;
+        for (int k = 0; k < 5; ++k) {
+            const Fighter& f = fighters_[size_t(k)];
+            if (!f.present) continue;
+            if (k < 2) levels += f.level, ++count;
+            else monsters += f.level;
+        }
+        const int mean = count ? levels / count : 0;
+        static const int kThresholds[3] = {-50, -1, 49}, kChance[4] = {40, 50, 60, 70};
+        int i = 0;
+        while (i < 3 && kThresholds[i] < mean - monsters) ++i; // (CheckResult)
+        sure = rand_.below(100) < kChance[i];
+    }
+    return escaped_ = sure;
+}
+
 void BattleRules::clearStates() {
     for (Fighter& f : fighters_)
         if (f.alive) f.guarding = false; // (the only state kept yet)

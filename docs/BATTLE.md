@@ -188,6 +188,13 @@ data's command 5), 4 awake / advent, 99 back (the second's back to the first's, 
 menu); for one on a single foe the target (StepTarget: the target buttons, the camera on the one
 chosen - SetCommandTargetCamera).
 
+Escape (StepEscape: a yes / no; StepEscapeLoop): BtlCalc::Escape - sure in the party's turn
+break, or with skill (4, 3) (HasEncountAbsoluteEscape: the one escaping's, or either of the party
+standing's), or at the first turn with +0x14; else the party's mean level (+0x24: their levels
+added up, +0x20, over their count) less the monsters' levels added up (+0x26, BtlWork::SetupEnemy)
+through CheckResult's -50 / -1 / 49 to 40, 50, 60 or 70 in 100 (BtlRand). Away: the battle over
+after 2 s (cr3_battle_post[8] 1); else, after 1 s, the turn the monsters' alone.
+
 ## The battle's script (BtlEvent)
 
 Every battle runs `script\battle.nut` (BtlEvent::Initialize; the same VM and helper library as

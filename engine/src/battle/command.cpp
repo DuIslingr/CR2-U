@@ -6,7 +6,7 @@ namespace cr2 {
 
 void CommandInput::begin(const BattleRules& rules, bool eventBattle) {
     rules_ = &rules, eventBattle_ = eventBattle;
-    menu_ = Menu::First, actor_ = 0, pair_ = false, pending_ = 0;
+    menu_ = Menu::First, actor_ = 0, pair_ = false, escape_ = false, pending_ = 0;
     targets_.clear(), orders_.clear();
 }
 
@@ -20,7 +20,7 @@ std::vector<CommandInput::Shown> CommandInput::buttons() const {
         const bool both = r.fighter(0).alive && r.fighter(1).alive;
         out.push_back({Solo, true});
         out.push_back({Pair, both && r.scriptSwitch(47)});
-        out.push_back({Escape, false && !eventBattle_}); // (not yet)
+        out.push_back({Escape, !eventBattle_});
         out.push_back({Options, false});                 // (not yet)
     } else if (menu_ == Menu::Command) {
         // CheckCommandEnable: Attack switch 43, Sopia 44, Items 45, Defend 46 (and the states
@@ -42,7 +42,11 @@ bool CommandInput::press(int id) {
     const auto it = std::find_if(b.begin(), b.end(), [id](const Shown& s) { return s.id == id; });
     if (it == b.end() || !it->selectable) return false;
     const BattleRules& r = *rules_;
-    if (menu_ == Menu::First) { // (StepGetsetLoop: 0 solo - the first standing chooses first; 1 pair)
+    if (menu_ == Menu::First) { // (StepGetsetLoop: 0 solo - the first standing chooses first; 1 pair; 2 escape)
+        if (id == Escape) {
+            escape_ = true, orders_.clear(), menu_ = Menu::Done;
+            return true;
+        }
         pair_ = id == Pair;
         orders_.clear();
         commandMenu(r.fighter(0).alive || pair_ ? 0 : 1);

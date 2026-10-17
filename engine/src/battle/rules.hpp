@@ -93,7 +93,7 @@ public:
     // ... step by step (BtlCommand / BtlActionCtrl), the script's calls between
     void beginTurn();
     void chooseTurn(bool pair, const std::vector<Order>& party);
-    bool actionsLeft() const { return !exited() && !outcome() && next_ < turnOrder_.size(); }
+    bool actionsLeft() const { return !exited() && !escaped_ && !outcome() && next_ < turnOrder_.size(); }
     const Order& nextAction() const { return turnOrder_[next_]; }
     void startAction();
     void doAction(std::vector<Event>& out);
@@ -121,6 +121,12 @@ public:
     void reserveScriptTurn() { scripted_.reserved = true; }
     // Invoke(0): every fighter standing rid of its states (BtlStateManager::Clear)
     void clearStates();
+    // BtlCalc::Escape for the party: sure in its turn break or with skill (4, 3) - its own, or
+    // either standing's; else the party's mean level (+0x24) less the monsters' levels added up
+    // (+0x26) against -50 / -1 / 49: 40, 50, 60, 70 in 100. A success ends the battle (escaped()),
+    // a failure leaves the party's turn to the monsters
+    bool tryEscape();
+    bool escaped() const { return escaped_; }
     // Cr3Battle.Exit: the battle over, on as the game goes (BtlMain::NextMode 0: no game over);
     // exitTimer() the time a timer gives it first (-1: none)
     void exitBattle() { exited_ = true; }
@@ -169,7 +175,7 @@ private:
         bool reserved = false, pair = false;
         int command[5] = {-1, -1, -1, -1, -1}, target[5] = {-1, -1, -1, -1, -1};
     } scripted_;
-    bool exited_ = false;
+    bool exited_ = false, escaped_ = false;
     float exitTimer_ = -1;
     void callScript(const char* f) { if (script) script(f); }
     int gauge_ = 0, break_ = 0;

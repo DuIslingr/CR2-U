@@ -260,6 +260,10 @@ Check (checkBtn_io) shows PubListMenu: posterIcon with each request's sign at ca
 yet - 28 requests, 42 with flag 201, 50 with 202), a tap its title, the share done in percent_io
 (completed / 50).
 
+Characters' shadows (FldShadow: `obj001` - a multiplying blob, `obj001_kage` - given the
+character's place, FldPlayer::Pose, and drawn just before it): the leader's, and an event's c / v
+models' (EvtModel::Init) unless hidden; NPCs' are made hidden.
+
 The library (a shelf - the town's evt023 .. 026, d11's evt032 ..: the dungeon's `ReserveLibrary(n)`,
 its message 90 + n, then `Cr3System.ReserveLibrary` - FldMain step 0xf, FldLibrary - and
 `InterfaceWindow.SetArchiveID(n)`; InterfaceMain::SetLibraryParameter - ArchiveWindowMenu and its
@@ -463,7 +467,8 @@ camera, the moves, the animations and the fades where they are by then. The scri
   `SetPosDirect(model, x, y, z)` / `SetPosLocator(model, other)` (the model - an effect,
   `PlayEff_Direct` / `PlayEff_Locate` - held at a point, or where the other model is),
   `ChangeDirection(model, other, frames)` (EvtModel::ChangeDirection, FldDirectionManager: turned
-  about y, the shorter way, to face the other over the frames), `SetDrawSkip`,
+  about y, the shorter way, to face the other over the frames), `ShadowVisible(model, on)` /
+  `IsShadowVisible` (a c / v model's shadow - FldShadow, shown at first), `SetDrawSkip`,
   `Terminate`; `Cr3System.SetBGColor(r, g, b)` the frame's clear colour (GameMain::Draw's: the
   white behind an awakening's message, the field's layers hidden by `Cr3FieldMap.SetVisibleBG` /
   `FG` / `MG` / `3D`, which the field's drawing now honours);

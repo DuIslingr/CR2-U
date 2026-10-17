@@ -1118,6 +1118,31 @@ struct Viewer {
 
     // A field motion of the character (FldPlayer::CreatePlayer: c<id> + "fn01" idle, "ff01" walk,
     // "ff02" run, "fj01".. jumps, "fp01".. its own), if it has it and isn't playing it already
+    // A character's shadow (FldShadow: obj001 on its own animation, given the character's place -
+    // FldPlayer::Pose - and drawn before it in the transparent pass): the leader's, and an event's
+    // c / v models' (EvtModel::Init) unless EvtScene.ShadowVisible hid it
+    ViewFigure shadowFig;
+    bool shadowTried = false;
+    void drawShadow(const cr2::Mat34& place, const float* mvp) {
+        if (!shadowTried) {
+            shadowTried = true;
+            std::string err;
+            if (!loadFigure("obj001.geom", shadowFig, &err)) SDL_Log("shadow: %s", err.c_str());
+            shadowFig.absolute = true;
+            const auto it = std::find(shadowFig.anims.begin(), shadowFig.anims.end(), "obj001.anim");
+            if (it != shadowFig.anims.end()) {
+                const float keep = time;
+                loadAnim(shadowFig, size_t(it - shadowFig.anims.begin()));
+                time = keep;
+            }
+        }
+        if (shadowFig.meshes.empty()) return;
+        shadowFig.place = place;
+        const float keep = time;
+        pose(shadowFig, shadowFig.animLoaded && shadowFig.anim.duration() > 0 ? std::fmod(time, shadowFig.anim.duration()) : 0.0f, false); // (its animation: a single frame)
+        time = keep;
+        drawFigure(shadowFig, mvp);
+    }
     std::string leaderMotion; // (a script's: held while the leader stands)
     int leaderMotionSerial = 0;
     void playMotion(ViewFigure& f, const char* motion) {
@@ -1475,9 +1500,12 @@ struct Viewer {
             if (script && script->events().sceneShown()) {
                 const std::vector<cr2::EventModel>& models = script->events().scene().models();
                 for (size_t i = 0; i < models.size() && i < eventFigures.size(); ++i)
-                    if (models[i].visible) drawFigure(eventFigures[i], fr.scene.data());
+                    if (models[i].visible) {
+                        if (models[i].hasShadow() && models[i].shadow) drawShadow(eventFigures[i].place, fr.scene.data());
+                        drawFigure(eventFigures[i], fr.scene.data());
+                    }
             }
-            if (!script || script->playerVisible()) drawFigure(fig, fr.scene.data());
+            if (!script || script->playerVisible()) drawShadow(fig.place, fr.scene.data()), drawFigure(fig, fr.scene.data());
             if (shown(1)) drawLayer(field.foregroundImage(), fr.foreground, field.info().foregroundShift == 1 ? -1152.0f : 0.0f);
             return;
         }
@@ -4108,7 +4136,10 @@ struct Viewer {
             drawFigure(vistaMap, vp.data());
             const std::vector<cr2::EventModel>& models = event->scene().models();
             for (size_t i = 0; i < models.size() && i < eventFigures.size(); ++i)
-                if (models[i].visible) drawFigure(eventFigures[i], vp.data());
+                if (models[i].visible) {
+                    if (models[i].hasShadow() && models[i].shadow) drawShadow(eventFigures[i].place, vp.data());
+                    drawFigure(eventFigures[i], vp.data());
+                }
         }
     }
 

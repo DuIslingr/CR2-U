@@ -49,6 +49,9 @@ struct EventModel {
     // about y to face the other over the frames, then held so
     bool turned = false;
     float turnFrom = 0, turnTo = 0, turnSeconds = 0, turnTime = 0;
+    // its shadow (EvtModel::Init: a FldShadow for a c / v model, shown; EvtScene.ShadowVisible)
+    bool shadow = true;
+    bool hasShadow() const { return !figure.empty() && (figure[0] == 'c' || figure[0] == 'v'); }
 };
 
 class EventScene {

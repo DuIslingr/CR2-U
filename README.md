@@ -156,7 +156,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       the game's code: read by an ARM interpreter over the library) - their effects (by the
       effects' table), summoned figures, cameras, the fighters hidden and faded, the screen's
       fades, hits and sounds; the pair's Advent list (`--input "pair advent v136"`)
-- [ ] Battles on screen: the actions' effects past the hits' (an advent's launch effect too), a scene's skip
+- [x] A special scene's skip: a tap (`--input skip`) while it may be skipped - its sounds stopped,
+      everyone back in place, its hits landed at once
+- [ ] Battles on screen: the actions' effects past the hits' (an advent's launch effect too)
 - [x] Treasure boxes: drawn as a dungeon is entered (the difficulty's tables), opened with their
       item and its window ("Obtained ...", the item's icon), the key boxes for Orlando alone - their
       mark and lock (two fingers spread on it: the mouse dragged from it) - the System window's

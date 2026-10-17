@@ -313,6 +313,7 @@ struct Viewer {
     // balloon's function (FldMain::CheckTouchEventExec_Tap, EventExecute), the leader turned to it
     void tap() {
         if (battleMode) {
+            if (skipScene()) return;
             if (battleScript && battleScript->running()) battleScript->events().advance();
             else if (result.stage > 0) result.tapped = true;
             return;
@@ -1868,6 +1869,10 @@ struct Viewer {
         if (credits.stage) return updateCredits(dt);
         if (battleMode) {
             battleClock += dt;
+            if (!inputScript.empty() && inputScript.front() == "skip" && scene.active && battleClock > scene.start + 1.0f) { // (--input: a tap on the scene)
+                inputScript.pop_front();
+                SDL_Log("input skip%s", skipScene() ? "" : " (not now)");
+            }
             updateBattleScript(dt);
             updateManual(dt);
             updateBattleSounds();
@@ -3518,6 +3523,7 @@ struct Viewer {
     };
     struct SceneState {
         bool active = false, advent = false;
+        bool skippable = true; // (ActionAwake / AdventStandby: on at its start; SetSkipEnable)
         float start = 0; // (battle seconds: the scene's clock's 0)
         std::vector<cr2::SpecialStep> steps;
         std::vector<bool> done;
@@ -3608,7 +3614,7 @@ struct Viewer {
         const cr2::SpecialScene* sc = cr2::specialScene(a.command, c.awaken != 0, &advent);
         if (!sc) return false;
         endScene();
-        scene.active = true, scene.advent = advent;
+        scene.active = true, scene.advent = advent, scene.skippable = true;
         scene.actor = a.actor, scene.partner = a.partner, scene.target = a.hits.empty() ? -1 : a.hits.front().target;
         scene.steps.clear(), scene.hits = 0;
         for (int k = 0; k < sc->count; ++k) {
@@ -3811,7 +3817,10 @@ struct Viewer {
             battleFade.alpha.begin(battleClock, in ? 1.0f : 0.0f, in ? 0.0f : 1.0f, float(st.i[1]) * 0.05f);
             break;
         }
-        default: break; // (WaitTime; the skip's switch; the few scenes' own offsets)
+        case kSpecialSetSkipEnable: // (ActionSpecialSetSkipEnable: its "enable")
+            scene.skippable = st.i[0] != 0;
+            break;
+        default: break; // (WaitTime; the few scenes' own offsets)
         }
     }
     void updateScene() {
@@ -3828,6 +3837,27 @@ struct Viewer {
             runStep(scene.steps[k]);
         }
         if (all) endScene();
+    }
+    // A tap during a scene (ActionAwakeMain / ActionAdventMain: while it may be skipped - but for
+    // coupling 282's command 123 and 221's / 271's 352 -, BtlMain::IsEnabled always so):
+    // ActionAwakeSkip / ActionAdventSkip - the moves, voices and sounds stopped, its effects gone,
+    // all at their places, then each of its hits not yet landed landed at once, and its end
+    bool skipScene() {
+        if (!scene.active || !scene.skippable || battleClock < scene.start) return false;
+        const int command = showIndex < showActions.size() ? showActions[showIndex].command : 0;
+        if ((battle.coupling == 0x11a && command == 0x7b) || ((battle.coupling == 0xdd || battle.coupling == 0x10f) && command == 0x160)) return false;
+        SDL_Log("  scene skipped");
+        audio.stopAllVoices(0), audio.stopAllSe(0);
+        seJobs.clear();
+        for (Move& m : showMoves) m.active = false;
+        for (BattleUnit& u : battleUnits) u.fig.place = u.home;
+        for (size_t k = 0; k < scene.steps.size(); ++k) {
+            if (scene.done[k]) continue;
+            scene.done[k] = true;
+            if (scene.steps[k].op == cr2::kSpecialHit) runStep(scene.steps[k]);
+        }
+        endScene();
+        return true;
     }
     // ActionAwakeCleanup / ActionAdventCleanup: its effects and cameras gone, all shown again at full
     // opacity, the HUD back, the battle's camera

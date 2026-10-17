@@ -260,6 +260,12 @@ Check (checkBtn_io) shows PubListMenu: posterIcon with each request's sign at ca
 yet - 28 requests, 42 with flag 201, 50 with 202), a tap its title, the share done in percent_io
 (completed / 50).
 
+A battle's special scene may be skipped (BtlActionCtrl::ActionAwakeMain / AdventMain): from its
+start (ActionAwake / AdventStandby) until a SetSkipEnable step turns it off, a tap - but for
+coupling 282's command 123 and 221's / 271's 352 - runs ActionAwakeSkip / AdventSkip: the moves,
+voices and sounds stopped, its effects gone, everyone at their places, each Hit step not yet run
+run at once (the damage), then its cleanup.
+
 Characters' shadows (FldShadow: `obj001` - a multiplying blob, `obj001_kage` - given the
 character's place, FldPlayer::Pose, and drawn just before it): the leader's, and an event's c / v
 models' (EvtModel::Init) unless hidden; NPCs' are made hidden.

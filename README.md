@@ -102,7 +102,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       them - the command's motion, to the target's attack place and back on BtlMotionTable's
       times, the damage motion at the hit, the downed gone; the game's cameras - the opening's
       sweep, each attack's two shots, the monsters', the commands'
-- [ ] Battles on screen: the commands to choose, the actions' effects, the numbers,
+- [x] The battle's HUD: the party's windows (faces, HP / MP bars and numbers), the break gauge,
+      the command's name, the damage numbers - as the reference video shows them
+- [ ] Battles on screen: the commands to choose, the actions' effects,
       the windows
 - [ ] Treasure boxes, the other windows (announcements, tutorials, items), the HUD, the sounds
       between areas

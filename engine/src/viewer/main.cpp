@@ -370,6 +370,13 @@ struct Viewer {
             vm.source = m;
             if (m.material < g.materials.size()) {
                 vm.material = vm.baseMaterial = g.materials[m.material];
+                if (SDL_getenv("CR2_MATERIALS")) { // (debugging: the materials' keys and states)
+                    const cr2::GeomMaterial& gm = g.materials[m.material];
+                    std::string st;
+                    for (const auto& [id, v] : gm.states) st += " " + std::to_string(id) + "=" + std::to_string(v[0]) + "/" + std::to_string(v[1]);
+                    SDL_Log("%s mesh %zu: material %u key %08x %08x %08x %08x states%s", name.c_str(), f.meshes.size(), m.material,
+                            gm.shaderKey[0], gm.shaderKey[1], gm.shaderKey[2], gm.shaderKey[3], st.c_str());
+                }
                 vm.texture = texture(vm.material.diffuse());
                 vm.normalMap = texture(vm.material.texture(0x35));
                 vm.extraMap = vm.material.textures.count(0x48) ? texture(vm.material.texture(0x48), false)
@@ -1313,6 +1320,7 @@ struct Viewer {
             SDL_Log("    camera %s", battleCamera.c_str());
         }
         if (c) SDL_Log("  %s: %s", battleRules->fighter(a.actor).name.c_str(), c->name[1].c_str());
+        if (c) commandShown = c->name[1], commandShownStart = battleClock;
     }
 
     void poseBattleShow() {
@@ -1346,6 +1354,25 @@ struct Viewer {
                 if (u < 0) continue;
                 BattleUnit& bu = battleUnits[size_t(u)];
                 if (e.hit) playMotion(bu, "bd01", battleClock);
+                if (e.hit) { // (the number at its DummyDP01 - else its middle - on the screen, in UI units)
+                    float p[3] = {bu.fig.place.m[3], bu.fig.place.m[7] + 0.15f, bu.fig.place.m[11]};
+                    const int dj = bu.fig.skeleton.joint(cr2::nameHash("DummyDP01"));
+                    if (dj >= 0) {
+                        std::vector<cr2::JointTransform> pp = bu.fig.skeleton.basePose;
+                        const std::vector<cr2::Mat34> ww = bu.fig.skeleton.world(pp, bu.fig.place);
+                        if (size_t(dj) < ww.size()) p[0] = ww[size_t(dj)].m[3], p[1] = ww[size_t(dj)].m[7], p[2] = ww[size_t(dj)].m[11];
+                    }
+                    const float* mm = battleVP.data();
+                    const float cw = mm[3] * p[0] + mm[7] * p[1] + mm[11] * p[2] + mm[15];
+                    if (cw > 0) {
+                        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+                        DamageShown ds;
+                        ds.value = e.damage, ds.set = 20, ds.start = battleClock;
+                        ds.x = (mm[0] * p[0] + mm[4] * p[1] + mm[8] * p[2] + mm[12]) / cw * float(screenW) * 0.5f / k;
+                        ds.y = (mm[1] * p[0] + mm[5] * p[1] + mm[9] * p[2] + mm[13]) / cw * float(screenH) * 0.5f / k;
+                        damageShown.push_back(ds);
+                    }
+                }
                 SDL_Log("    %s -> %s: %s", battleRules->fighter(e.actor).name.c_str(), battleRules->fighter(e.target).name.c_str(),
                         e.hit ? (std::to_string(e.damage) + (e.critical ? " critical" : "") + (e.defeated ? ", down" : "")).c_str() : "missed");
             }
@@ -1370,6 +1397,7 @@ struct Viewer {
         l.camera[0] = world[12], l.camera[1] = world[13], l.camera[2] = world[14];
         l.time = time;
         dev->setLighting(l);
+        battleVP = vp;
         drawFigure(battleMap, vp.data());
         for (const BattleUnit& u : battleUnits)
             if (!u.hidden) drawFigure(u.fig, vp.data());
@@ -1852,6 +1880,233 @@ struct Viewer {
     Mat4 fieldScene = cr2::mat4Identity();
     ViewFigure balloonFigure;
     bool balloonLoaded = false;
+    // The battle's interface (BtlInterface): an interface figure by name, posed by one of its
+    // animations; its joints placed
+    struct UiFig {
+        ViewFigure fig;
+        std::vector<std::string> joints;
+        bool loaded = false;
+    };
+    std::map<std::string, UiFig> uiFigs;
+    UiFig& uiFig(const std::string& name) {
+        UiFig& u = uiFigs[name];
+        if (!u.loaded) {
+            u.loaded = true;
+            std::string err;
+            const float keep = time;
+            if (!loadFigure(name + ".geom", u.fig, &err)) SDL_Log("ui %s: %s", name.c_str(), err.c_str());
+            time = keep;
+            std::vector<uint8_t> d;
+            if (archive.read(name + ".name", d)) u.joints = cr2::parseJointNames(d);
+        }
+        return u;
+    }
+    void poseUi(UiFig& u, const std::string& anim, float t, bool loop = false) {
+        // (the figure's own animation - SetParameterDataBase's, alone in slot 0 - is absolute;
+        // the animators added beside it relative)
+        u.fig.absolute = anim + ".geom" == u.fig.name;
+        const auto it = std::find(u.fig.anims.begin(), u.fig.anims.end(), anim + ".anim");
+        if (it != u.fig.anims.end() && (!u.fig.animLoaded || u.fig.anims[u.fig.animIndex] != *it)) {
+            const float keep = time;
+            loadAnim(u.fig, size_t(it - u.fig.anims.begin()));
+            time = keep;
+        }
+        pose(u.fig, t, loop);
+    }
+    // a posed joint's place in UI units (false: none)
+    bool uiJoint(const UiFig& u, const std::string& joint, float& x, float& y) {
+        const auto it = std::find(u.joints.begin(), u.joints.end(), joint);
+        if (it == u.joints.end() || !u.fig.skinned) return false;
+        std::vector<cr2::JointTransform> p = u.fig.skeleton.basePose;
+        if (u.fig.animLoaded) p = u.fig.anim.poseOver(u.fig.skeleton.basePose, 0);
+        const std::vector<cr2::Mat34> w = u.fig.skeleton.world(p, u.fig.place);
+        const size_t j = size_t(it - u.joints.begin());
+        if (j >= w.size()) return false;
+        x = w[j].m[3], y = w[j].m[7];
+        return true;
+    }
+    // DotNumId2: a number's digits from hud_dotnum (DotNumParamPackTable: set `set`'s glyph d at
+    // set + d, its size w x h pixels of a 1000-a-unit layout and its UVs), right to left from
+    // (x, y), `digits` places (the leading ones blank, but a 0)
+    struct Glyph {
+        float w, h, u0, v0, u1, v1;
+    };
+    std::vector<Glyph> dotNumGlyphs;
+    void loadDotNum() {
+        if (!dotNumGlyphs.empty()) return;
+        // (the table's entries this port uses: the sets at 20 .. 69 - 48 x 48, ten digits a row -
+        // and 90 - 24 x 24 - of hud_dotnum's 512 x 512)
+        dotNumGlyphs.assign(170, Glyph{0, 0, 0, 0, 0, 0});
+        for (int set = 20; set <= 60; set += 10)
+            for (int d = 0; d < 10; ++d) {
+                const float y0 = float(set - 20) / 10.0f * 47.8f;
+                dotNumGlyphs[size_t(set + d)] = {48, 48, d * 47.8f / 512.0f, 1.0f - y0 / 512.0f, (d + 1) * 47.8f / 512.0f, 1.0f - (y0 + 47.8f) / 512.0f};
+            }
+        for (int d = 0; d < 10; ++d) dotNumGlyphs[size_t(90 + d)] = {24, 24, d * 24.0f / 512.0f, 0.281f, (d + 1) * 24.0f / 512.0f, 0.234f};
+    }
+    void drawDigits(int value, int set, int digits, float x, float y, const Mat4& proj, float alpha = 1, float scale = 1) {
+        loadDotNum();
+        cr2::Texture* tex = texture("hud_dotnum", false);
+        if (!tex) return;
+        int place = 1;
+        for (int i = 0; i < digits; ++i, place *= 10) {
+            const int d = (i == 0 && value == 0) ? 0 : value < place ? -1 : value / place % 10; // (Cr3UtilGetNumberDisplay)
+            if (d < 0) continue;
+            const Glyph& g = dotNumGlyphs[size_t(set + d)];
+            const float w = g.w / 1000.0f * scale, h = g.h / 1000.0f * scale;
+            const float cx = x - float(i) * w;
+            const float x0 = cx - w / 2, x1 = cx + w / 2, y0 = y - h / 2, y1 = y + h / 2;
+            const float v[24] = {x0, y0, g.u0, g.v1, x1, y0, g.u1, g.v1, x1, y1, g.u1, g.v0,
+                                 x0, y0, g.u0, g.v1, x1, y1, g.u1, g.v0, x0, y1, g.u0, g.v0};
+            const float rgba[4] = {1, 1, 1, alpha};
+            dev->drawQuad(*tex, v, proj.data(), rgba);
+        }
+    }
+    // a line of text at a UI place (centred), made once
+    std::map<std::string, TextQuad> uiTexts;
+    void drawUiText(const std::string& text, float size, float x, float y, int w, int h) {
+        if (text.empty() || !font.loaded()) return;
+        const float k = std::min(float(w) / 0.96f, float(h) / 0.64f);
+        const int px = std::max(1, int(size / 1000.0f * k + 0.5f));
+        const std::string key = text + "\n" + std::to_string(px);
+        auto it = uiTexts.find(key);
+        if (it == uiTexts.end()) {
+            TextQuad q;
+            int tw = 0, th = 0;
+            cr2::Image img = font.render(text, px, tw, th);
+            if (img.rgba.empty()) return;
+            q.tex = dev->upload(img);
+            const float unitsPerPx = size / 1000.0f / float(px);
+            q.w = float(tw) * unitsPerPx, q.h = float(th) * unitsPerPx;
+            it = uiTexts.emplace(key, q).first;
+        }
+        const TextQuad& q = it->second;
+        const float x0 = x - q.w / 2, x1 = x + q.w / 2, y0 = y - q.h / 2, y1 = y + q.h / 2;
+        const float v[24] = {x0, y0, 0, 1, x1, y0, 1, 1, x1, y1, 1, 0, x0, y0, 0, 1, x1, y1, 1, 0, x0, y1, 0, 0};
+        const float rgba[4] = {1, 1, 1, 1};
+        dev->drawQuad(q.tex, v, uiProjection(w, h).data(), rgba);
+    }
+
+    // The battle's HUD: the party's windows (BattleStatusMenu: pc01win / pc02win, their HP and MP
+    // bars - btlHpBar_per posed at HP x 5 / max seconds, at least 0.07 - the face, the numbers:
+    // pc0NhpNum's call_dotNum_num1, five digits of set 90), the break gauge (BreakWindowMenu:
+    // brkWin, brkGauge at (gauge + 4) / 2 seconds - 2 even -, brkInfo's EV / PL / EN), the
+    // command's name (btlMsg, typeM_C01) and the damage (DamageInfo00: btlNum, btlNum_fgrN for N
+    // digits, a digit of set 20 at each call_dotNum_idNN, at the target's DummyDP01)
+    Mat4 battleVP = cr2::mat4Identity();
+    struct DamageShown {
+        int value = 0, set = 20;
+        float x = 0, y = 0, start = 0;
+    };
+    std::vector<DamageShown> damageShown;
+    std::string commandShown;
+    float commandShownStart = -10;
+    void drawBattleHud(int w, int h) {
+        if (!battleMode || !battleRules) return;
+        const Mat4 proj = uiProjection(w, h);
+        Mat4 camera = cr2::mat4Identity();
+        camera[14] = -0.881f;
+        const Mat4 view = cr2::mat4Multiply(proj, camera);
+        cr2::SceneLighting l;
+        dev->setLighting(l);
+        for (int k = 0; k < 2; ++k) {
+            const cr2::Fighter& f = battleRules->fighter(k);
+            if (!f.present) continue;
+            const std::string n = k == 0 ? "pc01" : "pc02";
+            UiFig& win = uiFig(n + "win");
+            win.fig.place = cr2::Mat34();
+            poseUi(win, n + "win", 0);
+            drawFigure(win.fig, view.data());
+            auto child = [&](const std::string& joint, const std::string& figure, float t, bool loop) -> UiFig* {
+                float x, y;
+                if (!uiJoint(win, joint, x, y)) return nullptr;
+                UiFig& c = uiFig(figure);
+                c.fig.place = cr2::Mat34();
+                c.fig.place.m[3] = x, c.fig.place.m[7] = y + 1.0f / float(std::max(h, 1)); // (+ a pixel)
+                poseUi(c, figure, t, loop);
+                return &c;
+            };
+            const float hpT = f.hp > 0 ? std::max(float(f.hp) * 5.0f / float(std::max(f.maxHp, 1)), 0.07f) : 0.0f;
+            const float mpT = f.maxMp > 0 ? float(f.mp) * 5.0f / float(f.maxMp) : 0.0f;
+            if (UiFig* c = child("call_btlHpBar_per", "btlhpbar_per", hpT, false)) drawFigure(c->fig, view.data());
+            if (UiFig* c = child("call_btlMpBar_per", "btlmpbar_per", mpT, false)) drawFigure(c->fig, view.data());
+            if (UiFig* c = child("call_btlFace", "btlface", time, true)) {
+                const std::string id = std::to_string(f.id);
+                for (ViewMesh& vm : c->fig.meshes) {
+                    vm.texture = texture("btlFaceC00" + id);
+                    vm.extraMap = texture("btlFaceA00" + id);
+                }
+                drawFigure(c->fig, view.data());
+            }
+            // the labels (StatusId2: hud_statusAI by StatusIdParamPackTable, the id the joint's
+            // number - call_status_fr01 "HP", fr02 "MP")
+            static const float kStatus[3][6] = {{0, 0, 0, 0, 0, 0}, {40, 24, 0.0f, 1.0f, 0.156f, 0.906f}, {40, 24, 0.0f, 0.906f, 0.156f, 0.813f}};
+            for (int id = 1; id <= 2; ++id) {
+                float x, y;
+                char jn[24];
+                std::snprintf(jn, sizeof jn, "call_status_fr%02d", id);
+                cr2::Texture* tex = texture("hud_statusAI", false);
+                if (!tex || !uiJoint(win, jn, x, y)) continue;
+                const float* g = kStatus[id];
+                const float x0 = x, x1 = x + g[0] / 1000.0f, y0 = y - g[1] / 2000.0f, y1 = y + g[1] / 2000.0f;
+                const float v[24] = {x0, y0, g[2], g[5], x1, y0, g[4], g[5], x1, y1, g[4], g[3],
+                                     x0, y0, g[2], g[5], x1, y1, g[4], g[3], x0, y1, g[2], g[3]};
+                const float rgba[4] = {1, 1, 1, 1};
+                dev->drawQuad(*tex, v, proj.data(), rgba);
+            }
+            for (const char* what : {"hpNum", "mpNum"}) {
+                UiFig& num = uiFig(n + (std::string(what) == "hpNum" ? "hpnum" : "mpnum"));
+                num.fig.place = cr2::Mat34();
+                float x, y;
+                if (uiJoint(num, "call_dotNum_num1", x, y))
+                    drawDigits(std::string(what) == "hpNum" ? f.hp : f.mp, 90, std::string(what) == "hpNum" ? 5 : 4, x, y, proj);
+            }
+        }
+        // the break gauge
+        UiFig& bw = uiFig("brkwin");
+        bw.fig.place = cr2::Mat34();
+        poseUi(bw, "brkwin", 0);
+        drawFigure(bw.fig, view.data());
+        UiFig& bg = uiFig("brkgauge");
+        bg.fig.place = cr2::Mat34();
+        poseUi(bg, "brkgauge", float(battleRules->gauge() + 4) * 0.5f);
+        drawFigure(bg.fig, view.data());
+        UiFig& bi = uiFig("brkinfo");
+        bi.fig.place = cr2::Mat34();
+        const int g = battleRules->gauge();
+        poseUi(bi, g > 0 ? "brkinfopl_io" : g < 0 ? "brkinfoen_io" : "brkinfoev_io", 5.0f);
+        drawFigure(bi.fig, view.data());
+        // the command's name
+        if (!commandShown.empty() && battleClock - commandShownStart < 3.0f) {
+            UiFig& m = uiFig("btlmsg");
+            m.fig.place = cr2::Mat34();
+            poseUi(m, "btlmsg_in", battleClock - commandShownStart);
+            drawFigure(m.fig, view.data());
+            float x, y;
+            if (uiJoint(m, "typeM_C01", x, y)) drawUiText(commandShown, 28, x, y, w, h);
+        }
+        // the damage
+        for (const DamageShown& d : damageShown) {
+            const float age = battleClock - d.start;
+            if (age < 0 || age > 1.2f) continue;
+            int digits = 1;
+            for (int v = d.value; v >= 10; v /= 10) ++digits;
+            UiFig& bn = uiFig("btlnum");
+            bn.fig.place = cr2::Mat34();
+            bn.fig.place.m[3] = d.x, bn.fig.place.m[7] = d.y;
+            poseUi(bn, "btlnum_fgr" + std::to_string(std::min(digits, 5)), age);
+            for (int i = 0; i < digits && i < 5; ++i) {
+                float x, y;
+                char jn[24];
+                std::snprintf(jn, sizeof jn, "call_dotNum_id%02d", i + 1);
+                if (!uiJoint(bn, jn, x, y)) continue;
+                int place = 1; // (id01 the ones)
+                for (int k = 0; k < i; ++k) place *= 10;
+                drawDigits(d.value / place % 10, d.set, 1, x, y, proj);
+            }
+        }
+    }
+
     void drawBalloons(int w, int h) {
         if (!fieldMode || eventMode || balloons.empty()) return;
         if (!balloonLoaded) {
@@ -1888,6 +2143,7 @@ struct Viewer {
     // in front of the fade windows')
     void drawEventUi() {
         drawBalloons(screenW, screenH);
+        drawBattleHud(screenW, screenH);
         cr2::EventRuntime* ev = activeEvents();
         if (!ev || !eventDrawingReady) return;
         const cr2::EventFade& fd = ev->fade();
@@ -2074,7 +2330,7 @@ int main(int argc, char** argv) {
     dev->setUpscaler(upscale);
     v.shaders = std::make_unique<cr2::ShaderLibrary>(v.archive);
     if (!playFrom.empty()) fieldName = playFrom, v.playMode = true; // (a new game: every flag clear)
-    if (!fieldName.empty() || !eventName.empty()) {
+    if (!fieldName.empty() || !eventName.empty() || battleId > 0) {
         // the font: --font, CR2_FONT, the Vita's beside its archive, else the system's
         std::string dataDir = data.substr(0, data.find_last_of("/\\") == std::string::npos ? 0 : data.find_last_of("/\\") + 1);
         const char* envFont = SDL_getenv("CR2_FONT");

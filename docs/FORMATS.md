@@ -514,3 +514,17 @@ on their first motions (BtlMotionTable's 25: 0 `bb01` the stance, 1 `bb02`, `bg0
 `Cam_Win_*`, ...: BtlCameraCtrl::Start; near halved - at least 0.1 - far five times, at most
 5000). `cr2tool battle <archive> all`: the 340 couplings with monsters set up, everything they use
 in the archive, in all three releases.
+
+The battle's interface (BtlInterface): the party's windows (BattleStatusMenu) `pc01win` /
+`pc02win`, their `call_` joints placing `btlHpBar_per` / `btlMpBar_per` (posed at HP x 5 / max
+seconds, at least 0.07: its `JNT_percent` moves an alpha-0 mask over the lost part, the depth test
+hiding the gradient behind it), `btlFace` (images `btlFaceC00<n>` / `btlFaceA00<n>` alpha, n the
+character), the labels (StatusId2: `hud_statusAI` by StatusIdParamPackTable, the joint
+`call_status_frNN` naming the sprite - 01 HP, 02 MP) and the numbers (`pc0NhpNum` / `mpNum`'s
+`call_dotNum_num1`: DotNumId2, five / four digits of DotNumParamPackTable's set 90 from
+`hud_dotnum`, right to left, w / 1000 apart); the break gauge (BreakWindowMenu) `brkWin`,
+`brkGauge` (posed at (gauge + 4) / 2 seconds), `brkInfo` (`brkInfoEV_io` / `PL` / `EN`); the
+command's name in `btlMsg` (`typeM_C01`, `btlMsg_in`); the damage (DamageInfo00) `btlNum` with
+`btlNum_fgrN` for N digits, a digit of set 20 (30, 40, 50, 60 for the other kinds:
+damageinfodata01) at each `call_dotNum_idNN`, id01 the ones. An interface figure's own animation
+(SetParameterDataBase's, alone in slot 0) is absolute; the animators added beside it relative.

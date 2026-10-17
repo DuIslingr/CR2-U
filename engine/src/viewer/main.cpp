@@ -1049,6 +1049,7 @@ struct Viewer {
             return false;
         }
         game.initSopia(battleData); // (a new game's levels, the first time)
+        game.initItems(battleData); // (and items)
         cr2::Skeleton dpos;
         if (!archive.read("battledpos.skel", d, &err) || !cr2::parseSkeleton(d, dpos, &err)) {
             SDL_Log("battledpos: %s", err.c_str());
@@ -1255,7 +1256,9 @@ struct Viewer {
         menuStart = battleClock, menuCursor = 0;
         using CI = cr2::CommandInput;
         if (commandInput.menu() == CI::Menu::First) setBattleCamera(battle.camera);
-        else if (commandInput.menu() == CI::Menu::Command || commandInput.menu() == CI::Menu::Awake || commandInput.menu() == CI::Menu::Sopia) setBattleCamera(commandInput.pairTurn() ? 0x1d : commandInput.actor() == 0 ? 0x1a : 0x1b);
+        else if (commandInput.menu() == CI::Menu::Command || commandInput.menu() == CI::Menu::Awake || commandInput.menu() == CI::Menu::Sopia ||
+                 commandInput.menu() == CI::Menu::Items)
+            setBattleCamera(commandInput.pairTurn() ? 0x1d : commandInput.actor() == 0 ? 0x1a : 0x1b);
     }
     // a token of --input as a choice
     void inputToken(const std::string& t) {
@@ -1275,6 +1278,7 @@ struct Viewer {
         if (t == "back") commandInput.back(), ok = true;
         else if (t.size() > 1 && t[0] == 'a' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickAwakening(std::atoi(t.c_str() + 1));
         else if (t.size() > 1 && t[0] == 's' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickSopia(std::atoi(t.c_str() + 1));
+        else if (t.size() > 1 && t[0] == 'i' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickItem(std::atoi(t.c_str() + 1));
         else if (t == "awake") ok = commandInput.press(cr2::CommandInput::Awake);
         else if (!t.empty() && std::isdigit(static_cast<unsigned char>(t[0]))) ok = commandInput.pick(std::atoi(t.c_str()));
         else
@@ -1299,6 +1303,11 @@ struct Viewer {
                 if (sc.selectable) out.push_back(sc.command);
             return out;
         }
+        if (commandInput.menu() == cr2::CommandInput::Menu::Items) {
+            for (const auto& e : commandInput.items())
+                if (e.selectable) out.push_back(e.item);
+            return out;
+        }
         for (const auto& b : commandInput.buttons())
             if (b.selectable) out.push_back(b.id);
         return out;
@@ -1307,6 +1316,7 @@ struct Viewer {
         if (commandInput.menu() == cr2::CommandInput::Menu::Target) commandInput.pick(idOrFighter);
         else if (commandInput.menu() == cr2::CommandInput::Menu::Awake) commandInput.pickAwakening(idOrFighter);
         else if (commandInput.menu() == cr2::CommandInput::Menu::Sopia) commandInput.pickSopia(idOrFighter);
+        else if (commandInput.menu() == cr2::CommandInput::Menu::Items) commandInput.pickItem(idOrFighter);
         else commandInput.press(idOrFighter);
         menuChanged();
     }
@@ -1376,6 +1386,7 @@ struct Viewer {
         battleScriptOk = battleScript->begin() && battleScript->runToEnd(100);
         if (!battleScriptOk) SDL_Log("battle script: %s", battleScript->error().c_str());
         else SDL_Log("battle script: %s%s", battleScript->name().c_str(), battleScript->own() ? " (its own)" : "");
+        for (int id = 1; id < 300; ++id) battleRules->setItemCount(id, game.itemCount[id]); // (BtlWork +0x52)
         battleRules->script = [this](const std::string& f) {
             if (battleScript && battleScriptOk && battleScript->own() && !(battleScriptOk = battleScript->call(f)))
                 SDL_Log("battle script: %s", battleScript->error().c_str());
@@ -1423,6 +1434,7 @@ struct Viewer {
         if (battleRules->exitTimer() >= 0) return; // (its exit coming: before a win or a loss is shown)
         if (battleStep != BattleStep::Over && (battleRules->exited() || (battleRules->outcome() && battleStep != BattleStep::ActionEnd))) {
             if (!battleRules->exited() && battleRules->outcome() == 1) battleRules->script("Battle_End"); // (BtlResult)
+            for (int id = 1; id < 300; ++id) game.itemCount[id] = static_cast<short>(battleRules->itemCount(id)); // (the items used)
             battleStep = BattleStep::Over;
             showIndex = showActions.size();
             setBattleCamera(battle.camera);
@@ -2368,7 +2380,7 @@ struct Viewer {
                 poseUi(ic, "mainicon_id", r.icon == 0x1c ? 1.45f : r.icon == 0x1d ? 1.4f : float(r.icon) / 20.0f);
                 drawFigure(ic.fig, view.data());
             }
-            if (uiJoint(b, "call_cost_id13", x, y)) { // (the number's mark: "MP" ...)
+            if (costIcon >= 0 && uiJoint(b, "call_cost_id13", x, y)) { // (the number's mark: "MP" ...)
                 UiFig& co = uiFig("cost_id");
                 co.fig.place = cr2::Mat34();
                 co.fig.place.m[3] = x, co.fig.place.m[7] = y;
@@ -2431,6 +2443,16 @@ struct Viewer {
             drawCommandMenu("btlbtn3rd_io", t, view, ids, names, w, h, CI::TargetFirst);
             buttonLook = nullptr, buttonFighter = nullptr;
             for (TapRect& r : tapRects) r.id = commandInput.targets()[size_t(r.id - CI::TargetFirst)]; // (a click: the fighter)
+        } else if (commandInput.menu() == CI::Menu::Items) {
+            // the items (BattleItemListMenu: its icon, its count, the tab's frame 7)
+            std::vector<ListRow> rows;
+            for (const auto& e : commandInput.items()) {
+                const cr2::BattleData::Item* it = battleData.item(e.item);
+                rows.push_back({e.item, it ? it->name[1] : "?", e.count, it ? it->icon : 0, e.selectable});
+            }
+            listRows = rows;
+            drawSkillList(rows, cursor, t, view, w, h, 7, -1);
+            return;
         } else if (commandInput.menu() == CI::Menu::Awake || commandInput.menu() == CI::Menu::Sopia) {
             // the awakenings (AddCommandAwake: the level its number) or the sopia (AddCommandSopia:
             // its MP) on the skill list

@@ -78,7 +78,18 @@ public:
         int type = 0;        // +0x10
         int hp = 0, mp = 0, param[5] = {0, 0, 0, 0, 0}; // +0x14, +0x18, +0x1a
         int skills[2] = {-1, -1}; // +0x30, +0x32: auto skills it gives
+        bool battle = false;  // +0x11: usable in battle (BtlCommand::GetItem)
+        bool usedUp = false;  // +0x2d: one gone each use
+        int command = 0;      // +0x2e: the command it is
+        int icon = 0;         // +0x34: its icon (mainIcon_id's frame)
     };
+    // the party's record (GetPartyDataPointer, the first): a new game's five items and their
+    // counts (+0, +0xa), its Oz (+0x14) - Cr3InitWorkFromBattleData
+    struct Party {
+        int items[5] = {}, counts[5] = {};
+        int oz = 0;
+    };
+    const Party& party() const { return party_; }
     // an auto skill (GetAutoSkillDataPointer, from 1; BtlWork::SetupSkill)
     struct AutoSkill {
         int id = 0;
@@ -112,6 +123,7 @@ private:
     std::vector<Item> items_;
     std::vector<AutoSkill> autoSkills_;
     std::vector<Sopia> sopias_;
+    Party party_;
 };
 
 // A battle's set-up (BtlMainCtrl::StepInit, BtlWork::SetStartWork): the map, the monsters' size

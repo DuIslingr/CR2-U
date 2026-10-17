@@ -158,7 +158,13 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         it.hp = int(u32(d, o + 0x14)), it.mp = s16(d, o + 0x18);
         for (int k = 0; k < 5; ++k) it.param[k] = s16(d, o + 0x1a + size_t(k) * 2);
         it.skills[0] = s16(d, o + 0x30), it.skills[1] = s16(d, o + 0x32);
+        it.battle = d[o + 0x11] == 1, it.usedUp = d[o + 0x2d] == 1, it.command = s16(d, o + 0x2e), it.icon = int8_t(d[o + 0x34]);
         items_.push_back(it);
+    }
+    party_ = Party();
+    if (const size_t po = u32(d, 0x04); po + 0x18 <= d.size()) {
+        for (int k = 0; k < 5; ++k) party_.items[k] = s16(d, po + size_t(k) * 2), party_.counts[k] = s16(d, po + 0x0a + size_t(k) * 2);
+        party_.oz = int(u32(d, po + 0x14));
     }
     if (characters_.empty() || monsters_.empty() || couplings_.empty()) {
         if (error) *error = "battledata: no records";

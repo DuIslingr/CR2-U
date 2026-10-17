@@ -82,6 +82,7 @@ public:
         int actor = -1;
         int command = 0;
         int target = -1; // (a single target's fighter)
+        int item = 0;    // (an item used: its number)
     };
     // what happened: a command's result on one fighter
     struct Event {
@@ -114,6 +115,10 @@ public:
     int paramI(int id) const;
     void setParamI(int id, int value);
     int charge() const { return charge_; }       // +0x28: the charge gauge, 0..300
+    // the items the battle has (BtlWork +0x52: a count by number, copied from the save's), one used
+    // up as it acts (an item +0x2d's)
+    int itemCount(int item) const { return item > 0 && item < 300 ? items_[item] : 0; }
+    void setItemCount(int item, int n) { if (item > 0 && item < 300) items_[item] = static_cast<short>(n); }
     void addCharge(int n) { charge_ = std::clamp(charge_ + n, 0, 300); } // (Cr3BattleEvent_Charge: at most 300)
     bool scriptSwitch(int n) const { return n >= 42 && n <= 47 && switches_[n - 42]; }
     int scriptCommandActor() const { return commandActor_; }   // +0x235c
@@ -186,6 +191,7 @@ private:
     std::vector<int> downed_; // (this action's: Dead for each)
     // the script's
     int charge_ = 0, ints_[5] = {0, 0, 0, 0, 0}, commandActor_ = -1;
+    short items_[300] = {};
     bool switches_[6] = {false, true, true, true, true, true}; // (BtlWork::InitializeVariables: 42 off, 43..47 on)
     struct Scripted {
         bool reserved = false, pair = false;

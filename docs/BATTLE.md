@@ -149,6 +149,14 @@ The restores (BtlCalc::Restore): kinds 18 / 19 HP / MP ceil(spread(Magic - the p
 revival with (CommandY + 50) % of the HP (1 .. 100); x 1.5 for a command with MP and skill (0, 10),
 x 2 with (0, 9) but for 22, 23, 25. Their numbers on the screen: set 50 (green) HP, 60 MP.
 
+The items (BtlCommand::GetItem / SetCommandItemList / StepItemLoop): a count by the item's
+number, 0..299 (cr3_common_data +0xc; the battle's own copy at BtlWork +0x52); a new game's from
+the party's record (the header's +4, 0x18 bytes: five items at +0, their counts at +0xa, the Oz
+at +0x14 - Chocolate x 5, Vin Brulee x 1). An item for battles (+0x11) is its command (+0x2e:
+Chocolate 11, kind 20 - 500 HP...), one gone each use when +0x2d is set; its icon +0x34. The
+list (BattleItemListMenu: the tab's frame 7, the count the number, no mark) offers those the
+battle has less what the turn has chosen; the revivals only with the partner down.
+
 The lists (Sopia, Awake; BattleSkillListMenu, a ScrollListMenu - GetModelDataName's scrlMtr_per,
 scrlBar, scrlWin, scrlBtn ...): scrlBar (scrlBar_io) the frame; a scrlBtn (scrlBtn_io) a row, 0.08
 apart (GetColumnSpacing), centred on the focused one, two either side (PartsPose) - its name

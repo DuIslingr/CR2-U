@@ -1,6 +1,7 @@
 #include "battle/command.hpp"
 
 #include <algorithm>
+#include <utility>
 
 #include "battle/awaketable.inc"
 
@@ -31,7 +32,7 @@ std::vector<CommandInput::Shown> CommandInput::buttons() const {
         // that forbid them - none kept yet); Awake / Advent shown when one can be (+0x3e / +0x3f)
         out.push_back({Attack, r.scriptSwitch(43)});
         out.push_back({Sopia, r.scriptSwitch(44)});
-        out.push_back({Items, false && r.scriptSwitch(45)}); // (not yet)
+        out.push_back({Items, r.scriptSwitch(45) && !items().empty()});
         out.push_back({Defend, r.scriptSwitch(46)});
         // CheckCommandAwake: Awake when one of the party has an awakening it can pay for
         bool awake = false;
@@ -73,6 +74,37 @@ std::vector<CommandInput::SopiaCommand> CommandInput::sopiaCommands() const {
     return out;
 }
 
+std::vector<CommandInput::ItemEntry> CommandInput::items() const {
+    std::vector<ItemEntry> out;
+    if (!rules_) return out;
+    const BattleRules& r = *rules_;
+    for (int id = 1; id < 300; ++id) {
+        int n = r.itemCount(id);
+        for (const BattleRules::Order& o : orders_) n -= o.item == id;
+        const BattleData::Item* it = r.data().item(id);
+        if (n <= 0 || !it || !it->battle) continue;
+        const BattleData::Command* c = r.data().command(it->command);
+        ItemEntry e;
+        e.item = id, e.command = it->command, e.count = n;
+        e.selectable = c != nullptr;
+        const bool partnerDown = !r.fighter(1 - actor_).alive && r.fighter(1 - actor_).present;
+        if (c && (c->kind == 24 || c->kind == 25) && !pair_ && !partnerDown) e.selectable = false;
+        out.push_back(e);
+    }
+    return out;
+}
+
+bool CommandInput::pickItem(int item) {
+    if (menu_ != Menu::Items) return false;
+    for (const ItemEntry& e : items())
+        if (e.item == item && e.selectable) {
+            pendingItem_ = item;
+            toTarget(e.command, 0);
+            return true;
+        }
+    return false;
+}
+
 bool CommandInput::pickSopia(int command) {
     if (menu_ != Menu::Sopia) return false;
     for (const SopiaCommand& sc : sopiaCommands())
@@ -98,7 +130,7 @@ void CommandInput::toTarget(int command, int cost) {
             if (rules_->fighter(k).present && rules_->fighter(k).alive != revive) targets_.push_back(k);
     }
     if (targets_.empty()) {
-        orders_.push_back({actor_, command, t == 1 ? actor_ : -1});
+        orders_.push_back({actor_, command, t == 1 ? actor_ : -1, std::exchange(pendingItem_, 0)});
         costs_.push_back(cost);
         next();
         return;
@@ -171,6 +203,10 @@ bool CommandInput::press(int id) {
         menu_ = Menu::Sopia;
         return true;
     }
+    if (id == Items) { // (StepItem: the list)
+        menu_ = Menu::Items;
+        return true;
+    }
     if (id == Defend) { // (StepNextCheck: state 4 for it - both, a pair)
         orders_.push_back({actor_, kDefend, actor_});
         costs_.push_back(0);
@@ -184,7 +220,7 @@ bool CommandInput::press(int id) {
 
 bool CommandInput::pick(int fighter) {
     if (menu_ != Menu::Target || std::find(targets_.begin(), targets_.end(), fighter) == targets_.end()) return false;
-    orders_.push_back({actor_, pending_, fighter});
+    orders_.push_back({actor_, pending_, fighter, std::exchange(pendingItem_, 0)});
     costs_.push_back(pendingCost_);
     next();
     return true;
@@ -198,8 +234,9 @@ void CommandInput::next() {
 
 void CommandInput::back() {
     switch (menu_) {
-    case Menu::Target: menu_ = pendingFrom_; break;
+    case Menu::Target: menu_ = pendingFrom_, pendingItem_ = 0; break;
     case Menu::Awake:
+    case Menu::Items:
     case Menu::Sopia: menu_ = Menu::Command; break;
     case Menu::Command: // (StepCommandLoop: the second's back to the first's, else the first menu)
         if (!pair_ && actor_ == 1 && rules_->fighter(0).alive) {

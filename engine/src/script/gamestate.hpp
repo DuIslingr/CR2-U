@@ -22,6 +22,19 @@ struct GameState {
     // the sopia's levels and EXP (cr3_common_data +0x26c, a byte each, by the sopia's number; +0x28c,
     // 32 integers) - what Cr3Battle.SetParamI2 / GetParamI2 (0 / 1) read and set. A new game's
     // (Cr3InitWorkFromBattleData): each sopia's starting level (initSopia)
+    // the items (cr3_common_data +0xc: a count by the item's number, 0..299) and the Oz (+0x264): a
+    // new game's from the party's record (initItems)
+    short itemCount[300] = {};
+    int oz = 0;
+    bool itemsReady = false;
+    template <class Data> void initItems(const Data& data) {
+        if (itemsReady) return;
+        itemsReady = true;
+        const auto& p = data.party();
+        for (int k = 0; k < 5; ++k)
+            if (p.items[k] > 0 && p.items[k] < 300) itemCount[p.items[k]] = static_cast<short>(p.counts[k]);
+        oz = p.oz;
+    }
     signed char sopiaLevel[32] = {};
     int sopiaExp[32] = {};
     bool sopiaReady = false;

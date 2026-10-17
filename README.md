@@ -111,10 +111,11 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       by the hits and its ring on the HUD
 - [x] Choosing the commands: the game's menus (Solo / Pair, Attack / Defend, the targets with
       their levels and HP; Escape by BtlCalc::Escape; the awakenings, paid with the charge; the
-      sopia's commands by their levels, paid with MP, on the game's scrolling list), tapped or with the keys (Up / Down, Left / Right, Return, Backspace
+      sopia's commands by their levels, paid with MP, and the items, on the game's scrolling
+      lists), tapped or with the keys (Up / Down, Left / Right, Return, Backspace
       back), the menus' cameras (`cr2view --battle 222 --fight manual`, `--play`; `--input "solo
       attack 2 defend"` gives the choices)
-- [ ] Battles on screen: Items, Options, the advents' list, the awakenings' own scenes, the
+- [ ] Battles on screen: Options, the advents' list, the awakenings' own scenes, the
       states (the sopia's buffs and ailments), the
       targets' camera, the actions' effects, the battles' tutorials
 - [ ] Treasure boxes, the other windows (announcements, tutorials, items), the HUD, the sounds

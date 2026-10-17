@@ -357,6 +357,12 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
         }
         if (targets.empty() && c->target == 2 && !revive) targets.push_back(o.actor);
     }
+    // an item's: one gone (short of it, nothing)
+    if (o.item > 0) {
+        const BattleData::Item* it = data_.item(o.item);
+        if (itemCount(o.item) <= 0) return;
+        if (it && it->usedUp) --items_[o.item];
+    }
     // its MP (ActionCommonCommandStart: the party's, both a pair's - short of it, the action fails)
     if (o.actor < 2 && c->mp > 0) {
         const int partner = isPairAction(o.actor) ? a.partner : -1;

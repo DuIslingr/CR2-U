@@ -18,7 +18,7 @@ public:
         Items = 16, Sopia = 18, Options = 20, Solo = 26, Pair = 27, Escape = 28, Awake = 29, Advent = 30, Attack = 31,
         Defend = 33, TargetFirst = 43, // (43..47: the target buttons)
     };
-    enum class Menu { First, Command, Sopia, Awake, Target, Done };
+    enum class Menu { First, Command, Sopia, Items, Awake, Target, Done };
     struct Shown {
         int id = 0;
         bool selectable = true;
@@ -38,6 +38,14 @@ public:
     };
     std::vector<SopiaCommand> sopiaCommands() const;
     bool pickSopia(int command);
+    // the items it can use (BtlCommand::GetItem / SetCommandItemList: those the battle has that are
+    // for battles, the count less what this turn has chosen; the revivals only with the partner down)
+    struct ItemEntry {
+        int item = 0, command = 0, count = 0;
+        bool selectable = false;
+    };
+    std::vector<ItemEntry> items() const;
+    bool pickItem(int item);
     // the awakenings the one choosing has (SetCommandAwakeList: its character's, those whose flag
     // is set; selectable while the charge less what this turn has set aside covers the cost)
     struct Awakening {
@@ -79,7 +87,7 @@ private:
     Menu menu_ = Menu::Done;
     int actor_ = 0;
     bool pair_ = false, escape_ = false;
-    int pending_ = 0, pendingCost_ = 0; // (the command waiting for its target, its charge)
+    int pending_ = 0, pendingCost_ = 0, pendingItem_ = 0; // (the command waiting for its target, its charge, its item)
     Menu pendingFrom_ = Menu::Command;  // (the menu it came from: back goes there)
     std::vector<int> targets_;
     std::vector<BattleRules::Order> orders_;

@@ -3389,6 +3389,18 @@ struct Viewer {
                 }
                 if (!c->shotMark.empty()) commandEffect(c->shotMark, target, a.partner >= 0);
             }
+            // (j007's and m507's: CreateWarpEffect - a pair's, eff110 twice on the one acting -
+            // and CreateAttackObject - an attack's, its plain or pair attack's launch effect)
+            if (const BattleUnit* au = unitOf(a.actor); au && (au->figure.rfind("j007", 0) == 0 || au->figure.rfind("m507", 0) == 0)) {
+                if (a.partner >= 0) commandEffect("eff110", a.actor, true), commandEffect("eff110", a.actor, true);
+                const cr2::Fighter& af = battleRules->fighter(a.actor);
+                int plainId = a.partner >= 0 ? af.pairAttack : af.attack;
+                if (a.actor >= 2)
+                    if (const cr2::BattleData::Monster* mo = battleData.monster(af.id)) plainId = a.partner >= 0 ? mo->pairAttack : mo->counter;
+                const cr2::BattleData::Command* pc = battleData.command(plainId);
+                if (a.command == plainId && pc && !pc->launchEffect.empty() && cr2::effectSetting(pc->launchEffect).pairLocator != 7) // (IsAttackAction: the attack's flow)
+                    commandEffect(pc->launchEffect, a.actor, a.partner >= 0);
+            }
             if (!c->launchEffect.empty()) {
                 const cr2::EffectSetting& ls = cr2::effectSetting(c->launchEffect);
                 if (ls.pairLocator != 7) commandEffect(c->launchEffect, a.actor, a.partner >= 0); // (ShowCommandLaunchEffect: its +0x32 7 left out - every caller passes true)

@@ -90,6 +90,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         m.exp = int(u32(d, o + 0x2c)), m.sp = int(u32(d, o + 0x30)), m.oz = int(u32(d, o + 0x34));
         m.sopia = s16(d, o + 0x18), m.sopiaLevel = d[o + 0x52];
         m.counter = s16(d, o + 0x4c);
+        m.pairAttack = s16(d, o + 0x54);
         for (int k = 0; k < 3; ++k) m.drops[k] = s16(d, o + 0xb4 + size_t(k) * 2), m.rareDrops[k] = s16(d, o + 0xba + size_t(k) * 2);
         m.size = int(int8_t(d[o + 0x53]));
         for (int k = 0; k < 5; ++k) m.param[k] = s16(d, o + 0x20 + size_t(k) * 2);

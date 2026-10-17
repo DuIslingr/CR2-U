@@ -46,7 +46,8 @@ public:
         int stateResist[5] = {0, 0, 0, 0, 0};  // +0x43
         uint32_t skills = 0; // +0x48 (SetupEnemySkill: bit 0 armour, 1 first, ...)
         int element = 0;    // +0x50
-        int counter = 0;    // +0x4c the command it counters with (BtlActionCtrl::CheckCounter)
+        int counter = 0;    // +0x4c the command it counters with (BtlActionCtrl::CheckCounter) - its plain attack
+        int pairAttack = 0; // +0x54 its pair's attack (CreateAttackObject)
         int size = 0;       // +0x53: 0 small, 1 medium, 2 large, 3 extra large, 4 human-sized
         // its choice (BtlEnemy): ten commands, each with a condition, a target rule, a weight, a
         // must-take flag and the condition's value

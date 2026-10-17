@@ -45,6 +45,9 @@ struct GameState {
     int level[9] = {}, exp[9] = {};
     // their MP between battles (cr3_player_data +0x10; -1 the most: MPFullRecovery, a new game)
     int mp[9] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
+    // what items have added to their parameters for good (cr3_player_data +0x1e..: the seeds,
+    // Cr3UtilParameterUpByItem)
+    short seed[9][5] = {};
     bool equipReady = false;
     template <class Data> void initEquip(const Data& data, const int* levelExp) {
         if (equipReady) return;

@@ -1719,7 +1719,7 @@ struct Viewer {
         std::string err;
         int party[2] = {0, 0};
         for (size_t k = 0; k < battle.party.size() && k < 2; ++k) party[k] = battle.party[k].id;
-        if (!battleRules->start(battle.coupling, party, 0, &err, game.sopiaLevel, game.equip, game.level, game.mp)) {
+        if (!battleRules->start(battle.coupling, party, 0, &err, game.sopiaLevel, game.equip, game.level, game.mp, game.seed, game.itemCount)) {
             SDL_Log("fight: %s", err.c_str());
             battleRules.reset();
             return;
@@ -3921,7 +3921,7 @@ struct Viewer {
         poseUi(win, "syswin_io", t);
         drawFigure(win.fig, view.data());
         float x, y;
-        if (uiJoint(win, "typeM_L01", x, y)) drawUiText(announce(0x6d), 26, x, y, w, h);
+        if (uiJoint(win, "typeM_L01", x, y)) drawUiText(announce(0x6d), 26, x, y, w, h, true);
         UiFig& ch = uiFig("choice_io");
         ch.fig.place = cr2::Mat34();
         poseUi(ch, "choice_io", t);
@@ -4443,7 +4443,7 @@ struct Viewer {
         SDL_Log("camp: open");
     }
     void closeCamp() {
-        campOpen = false, campList = 0;
+        campOpen = false, campList = 0, campUse = 0, campItem = 0;
         optionsOpen = optionsAsk = false, manualStage = 0, manualEvents.reset();
         SDL_Log("camp: closed");
     }
@@ -4475,7 +4475,8 @@ struct Viewer {
         r.id = ch + 1, r.level = std::max(game.level[ch], 1);
         int eq[8];
         for (int e = 0; e < 8; ++e) eq[e] = game.equip[ch][e];
-        cr2::BattleRules::characterMax(battleData, r.id, r.level, eq, r.hpMax, r.mpMax);
+        const cr2::BattleRules::PlayerStats st = cr2::BattleRules::playerStats(battleData, r.id, r.level, eq, game.sopiaLevel, game.seed[ch], game.itemCount);
+        r.hpMax = st.maxHp, r.mpMax = st.maxMp;
         r.hp = r.hpMax; // (Cr3RestorePlayerHP after each battle)
         r.mp = game.mp[ch] < 0 ? r.mpMax : std::min(game.mp[ch], r.mpMax);
         const int lo = cr2::levelExp(r.level), hi = cr2::levelExp(r.level + 1);
@@ -4489,6 +4490,7 @@ struct Viewer {
         if (manualStage == 2) return; // (the tutorial's picture and windows alone)
         if (optionsAsk) return drawOptionsAsk(view, w, h);
         if (optionsOpen) return drawOptions(view, proj, w, h);
+        if (campUse) return drawItemUse(view, proj, w, h);
         const float t = uiClock - campStart;
         if (campList) { // (the list, its tab - the items' 7, the sopia's 9 - and its own back)
             const std::vector<ListRow> rows = campRows();
@@ -4559,8 +4561,260 @@ struct Viewer {
         static const int kButtons[4] = {16, 17, 18, 20};
         return kButtons[std::clamp(campCursor, 0, 3)];
     }
+    // The characters the camp offers (Cr3UtilValidCharacter: 0..6 by flags 0x3fd..0x403 - those
+    // who have joined), else the party's two
+    std::vector<int> validChars() const {
+        std::vector<int> out;
+        for (int c = 0; c < 7; ++c)
+            if (game.flag(0x3fd + c)) out.push_back(c);
+        if (out.empty())
+            for (int c : game.party)
+                if (c >= 0 && c < 9) out.push_back(c);
+        return out;
+    }
+    cr2::BattleRules::PlayerStats statsOf(int ch) const {
+        int eq[8];
+        for (int e = 0; e < 8; ++e) eq[e] = game.equip[ch][e];
+        return cr2::BattleRules::playerStats(battleData, ch + 1, std::max(game.level[ch], 1), eq, game.sopiaLevel, game.seed[ch], game.itemCount);
+    }
+    int mpOf(int ch) const {
+        const int most = statsOf(ch).maxMp;
+        return game.mp[ch] < 0 ? most : std::min(game.mp[ch], most);
+    }
+    // a question on the system window (syswin_io's typeM_L01) with choice_io's Yes / No (call_cBtn_fr11 /
+    // 12: circleBtn_fr at those frames) - their taps `yes` / `no`
+    void drawAsk(const std::string& message, float t, const Mat4& view, int w, int h, int yes, int no) {
+        UiFig& win = uiFig("syswin_io");
+        win.fig.place = cr2::Mat34();
+        poseUi(win, "syswin_io", t);
+        drawFigure(win.fig, view.data());
+        float x, y;
+        size_t from = 0;
+        for (int line = 1; line <= 3 && from <= message.size(); ++line) { // (Cr3UtilNPrint: a line each "\n", typeM_L01 ..)
+            const size_t at = message.find("\\n", from);
+            char jn[16];
+            std::snprintf(jn, sizeof jn, "typeM_L%02d", line);
+            if (uiJoint(win, jn, x, y)) drawUiText(message.substr(from, at == std::string::npos ? std::string::npos : at - from), 26, x, y, w, h, true); // (an L joint: from the left)
+            if (at == std::string::npos) break;
+            from = at + 2;
+        }
+        UiFig& ch = uiFig("choice_io");
+        ch.fig.place = cr2::Mat34();
+        poseUi(ch, "choice_io", t);
+        drawFigure(ch.fig, view.data());
+        for (int n : {11, 12}) {
+            char jn[24];
+            std::snprintf(jn, sizeof jn, "call_cBtn_fr%d", n);
+            if (!uiJoint(ch, jn, x, y)) continue;
+            UiFig& c = uiFig("circlebtn_fr");
+            c.fig.place = cr2::Mat34();
+            c.fig.place.m[3] = x, c.fig.place.m[7] = y;
+            poseUi(c, "circlebtn_fr", float(n) / 20.0f);
+            drawFigure(c.fig, view.data());
+            float sx, sy, ex, ey;
+            if (uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) tapRects.push_back({n == 11 ? yes : no, sx, sy, ex, ey});
+        }
+    }
+    // CharaStatusWindowBMenu: one character's window (campWin with campWin3_io, the third's joints
+    // id90..): its face, name, level (3 of set 130), HP (5 of 110) and MP (4), their bars (btlHpBar_per
+    // / btlMpBar_per at the percent / 20 s), its labels, and an arrow by HP / MP (sign 5 up, 6 down)
+    // when what is chosen changes them
+    void drawStatusB(int ch, int hpChange, int mpChange, float t, const Mat4& view, const Mat4& proj) {
+        UiFig& win = uiFig("campwin");
+        win.fig.place = cr2::Mat34();
+        poseUi(win, "campwin3_io", t);
+        for (ViewMesh& vm : win.fig.meshes) {
+            const uint32_t j = vm.source.palette.empty() ? ~0u : vm.source.palette[0];
+            const std::string jn = j < win.joints.size() ? win.joints[j] : "";
+            vm.hidden = jn == "GEO_campWin1" || jn == "GEO_campWin2";
+        }
+        drawFigure(win.fig, view.data());
+        auto at = [&](const std::string& joint, const std::string& fig, float pose) -> UiFig* {
+            float x, y;
+            if (!uiJoint(win, joint, x, y)) return nullptr;
+            UiFig& c = uiFig(fig);
+            c.fig.place = cr2::Mat34();
+            c.fig.place.m[3] = x, c.fig.place.m[7] = y;
+            poseUi(c, fig, pose);
+            return &c;
+        };
+        const int id = ch + 1;
+        const cr2::BattleRules::PlayerStats st = statsOf(ch);
+        const int mp = mpOf(ch);
+        if (UiFig* face = at("call_cmpFace_id9000", "campface", 0)) {
+            for (ViewMesh& vm : face->fig.meshes) vm.texture = texture("cmpFaceC00" + std::to_string(id)), vm.extraMap = texture("cmpFaceA00" + std::to_string(id));
+            drawFigure(face->fig, view.data());
+        }
+        if (UiFig* n = at("call_pcNameEN_id9021", "pcnameen_id", float(id) / 20.0f)) drawFigure(n->fig, view.data());
+        float x, y;
+        for (int s : {1, 2, 3, 7})
+            if (uiJoint(win, "call_status_fr900" + std::to_string(s), x, y)) drawStatusSign(s, x, y, proj);
+        if (hpChange && uiJoint(win, "call_status_fr0005", x, y)) drawStatusSign(hpChange > 0 ? 5 : 6, x, y, proj);
+        if (mpChange && uiJoint(win, "call_status_fr0006", x, y)) drawStatusSign(mpChange > 0 ? 5 : 6, x, y, proj);
+        if (uiJoint(win, "call_dotNum_id9031", x, y)) drawDigits(std::max(game.level[ch], 1), 130, 3, x, y, proj);
+        if (uiJoint(win, "call_dotNum_id9041", x, y)) drawDigits(st.maxHp, 110, 5, x, y, proj); // (the HP: whole between battles)
+        if (uiJoint(win, "call_dotNum_id9061", x, y)) drawDigits(mp, 110, 4, x, y, proj);
+        if (UiFig* b = at("call_cmpHpBar_per9011", "btlhpbar_per", 5.0f)) drawFigure(b->fig, view.data());
+        if (UiFig* b = at("call_cmpMpBar_per9012", "btlmpbar_per", st.maxMp > 0 ? float(mp) * 5.0f / float(st.maxMp) : 0.0f)) drawFigure(b->fig, view.data());
+    }
+    // CharaStatusCapacityMenu (statusWin_io): the five parameters (4 of set 90 at call_dotNum_id001
+    // / 101 / 201 / 301 / 401), what is chosen would change of each (4 of set 140 at id011 .., sign
+    // 5 or 6 beside), the labels (call_status_fr16..20), the sopia's combination's name (typeS_L01)
+    void drawCapacity(int ch, const int* change, float t, const Mat4& view, const Mat4& proj, int w, int h) {
+        UiFig& sw = uiFig("statuswin_io");
+        sw.fig.place = cr2::Mat34();
+        poseUi(sw, "statuswin_io", t);
+        drawFigure(sw.fig, view.data());
+        const cr2::BattleRules::PlayerStats st = statsOf(ch);
+        float x, y;
+        for (int k = 0; k < 5; ++k) {
+            const std::string r = std::to_string(k);
+            if (uiJoint(sw, "call_dotNum_id" + r + "01", x, y)) drawDigits(st.param[k], 90, 4, x, y, proj);
+            if (change && change[k]) {
+                if (uiJoint(sw, "call_dotNum_id" + r + "11", x, y)) drawDigits(std::abs(change[k]), 140, 4, x, y, proj);
+                if (uiJoint(sw, "call_status_fr" + r + (change[k] > 0 ? "05" : "06"), x, y)) drawStatusSign(change[k] > 0 ? 5 : 6, x, y, proj);
+            }
+        }
+        for (int s = 16; s <= 20; ++s)
+            if (uiJoint(sw, "call_status_fr" + std::to_string(s), x, y)) drawStatusSign(s, x, y, proj);
+        int eq[8];
+        for (int e = 0; e < 8; ++e) eq[e] = game.equip[ch][e];
+        const int combo = cr2::BattleRules::sopiaCombo(battleData, eq, game.itemCount);
+        if (combo > 0 && uiJoint(sw, "typeS_L01", x, y)) drawUiText(messageText("autoskillname", combo), 22, x, y, w, h, true);
+    }
+
+    // Using an item (CampItemListMenu 9 -> CharaSelectButtonMenu, 10 -> CampItemDirectUseMenu):
+    // whom - faceWin_io's faceBtn per character (its texture faceBtn_00<n>), faceSlct on the one
+    // focused, campHelp_io's "on whom" (announce 0x84), its window and parameters with what the
+    // item would add; a tap on another focuses it (0xb3), on the focused uses it (0xb4) - one
+    // used up first asks how many (shopNum_io: tap 01 one fewer, 02 one more, 1 .. its count)
+    // and Yes / No (announce 0x74); Emergency Exit (36) asks (0x73), then leaves for t0101_p1
+    int campItem = 0;  // (the item being used; 0 none)
+    int campUse = 0;   // (1 whom, 2 how many and yes / no, 3 Emergency Exit's yes / no)
+    int campFace = 0;  // (the one focused: its place among validChars)
+    int campCount = 1;
+    float campUseStart = 0;
+    void useItemOn(int ch, int item, int n) { // (Cr3UtilParameterUpByItem, Cr3UpdatePlayerData; PlaySoundMPRecovery)
+        const cr2::BattleData::Item* it = battleData.item(item);
+        if (!it || n <= 0) return;
+        if (it->usedUp) game.itemCount[item] = static_cast<short>(std::max(game.itemCount[item] - n, 0));
+        const int mp0 = mpOf(ch);
+        for (int k = 0; k < 5; ++k) game.seed[ch][k] = static_cast<short>(std::clamp(game.seed[ch][k] + it->param[k] * n, -9999, 9999));
+        const int most = statsOf(ch).maxMp;
+        const int mp = std::clamp(std::min(mp0 + it->mp * n, 9999), 0, most);
+        game.mp[ch] = mp >= most ? -1 : mp;
+        bool any = it->mp != 0;
+        for (int k = 0; k < 5; ++k) any = any || it->param[k] != 0;
+        if (any) audio.playSe(0xc6, false);
+        SDL_Log("camp: %s x%d on %d: MP %d -> %d", it->name[1].c_str(), n, ch + 1, mp0, mp);
+    }
+    void campUseTap(int id) {
+        const std::vector<int> chars = validChars();
+        const cr2::BattleData::Item* it = battleData.item(campItem);
+        if (campUse == 1) {
+            if (id == 100) { campUse = 0, audio.playSe(0xb5, false); return; }
+            const int k = id - 7000;
+            if (k < 0 || k >= int(chars.size())) return;
+            if (k != campFace) { campFace = k, audio.playSe(0xb3, false); return; }
+            audio.playSe(0xb4, false);
+            if (it && it->usedUp) campUse = 2, campCount = 1, campUseStart = uiClock;
+            else useItemOn(chars[size_t(k)], campItem, 1), campUse = 0;
+        } else if (campUse == 2) {
+            const int most = std::max(int(game.itemCount[campItem]), 1);
+            if (id == 7101) campCount = std::max(campCount - 1, 1);
+            else if (id == 7102) campCount = std::min(campCount + 1, most);
+            else if (id == 7201) { // (yes: used, its effect)
+                if (campFace < int(chars.size())) useItemOn(chars[size_t(campFace)], campItem, campCount);
+                campUse = 0, campItem = 0;
+            } else if (id == 7202) campUse = 1, audio.playSe(0xb5, false);
+        } else if (campUse == 3) {
+            if (id == 7201) { // (FldMain: the camp's result 2 - its use)
+                game.itemCount[36] = static_cast<short>(std::max(game.itemCount[36] - 1, 0));
+                audio.playSe(0xb4, false);
+                closeCamp();
+                audio.stopBgm(20), audio.playSe(0x14f, false);
+                game.setFlag(0x3ed, true);
+                SDL_Log("camp: Emergency Exit");
+                enterMap("t0101", "t0101_p1");
+            } else if (id == 7202) campUse = 0, campItem = 0, audio.playSe(0xb5, false);
+        }
+    }
+    void drawItemUse(const Mat4& view, const Mat4& proj, int w, int h) {
+        const float t = uiClock - campUseStart;
+        const cr2::BattleData::Item* it = battleData.item(campItem);
+        const std::string name = it ? it->name[1] : "";
+        if (campUse == 3) return drawAsk(formatAnnounce(announce(0x73), {name}), t, view, w, h, 7201, 7202);
+        const std::vector<int> chars = validChars();
+        campFace = std::clamp(campFace, 0, std::max(int(chars.size()) - 1, 0));
+        const int ch = chars.empty() ? 0 : chars[size_t(campFace)];
+        drawStatusB(ch, it ? it->hp : 0, it ? it->mp : 0, t, view, proj);
+        drawCapacity(ch, it ? it->param : nullptr, t, view, proj, w, h);
+        if (campUse == 2) { // (how many, and the question)
+            UiFig& num = uiFig("shopnum_io");
+            num.fig.place = cr2::Mat34();
+            poseUi(num, "shopnum_io", t);
+            drawFigure(num.fig, view.data());
+            float x, y, sx, sy, ex, ey;
+            if (uiJoint(num, "call_dotNum_id01", x, y)) drawDigits(campCount, 90, 2, x, y, proj);
+            for (int k = 1; k <= 2; ++k) {
+                char sa[16], ea[16];
+                std::snprintf(sa, sizeof sa, "tapAreaS%02d", k), std::snprintf(ea, sizeof ea, "tapAreaE%02d", k);
+                if (uiJoint(num, sa, sx, sy) && uiJoint(num, ea, ex, ey)) tapRects.push_back({7100 + k, sx, sy, ex, ey});
+            }
+            drawAsk(formatAnnounce(announce(0x74), {name, std::to_string(game.itemCount[campItem])}), t, view, w, h, 7201, 7202); // (Cr3UtilDPrint: the count had)
+            return;
+        }
+        UiFig& fw = uiFig("facewin_io");
+        fw.fig.place = cr2::Mat34();
+        poseUi(fw, "facewin_io", t);
+        drawFigure(fw.fig, view.data());
+        for (size_t k = 0; k < chars.size(); ++k) {
+            float x, y;
+            if (!uiJoint(fw, "call_faceBtn" + std::to_string(k + 1), x, y)) continue;
+            UiFig& b = uiFig("facebtn");
+            b.fig.place = cr2::Mat34();
+            b.fig.place.m[3] = x, b.fig.place.m[7] = y;
+            poseUi(b, "facebtn", 0);
+            if (cr2::Texture* tex = texture("faceBtn_00" + std::to_string(chars[k] + 1)))
+                for (ViewMesh& vm : b.fig.meshes) vm.texture = tex;
+            drawFigure(b.fig, view.data());
+            float sx, sy, ex, ey;
+            if (uiJoint(b, "tapAreaS01", sx, sy) && uiJoint(b, "tapAreaE01", ex, ey)) tapRects.push_back({7000 + int(k), sx, sy, ex, ey});
+            if (int(k) == campFace && uiJoint(b, "call_faceSlct", sx, sy)) {
+                UiFig& sl = uiFig("faceslct");
+                sl.fig.place = cr2::Mat34();
+                sl.fig.place.m[3] = sx, sl.fig.place.m[7] = sy;
+                poseUi(sl, "faceslct", t, true);
+                drawFigure(sl.fig, view.data());
+            }
+        }
+        UiFig& help = uiFig("camphelp_io");
+        help.fig.place = cr2::Mat34();
+        poseUi(help, "camphelp_io", t);
+        drawFigure(help.fig, view.data());
+        float x, y;
+        if (uiJoint(help, "typeM_L01", x, y)) drawUiText(formatAnnounce(announce(0x84), {name}), 24, x, y, w, h, true);
+        UiFig& bk = uiFig("btlback");
+        bk.fig.place = cr2::Mat34();
+        poseUi(bk, "btlback_in", t);
+        drawFigure(bk.fig, view.data());
+        float sx, sy, ex, ey;
+        if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
+    }
+    // an item picked on the camp's list (CampItemListMenu::Update 5: 0xb4; 10 for item 36, else 9)
+    void campPickItem(int item) {
+        const std::vector<ListRow> rows = campRows();
+        const auto r = std::find_if(rows.begin(), rows.end(), [&](const ListRow& x) { return x.id == item; });
+        if (r == rows.end() || !r->selectable) return (void)SDL_Log("camp: item %d not usable here", item);
+        audio.playSe(0xb4, false);
+        campItem = item, campUseStart = uiClock, campFace = 0;
+        SDL_Log("camp: using %s", r->name.c_str());
+        campUse = item == 36 ? 3 : 1;
+    }
+
     // a camp button pressed (CampMenu::TouchSimpleRelease: 0xb4; InterfaceMain's camp step by it)
     void campPress(int id) {
+        if (campUse) return campUseTap(id);
         if (id == 100) {
             audio.playSe(0xb5, false);
             if (campList) campList = 0, campCursor = 0, campStart = uiClock;
@@ -4582,6 +4836,21 @@ struct Viewer {
     void campKey(SDL_Keycode k) {
         keysUsed = true;
         if (optionsKey(k)) return;
+        if (campUse) { // (whom: Left / Right, Return; how many: Left / Right, Return yes, Backspace no)
+            const int n = std::max(int(validChars().size()), 1);
+            if (campUse == 1) {
+                if (k == SDLK_LEFT || k == SDLK_UP) campUseTap(7000 + (campFace + n - 1) % n);
+                else if (k == SDLK_RIGHT || k == SDLK_DOWN) campUseTap(7000 + (campFace + 1) % n);
+                else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) campUseTap(7000 + campFace);
+                else if (k == SDLK_BACKSPACE) campUseTap(100);
+            } else {
+                if (k == SDLK_LEFT || k == SDLK_DOWN) campUseTap(7101);
+                else if (k == SDLK_RIGHT || k == SDLK_UP) campUseTap(7102);
+                else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) campUseTap(7201);
+                else if (k == SDLK_BACKSPACE || k == SDLK_N) campUseTap(7202);
+            }
+            return;
+        }
         if (k == SDLK_BACKSPACE) return campPress(100);
         if (campList) {
             const int n = std::max(int(campRows().size()), 1);
@@ -4589,6 +4858,9 @@ struct Viewer {
             else if (k == SDLK_DOWN) campCursor = (campCursor + 1) % n;
             else if (k == SDLK_LEFT || k == SDLK_RIGHT) { // (the items' two categories)
                 if (campList == 16) campCategory = 1 - campCategory, campCursor = 0;
+            } else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && campList == 16) {
+                const std::vector<ListRow> rows = campRows();
+                if (!rows.empty()) campPickItem(rows[size_t(std::clamp(campCursor, 0, int(rows.size()) - 1))].id);
             }
             return;
         }
@@ -4609,7 +4881,9 @@ struct Viewer {
             if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
                 if (r.id > 6000 && r.id <= 6005) fieldTabTap(r.id - 6000);
                 else if (campOpen && optionsTapped(r, x)) {
-                } else if (campOpen && campList && r.id >= 1000 && r.id < 5000) campCursor = r.id - 1000; // (a row: the focus)
+                } else if (campOpen && campUse) campUseTap(r.id);
+                else if (campOpen && campList && r.id >= 1000 && r.id < 5000) campCursor = r.id - 1000; // (a row: the focus)
+                else if (campOpen && campList == 16 && r.id > 0 && r.id < 1000) campPickItem(r.id); // (the focused row: picked)
                 else if (campOpen && r.id >= 0) campPress(r.id);
                 return true;
             }
@@ -4627,6 +4901,9 @@ struct Viewer {
         else if (t == "sopia") campPress(18);
         else if (t == "options") campPress(20);
         else if (t == "category") campCategory = 1 - campCategory, campCursor = 0;
+        else if (t.size() > 1 && t[0] == 'u' && std::isdigit(static_cast<unsigned char>(t[1]))) campPickItem(std::atoi(t.c_str() + 1)); // (an item used: uNNN)
+        else if (campUse && (t == "left" || t == "right")) campKey(t == "left" ? SDLK_LEFT : SDLK_RIGHT);
+        else if (campUse && (t == "yes" || t == "no")) campUseTap(t == "yes" ? 7201 : 7202);
         else if (t == "down") campKey(SDLK_DOWN);
         else if (t == "up") campKey(SDLK_UP);
         else if (t == "enter") campKey(SDLK_RETURN);
@@ -4788,6 +5065,7 @@ int main(int argc, char** argv) {
     int fightMode = 0;
     std::string inputArg; // (--input: the commands chosen, as tokens)
     std::vector<int> flagsArg;
+    std::vector<std::pair<int, int>> itemArg;
     std::vector<std::tuple<int, int, int>> equipArg;
     int chargeArg = -1;
     std::vector<std::pair<int, int>> stateArg;
@@ -4838,6 +5116,11 @@ int main(int argc, char** argv) {
             ++i;
         }
         else if (a == "--charge" && next) chargeArg = std::atoi(next), ++i; // (the charge gauge to begin with: tests)
+        else if (a == "--item" && next) { // (an item's count to begin with: id:count, tests)
+            int id = 0, n = 0;
+            if (std::sscanf(next, "%d:%d", &id, &n) == 2) itemArg.push_back({id, n});
+            ++i;
+        }
         else if (a == "--equip" && next) { // (a character's equipment slot: character:slot:id - 3..7 its sopia; tests)
             int c = 0, slot = 0, item = 0;
             if (std::sscanf(next, "%d:%d:%d", &c, &slot, &item) == 3) equipArg.push_back({c, slot, item});
@@ -4972,6 +5255,8 @@ int main(int argc, char** argv) {
     for (int f : flagsArg) v.game.setFlag(f, true);
     for (const auto& [id, level] : sopiaArg)
         if (id >= 0 && id < 32) v.game.sopiaLevel[id] = static_cast<signed char>(level);
+    for (const auto& [id, n] : itemArg)
+        if (id > 0 && id < 300) v.game.itemCount[id] = static_cast<short>(n);
     for (const auto& [c, slot, item] : equipArg)
         if (c >= 1 && c <= 9 && slot >= 0 && slot < 8) v.game.equip[c - 1][slot] = static_cast<short>(item);
     if (!fieldName.empty()) {

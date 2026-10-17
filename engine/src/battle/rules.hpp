@@ -104,9 +104,11 @@ public:
     // `sopiaLevel`: the sopia's levels (cr3_common_data +0x26c by number; null: their starting ones);
     // `equip`, `level`, `mp`: the characters' equipment, levels and MP (-1 full) by character from 0
     // (GameState's; null: a new game's)
+    // `seed`: what items have added to each one's parameters for good (cr3_player_data +0x1e);
+    // `items`: the counts had (the sopia's combinations need their item)
     bool start(int coupling, const int party[2], int dungeonLevel = 0, std::string* error = nullptr,
                const signed char* sopiaLevel = nullptr, const short (*equip)[8] = nullptr, const int* level = nullptr,
-               const int* mp = nullptr);
+               const int* mp = nullptr, const short (*seed)[5] = nullptr, const short* items = nullptr);
 
     const Fighter& fighter(int i) const { return fighters_[size_t(i)]; }
     const BattleData& data() const { return data_; }
@@ -174,9 +176,20 @@ public:
     void setParamI(int id, int value);
     int charge() const { return charge_; }       // +0x28: the charge gauge, 0..300
     void setCharge(int c) { charge_ = std::clamp(c, 0, 300); } // (tests)
-    // a character's most HP and MP (Cr3UpdatePlayerData): its level's, plus what its weapon,
-    // armour and accessory add (`equip`: its eight - null its record's)
-    static void characterMax(const BattleData& data, int id, int level, const int* equip, int& hp, int& mp);
+    // a character's most HP, MP and its five parameters (Cr3UpdatePlayerData): its level's (its
+    // record's growth), the items' for good (`seed`), the levels past 20's (Cr3UpdatePlayerBonusData:
+    // 10 HP, 1 MP and 1 each a level), what its weapon, armour and accessory add, then the percent
+    // its sopia's auto skills up to their levels add (Cr3UpdatePlayerDataBySopia, each of the five),
+    // and their combination's (Cr3UpdatePlayerDataBySopiaComb: the last three's kinds, with its
+    // item had); `equip` its eight (null its record's), `sopiaLevel` by sopia (null their first),
+    // `items` the counts (null none)
+    struct PlayerStats {
+        int maxHp = 1, maxMp = 0, param[5] = {0, 0, 0, 0, 0};
+    };
+    static PlayerStats playerStats(const BattleData& data, int id, int level, const int* equip, const signed char* sopiaLevel = nullptr,
+                                   const short* seed = nullptr, const short* items = nullptr);
+    // the auto skill the sopia in places 3..5 of `equip` make together (Cr3UtilGetSopiaComboSkillID; -1 none)
+    static int sopiaCombo(const BattleData& data, const int* equip, const short* items);
     // what the monsters downed give (BtlActionCtrl::CheckDead: BtlWork +0xabc EXP, +0xac0 SP,
     // +0xac4 Oz - each its GetMonsterEXP / SP / OZ, at most 9999999)
     // and what they leave (BtlActionCtrl::CheckDropItem / CheckDropSopia at each one down -

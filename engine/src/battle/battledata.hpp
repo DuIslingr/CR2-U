@@ -93,6 +93,7 @@ public:
         std::string name[2];
         int growth = 0, startLevel = 1, element = 0;
         int advent = 0; // +0x14: the advent it lets the pair call (BtlCommand::CheckCommandAdventAvailable: 136..141)
+        int kind = 0;   // +0x11: its kind (Cr3UtilGetSopiaComboSkillID's combinations; the camp's icon); +0x10 0 a human's
         int commands[5] = {}, skills[5] = {};
     };
     // an item (GetItemDataPointer, from 1): what it adds worn (Cr3UpdatePlayerData)
@@ -105,6 +106,7 @@ public:
         int skills[2] = {-1, -1}; // +0x30, +0x32: auto skills it gives
         bool battle = false;  // +0x11: usable in battle (BtlCommand::GetItem)
         bool usedUp = false;  // +0x2d: one gone each use
+        int wearers = 0;      // +0x12: the characters who can equip it (bit c: character c + 1)
         int command = 0;      // +0x2e: the command it is
         int icon = 0;         // +0x34: its icon (mainIcon_id's frame)
     };
@@ -118,6 +120,7 @@ public:
     // an auto skill (GetAutoSkillDataPointer, from 1; BtlWork::SetupSkill)
     struct AutoSkill {
         int id = 0;
+        int rate[7] = {};    // +0x10..+0x16: the percent it adds to the most HP, MP and the five parameters (Cr3UpdatePlayerDataBySopia)
         int resist[7] = {}, stateResist[5] = {}; // +0x17, +0x1e
         unsigned groups[7] = {}; // +0x26..+0x32: the fighter's skill bits (+0xfac..+0xfb8)
         int attach = 0;          // +0x34 the element it lends (GetAutoSkillAttach; 0 none)

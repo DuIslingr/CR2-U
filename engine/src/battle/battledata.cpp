@@ -147,7 +147,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         Sopia s;
         s.id = i + 1;
         s.name[0] = text(o), s.name[1] = text(o + 4);
-        s.growth = d[o + 0x10], s.startLevel = d[o + 0x12], s.advent = s16(d, o + 0x14), s.element = s16(d, o + 0x16);
+        s.growth = d[o + 0x10], s.startLevel = d[o + 0x12], s.advent = s16(d, o + 0x14), s.kind = d[o + 0x11], s.element = s16(d, o + 0x16);
         for (int k = 0; k < 5; ++k) s.commands[k] = s16(d, o + 0x18 + size_t(k) * 2), s.skills[k] = s16(d, o + 0x22 + size_t(k) * 2);
         sopias_.push_back(s);
     }
@@ -156,6 +156,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         if (o + 0x38 > d.size()) break;
         AutoSkill a;
         a.id = i + 1;
+        for (int k = 0; k < 7; ++k) a.rate[k] = d[o + 0x10 + size_t(k)];
         for (int k = 0; k < 7; ++k) a.resist[k] = d[o + 0x17 + size_t(k)];
         for (int k = 0; k < 5; ++k) a.stateResist[k] = d[o + 0x1e + size_t(k)];
         for (int k = 0; k < 7; ++k) a.groups[k] = uint16_t(s16(d, o + 0x26 + size_t(k) * 2));
@@ -173,7 +174,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         it.hp = int(u32(d, o + 0x14)), it.mp = s16(d, o + 0x18);
         for (int k = 0; k < 5; ++k) it.param[k] = s16(d, o + 0x1a + size_t(k) * 2);
         it.skills[0] = s16(d, o + 0x30), it.skills[1] = s16(d, o + 0x32);
-        it.battle = d[o + 0x11] == 1, it.usedUp = d[o + 0x2d] == 1, it.command = s16(d, o + 0x2e), it.icon = int8_t(d[o + 0x34]);
+        it.battle = d[o + 0x11] == 1, it.usedUp = d[o + 0x2d] == 1, it.wearers = uint16_t(s16(d, o + 0x12)), it.command = s16(d, o + 0x2e), it.icon = int8_t(d[o + 0x34]);
         items_.push_back(it);
     }
     voices_.clear();

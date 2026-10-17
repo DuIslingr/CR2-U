@@ -24,17 +24,90 @@ BattleRules::BattleRules(const BattleData& data, uint32_t seed) : data_(data) {
     if (seed) rand_.seed48(seed);
 }
 
-void BattleRules::characterMax(const BattleData& data, int id, int level, const int* equip, int& hp, int& mp) {
-    hp = 1, mp = 0;
-    const BattleData::Character* c = data.character(id);
-    if (!c) return;
-    hp = std::clamp(c->hp + c->hpGrowth * level * 50 / 100, 1, 99999);
-    mp = std::clamp(c->mp + c->mpGrowth * level * 5 / 100, 0, 9999);
-    for (int e = 0; e < 3; ++e)
-        if (const BattleData::Item* it = data.item(equip ? equip[e] : c->equip[e])) hp += it->hp, mp += it->mp;
+namespace {
+
+// Cr3UtilCheck3on3Peace: kinds a, b, c against a combination's x, y, z (z 0: any third)
+bool threeOnThree(int a, int b, int c, int x, int y, int z) {
+    if (a == x) {
+        if (b != y) {
+            if (b != z && z != 0) return false;
+            return y == c;
+        }
+        return c == z || z == 0;
+    }
+    if (a == y) {
+        if (b == x) return c == z || z == 0;
+        if (b != z && z != 0) return false;
+    } else {
+        if (a != z && z != 0) return false;
+        if (b == x) return y == c;
+        if (b != y) return false;
+    }
+    return x == c;
 }
 
-bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std::string* error, const signed char* sopiaLevel, const short (*equip)[8], const int* level, const int* mp) {
+int calcValue(int v, int percent) { return percent * v / 100 + v; } // (BtlCalcValue)
+
+} // namespace
+
+int BattleRules::sopiaCombo(const BattleData& data, const int* equip, const short* items) {
+    // (the table at 0x534bb8: {the item it needs, the auto skill, three kinds} x 8)
+    static const unsigned char kCombos[8][5] = {{53, 75, 4, 4, 4}, {54, 76, 1, 1, 1}, {57, 79, 3, 3, 3}, {58, 80, 2, 2, 2},
+                                                {51, 73, 1, 1, 0}, {52, 74, 4, 4, 0}, {55, 77, 2, 2, 0}, {56, 78, 3, 3, 0}};
+    int kinds[3] = {0, 0, 0}, n = 0;
+    for (int k = 5; k < 8; ++k)
+        if (equip[k] > 0) {
+            const BattleData::Sopia* so = data.sopia(equip[k]);
+            if (!so) return -1;
+            kinds[n++] = so->kind;
+        }
+    if (n < 2) return -1;
+    for (const auto& c : kCombos)
+        if (items && items[c[0]] > 0 && threeOnThree(kinds[0], kinds[1], kinds[2], c[2], c[3], c[4])) return c[1];
+    return -1;
+}
+
+BattleRules::PlayerStats BattleRules::playerStats(const BattleData& data, int id, int level, const int* equip, const signed char* sopiaLevel,
+                                                  const short* seed, const short* items) {
+    PlayerStats st;
+    const BattleData::Character* c = data.character(id);
+    if (!c) return st;
+    int eq[8];
+    for (int e = 0; e < 8; ++e) eq[e] = equip ? equip[e] : c->equip[e];
+    st.maxHp = std::clamp(c->hp + c->hpGrowth * level * 50 / 100, 1, 99999);
+    st.maxMp = std::clamp(c->mp + c->mpGrowth * level * 5 / 100, 0, 9999);
+    for (int n = 0; n < 5; ++n) st.param[n] = std::clamp(c->param[n] + c->paramGrowth[n] * level * 5 / 100, 0, 9999) + (seed ? seed[n] : 0);
+    const int past = std::max(level - 20, 0); // (Cr3UpdatePlayerBonusData)
+    st.maxHp += std::min(past * 10, 99999), st.maxMp += std::min(past, 9999);
+    for (int n = 0; n < 5; ++n) st.param[n] += std::min(past, 9999);
+    for (int e = 0; e < 3; ++e)
+        if (const BattleData::Item* it = eq[e] > 0 ? data.item(eq[e]) : nullptr) {
+            st.maxHp += it->hp, st.maxMp += it->mp;
+            for (int n = 0; n < 5; ++n) st.param[n] += it->param[n];
+        }
+    auto apply = [&](const BattleData::AutoSkill& a) {
+        st.maxHp = calcValue(st.maxHp, a.rate[0]), st.maxMp = calcValue(st.maxMp, a.rate[1]);
+        for (int n = 0; n < 5; ++n) st.param[n] = calcValue(st.param[n], a.rate[2 + n]);
+    };
+    for (int k = 3; k < 8; ++k) { // (each sopia: its skills' percent added up, up to its level)
+        const BattleData::Sopia* so = eq[k] > 0 ? data.sopia(eq[k]) : nullptr;
+        if (!so) continue;
+        const int lv = sopiaLevel && eq[k] < 32 ? sopiaLevel[eq[k]] : so->startLevel;
+        BattleData::AutoSkill sum;
+        for (int s = 0; s < lv && s < 5; ++s)
+            if (const BattleData::AutoSkill* a = so->skills[s] > 0 ? data.autoSkill(so->skills[s]) : nullptr)
+                for (int r = 0; r < 7; ++r) sum.rate[r] += a->rate[r];
+        apply(sum);
+    }
+    if (const int combo = sopiaCombo(data, eq, items); combo > 0)
+        if (const BattleData::AutoSkill* a = data.autoSkill(combo)) apply(*a);
+    st.maxHp = std::clamp(st.maxHp, 1, 99999), st.maxMp = std::clamp(st.maxMp, 0, 9999);
+    for (int& p : st.param) p = std::clamp(p, 0, 9999);
+    return st;
+}
+
+bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std::string* error, const signed char* sopiaLevel, const short (*equip)[8], const int* level, const int* mp,
+                        const short (*seed)[5], const short* items) {
     BattleSetup setup;
     if (!setupBattle(data_, coupling, party, setup, error)) return false;
     for (Fighter& f : fighters_) f = Fighter();
@@ -51,12 +124,12 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
         Fighter& f = fighters_[size_t(k)];
         f.present = f.alive = true;
         f.side = 0, f.id = c->id, f.name = c->name[1], f.level = level && c->id >= 1 && c->id <= 9 && level[c->id - 1] > 0 ? level[c->id - 1] : c->level;
-        characterMax(data_, c->id, f.level, eq, f.maxHp, f.maxMp);
-        for (int n = 0; n < 5; ++n) f.param[n] = std::clamp(c->param[n] + c->paramGrowth[n] * f.level * 5 / 100, 0, 9999);
+        const PlayerStats st = playerStats(data_, c->id, f.level, eq, sopiaLevel, seed && c->id >= 1 && c->id <= 9 ? seed[c->id - 1] : nullptr, items);
+        f.maxHp = st.maxHp, f.maxMp = st.maxMp;
+        for (int n = 0; n < 5; ++n) f.param[n] = st.param[n];
         for (int e = 0; e < 3; ++e) {
             const BattleData::Item* it = data_.item(eq[e]);
             if (!it) continue;
-            for (int n = 0; n < 5; ++n) f.param[n] += it->param[n];
             for (int s : it->skills)
                 if (const BattleData::AutoSkill* a = data_.autoSkill(s)) {
                     for (int g = 0; g < 7; ++g) f.skills[g] |= a->groups[g];

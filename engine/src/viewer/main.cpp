@@ -63,6 +63,8 @@
 #include "assets/mvgl.hpp"
 #include "assets/skeleton.hpp"
 #include "battle/battledata.hpp"
+#include "battle/motion.hpp"
+#include "battle/rules.hpp"
 #include "event/runtime.hpp"
 #include "field/character.hpp"
 #include "field/fieldmap.hpp"
@@ -958,7 +960,15 @@ struct Viewer {
     ViewFigure battleMap;
     struct BattleUnit {
         ViewFigure fig;
-        std::string first, loop; // (its motions: the first once, then the loop)
+        std::string figure;      // ("j001", "m206")
+        std::string position;    // its battledpos joint
+        cr2::Mat34 home;         // (there)
+        // its motion: `motion` (a suffix: "bb02") from `motionStart` (battle seconds), once unless
+        // `loop`, then `then` looping
+        std::string motion = "bb01", then = "bb01";
+        float motionStart = 0;
+        bool loop = true;
+        bool hidden = false;
     };
     std::vector<BattleUnit> battleUnits; // (the party, then the monsters)
     struct CameraFigure {
@@ -1018,7 +1028,8 @@ struct Viewer {
             } else {
                 SDL_Log("battle: no battledpos joint %s", su.position.c_str());
             }
-            u.first = su.figure + su.idle + ".anim", u.loop = su.figure + "bb01.anim";
+            u.figure = su.figure, u.position = su.position, u.home = u.fig.place;
+            u.motion = su.idle, u.then = "bb01", u.loop = su.idle == "bb01", u.motionStart = 0;
             log += " " + su.figure + su.colour + "@" + su.position;
             battleUnits.push_back(std::move(u));
         };
@@ -1067,32 +1078,237 @@ struct Viewer {
         return false;
     }
 
+    // a unit's figure on one of its motions (<figure><suffix>.anim; false: it has none)
+    bool useMotion(BattleUnit& u, const std::string& suffix) {
+        const std::string want = u.figure + suffix + ".anim";
+        const auto it = std::find(u.fig.anims.begin(), u.fig.anims.end(), want);
+        if (it == u.fig.anims.end()) return false;
+        if (!u.fig.animLoaded || u.fig.anims[u.fig.animIndex] != want) {
+            const float keep = time;
+            loadAnim(u.fig, size_t(it - u.fig.anims.begin()));
+            time = keep;
+        }
+        return true;
+    }
+    float motionLength(BattleUnit& u, const std::string& suffix) { return useMotion(u, suffix) ? u.fig.anim.duration() : 0.0f; }
+    void playMotion(BattleUnit& u, const std::string& suffix, float at, const std::string& then = "bb01") {
+        u.motion = suffix, u.then = then, u.motionStart = at, u.loop = false;
+    }
+
     void poseBattle() {
         pose(battleMap, battleClock);
+        poseBattleShow();
         for (BattleUnit& u : battleUnits) {
             if (!u.fig.skinned) continue;
-            // the first motion once, then the loop
-            float t = battleClock;
-            std::string want = u.loop;
-            const auto first = std::find(u.fig.anims.begin(), u.fig.anims.end(), u.first);
-            if (first != u.fig.anims.end() && u.first != u.loop) {
-                if (!u.fig.animLoaded || u.fig.anims[u.fig.animIndex] != u.first) {
-                    const float keep = time;
-                    loadAnim(u.fig, size_t(first - u.fig.anims.begin()));
-                    time = keep;
-                }
-                const float d = u.fig.anim.duration();
-                if (t < d) want = u.first;
-                else t -= d;
+            float t = battleClock - u.motionStart;
+            if (!u.loop) { // (once, then its stance)
+                const float d = motionLength(u, u.motion);
+                if (d <= 0 || t >= d) u.motionStart += std::max(d, 0.0f), u.motion = u.then, u.loop = true, t = battleClock - u.motionStart;
             }
-            const auto it = std::find(u.fig.anims.begin(), u.fig.anims.end(), want);
-            if (it != u.fig.anims.end() && (!u.fig.animLoaded || u.fig.anims[u.fig.animIndex] != want)) {
-                const float keep = time;
-                loadAnim(u.fig, size_t(it - u.fig.anims.begin()));
-                time = keep;
-            }
-            pose(u.fig, t, want == u.loop);
+            if (!useMotion(u, u.motion) && !useMotion(u, "bb01")) continue;
+            pose(u.fig, std::max(t, 0.0f), u.loop);
         }
+    }
+
+    // --fight solo | pair: the battle played by its rules (battle/rules.cpp), each turn's actions
+    // one after another as BtlActionCtrl shows an attack - the command's motion
+    // (BtlMotionTable's), the attacker moving to its aPos joint by the target over the table's
+    // move times and back over the second's, the targets' damage motion (bd01) at the first hit
+    // time, the downed hidden - the party attacking every turn
+    std::unique_ptr<cr2::BattleRules> battleRules;
+    int battleFight = 0; // 0 off, 1 solo, 2 pair
+    int fighterUnit[5] = {-1, -1, -1, -1, -1};
+    cr2::Skeleton battleApos;
+    std::vector<cr2::Mat34> battleAposWorld;
+    struct ShowAction {
+        int actor = -1, partner = -1, command = 0;
+        std::vector<cr2::BattleRules::Event> hits;
+    };
+    std::vector<ShowAction> showActions;
+    size_t showIndex = 0;
+    float showStart = 0; // (battle seconds)
+    float showHitAt = 0, showEnd = 0;
+    bool showHitDone = false;
+    struct Move {
+        int unit = -1;
+        cr2::Mat34 to;
+        float start = -1, end = -1, back = -1, backEnd = -1;
+        bool active = false;
+    } showMoves[2];
+
+    // the battleapos joint `name`'s place (false: none)
+    bool aposPlace(const std::string& name, cr2::Mat34& out) {
+        const int j = battleApos.joint(cr2::nameHash(name.c_str()));
+        if (j < 0 || size_t(j) >= battleAposWorld.size()) return false;
+        out = battleAposWorld[size_t(j)];
+        for (int c = 0; c < 3; ++c) {
+            const float l = std::sqrt(out.m[c] * out.m[c] + out.m[4 + c] * out.m[4 + c] + out.m[8 + c] * out.m[8 + c]);
+            if (l > 0) out.m[c] /= l, out.m[4 + c] /= l, out.m[8 + c] /= l;
+        }
+        return true;
+    }
+    // where an attacker goes to strike a target (BtlActionCtrl::GetAposName): by the target the
+    // party's "aPos_<its place><the attacker's: pSoloA, pPairA...>", by one of the party a
+    // monster's "aPos_<pSoloA | pSoloB | pPair><its place: s, ssL, m, msL...>"
+    std::string aposName(int actor, int target) {
+        auto key = [&](int f) {
+            const int u = fighterUnit[f];
+            std::string k = u >= 0 ? battleUnits[size_t(u)].position.substr(5) : "";
+            return k;
+        };
+        const bool pair = battleRules && battleRules->fighter(actor).partner >= 0;
+        if (actor < 2) return "aPos_" + key(target) + std::string(pair ? (actor == 0 ? "pPairA" : "pPairB") : (actor == 0 ? "pSoloA" : "pSoloB"));
+        std::string mk = key(actor);
+        if (mk == "sC") mk = "s";
+        else if (mk == "mC") mk = "m";
+        const bool targetPair = battleRules && battleRules->fighter(target).partner >= 0;
+        return "aPos_" + std::string(targetPair ? "pPair" : target == 0 ? "pSoloA" : "pSoloB") + mk;
+    }
+
+    void startFight(int mode, uint32_t seed) {
+        battleFight = mode;
+        battleRules = std::make_unique<cr2::BattleRules>(battleData, seed);
+        std::string err;
+        int party[2] = {0, 0};
+        for (size_t k = 0; k < battle.party.size() && k < 2; ++k) party[k] = battle.party[k].id;
+        if (!battleRules->start(battle.coupling, party, 0, &err)) {
+            SDL_Log("fight: %s", err.c_str());
+            battleRules.reset();
+            return;
+        }
+        int u = 0;
+        for (int k = 0; k < 2; ++k) fighterUnit[k] = party[k] > 0 ? u++ : -1;
+        for (int k = 0; k < 3; ++k) fighterUnit[2 + k] = k < int(battle.monsters.size()) ? int(battle.party.size()) + k : -1;
+        std::vector<uint8_t> d;
+        if (archive.read("battleapos.skel", d) && cr2::parseSkeleton(d, battleApos)) battleAposWorld = battleApos.world(battleApos.basePose);
+        showActions.clear(), showIndex = 0;
+        SDL_Log("fight: %s", mode == 2 ? "pair" : "solo");
+    }
+
+    // the party's places for its formation (BtlUtil::SetPairPosRot)
+    void placeParty(bool pair) {
+        cr2::Skeleton dpos;
+        std::vector<uint8_t> d;
+        if (!archive.read("battledpos.skel", d) || !cr2::parseSkeleton(d, dpos)) return;
+        const std::vector<cr2::Mat34> w = dpos.world(dpos.basePose);
+        for (int k = 0; k < 2; ++k) {
+            const int u = fighterUnit[k];
+            if (u < 0) continue;
+            const bool alone = fighterUnit[1 - k] < 0;
+            const std::string name = alone ? "dPos_pSoloC" : pair ? (k == 0 ? "dPos_pPairA" : "dPos_pPairB") : (k == 0 ? "dPos_pSoloA" : "dPos_pSoloB");
+            const int j = dpos.joint(cr2::nameHash(name.c_str()));
+            if (j < 0) continue;
+            cr2::Mat34 m = w[size_t(j)];
+            for (int c = 0; c < 3; ++c) {
+                const float l = std::sqrt(m.m[c] * m.m[c] + m.m[4 + c] * m.m[4 + c] + m.m[8 + c] * m.m[8 + c]);
+                if (l > 0) m.m[c] /= l, m.m[4 + c] /= l, m.m[8 + c] /= l;
+            }
+            BattleUnit& bu = battleUnits[size_t(u)];
+            bu.home = bu.fig.place = m, bu.position = name;
+        }
+    }
+
+    // the next action (or turn) once the last is over
+    void stepBattleShow() {
+        if (!battleRules || battleFight == 0) return;
+        if (showIndex < showActions.size() && battleClock < showEnd) return;
+        if (showIndex < showActions.size()) ++showIndex;
+        if (showIndex >= showActions.size()) {
+            if (battleRules->outcome()) return;
+            // a turn: the party attacking the first monster standing
+            const bool pair = battleFight == 2;
+            std::vector<cr2::BattleRules::Order> orders;
+            for (int k = 0; k < 2; ++k) {
+                const cr2::Fighter& f = battleRules->fighter(k);
+                if (!f.alive) continue;
+                cr2::BattleRules::Order o;
+                o.actor = k, o.command = f.attack;
+                for (int m = 2; m < 5; ++m)
+                    if (battleRules->fighter(m).alive) {
+                        o.target = m;
+                        break;
+                    }
+                orders.push_back(o);
+            }
+            placeParty(pair && battleRules->fighter(0).alive && battleRules->fighter(1).alive);
+            showActions.clear(), showIndex = 0;
+            for (const auto& e : battleRules->playTurn(pair, orders)) {
+                if (showActions.empty() || showActions.back().actor != e.actor || showActions.back().command != e.command)
+                    showActions.push_back({e.actor, e.partner, e.command, {}});
+                showActions.back().hits.push_back(e);
+            }
+            SDL_Log("turn %d: %zu actions; gauge %d", battleRules->turn(), showActions.size(), battleRules->gauge());
+            if (showActions.empty()) return;
+        }
+        beginShowAction(showActions[showIndex]);
+    }
+
+    void beginShowAction(const ShowAction& a) {
+        showStart = battleClock, showHitDone = false;
+        const cr2::BattleData::Command* c = battleData.command(a.command);
+        std::string motion = c ? c->motion : "bb01";
+        if (a.partner >= 0 && a.actor < 2) motion = "bp01"; // (the pair's command: +0x46, bp01)
+        float length = 0;
+        for (Move& m : showMoves) m = Move();
+        const int target = a.hits.empty() ? -1 : a.hits.front().target;
+        int slot = 0;
+        for (int f : {a.actor, a.partner}) {
+            const int u = f >= 0 ? fighterUnit[f] : -1;
+            if (u < 0) continue;
+            BattleUnit& bu = battleUnits[size_t(u)];
+            playMotion(bu, motion, battleClock);
+            length = std::max(length, motionLength(bu, motion));
+            cr2::MotionTimes t;
+            cr2::motionTimes(bu.figure, cr2::motionIndex(motion), t);
+            Move& m = showMoves[slot++];
+            m.unit = u;
+            if (target >= 0 && t.moveStart >= 0 && t.moveEnd >= t.moveStart && aposPlace(aposName(f, target), m.to)) {
+                m.active = true;
+                m.start = t.moveStart, m.end = t.moveEnd;
+                m.back = t.move2Start, m.backEnd = t.move2End;
+            }
+            if (f == a.actor) showHitAt = t.hit[0] >= 0 ? t.hit[0] : length * 0.5f;
+        }
+        showEnd = battleClock + std::max(length, 0.5f) + 0.3f;
+        if (c) SDL_Log("  %s: %s", battleRules->fighter(a.actor).name.c_str(), c->name[1].c_str());
+    }
+
+    void poseBattleShow() {
+        if (!battleRules || battleFight == 0) return;
+        stepBattleShow();
+        if (showIndex >= showActions.size()) return;
+        const ShowAction& a = showActions[showIndex];
+        const float s = battleClock - showStart;
+        // the attackers' way there and back
+        for (const Move& m : showMoves) {
+            if (m.unit < 0) continue;
+            BattleUnit& bu = battleUnits[size_t(m.unit)];
+            if (!m.active) {
+                bu.fig.place = bu.home;
+                continue;
+            }
+            float k = 0;
+            if (s >= m.start) k = m.end > m.start ? std::min((s - m.start) / (m.end - m.start), 1.0f) : 1.0f;
+            if (m.back >= 0 && s >= m.back) k = m.backEnd > m.back ? 1.0f - std::min((s - m.back) / (m.backEnd - m.back), 1.0f) : 0.0f;
+            if (m.back < 0 && s >= showEnd - showStart - 0.3f) k = 0;
+            cr2::Mat34 p = k < 0.5f ? bu.home : m.to; // (the turn: at the move's middle)
+            for (int r = 0; r < 3; ++r) p.m[r * 4 + 3] = bu.home.m[r * 4 + 3] + (m.to.m[r * 4 + 3] - bu.home.m[r * 4 + 3]) * k;
+            bu.fig.place = p;
+        }
+        // the hits
+        if (!showHitDone && s >= showHitAt) {
+            showHitDone = true;
+            for (const auto& e : a.hits) {
+                const int u = fighterUnit[e.target];
+                if (u < 0) continue;
+                BattleUnit& bu = battleUnits[size_t(u)];
+                if (e.hit) playMotion(bu, "bd01", battleClock);
+                SDL_Log("    %s -> %s: %s", battleRules->fighter(e.actor).name.c_str(), battleRules->fighter(e.target).name.c_str(),
+                        e.hit ? (std::to_string(e.damage) + (e.critical ? " critical" : "") + (e.defeated ? ", down" : "")).c_str() : "missed");
+            }
+        }
+        for (const auto& e : a.hits)
+            if (e.defeated && showHitDone && s > showHitAt + 0.6f && fighterUnit[e.target] >= 0) battleUnits[size_t(fighterUnit[e.target])].hidden = true;
     }
 
     void drawBattle(int w, int h) {
@@ -1112,7 +1328,8 @@ struct Viewer {
         l.time = time;
         dev->setLighting(l);
         drawFigure(battleMap, vp.data());
-        for (const BattleUnit& u : battleUnits) drawFigure(u.fig, vp.data());
+        for (const BattleUnit& u : battleUnits)
+            if (!u.hidden) drawFigure(u.fig, vp.data());
     }
 
     // The event (--event): its runtime, the vista's map figure, a figure for each of the scene's
@@ -1685,6 +1902,8 @@ int main(int argc, char** argv) {
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
     bool tapAfter = false;
     std::string eventName, vista = "null", fontPath, playFrom, callEntry = "evt000";
+    int fightMode = 0;
+    uint32_t fightSeed = 1;
     int battleId = 0, battleParty[2] = {1, 2}; // (--battle: Darwin and Orlando unless --party)
     float page = 3.0f;
     int width = 0, height = 0;    // the window (--size; else the resolution's, fitted to the display)
@@ -1713,6 +1932,8 @@ int main(int argc, char** argv) {
         else if (a == "--walk" && next) std::sscanf(next, "%f,%f,%f", &walkX, &walkY, &walkSeconds), ++i;
         else if (a == "--event" && next) eventName = next, ++i;
         else if (a == "--battle" && next) battleId = std::atoi(next), ++i;
+        else if (a == "--fight" && next) fightMode = !std::strcmp(next, "pair") ? 2 : 1, ++i;
+        else if (a == "--seed" && next) fightSeed = uint32_t(std::atoi(next)), ++i;
         else if (a == "--party" && next) std::sscanf(next, "%d,%d", &battleParty[0], &battleParty[1]), ++i;
         else if (a == "--vista" && next) vista = next, ++i;
         else if (a == "--page" && next) page = float(std::atof(next)), ++i;
@@ -1829,6 +2050,7 @@ int main(int argc, char** argv) {
     }
     v.load(start);
     if (battleId > 0 && !v.startBattle(battleId, battleParty)) return 1;
+    if (battleId > 0 && fightMode) v.startFight(fightMode, fightSeed);
     if (!eventName.empty()) {
         if (!v.startEvent(eventName, vista, page)) return 1;
         for (float t = 0; t + cr2::EventRuntime::kTick * 0.5f < startTime; t += cr2::EventRuntime::kTick) v.stepEvent();
@@ -1886,7 +2108,9 @@ int main(int argc, char** argv) {
             dev->endFrame(false);
         }
         // --run: frames as the window would show them, the event and animations going on
-        if (v.battleMode) v.battleClock = startTime; // (--time: that far into the battle)
+        if (v.battleMode) { // (--time: that far into the battle, played at 60 a second)
+            for (float t = 0; t + 0.5f / 60.0f < startTime; t += 1.0f / 60.0f) v.battleClock += 1.0f / 60.0f, v.pose();
+        }
         for (int k = 0; k < int(runSeconds * 60.0f + 0.5f); ++k) {
             v.time += 1.0f / 60.0f;
             v.advance(1.0f / 60.0f, walkX, walkY, true); // (the field on in --walk's direction)

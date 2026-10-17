@@ -119,3 +119,15 @@ three commands on turns given by its +0x94 values.
 
 The turn order (OrderPoint): Speed (a pair: the two's mean), +10000 a command with special 7,
 +5000 with the skill "ahead", -5000 for kind 4.
+
+## Showing an attack (BtlActionCtrl)
+
+ActionAttackStandby (a pair's commands swapped for the characters' +0x46 - Pair Attack, motion
+`bp01`), WaitAttackMotion (MoveToAttackPosition), Camera, WaitHit, Hit, Return, ... The times are
+BtlMotionTable's, built in code (tools/gen_motion_table.py -> engine/src/battle/motiontable.inc:
+69 figures' 25 motions, in frames / 20): +0x0c..+0x10 the move to the target, +0x14..+0x18 the
+move back, ten hit times from +0x1c, the turn, the effect. Where the attacker goes is a joint of
+`battleapos` (GetAposName: by a monster the party's `aPos_<its place><pSoloA | pSoloB | pPairA |
+pPairB>`, by the party a monster's `aPos_<pSoloA | pSoloB | pPair><s, ssL, m, msL ...>`; the
+fighters' indices +0xb48 / +0xb4c, +0xb50 / +0xb54 into BtlAposTable's names). Darwin's Slash
+(`j001bo01`): there over frames 4 - 10, the hit at 11, back over 25 - 32.

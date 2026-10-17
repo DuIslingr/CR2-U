@@ -98,7 +98,11 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] Battles' rules, the core: the fighters' stats (a new game's party as the reference video
       shows it), hits, criticals, damage, the monsters' choices, the turn order - `cr2tool fight
       222 pair` plays a battle by them (break gauge, sopia, items, states: not yet)
-- [ ] Battles on screen: the commands, the actions' motions and cameras, the windows
+- [x] Battles playing (`cr2view --battle 222 --fight pair`): each turn's actions as the game moves
+      them - the command's motion, to the target's attack place and back on BtlMotionTable's
+      times, the damage motion at the hit, the downed gone
+- [ ] Battles on screen: the commands to choose, the actions' cameras and effects, the numbers,
+      the windows
 - [ ] Treasure boxes, the other windows (announcements, tutorials, items), the HUD, the sounds
       between areas
 - [ ] Engine: events, battles, menus
@@ -122,7 +126,7 @@ One or more of:
 | `cr2view ... [--resolution WxH] [--upscaler off\|fsr3] [--quality native\|quality\|balanced\|performance\|ultra] [--sharpness 0..1] [--size WxH] [--fps n] [--run s]` | the output in any mode: 60 frames a second (`--fps`), frames of a resolution up to 3840 x 2160 (F1 steps through the window's size and 720p .. 2160p), FSR 3.1 (F2 steps through its modes), the window's size; a capture `--run`s that long first |
 | `cr2view --data <archive> --field <map> [--model c001] [--at point] [--binary file] [--walk sx,sy,s]` | a field: the arrow keys run the character (Shift walks) on the floors and against the walls; the maps' table comes from the executable beside the iPad's / Vita's archive, or `--binary` (Android: `lib/armeabi-v7a/libChaosRings2.so`) |
 | `cr2view --data <archive> --play [map] [--call function] [--tap] [--binary file]` | a new game (or from a map, `--call` one of its events in place of its entry - without what would call it, so no fade back in after): the field's scripts, events and vistas one after another as the game chains them; Return or a click turns a page or talks to what has a balloon (`--tap`: once, after `--walk`) |
-| `cr2view --data <archive> --battle <coupling> [--party a,b] [--time s]` | a battle's stage: its map, the party (characters a and b: Darwin 1, Orlando 2, Marie 3, ...) and the monsters, through the commands' camera |
+| `cr2view --data <archive> --battle <coupling> [--party a,b] [--fight solo\|pair] [--seed n] [--time s]` | a battle's stage: its map, the party (characters a and b: Darwin 1, Orlando 2, Marie 3, ...) and the monsters, through the commands' camera; `--fight`: played by its rules, the party attacking each turn |
 | `cr2tool check / scripts / run / images / models / compare-models / animations / pose / shaders / walk / exits / fieldscript / battle / fight` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared, the shader keys against their GLSL, the field player on every map, every map's exits, every map's entry script, every encounter's set-up, a battle played by its rules |
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
 | `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |

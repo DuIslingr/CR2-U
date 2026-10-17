@@ -475,7 +475,12 @@ struct Viewer {
     // an iai (FldIai) takes the button out (then gmk4csr_loop) and waits for a slash: a press,
     // then within 10 frames its line from where it began past the mark - the mark's foot on the
     // line within 128 of it (Cr3UtilCheckCuttingCircle) - SE 0x164, the ring out, the gimmick's
-    // function called (FldMain::CallEvent); else SE 0x165, the mark anew
+    // function called (FldMain::CallEvent); else SE 0x165, the mark anew. An aim (FldAim) takes
+    // the button out too (then FieldGimickEffect05Menu::SetAimingSet: gmk5mark_io on the mark,
+    // gmk5goal_io on the leader, gmk5line between): a press within 128 of the mark, the ring
+    // dragged with it (the line to it, scaled by its length / 0.112), let go within 128 of the
+    // leader - SE 0x164, the function called -; let go elsewhere, or a press away from the mark,
+    // SE 0x165 and the mark anew
     struct ActionMark {
         int gimmick = -1, kind = 0;
         bool able = false;
@@ -492,7 +497,11 @@ struct Viewer {
         int stage = 0; // 0 none, 1 the slash awaited, 2 pressed
         float x0 = 0, y0 = 0, pressedAt = 0;
     } iai;
-    bool actionRunning() const { return sprint.stage != 0 || iai.stage != 0; }
+    struct Aim {
+        int stage = 0; // 0 none, 1 a press on the mark awaited, 2 dragging
+        float x = 0, y = 0; // (the touch: the interface's units)
+    } aim;
+    bool actionRunning() const { return sprint.stage != 0 || iai.stage != 0 || aim.stage != 0; }
     void updateActionMark() {
         if (actionRunning()) return;
         if (actionMark.startedAt >= 0 && (actionMark.endedAt < 0 || uiClock - actionMark.endedAt > 0.5f)) actionMark = ActionMark();
@@ -536,6 +545,9 @@ struct Viewer {
         } else if (actionMark.kind == 4) {
             iai = Iai();
             iai.stage = 1;
+        } else if (actionMark.kind == 5) {
+            aim = Aim();
+            aim.stage = 1;
         } else {
             SDL_Log("%s: %s - its game isn't in yet", field.info().name.c_str(), g.name.c_str());
             return;
@@ -553,10 +565,11 @@ struct Viewer {
         return true;
     }
     void iaiEnd(bool success) {
-        if (!iai.stage) return;
-        iai = Iai();
+        if (!iai.stage && !aim.stage) return;
+        const char* what = iai.stage ? "iai" : "aim";
+        iai = Iai(), aim = Aim();
         const std::string function = field.gimmicks()[size_t(actionMark.gimmick)].name;
-        SDL_Log("%s: iai %s", field.info().name.c_str(), success ? "succeeded" : "failed");
+        SDL_Log("%s: %s %s", field.info().name.c_str(), what, success ? "succeeded" : "failed");
         if (!success) {
             audio.playSe(0x165, false);
             actionMark.startedAt = -1, actionMark.at = uiClock; // (the mark anew)
@@ -581,6 +594,23 @@ struct Viewer {
         const float t = ((mx - iai.x0) * dx + (my - iai.y0) * dy) / l2;
         if (t < 0 || t > 1) return;
         if (std::hypot(iai.x0 + t * dx - mx, iai.y0 + t * dy - my) * 2048.0f < 128.0f) iaiEnd(true);
+    }
+    // the leader's place in the interface's units (FldUtilGet2DPos)
+    bool leaderPlace(float& x, float& y) { return uiPlace(player, x, y); }
+    // the mouse in an aim (phase 0 pressed, 1 dragged, 2 let go)
+    void aimPointer(float fx, float fy, int phase) {
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+        float mx, my, lx, ly;
+        if (!actionMarkPlace(mx, my) || !leaderPlace(lx, ly)) return;
+        if (aim.stage == 1 && phase == 0) {
+            if (std::hypot(x - mx, y - my) * 2048.0f <= 128.0f) aim.stage = 2, aim.x = x, aim.y = y;
+            else iaiEnd(false);
+        } else if (aim.stage == 2 && phase == 1) {
+            aim.x = x, aim.y = y;
+        } else if (aim.stage == 2 && phase == 2) {
+            iaiEnd(std::hypot(x - lx, y - ly) * 2048.0f <= 128.0f);
+        }
     }
     void updateIai() {
         if (iai.stage == 2 && uiClock - iai.pressedAt > 10.0f / 60.0f) iaiEnd(false); // (10 frames)
@@ -612,10 +642,16 @@ struct Viewer {
         const std::string ring = "gmk" + std::to_string(actionMark.kind) + "rng";
         UiFig& r = uiFig(ring);
         const float io = duration(r, ring + "_io");
-        if (actionMark.endedAt >= 0) poseUi(r, ring + "_out", te);
+        if (actionMark.kind == 5 && aim.stage == 2) { // (dragged)
+            const float keepX = x, keepY = y;
+            x = aim.x, y = aim.y;
+            poseUi(r, ring + "_wait", t - io, true);
+            at(r);
+            x = keepX, y = keepY;
+        } else if (actionMark.endedAt >= 0) poseUi(r, ring + "_out", te);
         else if (t < io) poseUi(r, ring + "_io", t);
         else poseUi(r, ring + "_wait", t - io, true);
-        at(r);
+        if (!(actionMark.kind == 5 && aim.stage == 2)) at(r);
         if (actionMark.endedAt >= 0) return;
         UiFig& b = uiFig("gmkbtn");
         if (actionMark.startedAt < 0) {
@@ -630,6 +666,28 @@ struct Viewer {
             UiFig& c = uiFig("gmk4csr_loop");
             poseUi(c, "gmk4csr_loop", ts - out, true);
             at(c);
+        } else if (actionMark.kind == 5 && aim.stage) { // (the aim's: the mark, the goal, the line)
+            float lx, ly;
+            const float ta = ts - out;
+            UiFig& mk = uiFig("gmk5mark_io");
+            poseUi(mk, "gmk5mark_io", ta);
+            at(mk);
+            if (leaderPlace(lx, ly)) {
+                UiFig& g = uiFig("gmk5goal_io");
+                poseUi(g, "gmk5goal_io", ta);
+                g.fig.place = cr2::Mat34();
+                g.fig.place.m[3] = lx, g.fig.place.m[7] = ly, g.fig.place.m[11] = -0.2f;
+                drawFigure(g.fig, view.data());
+            }
+            const float tx = aim.stage == 2 ? aim.x : x, ty = aim.stage == 2 ? aim.y : y;
+            const float len = std::hypot(tx - x, ty - y), ang = std::atan2(tx - x, ty - y);
+            UiFig& ln = uiFig("gmk5line");
+            poseUi(ln, "gmk5line", ta);
+            const float c = std::cos(ang), sn = std::sin(ang), sy = std::max(len / 0.112f, 0.1f);
+            ln.fig.place = cr2::Mat34(); // (turned to the touch about z, its y scaled)
+            ln.fig.place.m[0] = c, ln.fig.place.m[1] = sn * sy, ln.fig.place.m[4] = -sn, ln.fig.place.m[5] = c * sy;
+            ln.fig.place.m[3] = x, ln.fig.place.m[7] = y, ln.fig.place.m[11] = -0.2f;
+            drawFigure(ln.fig, view.data());
         }
     }
     int sprintAt() const {
@@ -1333,7 +1391,7 @@ struct Viewer {
         }
         boxesDungeon = dungeon;
         keyLock = KeyLock();
-        actionMark = ActionMark(), sprint = Sprint(), iai = Iai();
+        actionMark = ActionMark(), sprint = Sprint(), iai = Iai(), aim = Aim();
         // the dungeon's script sets the area up (evt000: which gimmicks show, which collide)
         if (!script) script = std::make_unique<cr2::FieldScript>(archive, game);
         script->events().autoPage = pageSeconds;
@@ -1400,9 +1458,17 @@ struct Viewer {
             inputNext = uiClock + 0.4f;
             return;
         }
-        if (!inputScript.empty() && uiClock >= inputNext && iai.stage && uiClock - actionMark.startedAt > 1.0f &&
-            (inputScript.front() == "slash" || inputScript.front() == "slashfail")) { // (the iai: a slash past the mark, or not)
-            iaiEnd(inputScript.front() == "slash");
+        if (!inputScript.empty() && uiClock >= inputNext && (iai.stage || aim.stage) && uiClock - actionMark.startedAt > 1.0f &&
+            (inputScript.front() == "slash" || inputScript.front() == "slashfail" || inputScript.front() == "aim" ||
+             inputScript.front() == "aimfail" || inputScript.front() == "drag")) { // (the iai: a slash past the mark, or not; the aim: drawn back to the leader, or not)
+            if (inputScript.front() == "drag") { // (an aim's press on the mark, dragged halfway: tests)
+                float mx, my, lx, ly;
+                if (aim.stage && actionMarkPlace(mx, my) && leaderPlace(lx, ly)) aim.stage = 2, aim.x = (mx + lx) / 2, aim.y = (my + ly) / 2;
+                inputScript.pop_front();
+                inputNext = uiClock + 0.4f;
+                return;
+            }
+            iaiEnd(inputScript.front() == "slash" || inputScript.front() == "aim");
             inputScript.pop_front();
             inputNext = uiClock + 0.4f;
             return;
@@ -5049,7 +5115,7 @@ struct Viewer {
     float fieldTabAt = -10; // (uiClock: when it last began to open or close)
     bool fieldTabShown() const {
         return fieldMode && !eventMode && !battleMode && script && !script->running() && !campOpen && !mapOpen && !saveStage &&
-               keyLock.stage == 0 && changeStage == 0 && sprint.stage == 0 && iai.stage == 0;
+               keyLock.stage == 0 && changeStage == 0 && sprint.stage == 0 && iai.stage == 0 && aim.stage == 0;
     }
     float fieldTabPose(UiFig& tab) {
         const float d = tab.fig.animLoaded ? tab.fig.anim.duration() : 0.0f;
@@ -6707,6 +6773,7 @@ int main(int argc, char** argv) {
                     if (v.battleMode && v.choosing) v.battleClick(fx, fy);
                     else if (v.fieldMode && !v.eventMode && v.keyLock.stage != 0) v.unlockPointer(fx, fy, 0);
                     else if (v.fieldMode && !v.eventMode && v.iai.stage) v.iaiPointer(fx, fy, 0);
+                    else if (v.fieldMode && !v.eventMode && v.aim.stage) v.aimPointer(fx, fy, 0);
                     else if (v.fieldMode && !v.eventMode && (v.sprintTap(fx, fy) || v.actionTap(fx, fy))) {}
                     else if (v.fieldMode && !v.eventMode && v.fieldClick(fx, fy)) {
                     } else if (v.eventMode || v.fieldMode || v.battleMode) v.tap();
@@ -6714,10 +6781,16 @@ int main(int argc, char** argv) {
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
                     dragging = false;
                     if (v.fieldMode && v.keyLock.stage == 1) v.unlockPointer(0, 0, 2);
-                } else if (e.type == SDL_EVENT_MOUSE_MOTION && dragging && v.fieldMode && (v.keyLock.stage == 1 || v.iai.stage == 2)) {
+                    if (v.fieldMode && v.aim.stage == 2) {
+                        float fx, fy;
+                        screenFraction(e.button.x, e.button.y, fx, fy);
+                        v.aimPointer(fx, fy, 2);
+                    }
+                } else if (e.type == SDL_EVENT_MOUSE_MOTION && dragging && v.fieldMode && (v.keyLock.stage == 1 || v.iai.stage == 2 || v.aim.stage == 2)) {
                     float fx, fy;
                     screenFraction(e.motion.x, e.motion.y, fx, fy);
                     if (v.iai.stage == 2) v.iaiPointer(fx, fy, 1);
+                    else if (v.aim.stage == 2) v.aimPointer(fx, fy, 1);
                     else v.unlockPointer(fx, fy, 1);
                 }
                 else if (e.type == SDL_EVENT_MOUSE_MOTION && dragging && v.campOpen && v.campLink == 201) { // (the scenarios dragged up and down)

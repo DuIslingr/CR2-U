@@ -156,8 +156,12 @@ else's `gmk0rng_io`), gone as the leader leaves; a tap within 128 of it starts t
 `gmk4csr_loop`) and waits for a slash: a press, then within 10 frames the line from where it
 began must pass the mark - the mark's foot on it, within 128 (Cr3UtilCheckCuttingCircle) - SE
 0x164, the ring out, and the gimmick's own function called (FldMain::CallEvent: `iai01` - its
-flag, its obstacle cut, the action off); else SE 0x165 and the mark anew. (The mystic's, aim's
-and hakkei's games: not yet.) `SkipMessage` shows the page whole
+flag, its obstacle cut, the action off); else SE 0x165 and the mark anew. An aim (FldAim) takes
+the button out too, then shows its set (FieldGimickEffect05Menu::SetAimingSet: `gmk5mark_io` on the
+mark, `gmk5goal_io` on the leader, `gmk5line` from the mark to the touch, its length / 0.112):
+a press within 128 of the mark drags the ring, and letting go within 128 of the leader succeeds
+(SE 0x164, the function called); a press away from the mark, or letting go elsewhere, fails.
+(The mystic's and the hakkei's games: not yet.) `SkipMessage` shows the page whole
 (the typing skipped); the message stays until a tap or the window's Close.
 
 An area's script runs on the game's 20 updates a second like an event's, and uses the same

@@ -2698,11 +2698,29 @@ struct Viewer {
             poseUi(th, "scrlmtr_per", shown * 100.0f / 20.0f);
             drawFigure(th.fig, view.data());
         }
-        for (int k = std::max(fi - 2, 0); k < int(rows.size()) && k <= fi + 2; ++k) {
+        // (ScrollItemInitialize / SetLIstBottomItem: four rows or more between two end items - before
+        // the first scrlLow, its tap the last row; after the last scrlTop, its tap the first -,
+        // fewer without them)
+        const int n = int(rows.size());
+        const bool ends = n >= 4;
+        for (int d = -2; d <= 2; ++d) {
+            const int k = fi + d;
+            if (k < (ends ? -1 : 0) || k > (ends ? n : n - 1)) continue;
+            if (k < 0 || k >= n) {
+                const std::string fig = k < 0 ? "scrllow" : "scrltop";
+                UiFig& e = uiFig(fig);
+                e.fig.place = cr2::Mat34();
+                e.fig.place.m[7] = -0.08f * float(d);
+                poseUi(e, fig + "_io", t);
+                drawFigure(e.fig, view.data());
+                float sx, sy, ex, ey;
+                if (uiJoint(e, "tapAreaS01", sx, sy) && uiJoint(e, "tapAreaE01", ex, ey)) tapRects.push_back({1000 + (k < 0 ? n - 1 : 0), sx, sy, ex, ey});
+                continue;
+            }
             const ListRow& r = rows[size_t(k)];
             UiFig& b = uiFig("scrlbtn");
             b.fig.place = cr2::Mat34();
-            b.fig.place.m[7] = 0.08f * float(fi - k);
+            b.fig.place.m[7] = -0.08f * float(d);
             poseUi(b, "scrlbtn_io", t);
             for (ViewMesh& vm : b.fig.meshes) {
                 vm.material.params[0x33] = !r.selectable ? std::vector<float>{0.5f, 0.5f, 0.5f, 1.0f} : vm.baseMaterial.params[0x33];

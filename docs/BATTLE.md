@@ -119,6 +119,21 @@ Roar ...) - fills none. A battle starts at 0, or 100 when the first of the party
 posed at min(charge, 300) / 10 / 20 s - 1.5 s full (BreakWindowMenu::Update), played there forwards
 or back.
 
+The awakenings (BtlCommand::CheckCommandAwake / SetCommandAwakeList / StepAwakeLoop; three tables
+in the library, tools/gen_awake_table.py -> engine/src/battle/awaketable.inc): each character
+(from 0) has up to three awakening commands, each behind a story flag (9999: none) - Darwin's
+Executioner 121 (flag 3001), Collbrande 122 (3002), Godslayer 123 (3003); the eighth row, 121 and
+123 without flags. Its cost by the command's +0x48: level 1 100, 2 200, 3 300. The command menu
+shows Awake (+0x3e) when one of the party has one whose flag is set and whose cost the charge less
+what this turn has set aside (+0x2c: the first's choice) covers; the list (the select menu's
+buttons: its name and level) offers the character's, those it can't pay for not selectable; one
+on a single foe goes on to its target. The charge is spent as it acts (ActionAwakeStandby) -
+not with the script's switch 42 on: the prologue (221) sets it, and its Battle_Start the flags
+3001 / 3002 for the length of the battle.
+
+A turn the script reserves (ReserveCommand) is played without the menus (BtlCommand::StepEvent):
+the first battle with an advent (226) gives the pair Gale Roar so.
+
 ## The monsters' choice (BtlEnemy)
 
 A monster record holds ten commands (+0x58 s16), each with a condition (+0x6c u8), a target rule

@@ -110,10 +110,10 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       they fill (`cr2tool fight 221`: all 49 scripted encounters run); the charge gauge filling
       by the hits and its ring on the HUD
 - [x] Choosing the commands: the game's menus (Solo / Pair, Attack / Defend, the targets with
-      their levels and HP; Escape by BtlCalc::Escape), tapped or with the keys (Up / Down, Left / Right, Return, Backspace
+      their levels and HP; Escape by BtlCalc::Escape; the awakenings, paid with the charge), tapped or with the keys (Up / Down, Left / Right, Return, Backspace
       back), the menus' cameras (`cr2view --battle 222 --fight manual`, `--play`; `--input "solo
       attack 2 defend"` gives the choices)
-- [ ] Battles on screen: Sopia, Items, Options and the awakenings' / advents' lists, the
+- [ ] Battles on screen: Sopia, Items, Options, the advents' list, the awakenings' own scenes, the
       targets' camera, the actions' effects, the battles' tutorials
 - [ ] Treasure boxes, the other windows (announcements, tutorials, items), the HUD, the sounds
       between areas
@@ -152,6 +152,7 @@ and the APK) or `ipad/` (the `.app` or the unpacked `.ipa`).
 | `tools/skel.py` | Edge skeletons: base pose, hierarchy, world matrices; `check` against the inverse binds |
 | `tools/gen_camera_table.py` | the battle cameras' table (BtlCameraTable and their names) from the decompilation and the library, as `engine/src/battle/cameratable.inc` |
 | `tools/gen_dotnum_table.py` | the interface's digits (DotNumParamPackTable: each glyph's size and place in hud_dotnum) from the library, as `engine/src/gfx/dotnumtable.inc` |
+| `tools/gen_awake_table.py` | the characters' awakenings (their commands, the flags they need, their charge costs) from the decompilation and the library, as `engine/src/battle/awaketable.inc` |
 | `tools/gen_motion_table.py` | the battle motions' timing table (BtlMotionTable, built in the game's code) from the decompilation, as `engine/src/battle/motiontable.inc` |
 | `tools/sq_bindings.py` | the scripts' native API, from the Android library's decompilation |
 | `tools/re_setup.sh` | Ghidra groundwork in `re/` (never committed): the Android library (x86 and armv7, named), the iPad and Vita builds named from it |

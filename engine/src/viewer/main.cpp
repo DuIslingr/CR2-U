@@ -1254,7 +1254,7 @@ struct Viewer {
         menuStart = battleClock, menuCursor = 0;
         using CI = cr2::CommandInput;
         if (commandInput.menu() == CI::Menu::First) setBattleCamera(battle.camera);
-        else if (commandInput.menu() == CI::Menu::Command) setBattleCamera(commandInput.pairTurn() ? 0x1d : commandInput.actor() == 0 ? 0x1a : 0x1b);
+        else if (commandInput.menu() == CI::Menu::Command || commandInput.menu() == CI::Menu::Awake) setBattleCamera(commandInput.pairTurn() ? 0x1d : commandInput.actor() == 0 ? 0x1a : 0x1b);
     }
     // a token of --input as a choice
     void inputToken(const std::string& t) {
@@ -1272,6 +1272,8 @@ struct Viewer {
                 return;
             }
         if (t == "back") commandInput.back(), ok = true;
+        else if (t.size() > 1 && t[0] == 'a' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickAwakening(std::atoi(t.c_str() + 1));
+        else if (t == "awake") ok = commandInput.press(cr2::CommandInput::Awake);
         else if (!t.empty() && std::isdigit(static_cast<unsigned char>(t[0]))) ok = commandInput.pick(std::atoi(t.c_str()));
         else
             for (const auto& [n, id] : kNames)
@@ -1283,12 +1285,18 @@ struct Viewer {
     std::vector<int> menuChoices() const {
         std::vector<int> out;
         if (commandInput.menu() == cr2::CommandInput::Menu::Target) return commandInput.targets();
+        if (commandInput.menu() == cr2::CommandInput::Menu::Awake) {
+            for (const auto& a : commandInput.awakenings())
+                if (a.selectable) out.push_back(a.command);
+            return out;
+        }
         for (const auto& b : commandInput.buttons())
             if (b.selectable) out.push_back(b.id);
         return out;
     }
     void choose(int idOrFighter) {
         if (commandInput.menu() == cr2::CommandInput::Menu::Target) commandInput.pick(idOrFighter);
+        else if (commandInput.menu() == cr2::CommandInput::Menu::Awake) commandInput.pickAwakening(idOrFighter);
         else commandInput.press(idOrFighter);
         menuChanged();
     }
@@ -1298,6 +1306,7 @@ struct Viewer {
         keysUsed = true;
         const std::vector<int> c = menuChoices();
         const bool target = commandInput.menu() == cr2::CommandInput::Menu::Target;
+        // (the awakenings' list goes up and down)
         if (k == SDLK_BACKSPACE) commandInput.back(), menuChanged();
         else if (c.empty()) return;
         else if (k == (target ? SDLK_RIGHT : SDLK_DOWN)) menuCursor = (menuCursor + 1) % int(c.size());
@@ -1412,9 +1421,10 @@ struct Viewer {
             battleStep = BattleStep::TurnChoose;
             break;
         case BattleStep::TurnChoose: { // the party attacking the first monster standing
-            if (manualCommands) {
+            if (manualCommands && !battleRules->scriptTurnReserved()) {
                 if (!choosing) {
-                    commandInput.begin(*battleRules, battleData.coupling(battle.coupling) && battleData.coupling(battle.coupling)->flag);
+                    commandInput.begin(*battleRules, battleData.coupling(battle.coupling) && battleData.coupling(battle.coupling)->flag,
+                                       [this](int f) { return game.flag(f); });
                     choosing = true;
                     menuChanged();
                     inputNext = battleClock + 0.4f;
@@ -1465,7 +1475,7 @@ struct Viewer {
         case BattleStep::ActionStart:
             if (!battleRules->actionsLeft()) {
                 battleRules->endTurn();
-                SDL_Log("turn over; gauge %d", battleRules->gauge());
+                SDL_Log("turn over; gauge %d, charge %d", battleRules->gauge(), battleRules->charge());
                 battleStep = BattleStep::TurnBegin;
                 break;
             }
@@ -2264,6 +2274,8 @@ struct Viewer {
             const auto lt = labels.find(n);
             float tx, ty;
             if (lt != labels.end() && w > 0 && uiJoint(c, "typeM_C01", tx, ty)) drawUiText(lt->second, 24, tx, ty, w, h);
+            float ax, ay;
+            if (buttonLevel && w > 0 && uiJoint(c, "call_dotNum_id30", ax, ay)) drawDigits(buttonLevel(n), 120, 3, ax, ay, uiProjection(w, h));
             if (buttonFighter) { // a target's (CircleBtn::SetLevelNumbers / SetHPGauge)
                 const int f = buttonFighter(n);
                 if (f >= 0 && w > 0) {
@@ -2285,6 +2297,7 @@ struct Viewer {
     // a button's look as drawn: 0 not selectable, 1 as it is, 2 focused (the keys' cursor)
     std::function<int(int)> buttonLook;
     std::function<int(int)> buttonFighter; // (a target button's fighter, -1 none)
+    std::function<int(int)> buttonLevel;   // (an awakening button's level)
     // the menu of the choosing's step, the cursor's choice marked (the keys')
     void drawChoosing(const Mat4& view, int w, int h) {
         using CI = cr2::CommandInput;
@@ -2306,6 +2319,28 @@ struct Viewer {
             drawCommandMenu("btlbtn3rd_io", t, view, ids, names, w, h, CI::TargetFirst);
             buttonLook = nullptr, buttonFighter = nullptr;
             for (TapRect& r : tapRects) r.id = commandInput.targets()[size_t(r.id - CI::TargetFirst)]; // (a click: the fighter)
+        } else if (commandInput.menu() == CI::Menu::Awake) {
+            // the awakenings on the select menu's buttons (BtlInterfaceCtrl::AddCommandAwake: its
+            // name and level, not selectable when the charge can't pay for it)
+            const std::vector<CI::Awakening> list = commandInput.awakenings();
+            std::vector<int> ids;
+            std::map<int, std::string> names;
+            for (size_t k = 0; k < list.size() && k < 5; ++k) {
+                const cr2::BattleData::Command* c = battleData.command(list[k].command);
+                ids.push_back(CI::TargetFirst + int(k));
+                names[CI::TargetFirst + int(k)] = c ? c->name[1] : "?";
+            }
+            buttonLook = [&](int id) {
+                const CI::Awakening& a = list[size_t(id - CI::TargetFirst)];
+                return !a.selectable ? 0 : a.command == cursor && keysUsed ? 2 : 1;
+            };
+            buttonLevel = [&](int id) { return list[size_t(id - CI::TargetFirst)].level; };
+            drawCommandMenu("btlbtn3rd_io", t, view, ids, names, w, h, CI::TargetFirst);
+            buttonLook = nullptr, buttonLevel = nullptr;
+            for (TapRect& r : tapRects) {
+                const CI::Awakening& a = list[size_t(r.id - CI::TargetFirst)];
+                r.id = a.selectable ? a.command : -1;
+            }
         } else {
             std::vector<int> ids;
             for (const auto& b : commandInput.buttons()) ids.push_back(b.id);
@@ -2546,6 +2581,7 @@ int main(int argc, char** argv) {
     std::string eventName, vista = "null", fontPath, playFrom, callEntry = "evt000";
     int fightMode = 0;
     std::string inputArg; // (--input: the commands chosen, as tokens)
+    std::vector<int> flagsArg;
     bool skipBattlesOpt = false;
     uint32_t fightSeed = 1;
     int battleId = 0, battleParty[2] = {1, 2}; // (--battle: Darwin and Orlando unless --party)
@@ -2579,6 +2615,7 @@ int main(int argc, char** argv) {
         else if (a == "--skip-battles") skipBattlesOpt = true;
         else if (a == "--fight" && next) fightMode = !std::strcmp(next, "pair") ? 2 : !std::strcmp(next, "manual") ? 3 : 1, ++i;
         else if (a == "--input" && next) inputArg = next, ++i;
+        else if (a == "--flag" && next) flagsArg.push_back(std::atoi(next)), ++i; // (a story flag set to begin with: tests)
         else if (a == "--seed" && next) fightSeed = uint32_t(std::atoi(next)), ++i;
         else if (a == "--party" && next) std::sscanf(next, "%d,%d", &battleParty[0], &battleParty[1]), ++i;
         else if (a == "--vista" && next) vista = next, ++i;
@@ -2714,6 +2751,7 @@ int main(int argc, char** argv) {
         if (e == std::string::npos) break;
         p = e + 1;
     }
+    for (int f : flagsArg) v.game.setFlag(f, true);
     if (battleId > 0 && fightMode) v.startFight(fightMode == 3 ? 2 : fightMode, fightSeed);
     if (!eventName.empty()) {
         if (!v.startEvent(eventName, vista, page)) return 1;

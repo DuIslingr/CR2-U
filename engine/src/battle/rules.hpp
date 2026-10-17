@@ -65,6 +65,7 @@ public:
     bool start(int coupling, const int party[2], int dungeonLevel = 0, std::string* error = nullptr);
 
     const Fighter& fighter(int i) const { return fighters_[size_t(i)]; }
+    const BattleData& data() const { return data_; }
     int turn() const { return turn_; }
     // The break gauge (BtlWork +0x1e, -4 .. 4: the party's way up): a hit on a weakness, a
     // critical, a fighter downed move it a point each (BtlActionCtrl::UpdateBreakGauge; none on a
@@ -119,6 +120,7 @@ public:
     void setScriptTarget(int f, int target) { if (f >= 0 && f < 5) scripted_.target[f] = target; }
     void setScriptPair(int f) { if (f >= 0 && f < 2) scripted_.pair = true; }
     void reserveScriptTurn() { scripted_.reserved = true; }
+    bool scriptTurnReserved() const { return scripted_.reserved; } // (BtlCommand::StepEvent: no menus then)
     // Invoke(0): every fighter standing rid of its states (BtlStateManager::Clear)
     void clearStates();
     // BtlCalc::Escape for the party: sure in its turn break or with skill (4, 3) - its own, or

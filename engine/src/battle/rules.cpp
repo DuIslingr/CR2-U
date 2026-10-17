@@ -295,6 +295,12 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
     } else if (c->target == 1) {
         targets.push_back(o.actor);
     }
+    // an awakening's charge (BtlActionCtrl::ActionAwakeStandby: 100 / 200 / 300 by its level, none
+    // with the script's switch 42 on - the prologue's)
+    if (o.actor < 2 && c->awaken >= 1 && c->awaken <= 3 && !scriptSwitch(42)) {
+        static const int kCost[3] = {100, 200, 300};
+        charge_ = std::max(charge_ - kCost[c->awaken - 1], 0);
+    }
     if (c->kind != 0 && c->kind != 7 && c->kind != 5 && c->kind != 12) return; // (states, restores: not yet)
     for (int t : targets) {
         Fighter& tf = fighters_[size_t(t)];

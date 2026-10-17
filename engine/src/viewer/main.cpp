@@ -3766,6 +3766,7 @@ struct Viewer {
     std::unique_ptr<cr2::EventRuntime> event;
     bool eventMode = false;
     ViewFigure vistaMap;
+    float vistaMapTime = 0; // (its own animation's time: held while SetMapAnimPause says)
     std::vector<ViewFigure> eventFigures;
     std::vector<std::string> eventFigureNames; // (what eventFigures were made for)
     float eventClock = 0;
@@ -3808,6 +3809,7 @@ struct Viewer {
         eventEnded = false, eventClock = 0, messageLogged = false;
         if (map != "null" && !loadFigure(map + ".geom", vistaMap, &err)) SDL_Log("vista %s: %s", map.c_str(), err.c_str());
         vistaMap.absolute = true; // (VistaMain::LoadMapData: slot 0)
+        vistaMapTime = 0;
         event = std::make_unique<cr2::EventRuntime>(archive, game);
         event->autoPage = pageSeconds, event->askYesNo = true;
         if (!event->start(function)) {
@@ -3866,6 +3868,7 @@ struct Viewer {
     float eventLead() const { return battleMode && battleScript ? battleScriptClock : eventMode ? (eventEnded ? 0.0f : eventClock) : fieldClock; }
 
     void updateEvent(float dt) {
+        if (event && !event->mapAnimPaused) vistaMapTime += dt;
         eventClock = std::min(eventClock + dt, 0.25f);
         for (; eventClock >= cr2::EventRuntime::kTick && eventMode; eventClock -= cr2::EventRuntime::kTick) stepEvent();
     }
@@ -3873,7 +3876,7 @@ struct Viewer {
     // the models where the scene has them, playing what the script chose (ChangeAnimator: their
     // <figure><suffix>; else the figure's own), their faces as ChangeModelFace left them
     void poseEvent() {
-        pose(vistaMap, time);
+        pose(vistaMap, vistaMapTime);
         poseEventModels(*event);
     }
 

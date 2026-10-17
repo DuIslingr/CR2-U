@@ -424,7 +424,14 @@ camera, the moves, the animations and the fades where they are by then. The scri
   to)` (the model along its locator), `CameraMove(from, to)` / `LightMove` (to + 1: the frame's
   end), `CameraQuake(width, from %, to %, frames)` / `CameraQuakeStop` (EvtUtilVistaCameraQuake,
   VistaMain::Pose: each update the camera moved along its own up axis by width x the rate - from ..
-  to over the frames, then held, or stopped when it ends at 0 - one way, then back). The vista camera's near plane is at least 0.05, its far 5 x the camera's (at most 5000;
+  to over the frames, then held, or stopped when it ends at 0 - one way, then back).
+  `DirectionalLightColorAnimStart(from intensity, to intensity, from colour, to colour, frames)`
+  / `DirectionalLightColorDirectStart(intensity, colour)` / `...DirectStop` and the hemisphere's
+  (`HemisphereLightColorAnimStart(sky from, sky to, ground from, ground to, frames)`,
+  `...DirectStart(sky, ground)`, `...DirectStop`; Cr3Struct.Vector3 / Vector4 arguments): VistaMain::
+  Update steps them a frame each update, VistaMain::Draw puts them over the light figure's colours
+  (the directional light intensity x colour, the hemisphere's sky and ground) while one is animating
+  or held. `SetMapAnimPause(on)` holds the vista map's own animation. The vista camera's near plane is at least 0.05, its far 5 x the camera's (at most 5000;
   VistaCamera::Init, but for D11_06_0102 and D12_03_0106a). `ExecutionStart` /
   `ExecutionEndStart` wait for the player's slash (`WaitPlayerSlash`: `CheckExecution` each
   frame);

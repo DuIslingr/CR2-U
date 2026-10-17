@@ -142,6 +142,18 @@ void EventScene::update(float dt) {
     }
     cameraTime_ = std::min(cameraTime_ + dt, std::max(cameraEnd_, cameraTime_));
     lightTime_ = std::min(lightTime_ + dt, std::max(lightEnd_, lightTime_));
+    for (LightColour* l : {&directional_, &hemisphere_}) { // (VistaMain::Update: a frame more of each)
+        if (!l->anim) continue;
+        if (++l->frame < l->frames) {
+            const float k = float(l->frame) / float(l->frames);
+            for (int c = 0; c < 4; ++c) l->now[c] = l->from[c] + (l->to[c] - l->from[c]) * k;
+            for (int c = 0; c < 3; ++c) l->ground[c] = l->groundFrom[c] + (l->groundTo[c] - l->groundFrom[c]) * k;
+        } else {
+            l->anim = false, l->frame = l->frames;
+            for (int c = 0; c < 4; ++c) l->now[c] = l->to[c];
+            for (int c = 0; c < 3; ++c) l->ground[c] = l->groundTo[c];
+        }
+    }
     if (quake_.on) { // (VistaMain::Update: the quake's time; VistaMain::Pose: the camera moved)
         if ((quake_.time += dt) >= quake_.seconds) {
             quake_.time = quake_.seconds;
@@ -194,7 +206,13 @@ bool EventScene::lights(SceneLighting& out, float lead) const {
         const float t = std::min(lightTime_ + lead, std::max(lightEnd_, lightTime_));
         posed.basePose = light_.anim.poseAbsolute(light_.skel.basePose, std::clamp(t * light_.anim.sampleRate(), 0.0f, frames));
     }
-    return lightsFromFigure(light_.geom, posed, out);
+    if (!lightsFromFigure(light_.geom, posed, out)) return false;
+    // (VistaMain::Draw: the script's colours over the figure's while animated or held)
+    if (directional_.anim || directional_.direct)
+        for (int k = 0; k < 3; ++k) out.lightColor[k] = directional_.now[3] * directional_.now[k];
+    if (hemisphere_.anim || hemisphere_.direct)
+        for (int k = 0; k < 3; ++k) out.ambient[k] = hemisphere_.now[k], out.ground[k] = hemisphere_.ground[k];
+    return true;
 }
 
 } // namespace cr2

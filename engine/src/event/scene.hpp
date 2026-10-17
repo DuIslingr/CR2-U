@@ -67,6 +67,17 @@ public:
     // frames, then the last, or stopped when that is 0 -, one way then back; CameraQuakeStop
     void quake(float width, float fromPercent, float toPercent, int frames);
     void quakeStop();
+    // VistaEvent's light colours (EvtUtilVista*LightColor*; VistaMain::Update / Draw): the
+    // directional light's intensity and colour, the hemisphere's sky and ground, animated from ..
+    // to over the frames (then the light figure's again) or held (DirectStart .. DirectStop)
+    struct LightColour {
+        bool anim = false, direct = false;
+        int frame = 0, frames = 0;
+        float from[4] = {0, 0, 0, 0}, to[4] = {0, 0, 0, 0}, now[4] = {0, 0, 0, 0}; // (directional: rgb, intensity; hemisphere: sky rgb)
+        float groundFrom[3] = {0, 0, 0}, groundTo[3] = {0, 0, 0}, ground[3] = {0, 0, 0};
+    };
+    LightColour& directional() { return directional_; }
+    LightColour& hemisphere() { return hemisphere_; }
     void lightMove(float from, float to);
 
     // a frame's time passing: the moves, the camera and the lights advance
@@ -103,6 +114,7 @@ private:
         int parity = 0;
         float offset[3] = {0, 0, 0};
     } quake_;
+    LightColour directional_, hemisphere_;
     Figure scene_, camera_, light_;
     bool hasCamera_ = false, hasLight_ = false;
     std::map<std::string, int> locators_; // ev_<name> -> joint

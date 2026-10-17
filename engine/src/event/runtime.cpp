@@ -97,6 +97,40 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     vm.setNative("EvtScene", "SetPosLocator", [this](NativeCall& c) { scene_.pinTo(c.string(0), c.string(1)); });
     vm.setNative("VistaEvent", "CameraQuake", [this](NativeCall& c) { scene_.quake(c.number(0), c.number(1), c.number(2), c.integer(3)); });
     vm.setNative("VistaEvent", "CameraQuakeStop", [this](NativeCall&) { scene_.quakeStop(); });
+    // the light colours: DirectionalLightColorAnimStart(from intensity, to intensity, from colour,
+    // to colour, frames) / DirectStart(intensity, colour) / DirectStop; the hemisphere's (sky from,
+    // sky to, ground from, ground to, frames) / DirectStart(sky, ground) / DirectStop
+    auto vec = [](NativeCall& c, int i, float* out, int n) {
+        static const char* const kNames[4] = {"x", "y", "z", "w"};
+        for (int k = 0; k < n; ++k) out[k] = c.member(i, kNames[k]);
+    };
+    vm.setNative("VistaEvent", "DirectionalLightColorAnimStart", [this, vec](NativeCall& c) {
+        EventScene::LightColour& l = scene_.directional();
+        vec(c, 2, l.from, 3), vec(c, 3, l.to, 3);
+        l.from[3] = c.number(0), l.to[3] = c.number(1);
+        l.anim = true, l.frame = 0, l.frames = std::max(c.integer(4), 1);
+        std::copy(l.from, l.from + 4, l.now);
+    });
+    vm.setNative("VistaEvent", "DirectionalLightColorDirectStart", [this, vec](NativeCall& c) {
+        EventScene::LightColour& l = scene_.directional();
+        vec(c, 1, l.now, 3);
+        l.now[3] = c.number(0), l.direct = true;
+    });
+    vm.setNative("VistaEvent", "DirectionalLightColorDirectStop", [this](NativeCall&) { scene_.directional().direct = false; });
+    vm.setNative("VistaEvent", "HemisphereLightColorAnimStart", [this, vec](NativeCall& c) {
+        EventScene::LightColour& l = scene_.hemisphere();
+        vec(c, 0, l.from, 3), vec(c, 1, l.to, 3), vec(c, 2, l.groundFrom, 3), vec(c, 3, l.groundTo, 3);
+        l.anim = true, l.frame = 0, l.frames = std::max(c.integer(4), 1);
+        std::copy(l.from, l.from + 3, l.now), std::copy(l.groundFrom, l.groundFrom + 3, l.ground);
+    });
+    vm.setNative("VistaEvent", "HemisphereLightColorDirectStart", [this, vec](NativeCall& c) {
+        EventScene::LightColour& l = scene_.hemisphere();
+        vec(c, 0, l.now, 3), vec(c, 1, l.ground, 3);
+        l.direct = true;
+    });
+    vm.setNative("VistaEvent", "HemisphereLightColorDirectStop", [this](NativeCall&) { scene_.hemisphere().direct = false; });
+    // SetMapAnimPause(on): the vista map's own animation held (VistaMain +0x28)
+    vm.setNative("VistaEvent", "SetMapAnimPause", [this](NativeCall& c) { mapAnimPaused = c.boolean(0); });
     vm.setNative("EvtScene", "SetFaceTexture", [this](NativeCall& c) { faces_[c.integer(0)] = c.string(1); });
     vm.setNative("EvtScene", "ChangeModelFace", [this](NativeCall& c) {
         if (EventModel* m = scene_.model(c.string(0))) m->face = c.integer(1, -1);

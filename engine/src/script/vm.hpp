@@ -23,6 +23,8 @@ public:
     int count() const { return count_; }
     int integer(int i, int fallback = 0) const; // (floats and bools convert)
     float number(int i, float fallback = 0) const;
+    // a member of an object argument (Cr3Struct.Vector3 / Vector4's x, y, z, w)
+    float member(int i, const char* name, float fallback = 0) const;
     bool boolean(int i, bool fallback = false) const;
     std::string string(int i) const;
     std::string text(int i) const; // the argument as the script would print it (for traces)

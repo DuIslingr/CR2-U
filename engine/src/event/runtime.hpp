@@ -106,6 +106,7 @@ public:
     // page while EvtWindow.SetSkipButtonEnable allows - each Open allows it again): held
     // (EvtWindow::IsSkip), a page shows whole and turns at once, without a tap
     bool fastForward = false;
+    bool mapAnimPaused = false; // (VistaEvent.SetMapAnimPause: the viewer holds the vista map's animation)
     // the vista's skip button (EvtSkip: VistaFastButtonMenu - speedUp again; FldUtilGetVistaSkipEnable
     // is always on): from ButtonCreate till ButtonDelete, unless ButtonSetVisible(false). Held
     // (CheckButtonTouch: TestApp::onUpdate's), the game runs five updates a frame, the scripts'

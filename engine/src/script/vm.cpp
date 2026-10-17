@@ -203,6 +203,21 @@ float NativeCall::number(int i, float fallback) const {
     return fallback;
 }
 
+float NativeCall::member(int i, const char* name, float fallback) const {
+    if (i >= count_) return fallback;
+    const SQInteger top = sq_gettop(v_);
+    sq_pushstring(v_, name, -1);
+    float out = fallback;
+    if (SQ_SUCCEEDED(sq_get(v_, i + 2))) {
+        SQFloat f;
+        SQInteger n;
+        if (SQ_SUCCEEDED(sq_getfloat(v_, -1, &f))) out = float(f);
+        else if (SQ_SUCCEEDED(sq_getinteger(v_, -1, &n))) out = float(n);
+    }
+    sq_settop(v_, top);
+    return out;
+}
+
 bool NativeCall::boolean(int i, bool fallback) const {
     if (i >= count_) return fallback;
     SQBool b;

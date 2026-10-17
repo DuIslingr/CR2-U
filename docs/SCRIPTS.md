@@ -222,6 +222,18 @@ chapter, announce 0x8b). Yes: the chapter (`InterfaceWindow.GetChapterID`), the 
 field. An event ended at once (a map's `--call` run on entry) is followed by what it reserved, as
 any other.
 
+The library (a shelf - the town's evt023 .. 026, d11's evt032 ..: the dungeon's `ReserveLibrary(n)`,
+its message 90 + n, then `Cr3System.ReserveLibrary` - FldMain step 0xf, FldLibrary - and
+`InterfaceWindow.SetArchiveID(n)`; InterfaceMain::SetLibraryParameter - ArchiveWindowMenu and its
+ArchiveListMenu): the shelf's entries (SetArchiveList: category n's, from ArchiveCategoryStartTable
+[n - 1] to [n] - 0, 5, 10, 14, 26, 30, 32, 34, 39, 42, 45, 47, 50 -, each shown if its
+ArchiveOpenFlagTable flag is none or set; entry k's id k + 1, its title LibraryTxt's k + 1) in the
+scroll list, each with main icon 69 and the seal "new" (seal_id 2) while flag 1350 + id is set
+(SetListItemParam). Picked, the list shuts and the area's `library_disp` runs
+(InterfaceEvent::CallScript; `InterfaceWindow.GetLibraryID` the entry: its flag cleared, LibraryTxt's
+50 + id in window 6 over a half fade), then the list again; Back: the field. The fade and the windows
+go on under a menu once the script has ended (GameMain's update).
+
 The shop (Piupiu, `c103_00`: `ReserveShop` - FldMain step 0xb, FldShop; InterfaceMain::
 SetFieldShopParameter): ShopTitleMenu's `menu` (menuShop_io), Piupiu's cut-in (`cutIn` on
 cutInSgl_io wearing cutIn102_L02), the Oz window; ShopFirstMenu (`shopBtn_io`: circle buttons 13

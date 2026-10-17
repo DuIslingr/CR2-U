@@ -1725,6 +1725,13 @@ struct Viewer {
             inputNext = uiClock + 0.3f;
             return;
         }
+        if (!inputScript.empty() && uiClock >= inputNext && library.stage == 1 && uiClock - library.at > 0.5f) { // (the library: up, down, pick, back)
+            const std::string t = inputScript.front();
+            libraryKey(t == "up" ? SDLK_UP : t == "down" ? SDLK_DOWN : t == "pick" ? SDLK_RETURN : t == "back" ? SDLK_BACKSPACE : SDLK_UNKNOWN);
+            inputScript.pop_front();
+            inputNext = uiClock + 0.4f;
+            return;
+        }
         if (!inputScript.empty() && uiClock >= inputNext && world.stage && uiClock - world.at > 0.5f) { // (the world select: up, down, pick, back, yes, no)
             const std::string t = inputScript.front();
             if (t == "up" || t == "down") worldKey(t == "up" ? SDLK_UP : SDLK_DOWN);
@@ -1764,7 +1771,8 @@ struct Viewer {
             checkBalloons();
             if (!script->running()) {
                 SDL_Log("%s: the script ended", field.info().name.c_str());
-                if (playMode) branchAfterField();
+                if (library.stage == 2) library.stage = 1, library.at = uiClock; // (an entry read: the shelf again)
+                else if (playMode) branchAfterField();
                 if (!fieldMode) return; // (gone to a vista)
             }
         }
@@ -1799,9 +1807,13 @@ struct Viewer {
             }
         } else if (eventMode) {
             updateEvent(dt);
-        } else if (fieldMode && (campOpen || mapOpen || saveStage || world.stage || shop.stage || party.stage)) { // (FldMain steps 5 .. 7, 10: the camp, the map, saving, the world select - the field held)
+        } else if (fieldMode && (campOpen || mapOpen || saveStage || world.stage || shop.stage || party.stage || library.stage == 1)) { // (FldMain steps 5 .. 7, 10: the camp, the map, saving, the world select - the field held)
             updateManual(dt);
             if (saveStage == 2 && uiClock - saveStart > 1.0f) saveStage = 0; // (a second, then closed)
+            if (script && !script->running()) { // (the fade, the windows go on under a menu: GameMain's update - the library's fade back in)
+                fieldClock = std::min(fieldClock + dt, 0.25f);
+                for (; fieldClock >= cr2::EventRuntime::kTick; fieldClock -= cr2::EventRuntime::kTick) script->tick();
+            }
             fieldInput();
         } else if (fieldMode) {
             fieldUpdate(dt);
@@ -1841,6 +1853,11 @@ struct Viewer {
         if (n.chapter) { // (FldMain step 0xe: the chapter select)
             n.chapter = false;
             openChapterSelect();
+            return;
+        }
+        if (n.library) { // (FldMain step 0xf: the library)
+            n.library = false;
+            openLibrary();
             return;
         }
         if (n.shop) { // (FldMain step 0xb: the shop)
@@ -4540,6 +4557,7 @@ struct Viewer {
         int number = 0, icon = 0;
         bool selectable = true;
         std::string help; // (the command's or item's text: "\\n" between its lines)
+        int seal = -1; // (ScrollListItem::SetIcon 2: seal_id at call_seal_id12 - 2 "new")
     };
     // the rows centred on the focused one (ScrollListMenu::PartsPose: two either side shown; the
     // row's own place the one above it), the list's tab (ListTag: tabWin_io, its tabName_id at
@@ -4608,6 +4626,13 @@ struct Viewer {
                 ic.fig.place.m[3] = x, ic.fig.place.m[7] = y;
                 poseUi(ic, "mainicon_id", r.icon == 0x1c ? 1.45f : r.icon == 0x1d ? 1.4f : r.icon == 70 ? 3.55f : r.icon == 71 ? 3.5f : float(r.icon) / 20.0f);
                 drawFigure(ic.fig, view.data());
+            }
+            if (r.seal >= 0 && uiJoint(b, "call_seal_id12", x, y)) {
+                UiFig& se = uiFig("seal_id");
+                se.fig.place = cr2::Mat34();
+                se.fig.place.m[3] = x, se.fig.place.m[7] = y;
+                poseUi(se, "seal_id", float(r.seal) / 20.0f);
+                drawFigure(se.fig, view.data());
             }
             if (costIcon >= 0 && uiJoint(b, "call_cost_id13", x, y)) { // (the number's mark: "MP" ...)
                 UiFig& co = uiFig("cost_id");
@@ -6463,12 +6488,12 @@ struct Viewer {
                 }
             return true;
         }
-        if (world.stage) { // (the world select's rows, its question)
+        if (world.stage || library.stage == 1) { // (the world select's rows, its question; the library's rows)
             const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
             const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
             for (const TapRect& r : tapRects)
                 if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
-                    worldTap(r.id);
+                    world.stage ? worldTap(r.id) : libraryTap(r.id);
                     break;
                 }
             return true;
@@ -6747,6 +6772,76 @@ struct Viewer {
         poseUi(pic, "mappic_in", t);
         drawFigure(pic.fig, view.data());
         drawSkillList(rows, rows[size_t(world.focus)].id, t, view, w, h, -1, -1);
+    }
+
+    // The library (a shelf: ReserveLibrary - FldMain step 0xf, FldLibrary; InterfaceMain::
+    // SetLibraryParameter - ArchiveWindowMenu, its ArchiveListMenu): the shelf's entries
+    // (SetArchiveList: those of its category - InterfaceWindow.SetArchiveID - from
+    // ArchiveCategoryStartTable[c - 1] to [c], each shown if its ArchiveOpenFlagTable flag is none
+    // or set; entry k's id k + 1, its title LibraryTxt's), each with main icon 69 and the seal
+    // "new" (2) while flag 1350 + id is set (SetListItemParam). Picked, the list shut and the
+    // area's library_disp called (InterfaceEvent::CallScript: the entry - GetLibraryID - read in
+    // window 6, its flag cleared), then the list again; Back: the field.
+    struct Library {
+        int stage = 0; // 0 shut, 1 the list, 2 an entry being read (library_disp)
+        int focus = 0;
+        float at = 0;
+    } library;
+    std::vector<ListRow> libraryRows() {
+        static const short kOpenFlags[50] = {0, 1613, 1628, 1647, 1777, 0, 1573, 1573, 1573, 1573, 0, 0, 0, 0, 0, 1171, 1172,
+                                             1173, 1174, 1175, 1176, 1177, 1178, 1179, 1180, 1181}; // (ArchiveOpenFlagTable)
+        static const short kStarts[13] = {0, 5, 10, 14, 26, 30, 32, 34, 39, 42, 45, 47, 50}; // (ArchiveCategoryStartTable)
+        std::vector<ListRow> rows;
+        const int c = game.libraryArchive;
+        if (c < 1 || c > 12) return rows;
+        for (int k = kStarts[c - 1]; k < kStarts[c]; ++k)
+            if (kOpenFlags[k] == 0 || game.flag(kOpenFlags[k])) {
+                ListRow r;
+                r.id = k + 1, r.name = messageText("librarytxt", k + 1), r.number = -1, r.icon = 69;
+                if (game.flag(1350 + r.id)) r.seal = 2;
+                rows.push_back(r);
+            }
+        return rows;
+    }
+    void openLibrary() {
+        library = Library();
+        library.stage = 1, library.at = uiClock;
+        SDL_Log("library: shelf %d, %zu entries", game.libraryArchive, libraryRows().size());
+        if (libraryRows().empty()) library.stage = 0, pendingBranch = true;
+    }
+    void libraryPick(const ListRow& r) {
+        audio.playSe(0xb4, false);
+        game.libraryId = r.id;
+        library.stage = 2;
+        SDL_Log("library: entry %d", r.id);
+        callGimmick("library_disp");
+        if (!script->running()) library.stage = 1, library.at = uiClock; // (no reading: the list again)
+    }
+    void libraryBack() {
+        audio.playSe(0xb5, false);
+        library.stage = 0, pendingBranch = true; // (back to the field)
+    }
+    void libraryTap(int id) {
+        const std::vector<ListRow> rows = libraryRows();
+        if (id == 100) return libraryBack();
+        if (id >= 1000 && id < 1000 + int(rows.size())) library.focus = id - 1000;
+        else
+            for (const ListRow& r : rows)
+                if (r.id == id) return libraryPick(r);
+    }
+    void libraryKey(SDL_Keycode k) {
+        const std::vector<ListRow> rows = libraryRows();
+        const int n = std::max(int(rows.size()), 1);
+        if (k == SDLK_UP) library.focus = (library.focus + n - 1) % n;
+        else if (k == SDLK_DOWN) library.focus = (library.focus + 1) % n;
+        else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && library.focus < int(rows.size())) libraryPick(rows[size_t(library.focus)]);
+        else if (k == SDLK_BACKSPACE) libraryBack();
+    }
+    void drawLibrary(const Mat4& view, int w, int h) {
+        const std::vector<ListRow> rows = libraryRows();
+        if (rows.empty()) return;
+        library.focus = std::clamp(library.focus, 0, int(rows.size()) - 1);
+        drawSkillList(rows, rows[size_t(library.focus)].id, uiClock - library.at, view, w, h, -1, -1);
     }
 
     // The shop (Piupiu's: ReserveShop - FldMain step 0xb, FldShop; InterfaceMain::
@@ -7179,6 +7274,7 @@ struct Viewer {
         else if (mapOpen) tapRects.clear(), drawDungeonMap(view);
         else if (saveStage) tapRects.clear(), drawSave(view, proj, w, h);
         else if (world.stage) tapRects.clear(), drawWorldSelect(view, w, h);
+        else if (library.stage == 1) tapRects.clear(), drawLibrary(view, w, h);
         else if (shop.stage) tapRects.clear(), drawShop(view, proj, w, h);
         else if (party.stage) tapRects.clear(), drawParty(view, proj, w, h);
         else {
@@ -7761,6 +7857,10 @@ int main(int argc, char** argv) {
                     }
                     if (v.world.stage) { // (the world select: Up / Down, Return, Backspace; Y / N its question)
                         v.worldKey(k);
+                        continue;
+                    }
+                    if (v.library.stage == 1) { // (the library: Up / Down, Return, Backspace)
+                        v.libraryKey(k);
                         continue;
                     }
                     if (v.mapOpen) { // (the map: any key closes it)

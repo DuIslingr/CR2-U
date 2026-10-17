@@ -63,6 +63,9 @@ struct GameState {
     // the dungeon the world select chose last (FldWorldSelect::m_nSelectDungeonNum: GetSelectDungeonNum)
     int selectDungeon = 0;
     int selectChapter = -1; // (the chapter select's pick: InterfaceWindow.GetChapterID - not saved)
+    // the library's shelf (InterfaceWindow.SetArchiveID: InterfaceMain +0xd8, its category) and the
+    // entry being read (GetLibraryID: ArchiveWindowMenu +0x2c) - not saved
+    int libraryArchive = 0, libraryId = 0;
     TreasureBoxes boxes;
     bool equipReady = false;
     template <class Data> void initEquip(const Data& data, const int* levelExp) {
@@ -120,6 +123,7 @@ struct GameState {
         bool shop = false;        // (ReserveShop - FldMain step 0xb)
         bool party = false;       // (ReserveParty - FldMain step 0xc)
         bool chapter = false;     // (ReserveChapter - FldMain step 0xe)
+        bool library = false;     // (ReserveLibrary - FldMain step 0xf)
     } next;
 };
 

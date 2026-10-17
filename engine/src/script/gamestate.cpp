@@ -86,6 +86,9 @@ void bindGameState(ScriptVM& vm, GameState& state) {
     vm.setNative("Cr3System", "ReserveParty", [&next](NativeCall&) { next.party = true; });
     vm.setNative("Cr3System", "ReserveChapter", [&next](NativeCall&) { next.chapter = true; });
     vm.setNative("InterfaceWindow", "GetChapterID", [&state](NativeCall& c) { c.result(state.selectChapter); }); // (CR3InterfaceEvent_GetSelectChapterID)
+    vm.setNative("Cr3System", "ReserveLibrary", [&next](NativeCall&) { next.library = true; });
+    vm.setNative("InterfaceWindow", "SetArchiveID", [&state](NativeCall& c) { state.libraryArchive = c.integer(0); });
+    vm.setNative("InterfaceWindow", "GetLibraryID", [&state](NativeCall& c) { c.result(state.libraryId); });
     vm.setNative("Cr3System", "SetComeFromVistaToField", [&next](NativeCall&) { next.fieldMode = 2; });
 }
 

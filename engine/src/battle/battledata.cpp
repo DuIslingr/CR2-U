@@ -123,6 +123,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         c.magic = d[o + 0x49], c.spread = d[o + 0x4a], c.target = d[o + 0x4b], c.element = d[o + 0x4c];
         c.specials = uint16_t(s16(d, o + 0x4e));
         c.kind = d[o + 0x6f];
+        c.awaken = d[o + 0x48];
         commands_.push_back(c);
     }
     for (int i = 0, n = s16(d, 0x3e); i < n; ++i) {

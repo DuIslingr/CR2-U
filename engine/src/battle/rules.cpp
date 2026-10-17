@@ -57,6 +57,13 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
         f.attack = c->attack, f.pairAttack = c->pairAttack;
         levels += f.level, ++count;
     }
+    // BtlWork::CheckChargeSkill: the charge at 100 when the first standing has the skill (5, 4)
+    charge_ = 0;
+    for (int k = 0; k < 2; ++k)
+        if (fighters_[size_t(k)].alive) {
+            if (fighters_[size_t(k)].has(5, 4)) charge_ = 100;
+            break;
+        }
     const int average = count ? levels / count : 1;
     // the monsters (BtlWork::SetupEnemy): their own level, else near the party's within the
     // dungeon level's band
@@ -302,8 +309,28 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
             if (tf.hp == 0) tf.alive = false, e.defeated = true;
         }
         moveGauge(e, *c);
+        chargeFor(e, *c, t == targets.front());
         out.push_back(e);
     }
+}
+
+// BtlActionCtrl::UpdateChargeGauge, for each one struck (Damage: a hit on the first target; the
+// others' each time): the party striking a monster 15 a hit, 30 a critical (none on one guarding);
+// the party struck by the damage it took - half its HP or more 30, over a fifth 20, else 15 (half
+// for one guarding); the party's awakenings and advents none. (State 12's x 1.5: no states yet.)
+void BattleRules::chargeFor(const Event& e, const BattleData::Command& c, bool first) {
+    if (c.awaken && e.actor < 2) return;
+    const Fighter& t = fighters_[size_t(e.target)];
+    int n = 0;
+    if (e.target >= 2) {
+        if (e.actor >= 2 || t.guarding) return;
+        n = e.critical ? 30 : e.hit ? 15 : 0;
+    } else {
+        if (!e.hit && first) return;
+        n = e.damage >= t.maxHp / 2 ? 30 : e.damage > t.maxHp / 5 ? 20 : 15;
+        if (t.guarding) n = n / 2;
+    }
+    addCharge(n);
 }
 
 void BattleRules::moveGauge(const Event& e, const BattleData::Command& c) {

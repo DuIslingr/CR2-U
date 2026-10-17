@@ -940,7 +940,7 @@ int fight(const char* path, int coupling, bool pair, uint32_t seed, const int pa
                         e.hit ? (std::to_string(e.damage) + " damage").c_str() : "missed", e.critical ? " (critical)" : e.weak ? " (weak)" : "",
                         e.defeated ? ", down" : "");
         }
-        std::printf("         gauge %d%s; HP:", r.gauge(), r.breakState() == 1 ? " (the party's turn break)" : r.breakState() == 2 ? " (the monsters' turn break)" : r.breakState() == 3 ? " (a break coming)" : "");
+        std::printf("         charge %d, gauge %d%s; HP:", r.charge(), r.gauge(), r.breakState() == 1 ? " (the party's turn break)" : r.breakState() == 2 ? " (the monsters' turn break)" : r.breakState() == 3 ? " (a break coming)" : "");
         for (int i = 0; i < 5; ++i)
             if (r.fighter(i).present) std::printf(" %s %d", r.fighter(i).name.c_str(), r.fighter(i).hp);
         std::printf("\n");

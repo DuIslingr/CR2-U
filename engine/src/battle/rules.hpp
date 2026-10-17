@@ -10,8 +10,8 @@
 // startAction (Command_Start), doAction (Dead for each one downed), endAction (Command_End), and
 // endTurn (Turn_End) - playTurn does them all, the script's calls finishing at once.
 //
-// What isn't here yet: the charge gauge's filling and its use (awakening and advent), states other
-// than guarding, sopia (magic) and items, escape, the auto skills sopia give.
+// The charge gauge (+0x28, 0..300) fills by the hits (BtlActionCtrl::UpdateChargeGauge). What isn't
+// here yet: its use (awakening and advent), states other than guarding, sopia (magic) and items, escape, the auto skills sopia give.
 
 #include <algorithm>
 #include <cstdint>
@@ -174,6 +174,7 @@ private:
     void callScript(const char* f) { if (script) script(f); }
     int gauge_ = 0, break_ = 0;
     void moveGauge(const Event& e, const BattleData::Command& c);
+    void chargeFor(const Event& e, const BattleData::Command& c, bool first);
 };
 
 } // namespace cr2

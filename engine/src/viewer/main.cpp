@@ -2112,6 +2112,7 @@ struct Viewer {
     std::vector<DamageShown> damageShown;
     std::string commandShown;
     float commandShownStart = -10;
+    float chargeShown = 0, chargeShownAt = 0; // (the charge gauge's time shown)
     void drawBattleHud(int w, int h) {
         if (!battleMode || !battleRules) return;
         if (battleScript && !battleScript->statusShown()) return; // (its talk on)
@@ -2174,6 +2175,17 @@ struct Viewer {
                     drawDigits(std::string(what) == "hpNum" ? f.hp : f.mp, 90, std::string(what) == "hpNum" ? 5 : 4, x, y, proj);
             }
         }
+        // the charge gauge (BreakWindowMenu::Update -> ChargeGaugeWindow::SetChargeGaugeParameter
+        // with charge / 10, 0..30: chggauge played towards that / 20 s - 1.5 s full - forwards or
+        // back, at its own speed)
+        const float chargeT = float(std::clamp(battleRules->charge(), 0, 300) / 10) / 20.0f;
+        const float step = std::max(battleClock - chargeShownAt, 0.0f);
+        chargeShownAt = battleClock;
+        chargeShown = chargeShown < chargeT ? std::min(chargeShown + step, chargeT) : std::max(chargeShown - step, chargeT);
+        UiFig& cg = uiFig("chggauge");
+        cg.fig.place = cr2::Mat34();
+        poseUi(cg, "chggauge", chargeShown);
+        drawFigure(cg.fig, view.data());
         // the break gauge
         UiFig& bw = uiFig("brkwin");
         bw.fig.place = cr2::Mat34();

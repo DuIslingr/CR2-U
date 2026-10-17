@@ -105,6 +105,20 @@ monsters'), and at the next turn's end it is over, the gauge back to 0. While it
 doesn't move, the breaking side's commands get +100 power (CommandY) and take half damage
 (Damage3; also its blocks, counters and auto-guard, BadStatus).
 
+## The charge gauge
+
+BtlWork +0x28, 0..300 (Cr3Battle.Charge adds to it, at most 300). BtlActionCtrl::UpdateChargeGauge
+fills it for each fighter struck (BtlActionCtrl::Damage: the first target on a hit, the others
+each time): the party striking a monster 15 a hit, 30 a critical, none on one guarding (state 4);
+the party struck by what it took this action (+0xf70, the damage added up) - half its maximum HP
+or more 30, over a fifth 20, else 15, half that guarding; state 12 (the pair's or its own) x 1.5
+once (BtlCalcValue(n, 50)), the state's count down by one. A party's command with +0x48 set - 1..3
+the awakenings (Darwin: Executioner 121, Collbrande 122, Godslayer 123), 4 the advents (Gale
+Roar ...) - fills none. A battle starts at 0, or 100 when the first of the party standing has skill
+(5, 4) (BtlWork::CheckChargeSkill). On the screen: `chggauge` (fit 7, by the break gauge: its ring)
+posed at min(charge, 300) / 10 / 20 s - 1.5 s full (BreakWindowMenu::Update), played there forwards
+or back.
+
 ## The monsters' choice (BtlEnemy)
 
 A monster record holds ten commands (+0x58 s16), each with a condition (+0x6c u8), a target rule

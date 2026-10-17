@@ -53,6 +53,7 @@ public:
         int power = 0;       // +0x44
         int magic = 0;       // +0x49: 0 physical, 1 magic
         int spread = 0;      // +0x4a: +- percent
+        int awaken = 0;      // +0x48: 1..3 an awakening of that level, 4 an advent (they fill no charge)
         int target = 0;      // +0x4b: 1 itself, 2 an ally, 3 the allies, 4 a foe, 6 the foes, 7 anyone
         int element = 0;     // +0x4c
         unsigned specials = 0; // +0x4e (CheckCommandSpecial's bits)

@@ -174,6 +174,9 @@ public:
     void setParamI(int id, int value);
     int charge() const { return charge_; }       // +0x28: the charge gauge, 0..300
     void setCharge(int c) { charge_ = std::clamp(c, 0, 300); } // (tests)
+    // a character's most HP and MP (Cr3UpdatePlayerData): its level's, plus what its weapon,
+    // armour and accessory add (`equip`: its eight - null its record's)
+    static void characterMax(const BattleData& data, int id, int level, const int* equip, int& hp, int& mp);
     // what the monsters downed give (BtlActionCtrl::CheckDead: BtlWork +0xabc EXP, +0xac0 SP,
     // +0xac4 Oz - each its GetMonsterEXP / SP / OZ, at most 9999999)
     // and what they leave (BtlActionCtrl::CheckDropItem / CheckDropSopia at each one down -

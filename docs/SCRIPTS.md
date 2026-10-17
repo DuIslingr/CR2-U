@@ -128,6 +128,27 @@ area change, a battle, a vista, then the world select, the camp, a shop, ..., th
 vista's ends, VistaMain::BranchAfterVista: a battle, another vista, the credits, else back to the
 field.
 
+The field's tab and the camp. While nothing runs, the field shows its tab (FldTabMenu ->
+InterfaceMain interface 0x28, FieldMenuTabMenu: `fldMenu_tab`, its own animation played forward to
+open, back to close - Cr3UtilSoundPlaySE 0xba / 0xbb). Its tap areas: 01 the tab itself, 02 Camp
+(+0x1b, Cr3TabMenu's), 03 the map (not in dungeon 12), 04 Save (off with flag 0x3ea), 05 the
+encounters' switch (shown with flag 0x40e, on with 0x40f); each but the tab only once it is open,
+0xb4 as it is pressed. FldMain takes the button: 1 the camp (step 5, FldCamp), 2 the dungeon's map
+.... The camp (InterfaceMain::SetCampWindowParameter): CharaStatusWindowMenu (0x23 for one - campWin
+with campWin1_io, the third window's joints; 0x24 for two - campWin2_io), CampTitleMenu (0x2c: `menu`
+with menuCamp_io), CampMenu (0x29: campBtn_io's circle buttons 16 Items - not selectable with no
+item -, 17 Equipment, 18 Sopia, 20 Options; btlBack; campLnk - campLnk1_io with GEO_pub hidden before
+flag 0x4b0, campLnk2_io after - its 201 / 202 links), the battery, the Oz (0x52: ozWin_io, its seven
+digits) and the clock (0x51 PlayTimeWindowMenu: timeWin_io - the device's time, GetCurrentHourTime:
+the hours at call_dotNum_id04, glyph 163's ":" at 03, the minutes at 01, set 90). A button's result
+(InterfaceMain::Update's camp step): 1 CampItemListMenu (0x2d), 2 the equipment (0x2f, 0x30, 0x3a,
+0x33), 3 CampSopiaListMenu (0x36), 4 CampOptionMenu (0x2a: the options' window, Title Screen and
+Manual as the battle's), 5 / 6 the camp closed. The items' list (CampItemListMenu): by its category
+(the item's +0x10, a byte: 0 / 1 the first tab, 4 the second), item 36 first, each with its count,
+lit when the camp can use it (Cr3UtilUseItemByCamp: 4 .. 7, 36 .. 41 - the MP ones and the field's;
+the HP is whole again after each battle). The sopia's (CampSopiaListMenu::SetSopiaList): each had
+(cr3_common_data +0x268's bits), by number.
+
 A new game starts on map d1020 (area 19), its set-up `D10_01_01_set`: `NewGameFlgSet`,
 `PartySet`, the field event `D10_01_0104`, then `D10_01_0101` - the prologue's vista
 (`D10_01_0101_evt` in `d1053v`) and its battle. `engine/src/script/gamestate.cpp` holds the

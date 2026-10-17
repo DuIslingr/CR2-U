@@ -52,6 +52,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <deque>
 #include <map>
 #include <set>
@@ -908,6 +909,13 @@ struct Viewer {
     // scene, windows and fades with it); the leader held while it runs, as FldMain holds it
     float fieldClock = 0, pageSeconds = 3.0f;
     bool fieldScriptRunning() const { return script && script->running(); }
+    // --input's tokens the field takes (fieldToken: the tab, the camp), one a 0.4 s while it is idle
+    void fieldInput() {
+        if (inputScript.empty() || uiClock < inputNext || (!campOpen && !fieldTabShown()) || manualStage == 2) return;
+        if (!fieldToken(inputScript.front())) return; // (not the field's: left for a battle)
+        inputScript.pop_front();
+        inputNext = uiClock + 0.4f;
+    }
     void fieldUpdate(float dt) {
         if (!script) return;
         fieldClock = std::min(fieldClock + dt, 0.25f);
@@ -937,7 +945,9 @@ struct Viewer {
 
     // A frame's time: the vista's event, else the field (its script, then the leader - held while
     // the script runs)
+    float uiClock = 0; // (the menus' seconds: the options', the manual's, the camp's - in a battle or out)
     void advance(float dt, float sx, float sy, bool run) {
+        uiClock += dt;
         audio.setVolumes(float(optionVolume[0]) / 100.0f, float(optionVolume[1]) / 100.0f, float(optionVolume[2]) / 100.0f);
         audio.update(dt);
         if (battleMode) {
@@ -957,8 +967,12 @@ struct Viewer {
             }
         } else if (eventMode) {
             updateEvent(dt);
+        } else if (fieldMode && campOpen) { // (FldMain step 5: the camp - the field held)
+            updateManual(dt);
+            fieldInput();
         } else if (fieldMode) {
             fieldUpdate(dt);
+            fieldInput();
             if (fieldMode && !eventMode) {
                 const bool held = fieldScriptRunning();
                 walk(dt, held ? 0 : sx, held ? 0 : sy, run);
@@ -968,7 +982,7 @@ struct Viewer {
 
     // The events' runtime the screen shows: the vista's, else the field's
     cr2::EventRuntime* activeEvents() {
-        if (battleMode && manualStage == 2 && manualEvents) return manualEvents.get(); // (the manual's tutorial)
+        if ((battleMode || campOpen) && manualStage == 2 && manualEvents) return manualEvents.get(); // (the manual's tutorial)
         if (battleMode && battleScript) return &battleScript->events(); // (the battle's talks)
         return eventMode ? event.get() : script ? &script->events() : nullptr;
     }
@@ -1521,7 +1535,7 @@ struct Viewer {
         else if (commandInput.menu() == cr2::CommandInput::Menu::Sopia) commandInput.pickSopia(idOrFighter);
         else if (commandInput.menu() == cr2::CommandInput::Menu::Items) commandInput.pickItem(idOrFighter);
         else if (commandInput.menu() == cr2::CommandInput::Menu::First && idOrFighter == cr2::CommandInput::Options) {
-            optionsOpen = true, optionsStart = battleClock; // (BtlCommand::StepOption: the window, the HUD gone)
+            optionsOpen = true, optionsStart = uiClock; // (BtlCommand::StepOption: the window, the HUD gone)
             // (OptionMenu::PartsUpdate: the first time, title.nut's Tutorial_Option - flag 84)
             if (!game.flag(84)) optionsOpen = false, playTutorial("Tutorial_Option", 0, false);
             return;
@@ -1589,15 +1603,12 @@ struct Viewer {
         if (!(battleScriptOk = battleScript->tutorial(function))) SDL_Log("battle script: %s", battleScript->error().c_str());
     }
     bool keysUsed = false; // (a command button's focus shown once a key moves it: a touch shows none)
-    void battleKey(SDL_Keycode k) {
-        if (!choosing) return;
-        keysUsed = true;
-        const std::vector<int> c = menuChoices();
-        const bool target = commandInput.menu() == cr2::CommandInput::Menu::Target;
-        // (the awakenings' list goes up and down)
+    // the options' window, its question and the manual (in a battle or the camp) taking a key:
+    // false - none of them open
+    bool optionsKey(SDL_Keycode k) {
         if (manualStage == 2) { // (the tutorial: Return a page)
             if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && manualEvents) manualEvents->advance();
-            return;
+            return true;
         }
         if (manualStage == 1) { // (the list: Up / Down, Return plays, Backspace back)
             const int n = std::max(int(manualEntries.size()), 1);
@@ -1605,12 +1616,12 @@ struct Viewer {
             else if (k == SDLK_DOWN) manualCursor = (manualCursor + 1) % n;
             else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) playManual(manualCursor);
             else if (k == SDLK_BACKSPACE) closeManual();
-            return;
+            return true;
         }
         if (optionsAsk) { // (the question: Return yes, Backspace no)
             if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) optionTap(3201);
             else if (k == SDLK_BACKSPACE || k == SDLK_N) optionTap(3202);
-            return;
+            return true;
         }
         if (optionsOpen) { // (the options: Backspace / Return back, Left / Right the focused bar)
             if (k == SDLK_BACKSPACE || k == SDLK_RETURN || k == SDLK_KP_ENTER) optionsOpen = false;
@@ -1618,8 +1629,42 @@ struct Viewer {
             else if (k == SDLK_DOWN) optionFocus = (optionFocus + 1) % 3;
             else if (k == SDLK_LEFT) optionVolume[optionFocus] = std::max(optionVolume[optionFocus] - 5, 0);
             else if (k == SDLK_RIGHT) optionVolume[optionFocus] = std::min(optionVolume[optionFocus] + 5, 100);
-            return;
+            return true;
         }
+        return false;
+    }
+    // a tap on the options' window, its question or the manual (`x`: across, UI units): false -
+    // none of them open
+    bool optionsTapped(const TapRect& r, float x) {
+        if (manualStage == 1) {
+            if (r.id == 100) closeManual();
+            else if (r.id >= 5000) playManual(r.id - 5000);
+            else if (r.id >= 1000) manualCursor = r.id - 1000; // (another row: the focus)
+            return true;
+        }
+        if (optionsAsk) {
+            if (r.id == 3201 || r.id == 3202) optionTap(r.id);
+            return true;
+        }
+        if (optionsOpen) { // (Back; a bar's slide area: its volume by the point across it)
+            if (r.id == 100) optionsOpen = false;
+            else if ((r.id >= 3100 && r.id < 3300) || r.id == 4098 || r.id == 4099) optionTap(r.id);
+            else if (r.id >= 2000 && r.id < 2003) {
+                const float a = std::min(r.x0, r.x1), b = std::max(r.x0, r.x1);
+                optionVolume[r.id - 2000] = std::clamp(int(std::lround((x - a) / std::max(b - a, 1e-4f) * 20.0f)) * 5, 0, 100);
+                optionFocus = r.id - 2000;
+            }
+            return true;
+        }
+        return false;
+    }
+    void battleKey(SDL_Keycode k) {
+        if (!choosing) return;
+        keysUsed = true;
+        const std::vector<int> c = menuChoices();
+        const bool target = commandInput.menu() == cr2::CommandInput::Menu::Target;
+        // (the awakenings' list goes up and down)
+        if (optionsKey(k)) return;
         if (k == SDLK_BACKSPACE) commandInput.back(), audio.playSe(0xb5, false), menuChanged(); // (InterfaceMain: 0xb5 back)
         else if (c.empty()) return;
         else if (k == (target ? SDLK_RIGHT : SDLK_DOWN)) menuCursor = (menuCursor + 1) % int(c.size());
@@ -1637,26 +1682,7 @@ struct Viewer {
         const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
         for (const TapRect& r : tapRects)
             if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
-                if (manualStage == 1) {
-                    if (r.id == 100) closeManual();
-                    else if (r.id >= 5000) playManual(r.id - 5000);
-                    else if (r.id >= 1000) manualCursor = r.id - 1000; // (another row: the focus)
-                    return;
-                }
-                if (optionsAsk) {
-                    if (r.id == 3201 || r.id == 3202) optionTap(r.id);
-                    return;
-                }
-                if (optionsOpen) { // (Back; a bar's slide area: its volume by the point across it)
-                    if (r.id == 100) optionsOpen = false;
-                    else if ((r.id >= 3100 && r.id < 3300) || r.id == 4098 || r.id == 4099) optionTap(r.id);
-                    else if (r.id >= 2000 && r.id < 2003) {
-                        const float a = std::min(r.x0, r.x1), b = std::max(r.x0, r.x1);
-                        optionVolume[r.id - 2000] = std::clamp(int(std::lround((x - a) / std::max(b - a, 1e-4f) * 20.0f)) * 5, 0, 100);
-                        optionFocus = r.id - 2000;
-                    }
-                    return;
-                }
+                if (optionsTapped(r, x)) return;
                 if (r.id == 100) commandInput.back(), audio.playSe(0xb5, false), menuChanged();
                 else if (r.id >= 1000) { // (another row: the focus to it - ScrollListMenu)
                     const std::vector<int> c = menuChoices();
@@ -3563,8 +3589,9 @@ struct Viewer {
     // `shown`: the buttons to draw (an empty list: every one); each drawn button's tap area kept
     // (tapAreaS01 / tapAreaE01) for clicks; `labels` text at a button's typeM_C01 (the targets')
     void drawCommandMenu(const std::string& anim, float t, const Mat4& view, const std::vector<int>& shown,
-                         const std::map<int, std::string>& labels = {}, int w = 0, int h = 0, int frameOf = 0) {
-        UiFig& b = uiFig("btlbtn");
+                         const std::map<int, std::string>& labels = {}, int w = 0, int h = 0, int frameOf = 0,
+                         const std::string& figure = "btlbtn") {
+        UiFig& b = uiFig(figure);
         b.fig.place = cr2::Mat34();
         poseUi(b, anim, t);
         drawFigure(b.fig, view.data());
@@ -3766,7 +3793,7 @@ struct Viewer {
     // +4, +8); circleBtn_fr at call_circleBtn_frNN (frame NN), mainIcon_id at call_mainIcon_idNN;
     // btlBack to leave. (No sound here: the volumes kept, the other settings shown.)
     bool optionsOpen = false;
-    float optionsStart = 0;
+    float optionsStart = 0; // (uiClock's)
     // the language (cr3_system_data +0xc, Cr3UtilOptionLanguage: the messages' own order - 0
     // Japanese, 1 English, 2 French, 3 German, 4 Spanish, 5 / 6 simplified / traditional Chinese,
     // 7 Korean) and the quality (+0x11, SetOffScreenMode: 0 High, 1 Middle, 2 Low - labels 143..145)
@@ -3781,7 +3808,7 @@ struct Viewer {
     void optionTap(int id) {
         switch (id) {
         case 3101:
-            optionsOpen = false, optionsAsk = true, optionsAskStart = battleClock;
+            optionsOpen = false, optionsAsk = true, optionsAskStart = uiClock;
             break;
         case 3102: // (BattleOptionMenu 4 -> 9 -> 0x22: InstructionsWindowMenu, the tutorials' list)
             optionsOpen = false;
@@ -3796,7 +3823,7 @@ struct Viewer {
             SDL_Log("options: to the title screen");
             break;
         case 3202: // (7: the options again)
-            optionsAsk = false, optionsOpen = true, optionsStart = battleClock;
+            optionsAsk = false, optionsOpen = true, optionsStart = uiClock;
             break;
         default: break;
         }
@@ -3836,12 +3863,12 @@ struct Viewer {
                 manualEntries.push_back(e);
             }
         }
-        manualStage = 1, manualStart = battleClock, manualCursor = 0;
+        manualStage = 1, manualStart = uiClock, manualCursor = 0;
         SDL_Log("manual: %zu entries", manualEntries.size());
     }
     void closeManual() {
         manualStage = 0, manualEvents.reset();
-        optionsOpen = true, optionsStart = battleClock;
+        optionsOpen = true, optionsStart = uiClock;
     }
     void playManual(int k) {
         if (k < 0 || k >= int(manualEntries.size())) return;
@@ -3870,8 +3897,8 @@ struct Viewer {
             if (!manualEvents->tick()) SDL_Log("manual: %s", manualEvents->error().c_str());
         if (!manualEvents->running()) { // (InstructionsWindowMenu 3 -> 0: the list again)
             manualEvents.reset();
-            if (manualToList) manualStage = 1, manualStart = battleClock;
-            else manualStage = 0, optionsOpen = true, optionsStart = battleClock;
+            if (manualToList) manualStage = 1, manualStart = uiClock;
+            else manualStage = 0, optionsOpen = true, optionsStart = uiClock;
             SDL_Log("tutorial over");
         }
     }
@@ -3884,11 +3911,11 @@ struct Viewer {
             rows.push_back(r);
         }
         listRows = rows;
-        drawSkillList(rows, 5000 + manualCursor, battleClock - manualStart, view, w, h, -1, -1);
+        drawSkillList(rows, 5000 + manualCursor, uiClock - manualStart, view, w, h, -1, -1);
     }
     void drawOptionsAsk(const Mat4& view, int w, int h) {
         tapRects.clear();
-        const float t = battleClock - optionsAskStart;
+        const float t = uiClock - optionsAskStart;
         UiFig& win = uiFig("syswin_io");
         win.fig.place = cr2::Mat34();
         poseUi(win, "syswin_io", t);
@@ -3915,7 +3942,7 @@ struct Viewer {
     int optionVolume[3] = {100, 100, 100}, optionFocus = 0; // (0..100: GetOptionWork's time the volume / 20)
     void drawOptions(const Mat4& view, const Mat4& proj, int w, int h) {
         tapRects.clear();
-        const float t = battleClock - optionsStart;
+        const float t = uiClock - optionsStart;
         UiFig& title = uiFig("menu");
         title.fig.place = cr2::Mat34();
         poseUi(title, "menuopt_io", t);
@@ -4073,6 +4100,88 @@ struct Viewer {
     // next level (6 of 110) at 081 - the second's 531 ... 581, 0.01 to the right but its level -,
     // their HP / MP / next bars (cmpHpBar_per ... at its percent / 20 s) -, and the system window
     // (sysWin_io) with "Victory!" (announce 16) at typeM_L01
+    // CharaStatusWindowMenu (campWin): the party's windows - campWin2_io for two (`twoAlways`: so
+    // for the result's, a lone one in the first), its third - a lone one's - hidden; campWin1_io
+    // for one, the third's joints (id9000 ..) - each one's face (campFace, cmpFaceC00<n> / A00<n>)
+    // at call_cmpFace_id000 / 500, name (pcNameEN_id at the character's frame / 20 s) at
+    // call_pcNameEN_id021 / 521, labels at call_status_frNNN, level (3 digits of set 130) at
+    // call_dotNum_id031, HP (5 of 110: the most, glyph 164's "/", the HP) at id041 / 100 / 051, MP
+    // (4) at 061 / 200 / 071, the EXP to the next level (6) at 081 - the second's 5NN, 0.01 to the
+    // right but its level -; the HP / MP / next bars at their percent / 20 s
+    struct StatusShown {
+        int id = 0, level = 1, hp = 0, hpMax = 1, mp = 0, mpMax = 0, next = 0, percent = 0;
+    };
+    void drawStatusWindows(const StatusShown* rows, int count, float t, const Mat4& view, const Mat4& proj, bool twoAlways = false) {
+        const bool one = count == 1 && !twoAlways;
+        UiFig& win = uiFig("campwin");
+        win.fig.place = cr2::Mat34();
+        poseUi(win, one ? "campwin1_io" : "campwin2_io", t);
+        for (ViewMesh& vm : win.fig.meshes) { // (the parts the window does not use: their joints' meshes)
+            const uint32_t j = vm.source.palette.empty() ? ~0u : vm.source.palette[0];
+            const std::string jn = j < win.joints.size() ? win.joints[j] : "";
+            vm.hidden = one ? jn == "GEO_campWin1" || jn == "GEO_campWin2" : jn == "GEO_campWin3";
+        }
+        drawFigure(win.fig, view.data());
+        auto at = [&](const std::string& joint, const std::string& fig, float pose, bool draw = true) -> UiFig* {
+            float x, y;
+            if (!uiJoint(win, joint, x, y)) return nullptr;
+            UiFig& c = uiFig(fig);
+            c.fig.place = cr2::Mat34();
+            c.fig.place.m[3] = x, c.fig.place.m[7] = y;
+            poseUi(c, fig, pose);
+            if (draw) drawFigure(c.fig, view.data());
+            return &c;
+        };
+        float x, y;
+        for (int k = 0; k < count && k < 2; ++k) {
+            const StatusShown& r = rows[k];
+            const std::string b = one ? "900" : k == 0 ? "0" : "5";
+            if (UiFig* face = at(one ? std::string("call_cmpFace_id9000") : "call_cmpFace_id" + b + "00", "campface", 0, false)) {
+                const std::string id = std::to_string(r.id);
+                for (ViewMesh& vm : face->fig.meshes) vm.texture = texture("cmpFaceC00" + id), vm.extraMap = texture("cmpFaceA00" + id);
+                drawFigure(face->fig, view.data());
+            }
+            const std::string p = one ? "90" : b; // (the lone one's joints: id9021, fr9001 ...)
+            at("call_pcNameEN_id" + p + "21", "pcnameen_id", float(r.id) / 20.0f);
+            for (int s : {1, 2, 3, 7})
+                if (uiJoint(win, "call_status_fr" + p + "0" + std::to_string(s), x, y)) drawStatusSign(s, x, y, proj);
+            const float dx = k == 0 ? 0.0f : 0.01f;
+            auto num = [&](const std::string& id, int value, int set, int digits, float off) {
+                float nx, ny;
+                if (uiJoint(win, "call_dotNum_id" + id, nx, ny)) drawDigits(value, set, digits, nx + off, ny, proj);
+            };
+            if (one) { // (its level, HP and MP alone)
+                num("9031", r.level, 130, 3, 0);
+                num("9041", r.hp, 110, 5, 0);
+                num("9061", r.mp, 110, 4, 0);
+            } else {
+                const char* const ids[2][8] = {{"031", "041", "100", "051", "061", "200", "071", "081"},
+                                               {"531", "541", "500", "551", "561", "600", "571", "581"}};
+                num(ids[k][0], r.level, 130, 3, 0);
+                num(ids[k][1], r.hpMax, 110, 5, dx); // (SetParameterNumberID: the first the most, on the right)
+                num(ids[k][2], 0, 164, 1, dx);
+                num(ids[k][3], r.hp, 110, 5, dx);
+                num(ids[k][4], r.mpMax, 110, 4, dx);
+                num(ids[k][5], 0, 164, 1, dx);
+                num(ids[k][6], r.mp, 110, 4, dx);
+                num(ids[k][7], r.next, 110, 6, dx);
+            }
+            // the bars (their joints in order: the first's, the second's; the lone one's its own)
+            const float hpT = r.hp > 0 ? std::max(float(r.hp) * 5.0f / float(std::max(r.hpMax, 1)), 0.07f) : 0.0f;
+            const float mpT = r.mpMax > 0 ? float(r.mp) * 5.0f / float(r.mpMax) : 0.0f;
+            const struct { const char* prefix; const char* fig; float pose; } bars[3] = {
+                {"call_cmpHpBar_per", "cmphpbar_per", hpT}, {"call_cmpMpBar_per", "cmpmpbar_per", mpT}, {"call_cmpNxBar_per", "cmpnxbar_per", float(r.percent) / 20.0f}};
+            for (const auto& bar : bars) {
+                int seen = 0;
+                for (const std::string& j : win.joints) {
+                    if (j.rfind(bar.prefix, 0) != 0) continue;
+                    const bool lone = j.size() > std::strlen(bar.prefix) && j[std::strlen(bar.prefix)] == '9';
+                    if (lone != one) continue;
+                    if (seen++ == (one ? 0 : k)) at(j, bar.fig, bar.pose);
+                }
+            }
+        }
+    }
     void drawResult(const Mat4& view, const Mat4& proj, int w, int h) {
         const float t = battleClock - result.windowStart;
         auto part = [&](const std::string& fig, const std::string& anim, const char* hide = nullptr) -> UiFig& {
@@ -4087,16 +4196,6 @@ struct Viewer {
             drawFigure(u.fig, view.data());
             return u;
         };
-        auto at = [&](UiFig& in, const std::string& joint, const std::string& fig, float pose, bool draw = true) -> UiFig* {
-            float x, y;
-            if (!uiJoint(in, joint, x, y)) return nullptr;
-            UiFig& c = uiFig(fig);
-            c.fig.place = cr2::Mat34();
-            c.fig.place.m[3] = x, c.fig.place.m[7] = y;
-            poseUi(c, fig, pose);
-            if (draw) drawFigure(c.fig, view.data());
-            return &c;
-        };
         part("menu", "menurslt_io");
         UiFig& seat = part("seatrslt_io", "seatrslt_io");
         float x, y;
@@ -4104,46 +4203,15 @@ struct Viewer {
             if (uiJoint(seat, "call_dotNum_id01", x, y)) drawDigits(result.exp, 90, 6, x, y, proj);
             if (uiJoint(seat, "call_dotNum_id11", x, y)) drawDigits(result.sp, 90, 4, x, y, proj);
         }
-        UiFig& win = part("campwin", "campwin2_io", "GEO_campWin3"); // (the third's: a one-character window's)
+        StatusShown rows[2];
+        int count = 0;
         for (int k = 0; k < 2; ++k) {
             const ResultMember& r = result.member[k];
             if (r.ch < 0) continue;
             const ResultNow n = resultNow(r);
-            const std::string b = k == 0 ? "0" : "5";
-            if (UiFig* face = at(win, "call_cmpFace_id" + b + "00", "campface", 0, false)) {
-                const std::string id = std::to_string(r.id);
-                for (ViewMesh& vm : face->fig.meshes) vm.texture = texture("cmpFaceC00" + id), vm.extraMap = texture("cmpFaceA00" + id);
-                drawFigure(face->fig, view.data());
-            }
-            at(win, "call_pcNameEN_id" + b + "21", "pcnameen_id", float(r.id) / 20.0f);
-            for (int s : {1, 2, 3, 7})
-                if (uiJoint(win, "call_status_fr" + b + "0" + std::to_string(s), x, y)) drawStatusSign(s, x, y, proj);
-            const float dx = k == 0 ? 0.0f : 0.01f;
-            auto num = [&](const char* id, int value, int set, int digits, float off) {
-                float nx, ny;
-                if (uiJoint(win, std::string("call_dotNum_id") + id, nx, ny)) drawDigits(value, set, digits, nx + off, ny, proj);
-            };
-            const char* const ids[2][8] = {{"031", "041", "100", "051", "061", "200", "071", "081"},
-                                           {"531", "541", "500", "551", "561", "600", "571", "581"}};
-            num(ids[k][0], n.level, 130, 3, 0);
-            num(ids[k][1], r.hpMax, 110, 5, dx); // (SetParameterNumberID: the first the most, on the right)
-            num(ids[k][2], 0, 164, 1, dx);
-            num(ids[k][3], n.hp, 110, 5, dx);
-            num(ids[k][4], r.mpMax, 110, 4, dx);
-            num(ids[k][5], 0, 164, 1, dx);
-            num(ids[k][6], r.mp, 110, 4, dx);
-            num(ids[k][7], n.next, 110, 6, dx);
-            // the bars (their joints in order: the first's, the second's)
-            const float hpT = n.hp > 0 ? std::max(float(n.hp) * 5.0f / float(std::max(r.hpMax, 1)), 0.07f) : 0.0f;
-            const float mpT = r.mpMax > 0 ? float(r.mp) * 5.0f / float(r.mpMax) : 0.0f;
-            const struct { const char* prefix; const char* fig; float pose; } bars[3] = {
-                {"call_cmpHpBar_per", "cmphpbar_per", hpT}, {"call_cmpMpBar_per", "cmpmpbar_per", mpT}, {"call_cmpNxBar_per", "cmpnxbar_per", float(n.percent) / 20.0f}};
-            for (const auto& bar : bars) {
-                int seen = 0;
-                for (const std::string& j : win.joints)
-                    if (j.rfind(bar.prefix, 0) == 0 && seen++ == k) at(win, j, bar.fig, bar.pose);
-            }
+            rows[count++] = {r.id, n.level, n.hp, r.hpMax, r.mp, r.mpMax, n.next, n.percent};
         }
+        drawStatusWindows(rows, count, t, view, proj, true);
         UiFig& sys = part("syswin_io", "syswin_io");
         const std::string& text = result.message >= 0 && result.message < int(result.messages.size()) ? result.messages[size_t(result.message)] : announce(16);
         if (uiJoint(sys, "typeM_L01", x, y)) drawUiText(text, 24, x, y, w, h, true);
@@ -4303,6 +4371,297 @@ struct Viewer {
         }
     }
 
+    // The field's tab (FldTabMenu -> FieldMenuTabMenu: fldMenu_tab, over the field while nothing
+    // runs): its own animation played forward to open it, back to close it (Cr3UtilSoundPlaySE
+    // 0xba / 0xbb); its tap areas 01 the tab, 02 Camp, 03 the map, 04 Save, 05 the encounters'
+    // switch - each but the tab only once it is open (CheckOpenMenu), 0xb4 as one is pressed. Camp
+    // opens the camp (FldMain step 5, FldCamp); the others are not here yet.
+    bool fieldTabOpen = false;
+    float fieldTabAt = -10; // (uiClock: when it last began to open or close)
+    bool fieldTabShown() const { return fieldMode && !eventMode && !battleMode && script && !script->running() && !campOpen; }
+    float fieldTabPose(UiFig& tab) {
+        const float d = tab.fig.animLoaded ? tab.fig.anim.duration() : 0.0f;
+        const float e = std::clamp(uiClock - fieldTabAt, 0.0f, d);
+        return fieldTabOpen ? e : d - e;
+    }
+    void drawFieldTab(const Mat4& view) {
+        UiFig& tab = uiFig("fldmenu_tab");
+        tab.fig.place = cr2::Mat34();
+        poseUi(tab, "fldmenu_tab", 0);
+        poseUi(tab, "fldmenu_tab", fieldTabPose(tab));
+        // (the encounters' sign: GEO_encOn / GEO_encOff by flag 0x40e - not had, both away)
+        for (ViewMesh& vm : tab.fig.meshes) {
+            const uint32_t j = vm.source.palette.empty() ? ~0u : vm.source.palette[0];
+            const std::string jn = j < tab.joints.size() ? tab.joints[j] : "";
+            vm.hidden = (jn == "GEO_encOn" || jn == "GEO_encOff") && !game.flag(0x40e);
+        }
+        drawFigure(tab.fig, view.data());
+        for (int k = 1; k <= 5; ++k) {
+            char sa[16], ea[16];
+            std::snprintf(sa, sizeof sa, "tapAreaS%02d", k), std::snprintf(ea, sizeof ea, "tapAreaE%02d", k);
+            float sx, sy, ex, ey;
+            if (uiJoint(tab, sa, sx, sy) && uiJoint(tab, ea, ex, ey)) tapRects.push_back({6000 + k, sx, sy, ex, ey});
+        }
+    }
+    void fieldTabTap(int area) {
+        UiFig& tab = uiFig("fldmenu_tab");
+        const bool opened = fieldTabOpen && uiClock - fieldTabAt >= (tab.fig.animLoaded ? tab.fig.anim.duration() : 0.0f);
+        if (area == 1) { // (the tab: open or closed, from where its animation is)
+            const float d = tab.fig.animLoaded ? tab.fig.anim.duration() : 0.0f;
+            const float now = fieldTabPose(tab);
+            fieldTabOpen = !fieldTabOpen;
+            fieldTabAt = uiClock - (fieldTabOpen ? now : d - now);
+            audio.playSe(fieldTabOpen ? 0xba : 0xbb, false);
+            SDL_Log("field: the tab %s", fieldTabOpen ? "opened" : "closed");
+            return;
+        }
+        if (!opened) return;
+        if (area == 2) {
+            audio.playSe(0xb4, false);
+            openCamp();
+        } else {
+            SDL_Log("field: tab button %d (not here yet)", area);
+        }
+    }
+
+    // The camp (FldCamp -> InterfaceMain::SetCampWindowParameter): the party's status windows
+    // (CharaStatusWindowMenu: 0x23 one, 0x24 two), the title (CampTitleMenu: menu, menuCamp_io),
+    // the buttons (CampMenu: campBtn_io's circle buttons - 16 Items, selectable with any item;
+    // 17 Equipment, 18 Sopia, 20 Options -, btlBack, campLnk's links), the Oz (ozWin_io: 7 digits)
+    // and the clock (timeWin_io). Items (CampItemListMenu: by category - type 0 / 1, else 4 -,
+    // item 36 first, each with its count, those the camp can use - Cr3UtilUseItemByCamp - lit) and
+    // Sopia (CampSopiaListMenu: those had, by number) on the list; Options the options' window
+    // (CampOptionMenu: as the battle's, its Manual the manual); Back (or Backspace) closes it.
+    bool campOpen = false;
+    float campStart = 0;
+    int campList = 0; // (0 none, 16 the items, 18 the sopia)
+    int campCategory = 0, campCursor = 0;
+    void openCamp() {
+        campOpen = true, campStart = uiClock, campList = 0, campCursor = 0;
+        fieldTabOpen = false, fieldTabAt = -10;
+        optionsOpen = optionsAsk = false, manualStage = 0;
+        SDL_Log("camp: open");
+    }
+    void closeCamp() {
+        campOpen = false, campList = 0;
+        optionsOpen = optionsAsk = false, manualStage = 0, manualEvents.reset();
+        SDL_Log("camp: closed");
+    }
+    std::vector<ListRow> campRows() {
+        std::vector<ListRow> rows;
+        if (campList == 16) {
+            static const int kCampItems[] = {4, 5, 6, 7, 36, 37, 38, 39, 40, 41}; // (Cr3UtilUseItemByCamp: 4, and the library's list)
+            auto add = [&](int id) {
+                const cr2::BattleData::Item* it = battleData.item(id);
+                const int n = game.itemCount[id];
+                if (!it || n <= 0) return;
+                const bool inCategory = campCategory == 0 ? it->type <= 1 : it->type == 4; // (CategoryCheck)
+                if (!inCategory) return;
+                const bool usable = std::find(std::begin(kCampItems), std::end(kCampItems), id) != std::end(kCampItems) && !(id == 36 && game.flag(0x3e9));
+                rows.push_back({id, it->name[1], n, it->icon, usable, it->text[1]});
+            };
+            add(36);
+            for (int id = 1; id < 300; ++id)
+                if (id != 36) add(id);
+        } else if (campList == 18) {
+            for (int id = 1; id < 32; ++id)
+                if (game.sopiaOwned >> id & 1u)
+                    if (const cr2::BattleData::Sopia* so = battleData.sopia(id)) rows.push_back({id, so->name[1], -1, 0, true, ""});
+        }
+        return rows;
+    }
+    StatusShown statusOf(int ch) const {
+        StatusShown r;
+        r.id = ch + 1, r.level = std::max(game.level[ch], 1);
+        int eq[8];
+        for (int e = 0; e < 8; ++e) eq[e] = game.equip[ch][e];
+        cr2::BattleRules::characterMax(battleData, r.id, r.level, eq, r.hpMax, r.mpMax);
+        r.hp = r.hpMax; // (Cr3RestorePlayerHP after each battle)
+        r.mp = game.mp[ch] < 0 ? r.mpMax : std::min(game.mp[ch], r.mpMax);
+        const int lo = cr2::levelExp(r.level), hi = cr2::levelExp(r.level + 1);
+        r.next = r.level >= 200 ? 0 : hi - game.exp[ch];
+        r.percent = r.level >= 200 || hi <= lo ? 0 : std::clamp((game.exp[ch] - lo) * 100 / (hi - lo), 0, 100);
+        return r;
+    }
+    void drawCamp(const Mat4& view, const Mat4& proj, int w, int h) {
+        tapRects.clear();
+        if (manualStage == 1) return drawManualList(view, w, h);
+        if (manualStage == 2) return; // (the tutorial's picture and windows alone)
+        if (optionsAsk) return drawOptionsAsk(view, w, h);
+        if (optionsOpen) return drawOptions(view, proj, w, h);
+        const float t = uiClock - campStart;
+        if (campList) { // (the list, its tab - the items' 7, the sopia's 9 - and its own back)
+            const std::vector<ListRow> rows = campRows();
+            listRows = rows;
+            const int focused = rows.empty() ? -1 : rows[size_t(std::clamp(campCursor, 0, int(rows.size()) - 1))].id;
+            drawSkillList(rows, focused, t, view, w, h, campList == 16 ? 7 : 9, -1);
+            return;
+        }
+        UiFig& title = uiFig("menu");
+        title.fig.place = cr2::Mat34();
+        poseUi(title, "menucamp_io", t);
+        drawFigure(title.fig, view.data());
+        StatusShown rows[2];
+        int count = 0;
+        for (int k = 0; k < 2; ++k)
+            if (game.party[k] >= 0 && game.party[k] < 9) rows[count++] = statusOf(game.party[k]);
+        drawStatusWindows(rows, count, t, view, proj);
+        bool anyItem = false;
+        for (int id = 1; id < 300; ++id) anyItem = anyItem || game.itemCount[id] > 0;
+        buttonLook = [&](int id) { return id == 16 && !anyItem ? 0 : id == campCursorButton() && keysUsed ? 2 : 1; };
+        drawCommandMenu("campbtn_io", t, view, {}, {}, w, h, 0, "campbtn_io");
+        buttonLook = nullptr;
+        for (TapRect& r : tapRects)
+            if (r.id == 16 && !anyItem) r.id = -1;
+        // the links (CampPubLink: campLnk1_io, the pub hidden, before flag 0x4b0; campLnk2_io after)
+        UiFig& lnk = uiFig("camplnk");
+        lnk.fig.place = cr2::Mat34();
+        const bool pub = game.flag(0x4b0);
+        poseUi(lnk, pub ? "camplnk2_io" : "camplnk1_io", t);
+        for (ViewMesh& vm : lnk.fig.meshes) {
+            const uint32_t j = vm.source.palette.empty() ? ~0u : vm.source.palette[0];
+            vm.hidden = !pub && j < lnk.joints.size() && lnk.joints[j] == "GEO_pub";
+        }
+        drawFigure(lnk.fig, view.data());
+        // the Oz and the clock
+        float x, y;
+        UiFig& oz = uiFig("ozwin_io");
+        oz.fig.place = cr2::Mat34();
+        poseUi(oz, "ozwin_io", t);
+        drawFigure(oz.fig, view.data());
+        if (uiJoint(oz, "call_status_fr13", x, y)) drawStatusSign(13, x, y, proj);
+        if (uiJoint(oz, "call_dotNum_id07", x, y)) drawDigits(std::clamp(game.oz, 0, 9999999), 110, 7, x, y, proj);
+        UiFig& tw = uiFig("timewin_io");
+        tw.fig.place = cr2::Mat34();
+        poseUi(tw, "timewin_io", t);
+        drawFigure(tw.fig, view.data());
+        if (uiJoint(tw, "call_status_fr14", x, y)) drawStatusSign(14, x, y, proj);
+        { // (PlayTimeWindowMenu: the clock's - GetCurrentHourTime - hours at id04, glyph 163's ":" at id03, minutes at id01; set 90)
+            const std::time_t now = std::time(nullptr);
+            std::tm lt{};
+#ifdef _WIN32
+            localtime_s(&lt, &now);
+#else
+            localtime_r(&now, &lt);
+#endif
+            if (uiJoint(tw, "call_dotNum_id04", x, y)) drawDigits(lt.tm_hour, 90, 2, x, y, proj);
+            if (uiJoint(tw, "call_dotNum_id03", x, y)) drawDigits(0, 163, 1, x, y, proj);
+            if (uiJoint(tw, "call_dotNum_id01", x, y)) drawDigits(lt.tm_min, 90, 2, x, y, proj);
+        }
+        UiFig& bk = uiFig("btlback");
+        bk.fig.place = cr2::Mat34();
+        poseUi(bk, "btlback_in", t);
+        drawFigure(bk.fig, view.data());
+        float sx, sy, ex, ey;
+        if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
+    }
+    int campCursorButton() const {
+        static const int kButtons[4] = {16, 17, 18, 20};
+        return kButtons[std::clamp(campCursor, 0, 3)];
+    }
+    // a camp button pressed (CampMenu::TouchSimpleRelease: 0xb4; InterfaceMain's camp step by it)
+    void campPress(int id) {
+        if (id == 100) {
+            audio.playSe(0xb5, false);
+            if (campList) campList = 0, campCursor = 0, campStart = uiClock;
+            else closeCamp();
+            return;
+        }
+        if (campList) return;
+        audio.playSe(0xb4, false);
+        if (id == 16 || id == 18) {
+            campList = id, campCategory = 0, campCursor = 0, campStart = uiClock;
+            SDL_Log("camp: %s - %zu", id == 16 ? "items" : "sopia", campRows().size());
+        } else if (id == 20) {
+            optionsOpen = true, optionsStart = uiClock; // (CampOptionMenu)
+            if (!game.flag(84)) optionsOpen = false, playTutorial("Tutorial_Option", 0, false);
+        } else {
+            SDL_Log("camp: button %d (not here yet)", id);
+        }
+    }
+    void campKey(SDL_Keycode k) {
+        keysUsed = true;
+        if (optionsKey(k)) return;
+        if (k == SDLK_BACKSPACE) return campPress(100);
+        if (campList) {
+            const int n = std::max(int(campRows().size()), 1);
+            if (k == SDLK_UP) campCursor = (campCursor + n - 1) % n;
+            else if (k == SDLK_DOWN) campCursor = (campCursor + 1) % n;
+            else if (k == SDLK_LEFT || k == SDLK_RIGHT) { // (the items' two categories)
+                if (campList == 16) campCategory = 1 - campCategory, campCursor = 0;
+            }
+            return;
+        }
+        if (k == SDLK_UP) campCursor = (campCursor + 3) % 4;
+        else if (k == SDLK_DOWN) campCursor = (campCursor + 1) % 4;
+        else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) campPress(campCursorButton());
+    }
+    // a click on the field's UI (the tab, the camp): false - none of it there (the field's own tap)
+    bool fieldClick(float fx, float fy) {
+        if (!campOpen && !fieldTabShown()) return false;
+        if (campOpen && manualStage == 2) {
+            if (manualEvents) manualEvents->advance();
+            return true;
+        }
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+        for (const TapRect& r : tapRects)
+            if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
+                if (r.id > 6000 && r.id <= 6005) fieldTabTap(r.id - 6000);
+                else if (campOpen && optionsTapped(r, x)) {
+                } else if (campOpen && campList && r.id >= 1000 && r.id < 5000) campCursor = r.id - 1000; // (a row: the focus)
+                else if (campOpen && r.id >= 0) campPress(r.id);
+                return true;
+            }
+        return campOpen; // (the camp takes every tap)
+    }
+    // --input in the field: "tab", "camp" (the tab opened, then Camp), "back", "items", "sopia",
+    // "equip", "options", "category"; the options' own (as in battle); false - not one of these
+    bool fieldToken(const std::string& t) {
+        if (t == "tab" && fieldTabShown()) fieldTabTap(1);
+        else if (t == "camp" && fieldTabShown()) fieldTabOpen = true, fieldTabAt = -10, fieldTabTap(2);
+        else if (!campOpen) return false;
+        else if (t == "back") manualStage == 1 ? closeManual() : optionsAsk ? optionTap(3202) : optionsOpen ? void(optionsOpen = false) : campPress(100);
+        else if (t == "items") campPress(16);
+        else if (t == "equip") campPress(17);
+        else if (t == "sopia") campPress(18);
+        else if (t == "options") campPress(20);
+        else if (t == "category") campCategory = 1 - campCategory, campCursor = 0;
+        else if (t == "down") campKey(SDLK_DOWN);
+        else if (t == "up") campKey(SDLK_UP);
+        else if (t == "enter") campKey(SDLK_RETURN);
+        else {
+            static const std::pair<const char*, int> kOptionTaps[] = {{"title", 3101}, {"manual", 3102}, {"quality-", 3103}, {"quality+", 3104},
+                                                                      {"language-", 3105}, {"language+", 3106}, {"yes", 3201}, {"no", 3202}};
+            for (const auto& [n, id] : kOptionTaps)
+                if (t == n && (optionsOpen || optionsAsk)) {
+                    optionTap(id);
+                    SDL_Log("input %s", t.c_str());
+                    return true;
+                }
+            return false;
+        }
+        SDL_Log("input %s", t.c_str());
+        return true;
+    }
+    void drawFieldUi(int w, int h) {
+        if (!fieldMode || battleMode || eventMode) return;
+        const bool tabShown = fieldTabShown();
+        if (!campOpen && !tabShown) return;
+        const Mat4 proj = uiProjection(w, h);
+        Mat4 camera = cr2::mat4Identity();
+        camera[14] = -0.881f;
+        const Mat4 view = cr2::mat4Multiply(proj, camera);
+        cr2::SceneLighting l;
+        dev->setLighting(l);
+        dev->clearDepth();
+        if (campOpen) drawCamp(view, proj, w, h);
+        else {
+            tapRects.clear();
+            drawFieldTab(view);
+        }
+    }
+
     void drawBalloons(int w, int h) {
         if (!fieldMode || eventMode || balloons.empty()) return;
         if (!balloonLoaded) {
@@ -4340,6 +4699,7 @@ struct Viewer {
     void drawEventUi() {
         dev->clearDepth(); // (the scene's depths behind all of it: a near camera's ground too)
         drawBalloons(screenW, screenH);
+        drawFieldUi(screenW, screenH);
         drawBattleHud(screenW, screenH);
         if (battleMode && white.id) { // (a special scene's: Cr3Fade over the battle)
             const float alpha = battleFade.alpha.at(battleClock);
@@ -4752,6 +5112,18 @@ int main(int argc, char** argv) {
                         v.battleKey(k);
                         continue;
                     }
+                    if (v.campOpen) { // (the camp: Up / Down and Return, Backspace back)
+                        v.campKey(k);
+                        continue;
+                    }
+                    if (k == SDLK_TAB && v.fieldTabShown()) { // (the field's tab: open or closed; C the camp)
+                        v.fieldTabTap(1);
+                        continue;
+                    }
+                    if (k == SDLK_C && v.fieldTabShown()) {
+                        v.fieldToken("camp");
+                        continue;
+                    }
                     if (k == SDLK_RETURN || k == SDLK_KP_ENTER) v.tap();
                     if (v.eventMode) continue;
                     ViewFigure& f = v.fig;
@@ -4769,16 +5141,17 @@ int main(int argc, char** argv) {
                         v.loadAnim(f, (f.animIndex + (k == SDLK_DOWN ? 1 : f.anims.size() - 1)) % f.anims.size());
                 } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
                     dragging = true;
-                    if (v.battleMode && v.choosing) { // (the window's point on the game's screen)
-                        int ww = 1, wh = 1, pw = 1, ph = 1;
-                        SDL_GetWindowSize(win, &ww, &wh);
-                        SDL_GetWindowSizeInPixels(win, &pw, &ph);
-                        const float px = e.button.x * float(pw) / float(std::max(ww, 1)), py = e.button.y * float(ph) / float(std::max(wh, 1));
-                        // (the screen letterboxed in the window at its own shape)
-                        const float sw = float(v.screenW), sh = float(v.screenH);
-                        const float k = std::min(float(pw) / sw, float(ph) / sh);
-                        const float ox = (float(pw) - sw * k) * 0.5f, oy = (float(ph) - sh * k) * 0.5f;
-                        v.battleClick((px - ox) / (sw * k), (py - oy) / (sh * k));
+                    // (the window's point on the game's screen, letterboxed in the window at its own shape)
+                    int ww = 1, wh = 1, pw = 1, ph = 1;
+                    SDL_GetWindowSize(win, &ww, &wh);
+                    SDL_GetWindowSizeInPixels(win, &pw, &ph);
+                    const float px = e.button.x * float(pw) / float(std::max(ww, 1)), py = e.button.y * float(ph) / float(std::max(wh, 1));
+                    const float sw = float(v.screenW), sh = float(v.screenH);
+                    const float k = std::min(float(pw) / sw, float(ph) / sh);
+                    const float ox = (float(pw) - sw * k) * 0.5f, oy = (float(ph) - sh * k) * 0.5f;
+                    const float fx = (px - ox) / (sw * k), fy = (py - oy) / (sh * k);
+                    if (v.battleMode && v.choosing) v.battleClick(fx, fy);
+                    else if (v.fieldMode && !v.eventMode && v.fieldClick(fx, fy)) {
                     } else if (v.eventMode || v.fieldMode || v.battleMode) v.tap();
                 }
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) dragging = false;

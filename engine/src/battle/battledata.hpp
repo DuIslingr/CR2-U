@@ -100,7 +100,7 @@ public:
         int id = 0;
         std::string name[2];
         std::string text[2]; // +0x08, +0x0c: what it does
-        int type = 0;        // +0x10
+        int type = 0;        // +0x10 (a byte): 0 / 1 the camp's first list (CampItemListMenu::CategoryCheck), 4 its second
         int hp = 0, mp = 0, param[5] = {0, 0, 0, 0, 0}; // +0x14, +0x18, +0x1a
         int skills[2] = {-1, -1}; // +0x30, +0x32: auto skills it gives
         bool battle = false;  // +0x11: usable in battle (BtlCommand::GetItem)

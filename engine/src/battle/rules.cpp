@@ -24,6 +24,16 @@ BattleRules::BattleRules(const BattleData& data, uint32_t seed) : data_(data) {
     if (seed) rand_.seed48(seed);
 }
 
+void BattleRules::characterMax(const BattleData& data, int id, int level, const int* equip, int& hp, int& mp) {
+    hp = 1, mp = 0;
+    const BattleData::Character* c = data.character(id);
+    if (!c) return;
+    hp = std::clamp(c->hp + c->hpGrowth * level * 50 / 100, 1, 99999);
+    mp = std::clamp(c->mp + c->mpGrowth * level * 5 / 100, 0, 9999);
+    for (int e = 0; e < 3; ++e)
+        if (const BattleData::Item* it = data.item(equip ? equip[e] : c->equip[e])) hp += it->hp, mp += it->mp;
+}
+
 bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std::string* error, const signed char* sopiaLevel, const short (*equip)[8], const int* level, const int* mp) {
     BattleSetup setup;
     if (!setupBattle(data_, coupling, party, setup, error)) return false;
@@ -41,13 +51,11 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
         Fighter& f = fighters_[size_t(k)];
         f.present = f.alive = true;
         f.side = 0, f.id = c->id, f.name = c->name[1], f.level = level && c->id >= 1 && c->id <= 9 && level[c->id - 1] > 0 ? level[c->id - 1] : c->level;
-        f.maxHp = std::clamp(c->hp + c->hpGrowth * f.level * 50 / 100, 1, 99999);
-        f.maxMp = std::clamp(c->mp + c->mpGrowth * f.level * 5 / 100, 0, 9999);
+        characterMax(data_, c->id, f.level, eq, f.maxHp, f.maxMp);
         for (int n = 0; n < 5; ++n) f.param[n] = std::clamp(c->param[n] + c->paramGrowth[n] * f.level * 5 / 100, 0, 9999);
         for (int e = 0; e < 3; ++e) {
             const BattleData::Item* it = data_.item(eq[e]);
             if (!it) continue;
-            f.maxHp += it->hp, f.maxMp += it->mp;
             for (int n = 0; n < 5; ++n) f.param[n] += it->param[n];
             for (int s : it->skills)
                 if (const BattleData::AutoSkill* a = data_.autoSkill(s)) {

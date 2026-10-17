@@ -169,7 +169,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         it.id = i + 1;
         it.name[0] = text(o), it.name[1] = text(o + 4);
         it.text[0] = text(o + 8), it.text[1] = text(o + 0xc);
-        it.type = s16(d, o + 0x10);
+        it.type = d[o + 0x10]; // (a byte: +0x11 the battles' flag)
         it.hp = int(u32(d, o + 0x14)), it.mp = s16(d, o + 0x18);
         for (int k = 0; k < 5; ++k) it.param[k] = s16(d, o + 0x1a + size_t(k) * 2);
         it.skills[0] = s16(d, o + 0x30), it.skills[1] = s16(d, o + 0x32);

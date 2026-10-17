@@ -121,6 +121,10 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       Title Screen and Manual shown, the volumes set by a tap or the keys, the language and the
       quality by their arrows (the messages then in that language, a system CJK font for what the
       game's lacks), Title Screen's yes / no, Manual, Back (`--input "options language+ title no back"`)
+- [x] The field's tab (Camp, Map, Save) and the camp: the party's status windows, the title,
+      its buttons and links, the Oz and the clock; its items' and sopia's lists, its options and
+      the manual, Back (a tap, Tab / C and the keys, or `--input "camp items back options manual"`
+      in the field). Not yet: using an item there, the equipment, the map, saving
 - [x] States: poison, blind, seal, the action cancelled, raised and lowered parameters, time
       stopped, the seals, the special ones - taken by the game's chances and resistances, their
       effects (counters, the magic barrier turning a sopia back, revived once, strength doubled,

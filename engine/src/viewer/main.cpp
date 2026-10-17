@@ -1270,7 +1270,7 @@ struct Viewer {
     };
     std::vector<TapRect> tapRects;
     // a step of the choosing begun: its camera (StepGetset: Cam_Getset; SetCommandCamera: 0x1a the
-    // first's, 0x1b the second's, 0x1d the pair's command - the target's camera, BtlCommand::
+    // first's, 0x1b the second's, 0x1d the pair's command, 0x1c the one alone's - the target's camera, BtlCommand::
     // SetCommandTargetCamera's, not yet: the command's stays)
     void menuChanged() {
         menuStart = battleClock, menuCursor = 0;
@@ -1278,7 +1278,7 @@ struct Viewer {
         if (commandInput.menu() == CI::Menu::First) setBattleCamera(battle.camera);
         else if (commandInput.menu() == CI::Menu::Command || commandInput.menu() == CI::Menu::Awake || commandInput.menu() == CI::Menu::Sopia ||
                  commandInput.menu() == CI::Menu::Items)
-            setBattleCamera(commandInput.pairTurn() ? 0x1d : commandInput.actor() == 0 ? 0x1a : 0x1b);
+            setBattleCamera(fighterUnit[1] < 0 ? 0x1c : commandInput.pairTurn() ? 0x1d : commandInput.actor() == 0 ? 0x1a : 0x1b);
     }
     // the camera a target is chosen under (BtlCommand::SetCommandTargetCamera: the fighter's
     // camera, StepBattleIn_Setup's BtlWork +0x580 - a party member's GetTarget 0 / 1, 2 for the one

@@ -4029,6 +4029,10 @@ int main(int argc, char** argv) {
         v.pageSeconds = page;
     }
     v.newGame();
+    // (the test's story flags and sopia levels: before the field's entry or the battle runs)
+    for (int f : flagsArg) v.game.setFlag(f, true);
+    for (const auto& [id, level] : sopiaArg)
+        if (id >= 0 && id < 32) v.game.sopiaLevel[id] = static_cast<signed char>(level);
     if (!fieldName.empty()) {
         if (!v.loadField(fieldName, at, binary, data, callEntry)) return 1;
     } else if (lights != "none") {
@@ -4046,9 +4050,6 @@ int main(int argc, char** argv) {
         if (e == std::string::npos) break;
         p = e + 1;
     }
-    for (int f : flagsArg) v.game.setFlag(f, true);
-    for (const auto& [id, level] : sopiaArg)
-        if (id >= 0 && id < 32) v.game.sopiaLevel[id] = static_cast<signed char>(level);
     if (battleId > 0 && fightMode) v.startFight(fightMode == 3 ? 2 : fightMode, fightSeed);
     if (!eventName.empty()) {
         if (!v.startEvent(eventName, vista, page)) return 1;

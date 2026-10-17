@@ -3391,7 +3391,7 @@ struct Viewer {
             }
             if (!c->launchEffect.empty()) {
                 const cr2::EffectSetting& ls = cr2::effectSetting(c->launchEffect);
-                if (!(a.partner >= 0 && ls.pairLocator == 7)) commandEffect(c->launchEffect, a.actor, a.partner >= 0);
+                if (ls.pairLocator != 7) commandEffect(c->launchEffect, a.actor, a.partner >= 0); // (ShowCommandLaunchEffect: its +0x32 7 left out - every caller passes true)
             }
         }
         // its cameras (BtlActionCtrl::SetAttackCamera1 / 2): by the party - its kind (0 / 1 the
@@ -3709,6 +3709,8 @@ struct Viewer {
                     bu->alpha.begin(battleClock + 1.25f, 1, 0, 1.0f);
                 }
             if (c.launchSe > 0) battleSe(c.launchSe);
+            if (!c.launchEffect.empty() && cr2::effectSetting(c.launchEffect).pairLocator != 7) // (ActionAdventLaunch: ShowCommandLaunchEffect on the one calling it - the advents' eff302, 7, left out as there)
+                commandEffect(c.launchEffect, a.actor, true);
         } else if (BattleUnit* bu = unitOf(a.actor)) { // (ActionAwakeStandby: its command's motion)
             playMotion(*bu, c.motion, battleClock);
         }

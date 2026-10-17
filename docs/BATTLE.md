@@ -178,7 +178,8 @@ to go back. The focused row's help over them (scrlWin, scrlWin_io: the command's
 its two lines - split at a "\n" in the text - at typeS_L01 / typeS_L02). The bar's thumb
 (scrlMtr_per, in place): SetScrollBarLength poses it at the part of the list shown (5 rows of
 the count, at most all) x 100 / 20 s; SetScrollBarPosition lowers it by the rows above the first
-shown, of those that do not fit. sBtnSlct (0.15 s, once) lights the focused row across. As the
+shown, of those that do not fit. sBtnSlct (0.15 s, once) lights the focused row across. The help is
+near black (SetStringData's colour 0.01), narrowed to fit inside its window. As the
 reference video shows them (the prologue's Sopia list: Preemptive Strike focused, its help on
 two lines, the thumb the bar's length).
 
@@ -216,8 +217,10 @@ video: "Even" through Slash on a mantis that stands). The number at the target's
 (BtlActionCtrl::ShowDamage -> BtlEtcCtrl::CreateDispNumber, its kind's set by damageinfodata01:
 20, 30, 40 a weakness's, 50 / 60 the restores'), and a mark there (CreateDispState ->
 DamageInfo01: `bonus` with damageinfodata02's animator - 0 `bonus_miss` for a miss, 2
-`bonus_crtcl` for a critical, 1 `bonus_block`, 3 `bonus_blow`; its fade an offset from the whole,
--1 .. 0, over 1.45 s): the reference video's "1342 Critical!".
+`bonus_crtcl` for a critical, 1 `bonus_block`, 3 `bonus_blow`; over 1.45 s): the reference video's
+"1342 Critical!". An animator's material channels (beside a figure's own animation) add to the
+material's value: bonus_crtcl's fade -1 .. 0 about 1, brkInfo's colour -0.5 .. +0.43 .. 0 about its
+0.99 (a flash, then the cream "Even" / "Player" / "Enemy").
 
 The cameras: BtlCameraTable, also built in code (tools/gen_camera_table.py ->
 engine/src/battle/cameratable.inc), numbers into btl_camera_name_table (462 names: the joints of

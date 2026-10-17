@@ -515,8 +515,12 @@ struct Viewer {
                     const cr2::Skeleton::UserChannel& c = f.skeleton.userChannels[k];
                     if (std::isnan(user[k]) || c.material != vm.material.hash) continue;
                     std::vector<float>& v = vm.material.params[c.param];
-                    if (v.size() <= c.component) v.resize(size_t(c.component) + 1, 0.0f);
-                    v[c.component] = user[k];
+                    const bool fresh = v.size() <= c.component;
+                    if (fresh) v.resize(size_t(c.component) + 1, c.param == 0x33 ? 1.0f : 0.0f); // (DiffuseColor's default white)
+                    // the figure's own animation sets the value; an animator beside it adds to the
+                    // material's (brkInfo's colour -0.5 .. +0.43 .. 0 about its 0.99: a flash, then as
+                    // it is; bonus_crtcl's fade -1 .. 0 about 1)
+                    v[c.component] = f.absolute ? user[k] : v[c.component] + user[k];
                 }
             }
         }
@@ -2355,6 +2359,19 @@ struct Viewer {
         }
         pose(u.fig, t, loop);
     }
+    // the right edge of a posed figure's meshes (UI units: their vertices as last posed)
+    static float uiRight(const UiFig& u) {
+        float r = -1e9f;
+        for (const ViewMesh& vm : u.fig.meshes) {
+            if (vm.hidden) continue;
+            for (size_t o = 0; o + 12 <= vm.vertices.size(); o += cr2::kVertexStride) {
+                float x;
+                std::memcpy(&x, &vm.vertices[o], 4);
+                r = std::max(r, x);
+            }
+        }
+        return r;
+    }
     // a posed joint's place in UI units (false: none)
     bool uiJoint(const UiFig& u, const std::string& joint, float& x, float& y) {
         const auto it = std::find(u.joints.begin(), u.joints.end(), joint);
@@ -2455,7 +2472,8 @@ struct Viewer {
     // a line of text at a UI place (centred), made once
     std::map<std::string, TextQuad> uiTexts;
     // `left`: from x (typeS_L: the text's left), else centred on it; `shade` its colour's
-    void drawUiText(const std::string& text, float size, float x, float y, int w, int h, bool left = false, float shade = 1) {
+    // `maxWidth` (UI units, 0 none): narrowed to fit it (MenuText's width limit)
+    void drawUiText(const std::string& text, float size, float x, float y, int w, int h, bool left = false, float shade = 1, float maxWidth = 0) {
         if (text.empty() || !font.loaded()) return;
         const float k = std::min(float(w) / 0.96f, float(h) / 0.64f);
         const int px = std::max(1, int(size / 1000.0f * k + 0.5f));
@@ -2472,7 +2490,8 @@ struct Viewer {
             it = uiTexts.emplace(key, q).first;
         }
         const TextQuad& q = it->second;
-        const float x0 = left ? x : x - q.w / 2, x1 = x0 + q.w, y0 = y - q.h / 2, y1 = y + q.h / 2;
+        const float qw = maxWidth > 0 ? std::min(q.w, maxWidth) : q.w;
+        const float x0 = left ? x : x - qw / 2, x1 = x0 + qw, y0 = y - q.h / 2, y1 = y + q.h / 2;
         const float v[24] = {x0, y0, 0, 1, x1, y0, 1, 1, x1, y1, 1, 0, x0, y0, 0, 1, x1, y1, 1, 0, x0, y1, 0, 0};
         const float rgba[4] = {shade, shade, shade, 1};
         dev->drawQuad(q.tex, v, uiProjection(w, h).data(), rgba);
@@ -2638,11 +2657,13 @@ struct Viewer {
             win.fig.place = cr2::Mat34();
             poseUi(win, "scrlwin_io", t);
             drawFigure(win.fig, view.data());
+            // (BattleSkillListMenu::Update: SetStringData - near black, 0.01; within the window)
             const std::string& s = rows[size_t(fi)].help; // (its break the text's "\\n")
             const size_t br = s.find("\\n");
+            const float right = uiRight(win) - 0.03f;
             float x, y;
-            if (uiJoint(win, "typeS_L01", x, y)) drawUiText(s.substr(0, br), 22, x, y, w, h, true);
-            if (br != std::string::npos && uiJoint(win, "typeS_L02", x, y)) drawUiText(s.substr(br + 2), 22, x, y, w, h, true);
+            if (uiJoint(win, "typeS_L01", x, y)) drawUiText(s.substr(0, br), 26, x, y, w, h, true, 0.01f, right - x);
+            if (br != std::string::npos && uiJoint(win, "typeS_L02", x, y)) drawUiText(s.substr(br + 2), 26, x, y, w, h, true, 0.01f, right - x);
         }
         UiFig& tag = uiFig("tabwin_io");
         tag.fig.place = cr2::Mat34();
@@ -2939,8 +2960,6 @@ struct Viewer {
                 bm.fig.place = cr2::Mat34();
                 bm.fig.place.m[3] = d.x, bm.fig.place.m[7] = d.y;
                 poseUi(bm, kMarks[d.mark], age);
-                for (ViewMesh& vm : bm.fig.meshes) // (its fade an offset from the whole: -1 .. 0)
-                    if (auto a = vm.material.params.find(0x33); a != vm.material.params.end() && a->second.size() > 3) a->second[3] = std::clamp(1.0f + a->second[3], 0.0f, 1.0f);
                 drawFigure(bm.fig, view.data());
             }
             if (d.value < 0) continue;

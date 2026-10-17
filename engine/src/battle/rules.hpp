@@ -164,7 +164,7 @@ private:
     std::vector<int> downed_; // (this action's: Dead for each)
     // the script's
     int charge_ = 0, ints_[5] = {0, 0, 0, 0, 0}, commandActor_ = -1;
-    bool switches_[6] = {false, false, false, false, false, false};
+    bool switches_[6] = {false, true, true, true, true, true}; // (BtlWork::InitializeVariables: 42 off, 43..47 on)
     struct Scripted {
         bool reserved = false, pair = false;
         int command[5] = {-1, -1, -1, -1, -1}, target[5] = {-1, -1, -1, -1, -1};

@@ -155,6 +155,39 @@ and at the hit the next number (SetAttackCamera2: `Cam_BtlPair_SSS1_00`, `..._01
 GetAttackFromEnemy(the base + which - 2, its target: 0, 1, 3 a pair) (`Cam_Btlenemy_SSS2_20`). The
 battle opens on `Cam_Start_<pattern>_00` and the commands are chosen under `Cam_Getset_..._00`.
 
+## Choosing the commands (BtlCommand)
+
+The menus are one figure, `btlBtn` (fit 6), with an animator for each - `btlBtn1st_io`
+(BattleFirstMenu), `btlBtn2nd_io` (BattleSoloMenu), `btlBtn3rd_io` (BattleSelectMenu) - and a
+round button, `circleBtn_fr`, at each of its `call_circleBtn_frNN` joints that the menu takes (the
+ids in ValidIDNumber: 26, 27, 28, 20 the first; 29, 30, 31, 18, 16, 33 the second; 43..47 the
+targets), posed at frame NN (its own animation: NN / 20 s), which picks its icon and label:
+
+| id | | | id | |
+|---|---|---|---|---|
+| 26 | Solo | | 31 | Attack (+0x40) |
+| 27 | Pair (+0x44: switch 47, both standing) | | 18 | Sopia (+0x41) |
+| 28 | Escape (not in an event battle, +0x1fb4) | | 16 | Items (+0x42 and items to use) |
+| 20 | Options | | 33 | Defend (+0x43) |
+| 43..47 | a target: its name (typeM_C01), level (DotNumId2, 3 digits of set 120 at call_dotNum_id30, the ones), HP bar (btlHpBar_per at call_hpBar_per20, HP x 5 / max s, at least 0.07) | | 29 / 30 | Awake (+0x3e) / Advent (+0x3f), in one place |
+
+CheckCommandEnable sets the second menu's switches: +0x40 from the script's switch 43 (and not
+state 22), +0x41 switch 44 (not 2 or 23), +0x42 switch 45 (not 25), +0x43 switch 46 (not 24) -
+the switches on at the battle's start but 42. A tap hits a button inside its tapAreaS01 /
+tapAreaE01 joints (Cr3UtilCheckHitCollision); `btlBack` (fit 3, `btlBack_in`) goes back. A button
+not selectable is drawn at half its colour (CircleBtn::ChangeTapButtonColor 0.5: every
+material's DiffuseColor), one focused with its PRG_shiftR material's texture half across
+(OffsetSet1 U 0.5; 2.0).
+
+The steps: the first menu (StepGetsetFirst / StepGetset: Cam_Getset, the party on its solo
+places) - its result 0 solo, 1 pair, 2 escape, 3 options; then the command menu for the first
+standing (solo: each in turn; the pair: once - SetCommandCamera 0x1a the first's, 0x1b the
+second's, 0x1d the pair's) - its result 0 attack (the character's +0x44, a pair's swapped for
++0x46 as it acts), 1 sopia, 2 items, 3 defend (StepNextCheck: state 4, both for a pair; the
+data's command 5), 4 awake / advent, 99 back (the second's back to the first's, else the first
+menu); for one on a single foe the target (StepTarget: the target buttons, the camera on the one
+chosen - SetCommandTargetCamera).
+
 ## The battle's script (BtlEvent)
 
 Every battle runs `script\battle.nut` (BtlEvent::Initialize; the same VM and helper library as

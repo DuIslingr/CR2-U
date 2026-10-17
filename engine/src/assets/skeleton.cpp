@@ -155,6 +155,20 @@ std::vector<std::string> parseJointNames(const std::vector<uint8_t>& d) {
     return out;
 }
 
+std::vector<std::string> parseMaterialNames(const std::vector<uint8_t>& d) {
+    std::vector<std::string> out;
+    if (d.size() < 8) return out;
+    const uint32_t joints = uint32_t(rd32(d, 0)), materials = uint32_t(rd32(d, 4));
+    const size_t count = size_t(joints) + materials;
+    if (8 + 4 * count > d.size()) return out;
+    for (size_t k = joints; k < count; ++k) {
+        const size_t from = size_t(uint32_t(rd32(d, 8 + 4 * k)));
+        const size_t to = k + 1 < count ? size_t(uint32_t(rd32(d, 8 + 4 * (k + 1)))) : d.size();
+        if (from <= to && to <= d.size()) out.emplace_back(reinterpret_cast<const char*>(&d[from]), to - from);
+    }
+    return out;
+}
+
 int Skeleton::joint(uint32_t hash) const {
     for (size_t j = 0; j < nameHashes.size(); ++j)
         if (nameHashes[j] == hash) return int(j);

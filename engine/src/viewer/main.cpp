@@ -52,6 +52,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <map>
 #include <set>
 #include <memory>
@@ -67,6 +68,7 @@
 #include "battle/battledata.hpp"
 #include "battle/camera.hpp"
 #include "battle/motion.hpp"
+#include "battle/command.hpp"
 #include "battle/rules.hpp"
 #include "battle/script.hpp"
 #include "event/runtime.hpp"
@@ -78,6 +80,8 @@
 #include "gfx/text.hpp"
 
 namespace {
+
+#include "gfx/dotnumtable.inc"
 
 using cr2::Mat4;
 
@@ -149,6 +153,7 @@ struct ViewFigure {
     bool blendLoaded = false, blendAbsolute = false, blendLoop = true;
     float blendTime = 0, blendWeight = 1;
     size_t vertices = 0, triangles = 0;
+    std::vector<cr2::JointTransform> posed; // (the pose last drawn)
 };
 
 void packVertex(uint8_t* o, const float* p, const float* n, const float* uv, const float* c, const float* t, const float* b) {
@@ -515,6 +520,7 @@ struct Viewer {
             }
         }
         const std::vector<cr2::Mat34> world = f.skeleton.world(p, f.place);
+        f.posed = p;
         std::vector<cr2::Mat34> skin(world.size());
         for (size_t j = 0; j < world.size(); ++j) skin[j] = world[j] * f.inverseBind[j];
         for (ViewMesh& vm : f.meshes) {
@@ -1226,6 +1232,90 @@ struct Viewer {
     // Command_Start, the action shown, Command_End; the end - each step after the script's call
     // is over (BtlEvent::IsRunning), its talks on the screen meanwhile
     enum class BattleStep { Opening, TurnBegin, TurnChoose, ActionStart, ActionDo, ActionEnd, Over };
+    // The party's commands chosen on the screen (BtlCommand: the menus, a tap or the keys - Up /
+    // Down and Return, Backspace back, Left / Right among the targets), or given (--input: "pair
+    // attack 2 ...", one a 0.4 s); else (a capture, --fight) the party attacking each turn
+    bool manualCommands = false;
+    bool choosing = false;
+    cr2::CommandInput commandInput;
+    float menuStart = 0;
+    int menuCursor = 0;
+    std::deque<std::string> inputScript;
+    float inputNext = 0;
+    struct TapRect {
+        int id;
+        float x0, y0, x1, y1; // (UI units)
+    };
+    std::vector<TapRect> tapRects;
+    // a step of the choosing begun: its camera (StepGetset: Cam_Getset; SetCommandCamera: 0x1a the
+    // first's, 0x1b the second's, 0x1d the pair's command - the target's camera, BtlCommand::
+    // SetCommandTargetCamera's, not yet: the command's stays)
+    void menuChanged() {
+        menuStart = battleClock, menuCursor = 0;
+        using CI = cr2::CommandInput;
+        if (commandInput.menu() == CI::Menu::First) setBattleCamera(battle.camera);
+        else if (commandInput.menu() == CI::Menu::Command) setBattleCamera(commandInput.pairTurn() ? 0x1d : commandInput.actor() == 0 ? 0x1a : 0x1b);
+    }
+    // a token of --input as a choice
+    void inputToken(const std::string& t) {
+        using CI = cr2::CommandInput;
+        static const std::pair<const char*, int> kNames[] = {{"solo", CI::Solo}, {"pair", CI::Pair}, {"escape", CI::Escape},
+                                                             {"attack", CI::Attack}, {"defend", CI::Defend}, {"sopia", CI::Sopia},
+                                                             {"items", CI::Items}};
+        bool ok = false;
+        static const std::pair<const char*, SDL_Keycode> kKeys[] = {{"up", SDLK_UP}, {"down", SDLK_DOWN}, {"left", SDLK_LEFT},
+                                                                    {"right", SDLK_RIGHT}, {"enter", SDLK_RETURN}};
+        for (const auto& [n, key] : kKeys)
+            if (t == n) {
+                battleKey(key);
+                SDL_Log("input %s", t.c_str());
+                return;
+            }
+        if (t == "back") commandInput.back(), ok = true;
+        else if (!t.empty() && std::isdigit(static_cast<unsigned char>(t[0]))) ok = commandInput.pick(std::atoi(t.c_str()));
+        else
+            for (const auto& [n, id] : kNames)
+                if (t == n) ok = commandInput.press(id);
+        SDL_Log("input %s%s", t.c_str(), ok ? "" : " (not taken)");
+        menuChanged();
+    }
+    // the menu's choices in order (the buttons selectable, or the targets)
+    std::vector<int> menuChoices() const {
+        std::vector<int> out;
+        if (commandInput.menu() == cr2::CommandInput::Menu::Target) return commandInput.targets();
+        for (const auto& b : commandInput.buttons())
+            if (b.selectable) out.push_back(b.id);
+        return out;
+    }
+    void choose(int idOrFighter) {
+        if (commandInput.menu() == cr2::CommandInput::Menu::Target) commandInput.pick(idOrFighter);
+        else commandInput.press(idOrFighter);
+        menuChanged();
+    }
+    bool keysUsed = false; // (the cursor shown once a key moves it)
+    void battleKey(SDL_Keycode k) {
+        if (!choosing) return;
+        keysUsed = true;
+        const std::vector<int> c = menuChoices();
+        const bool target = commandInput.menu() == cr2::CommandInput::Menu::Target;
+        if (k == SDLK_BACKSPACE) commandInput.back(), menuChanged();
+        else if (c.empty()) return;
+        else if (k == (target ? SDLK_RIGHT : SDLK_DOWN)) menuCursor = (menuCursor + 1) % int(c.size());
+        else if (k == (target ? SDLK_LEFT : SDLK_UP)) menuCursor = (menuCursor + int(c.size()) - 1) % int(c.size());
+        else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) choose(c[size_t(std::clamp(menuCursor, 0, int(c.size()) - 1))]);
+    }
+    // a click at the screen's (fx, fy) - 0..1 across, down: a button's tap area (UI units)
+    void battleClick(float fx, float fy) {
+        if (!choosing) return;
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+        for (const TapRect& r : tapRects)
+            if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
+                if (r.id == 100) commandInput.back(), menuChanged();
+                else choose(r.id);
+                return;
+            }
+    }
     BattleStep battleStep = BattleStep::Over;
     std::unique_ptr<cr2::BattleScript> battleScript;
     float battleScriptClock = 0;
@@ -1322,6 +1412,26 @@ struct Viewer {
             battleStep = BattleStep::TurnChoose;
             break;
         case BattleStep::TurnChoose: { // the party attacking the first monster standing
+            if (manualCommands) {
+                if (!choosing) {
+                    commandInput.begin(*battleRules, battleData.coupling(battle.coupling) && battleData.coupling(battle.coupling)->flag);
+                    choosing = true;
+                    menuChanged();
+                    inputNext = battleClock + 0.4f;
+                }
+                if (!inputScript.empty() && battleClock >= inputNext) {
+                    inputToken(inputScript.front());
+                    inputScript.pop_front();
+                    inputNext = battleClock + 0.4f;
+                }
+                if (commandInput.menu() != cr2::CommandInput::Menu::Done) break;
+                choosing = false;
+                battleRules->chooseTurn(commandInput.pairTurn(), commandInput.orders());
+                placeParty(battleRules->fighter(0).partner >= 0);
+                SDL_Log("turn %d (%s)", battleRules->turn() + 1, commandInput.pairTurn() ? "pair" : "solo");
+                battleStep = BattleStep::ActionStart;
+                break;
+            }
             const bool pair = battleFight == 2;
             std::vector<cr2::BattleRules::Order> orders;
             for (int k = 0; k < 2; ++k) {
@@ -1995,7 +2105,7 @@ struct Viewer {
     // animations; its joints placed
     struct UiFig {
         ViewFigure fig;
-        std::vector<std::string> joints;
+        std::vector<std::string> joints, materials;
         bool loaded = false;
     };
     std::map<std::string, UiFig> uiFigs;
@@ -2008,7 +2118,7 @@ struct Viewer {
             if (!loadFigure(name + ".geom", u.fig, &err)) SDL_Log("ui %s: %s", name.c_str(), err.c_str());
             time = keep;
             std::vector<uint8_t> d;
-            if (archive.read(name + ".name", d)) u.joints = cr2::parseJointNames(d);
+            if (archive.read(name + ".name", d)) u.joints = cr2::parseJointNames(d), u.materials = cr2::parseMaterialNames(d);
         }
         return u;
     }
@@ -2029,7 +2139,8 @@ struct Viewer {
         const auto it = std::find(u.joints.begin(), u.joints.end(), joint);
         if (it == u.joints.end() || !u.fig.skinned) return false;
         std::vector<cr2::JointTransform> p = u.fig.skeleton.basePose;
-        if (u.fig.animLoaded) p = u.fig.anim.poseOver(u.fig.skeleton.basePose, 0);
+        if (!u.fig.posed.empty()) p = u.fig.posed; // (where its animation has it now)
+        else if (u.fig.animLoaded) p = u.fig.anim.poseOver(u.fig.skeleton.basePose, 0);
         const std::vector<cr2::Mat34> w = u.fig.skeleton.world(p, u.fig.place);
         const size_t j = size_t(it - u.joints.begin());
         if (j >= w.size()) return false;
@@ -2045,15 +2156,8 @@ struct Viewer {
     std::vector<Glyph> dotNumGlyphs;
     void loadDotNum() {
         if (!dotNumGlyphs.empty()) return;
-        // (the table's entries this port uses: the sets at 20 .. 69 - 48 x 48, ten digits a row -
-        // and 90 - 24 x 24 - of hud_dotnum's 512 x 512)
-        dotNumGlyphs.assign(170, Glyph{0, 0, 0, 0, 0, 0});
-        for (int set = 20; set <= 60; set += 10)
-            for (int d = 0; d < 10; ++d) {
-                const float y0 = float(set - 20) / 10.0f * 47.8f;
-                dotNumGlyphs[size_t(set + d)] = {48, 48, d * 47.8f / 512.0f, 1.0f - y0 / 512.0f, (d + 1) * 47.8f / 512.0f, 1.0f - (y0 + 47.8f) / 512.0f};
-            }
-        for (int d = 0; d < 10; ++d) dotNumGlyphs[size_t(90 + d)] = {24, 24, d * 24.0f / 512.0f, 0.281f, (d + 1) * 24.0f / 512.0f, 0.234f};
+        // (DotNumParamPackTable: tools/gen_dotnum_table.py -> gfx/dotnumtable.inc)
+        for (const auto& g : kDotNum) dotNumGlyphs.push_back({g[0], g[1], g[2], g[3], g[4], g[5]});
     }
     void drawDigits(int value, int set, int digits, float x, float y, const Mat4& proj, float alpha = 1, float scale = 1) {
         loadDotNum();
@@ -2063,6 +2167,7 @@ struct Viewer {
         for (int i = 0; i < digits; ++i, place *= 10) {
             const int d = (i == 0 && value == 0) ? 0 : value < place ? -1 : value / place % 10; // (Cr3UtilGetNumberDisplay)
             if (d < 0) continue;
+            if (size_t(set + d) >= dotNumGlyphs.size()) continue;
             const Glyph& g = dotNumGlyphs[size_t(set + d)];
             const float w = g.w / 1000.0f * scale, h = g.h / 1000.0f * scale;
             const float cx = x - float(i) * w;
@@ -2113,6 +2218,108 @@ struct Viewer {
     std::string commandShown;
     float commandShownStart = -10;
     float chargeShown = 0, chargeShownAt = 0; // (the charge gauge's time shown)
+    // the command menu (BattleFirstMenu / BattleSoloMenu / BattleSelectMenu: btlBtn and its
+    // animator, a circleBtn_fr at each call_circleBtn_frNN joint - its frame NN)
+    // `shown`: the buttons to draw (an empty list: every one); each drawn button's tap area kept
+    // (tapAreaS01 / tapAreaE01) for clicks; `labels` text at a button's typeM_C01 (the targets')
+    void drawCommandMenu(const std::string& anim, float t, const Mat4& view, const std::vector<int>& shown,
+                         const std::map<int, std::string>& labels = {}, int w = 0, int h = 0, int frameOf = 0) {
+        UiFig& b = uiFig("btlbtn");
+        b.fig.place = cr2::Mat34();
+        poseUi(b, anim, t);
+        drawFigure(b.fig, view.data());
+        for (const std::string& j : b.joints) {
+            if (j.rfind("call_circleBtn_fr", 0) != 0) continue;
+            const int n = std::atoi(j.c_str() + 17);
+            if (const char* only = SDL_getenv("CR2_MENU_ONLY"); only && std::atoi(only) != n) continue; // (debugging)
+            if (!shown.empty() && std::find(shown.begin(), shown.end(), n) == shown.end()) continue;
+            float x, y;
+            if (!uiJoint(b, j, x, y)) continue;
+            UiFig& c = uiFig("circlebtn_fr");
+            c.fig.place = cr2::Mat34();
+            c.fig.place.m[3] = x, c.fig.place.m[7] = y;
+            poseUi(c, "circlebtn_fr", float(frameOf ? frameOf : n) / 20.0f);
+            // CircleBtn::ChangeTapButtonColor: focused (2) PRG_shiftR's texture half across
+            // (OffsetSet1 U 0.5), not selectable (0.5) every material's colour at half
+            const int look = buttonLook ? buttonLook(n) : 1;
+            for (ViewMesh& vm : c.fig.meshes) {
+                const uint32_t mi = vm.source.material;
+                if (mi < c.materials.size() && c.materials[mi] == "PRG_shiftR") vm.material.params[0x5e] = {look == 2 ? 0.5f : 0.0f, 0.0f};
+                vm.material.params[0x33] = look == 0 ? std::vector<float>{0.5f, 0.5f, 0.5f, 1.0f} : vm.baseMaterial.params[0x33];
+                if (vm.material.params[0x33].empty()) vm.material.params.erase(0x33);
+            }
+            drawFigure(c.fig, view.data());
+            float sx, sy, ex, ey;
+            if (uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) tapRects.push_back({n, sx, sy, ex, ey});
+            const auto lt = labels.find(n);
+            float tx, ty;
+            if (lt != labels.end() && w > 0 && uiJoint(c, "typeM_C01", tx, ty)) drawUiText(lt->second, 24, tx, ty, w, h);
+            if (buttonFighter) { // a target's (CircleBtn::SetLevelNumbers / SetHPGauge)
+                const int f = buttonFighter(n);
+                if (f >= 0 && w > 0) {
+                    const cr2::Fighter& fi = battleRules->fighter(f);
+                    float lx, ly;
+                    if (uiJoint(c, "call_dotNum_id30", lx, ly)) drawDigits(fi.level, 120, 3, lx, ly, uiProjection(w, h));
+                    float hx, hy;
+                    if (uiJoint(c, "call_hpBar_per20", hx, hy)) {
+                        UiFig& bar = uiFig("btlhpbar_per");
+                        bar.fig.place = cr2::Mat34();
+                        bar.fig.place.m[3] = hx, bar.fig.place.m[7] = hy;
+                        poseUi(bar, "btlhpbar_per", fi.hp > 0 ? std::max(float(fi.hp) * 5.0f / float(std::max(fi.maxHp, 1)), 0.07f) : 0.0f);
+                        drawFigure(bar.fig, view.data());
+                    }
+                }
+            }
+        }
+    }
+    // a button's look as drawn: 0 not selectable, 1 as it is, 2 focused (the keys' cursor)
+    std::function<int(int)> buttonLook;
+    std::function<int(int)> buttonFighter; // (a target button's fighter, -1 none)
+    // the menu of the choosing's step, the cursor's choice marked (the keys')
+    void drawChoosing(const Mat4& view, int w, int h) {
+        using CI = cr2::CommandInput;
+        tapRects.clear();
+        const float t = battleClock - menuStart;
+        const std::vector<int> c = menuChoices();
+        const int cursor = c.empty() ? -1 : c[size_t(std::clamp(menuCursor, 0, int(c.size()) - 1))];
+        if (commandInput.menu() == CI::Menu::Target) {
+            // BattleSelectMenu: a target button a target (43 ..), its name on it
+            std::vector<int> ids;
+            std::map<int, std::string> names;
+            for (size_t k = 0; k < commandInput.targets().size() && k < 5; ++k) {
+                const int f = commandInput.targets()[k];
+                ids.push_back(CI::TargetFirst + int(k));
+                names[CI::TargetFirst + int(k)] = battleRules->fighter(f).name;
+            }
+            buttonLook = [&](int id) { return commandInput.targets()[size_t(id - CI::TargetFirst)] == cursor && keysUsed ? 2 : 1; };
+            buttonFighter = [&](int id) { return commandInput.targets()[size_t(id - CI::TargetFirst)]; };
+            drawCommandMenu("btlbtn3rd_io", t, view, ids, names, w, h, CI::TargetFirst);
+            buttonLook = nullptr, buttonFighter = nullptr;
+            for (TapRect& r : tapRects) r.id = commandInput.targets()[size_t(r.id - CI::TargetFirst)]; // (a click: the fighter)
+        } else {
+            std::vector<int> ids;
+            for (const auto& b : commandInput.buttons()) ids.push_back(b.id);
+            buttonLook = [&](int id) {
+                for (const auto& b : commandInput.buttons())
+                    if (b.id == id) return !b.selectable ? 0 : id == cursor && keysUsed ? 2 : 1;
+                return 1;
+            };
+            drawCommandMenu(commandInput.menu() == CI::Menu::First ? "btlbtn1st_io" : "btlbtn2nd_io", t, view, ids);
+            buttonLook = nullptr;
+            for (TapRect& r : tapRects) // (the ones not selectable take no tap)
+                for (const auto& b : commandInput.buttons())
+                    if (b.id == r.id && !b.selectable) r.id = -1;
+        }
+        // the back button (btlBack, fit 3) past the first menu
+        if (commandInput.menu() != CI::Menu::First) {
+            UiFig& bk = uiFig("btlback");
+            bk.fig.place = cr2::Mat34();
+            poseUi(bk, "btlback_in", t);
+            drawFigure(bk.fig, view.data());
+            float sx, sy, ex, ey;
+            if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
+        }
+    }
     void drawBattleHud(int w, int h) {
         if (!battleMode || !battleRules) return;
         if (battleScript && !battleScript->statusShown()) return; // (its talk on)
@@ -2200,6 +2407,8 @@ struct Viewer {
         const int g = battleRules->gauge();
         poseUi(bi, g > 0 ? "brkinfopl_io" : g < 0 ? "brkinfoen_io" : "brkinfoev_io", 5.0f);
         drawFigure(bi.fig, view.data());
+        if (const char* m = SDL_getenv("CR2_MENU")) drawCommandMenu(std::string("btlbtn") + m + "_io", 10.0f, view, {}); // (debugging)
+        if (choosing) drawChoosing(view, w, h);
         // the command's name
         if (!commandShown.empty() && battleClock - commandShownStart < 3.0f) {
             UiFig& m = uiFig("btlmsg");
@@ -2326,6 +2535,7 @@ int main(int argc, char** argv) {
     bool tapAfter = false;
     std::string eventName, vista = "null", fontPath, playFrom, callEntry = "evt000";
     int fightMode = 0;
+    std::string inputArg; // (--input: the commands chosen, as tokens)
     bool skipBattlesOpt = false;
     uint32_t fightSeed = 1;
     int battleId = 0, battleParty[2] = {1, 2}; // (--battle: Darwin and Orlando unless --party)
@@ -2357,7 +2567,8 @@ int main(int argc, char** argv) {
         else if (a == "--event" && next) eventName = next, ++i;
         else if (a == "--battle" && next) battleId = std::atoi(next), ++i;
         else if (a == "--skip-battles") skipBattlesOpt = true;
-        else if (a == "--fight" && next) fightMode = !std::strcmp(next, "pair") ? 2 : 1, ++i;
+        else if (a == "--fight" && next) fightMode = !std::strcmp(next, "pair") ? 2 : !std::strcmp(next, "manual") ? 3 : 1, ++i;
+        else if (a == "--input" && next) inputArg = next, ++i;
         else if (a == "--seed" && next) fightSeed = uint32_t(std::atoi(next)), ++i;
         else if (a == "--party" && next) std::sscanf(next, "%d,%d", &battleParty[0], &battleParty[1]), ++i;
         else if (a == "--vista" && next) vista = next, ++i;
@@ -2485,7 +2696,15 @@ int main(int argc, char** argv) {
     }
     v.load(start);
     if (battleId > 0 && !v.startBattle(battleId, battleParty)) return 1;
-    if (battleId > 0 && fightMode) v.startFight(fightMode, fightSeed);
+    // the commands: chosen on the screen in a window (--fight manual, or --play), or given (--input)
+    v.manualCommands = fightMode == 3 || !inputArg.empty() || (capture.empty() && !playFrom.empty());
+    for (size_t p = 0; p < inputArg.size();) {
+        const size_t e = inputArg.find_first_of(" ,", p);
+        if (e != p) v.inputScript.push_back(inputArg.substr(p, e == std::string::npos ? std::string::npos : e - p));
+        if (e == std::string::npos) break;
+        p = e + 1;
+    }
+    if (battleId > 0 && fightMode) v.startFight(fightMode == 3 ? 2 : fightMode, fightSeed);
     if (!eventName.empty()) {
         if (!v.startEvent(eventName, vista, page)) return 1;
         for (float t = 0; t + cr2::EventRuntime::kTick * 0.5f < startTime; t += cr2::EventRuntime::kTick) v.stepEvent();
@@ -2601,6 +2820,10 @@ int main(int argc, char** argv) {
                         SDL_Log("output: %s", describe().c_str());
                         continue;
                     }
+                    if (v.battleMode && v.choosing) {
+                        v.battleKey(k);
+                        continue;
+                    }
                     if (k == SDLK_RETURN || k == SDLK_KP_ENTER) v.tap();
                     if (v.eventMode) continue;
                     ViewFigure& f = v.fig;
@@ -2618,7 +2841,17 @@ int main(int argc, char** argv) {
                         v.loadAnim(f, (f.animIndex + (k == SDLK_DOWN ? 1 : f.anims.size() - 1)) % f.anims.size());
                 } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
                     dragging = true;
-                    if (v.eventMode || v.fieldMode) v.tap();
+                    if (v.battleMode && v.choosing) { // (the window's point on the game's screen)
+                        int ww = 1, wh = 1, pw = 1, ph = 1;
+                        SDL_GetWindowSize(win, &ww, &wh);
+                        SDL_GetWindowSizeInPixels(win, &pw, &ph);
+                        const float px = e.button.x * float(pw) / float(std::max(ww, 1)), py = e.button.y * float(ph) / float(std::max(wh, 1));
+                        // (the screen letterboxed in the window at its own shape)
+                        const float sw = float(v.screenW), sh = float(v.screenH);
+                        const float k = std::min(float(pw) / sw, float(ph) / sh);
+                        const float ox = (float(pw) - sw * k) * 0.5f, oy = (float(ph) - sh * k) * 0.5f;
+                        v.battleClick((px - ox) / (sw * k), (py - oy) / (sh * k));
+                    } else if (v.eventMode || v.fieldMode) v.tap();
                 }
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) dragging = false;
                 else if (e.type == SDL_EVENT_MOUSE_MOTION && dragging && !v.fieldMode) {

@@ -52,6 +52,8 @@ bool parseSkeleton(const std::vector<uint8_t>& file, Skeleton& out, std::string*
 // A figure's names (`<figure>.name`): u32 joints, u32 materials, then an offset per name, each
 // running to the next - the joints' names in order (their hashes: Skeleton::nameHashes)
 std::vector<std::string> parseJointNames(const std::vector<uint8_t>& file);
+// the same file's material names (after the joints'), in the figure's materials' order
+std::vector<std::string> parseMaterialNames(const std::vector<uint8_t>& file);
 
 class Animation {
 public:

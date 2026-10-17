@@ -179,7 +179,12 @@ event motion (FldObject / FldNPC::SetEventAnim: bound over its idle, looping unl
 `SetMotionLoop(gimmick, false)` - the iai's gate `obj131fa01` cut once and held), `ChangeAlpha
 (gimmick, from, to, updates)` fades it (FldAlphaManager: a step an update), and
 `Cr3FieldMapCharacter.ChangeAlpha(from, to, updates)` the leader. `Cr3System.ItemGet(item, n)`
-adds n of an item (Cr3UtilGetItem: 0..99), `ItemCheck(item)` says how many.
+adds n of an item (Cr3UtilGetItem: 0..99), `ItemCheck(item)` says how many. `ChangeDirection
+(gimmick, target, updates)` turns an NPC to the leader ("player") or another gimmick, and
+`Cr3FieldMapCharacter.ChangeDirection(target, updates)` the leader to a gimmick (FldDirectionManager:
+a 1 / updates step an update - a talk's `ModelDir_Field('player', 'c007_01', 5)`).
+`Cr3TabMenu.SetEnable` shows or hides the tab (cr3_field_data +0x33, saved; a new game's on, as
+the character change's +0x32).
 
 Questions (EvtWindow.ShowYesNoButton: BattleYNChoice's `choice_io` with the circle buttons 11
 yes and 12 no; SE 0xb4) wait for an answer: `CheckYesNoButton` 0 until then, 1 yes, 2 no, and

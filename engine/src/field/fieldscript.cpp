@@ -93,6 +93,13 @@ void FieldScript::bind() {
     vm.setNative("Cr3GimmickData", "ChangeAlpha", [this, alpha](NativeCall& c) {
         if (auto it = gimmicks_.find(c.string(0)); it != gimmicks_.end()) alpha(it->second, c, 1);
     });
+    auto face = [this](GimmickState& g, const std::string& target, int updates) {
+        g.faceTarget = target, g.faceUpdates = std::max(updates, 1), ++g.faceSerial, g.faceTick = ticks_;
+    };
+    vm.setNative("Cr3GimmickData", "ChangeDirection", [this, face](NativeCall& c) { // (FldUtilChangeNPCDirection)
+        if (auto it = gimmicks_.find(c.string(0)); it != gimmicks_.end()) face(it->second, c.string(1), c.integer(2));
+    });
+    vm.setNative("Cr3FieldMapCharacter", "ChangeDirection", [this, face](NativeCall& c) { face(playerAlpha_, c.string(0), c.integer(1)); });
     vm.setNative("Cr3GimmickData", "SetMotion", [this](NativeCall& c) {
         if (auto it = gimmicks_.find(c.string(0)); it != gimmicks_.end())
             it->second.motion = c.string(1), it->second.motionLoop = true, ++it->second.motionSerial, it->second.motionTick = ticks_;
@@ -107,6 +114,7 @@ void FieldScript::bind() {
     // the character change (FldChangeCharacter): its button allowed, the leader, a change at once
     // (FldMain::ChangeCharacterQuick: the other of the two, unless it leads already)
     vm.setNative("Cr3ChangeCharacter", "SetEnable", [this](NativeCall& c) { state_.changeEnable = c.boolean(0); });
+    vm.setNative("Cr3TabMenu", "SetEnable", [this](NativeCall& c) { state_.tabEnable = c.boolean(0); }); // (FldUtilSetTabMenuEnable)
     vm.setNative("Cr3ChangeCharacter", "GetEnable", [this](NativeCall& c) { c.result(state_.changeEnable); });
     vm.setNative("Cr3ChangeCharacter", "GetActive", [this](NativeCall& c) { c.result(state_.active); });
     vm.setNative("Cr3ChangeCharacter", "ExeQuick", [this](NativeCall& c) {

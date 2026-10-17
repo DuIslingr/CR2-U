@@ -40,6 +40,10 @@ struct GimmickState {
     // its alpha (ChangeAlpha(from, to, updates): FldAlphaManager - from by a step an update to `to`)
     float alphaFrom = 1, alphaTo = 1;
     int alphaUpdates = 0, alphaTick = 0;
+    // turned to something (ChangeDirection(gimmick, target, updates): FldDirectionManager - from
+    // where it faces to `faceTarget`, "player" or a gimmick, a 1 / updates step an update)
+    std::string faceTarget;
+    int faceUpdates = 0, faceSerial = 0, faceTick = 0;
     float alpha() const { return alphaUpdates <= 0 || alphaTick >= alphaUpdates ? alphaTo : alphaFrom + (alphaTo - alphaFrom) * float(alphaTick) / float(alphaUpdates); }
 };
 
@@ -90,6 +94,8 @@ public:
     bool playerVisible() const { return playerVisible_; }
     // (the leader's alpha: Cr3FieldMapCharacter.ChangeAlpha, as a gimmick's)
     float playerAlpha() const { return playerAlpha_.alpha(); }
+    // (the leader turned to a gimmick: Cr3FieldMapCharacter.ChangeDirection(target, updates))
+    const GimmickState& playerState() const { return playerAlpha_; }
     int ticks() const { return ticks_; } // (the updates since it was made)
     // the field's two characters (FldPlayer +0x1c: made from the party as the area is - FldMain::
     // Init -, Cr3FieldMapCharacter.ChangeModel(slot, character) changing one, -1 the leader's);

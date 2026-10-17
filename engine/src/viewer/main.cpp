@@ -1266,6 +1266,20 @@ struct Viewer {
                 const auto st = k < gimmickIds.size() ? script->gimmicks().find(gimmickIds[k]) : script->gimmicks().end();
                 if (st != script->gimmicks().end()) {
                     g.tint[3] = st->second.alpha();
+                    if (st->second.faceUpdates > 0) { // (ChangeDirection: turned about y toward its target, in place)
+                        if (gimmickFace[k].serial != st->second.faceSerial) {
+                            float tx, tz;
+                            gimmickFace[k].serial = st->second.faceSerial;
+                            gimmickFace[k].from = gimmickFace[k].yaw;
+                            if (gimmickTarget(st->second.faceTarget, tx, tz)) gimmickFace[k].to = std::atan2(tx - g.place.m[3], tz - g.place.m[11]);
+                        }
+                        const float a = std::clamp((float(script->ticks() - st->second.faceTick) + fieldClock / cr2::EventRuntime::kTick) / float(st->second.faceUpdates), 0.0f, 1.0f);
+                        gimmickFace[k].yaw = turnBetween(gimmickFace[k].from, gimmickFace[k].to, a);
+                        const float sc = std::hypot(g.place.m[0], g.place.m[4], g.place.m[8]), c = std::cos(gimmickFace[k].yaw), sn = std::sin(gimmickFace[k].yaw);
+                        g.place.m[0] = c * sc, g.place.m[1] = 0, g.place.m[2] = sn * sc;
+                        g.place.m[4] = 0, g.place.m[5] = sc, g.place.m[6] = 0;
+                        g.place.m[8] = -sn * sc, g.place.m[9] = 0, g.place.m[10] = c * sc;
+                    }
                     if (!st->second.motion.empty()) {
                         if (gimmickSerial[k] != st->second.motionSerial) {
                             gimmickSerial[k] = st->second.motionSerial;
@@ -1283,6 +1297,16 @@ struct Viewer {
                 pose(g, time);
             }
             if (script) fig.tint[3] = script->playerAlpha();
+            if (script && script->playerState().faceUpdates > 0) { // (the leader turned: Cr3FieldMapCharacter.ChangeDirection)
+                const cr2::GimmickState& ps = script->playerState();
+                if (leaderFace.serial != ps.faceSerial) {
+                    float tx, tz;
+                    leaderFace.serial = ps.faceSerial, leaderFace.from = heading, leaderFace.done = false;
+                    leaderFace.to = gimmickTarget(ps.faceTarget, tx, tz) ? std::atan2(tx - player[0], tz - player[2]) : heading;
+                }
+                const float a = (float(script->ticks() - ps.faceTick) + fieldClock / cr2::EventRuntime::kTick) / float(ps.faceUpdates);
+                if (!leaderFace.done) heading = turnBetween(leaderFace.from, leaderFace.to, std::clamp(a, 0.0f, 1.0f)), leaderFace.done = a >= 1;
+            }
             if (script && script->events().scene().loaded()) poseEventModels(script->events());
         }
         pose(fig, time);
@@ -1456,6 +1480,24 @@ struct Viewer {
     std::vector<std::string> shownGimmicks;
     std::vector<std::string> gimmickIds; // (the figures' gimmicks: the script's names for them)
     std::vector<int> gimmickSerial;      // (the event motion each has loaded: its SetMotion's count)
+    struct Facing {
+        int serial = 0;
+        float yaw = 0, from = 0, to = 0;
+        bool done = true; // (the leader's: its turn's end applied - the player's to steer then)
+    };
+    std::vector<Facing> gimmickFace; // (each one's turn: ChangeDirection)
+    Facing leaderFace;
+    // where a turn's target is ("player", else a gimmick's id or name)
+    bool gimmickTarget(const std::string& target, float& x, float& z) const {
+        if (target == "player") return x = player[0], z = player[2], true;
+        for (const cr2::Gimmick& g : field.gimmicks())
+            if (g.id == target || g.name == target) return x = g.position[0], z = g.position[2], true;
+        return false;
+    }
+    static float turnBetween(float from, float to, float a) { // (the shorter way round)
+        float d = std::remainder(to - from, 6.28318531f);
+        return from + d * a;
+    }
     void refreshGimmicks() {
         std::vector<std::string> want;
         for (const cr2::Gimmick& gm : field.gimmicks())
@@ -1464,7 +1506,7 @@ struct Viewer {
         shownGimmicks = want;
         std::string err;
         for (ViewFigure& g : gimmicks) unload(g);
-        gimmicks.clear(), gimmickIds.clear(), gimmickSerial.clear();
+        gimmicks.clear(), gimmickIds.clear(), gimmickSerial.clear(), gimmickFace.clear();
         for (const cr2::Gimmick& gm : field.gimmicks()) {
             if (gm.figure.empty() || !archive.contains(gm.figure + ".geom") || !script->visible(gm)) continue;
             ViewFigure g;
@@ -1478,6 +1520,9 @@ struct Viewer {
             if (gm.kind == cr2::Gimmick::Box) playMotion(g, game.boxes.isOpen(gm.boxKind, gm.boxNumber) ? "fn02" : "fn01"); // (FldBox: closed fn01, open fn02)
             gimmicks.push_back(std::move(g));
             gimmickIds.push_back(gm.id), gimmickSerial.push_back(0);
+            Facing fc; // (its joint's yaw)
+            fc.yaw = std::atan2(g.place.m[2], g.place.m[0]);
+            gimmickFace.push_back(fc);
         }
     }
 
@@ -5291,6 +5336,7 @@ struct Viewer {
         }
     }
     void fieldTabTap(int area) {
+        if (!game.tabEnable) return;
         UiFig& tab = uiFig("fldmenu_tab");
         const bool opened = fieldTabOpen && uiClock - fieldTabAt >= (tab.fig.animLoaded ? tab.fig.anim.duration() : 0.0f);
         if (area == 1) { // (the tab: open or closed, from where its animation is)
@@ -6422,7 +6468,7 @@ struct Viewer {
         else if (saveStage) tapRects.clear(), drawSave(view, proj, w, h);
         else {
             tapRects.clear();
-            drawFieldTab(view);
+            if (game.tabEnable) drawFieldTab(view); // (Cr3TabMenu.SetEnable)
             drawChangeButton(view);
         }
     }

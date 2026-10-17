@@ -21,10 +21,11 @@ struct GameState {
     // Orlando 1, Marie 2 ...) and three pairs kept (+5..+10) - a new game's
     // (Cr3InitWorkFromBattleData): Darwin and Marie, the pairs 0 2, 1 3, 4 5
     int party[2] = {0, 2};
-    // the field's leader of the two (cr3_field_data +8: FldUtilGetActiveCharacter, 0 / 1) and the
-    // character change allowed (+0x32: Cr3ChangeCharacter.SetEnable - its button)
+    // the field's leader of the two (cr3_field_data +8: FldUtilGetActiveCharacter, 0 / 1), the
+    // character change allowed (+0x32: Cr3ChangeCharacter.SetEnable - its button) and the tab
+    // (+0x33: Cr3TabMenu.SetEnable) - a new game's both (Cr3InitFieldData)
     int active = 0;
-    bool changeEnable = false;
+    bool changeEnable = true, tabEnable = true;
     int partySets[3][2] = {{0, 2}, {1, 3}, {4, 5}};
     // the sopia's levels and EXP (cr3_common_data +0x26c, a byte each, by the sopia's number; +0x28c,
     // 32 integers) - what Cr3Battle.SetParamI2 / GetParamI2 (0 / 1) read and set. A new game's

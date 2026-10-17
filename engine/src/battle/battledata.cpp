@@ -70,6 +70,12 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         c.id = i + 1;
         c.name[0] = text(o), c.name[1] = text(o + 4);
         c.figure = cstr(d, o + 8, 8);
+        c.hp = int(u32(d, o + 0x10)), c.mp = s16(d, o + 0x14);
+        c.hpGrowth = d[o + 0x21], c.mpGrowth = d[o + 0x22], c.level = d[o + 0x20];
+        for (int k = 0; k < 5; ++k) c.param[k] = s16(d, o + 0x16 + size_t(k) * 2), c.paramGrowth[k] = d[o + 0x23 + size_t(k)];
+        for (int k = 0; k < 8; ++k) c.equip[k] = s16(d, o + 0x28 + size_t(k) * 2);
+        for (int k = 0; k < 3; ++k) c.specials[k] = s16(d, o + 0x38 + size_t(k) * 2);
+        c.attack = s16(d, o + 0x44), c.pairAttack = s16(d, o + 0x46);
         characters_.push_back(c);
     }
     for (int i = 0; i < nMonster; ++i) {
@@ -81,6 +87,18 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         m.figure = cstr(d, o + 0x10, 12);
         m.hp = int(u32(d, o + 0x1c));
         m.size = int(int8_t(d[o + 0x53]));
+        for (int k = 0; k < 5; ++k) m.param[k] = s16(d, o + 0x20 + size_t(k) * 2);
+        m.level = d[o + 0x3b];
+        for (int k = 0; k < 7; ++k) m.resist[k] = d[o + 0x3c + size_t(k)];
+        for (int k = 0; k < 5; ++k) m.stateResist[k] = d[o + 0x43 + size_t(k)];
+        m.skills = u32(d, o + 0x48);
+        m.element = d[o + 0x50];
+        for (int k = 0; k < 10; ++k) {
+            m.commands[k] = s16(d, o + 0x58 + size_t(k) * 2);
+            m.condition[k] = d[o + 0x6c + size_t(k)], m.targetRule[k] = d[o + 0x76 + size_t(k)];
+            m.weight[k] = int8_t(d[o + 0x80 + size_t(k)]), m.must[k] = d[o + 0x8a + size_t(k)];
+            m.conditionValue[k] = s16(d, o + 0x94 + size_t(k) * 2);
+        }
         monsters_.push_back(m);
     }
     for (int i = 0; i < nCoupling; ++i) {
@@ -92,6 +110,42 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         c.flag = d[o + 4] != 0;
         for (int k = 0; k < 3; ++k) c.monsters[k] = s16(d, o + 8 + size_t(k) * 2);
         couplings_.push_back(c);
+    }
+    const uint32_t commands = u32(d, 0x14), autoSkills = u32(d, 0x18), items = u32(d, 0x24);
+    for (int i = 0, n = s16(d, 0x3c); i < n; ++i) {
+        const size_t o = commands + size_t(i) * 0x7c;
+        if (o + 0x7c > d.size()) break;
+        Command c;
+        c.id = i + 1;
+        c.name[0] = text(o), c.name[1] = text(o + 4); // (+0 Japanese, +4 English)
+        c.motion = cstr(d, o + 0x38, 6);
+        c.power = int(u32(d, o + 0x44));
+        c.magic = d[o + 0x49], c.spread = d[o + 0x4a], c.target = d[o + 0x4b], c.element = d[o + 0x4c];
+        c.specials = uint16_t(s16(d, o + 0x4e));
+        c.kind = d[o + 0x6f];
+        commands_.push_back(c);
+    }
+    for (int i = 0, n = s16(d, 0x3e); i < n; ++i) {
+        const size_t o = autoSkills + size_t(i) * 0x38;
+        if (o + 0x38 > d.size()) break;
+        AutoSkill a;
+        a.id = i + 1;
+        for (int k = 0; k < 7; ++k) a.resist[k] = d[o + 0x17 + size_t(k)];
+        for (int k = 0; k < 5; ++k) a.stateResist[k] = d[o + 0x1e + size_t(k)];
+        for (int k = 0; k < 7; ++k) a.groups[k] = uint16_t(s16(d, o + 0x26 + size_t(k) * 2));
+        autoSkills_.push_back(a);
+    }
+    for (int i = 0, n = s16(d, 0x44); i < n; ++i) {
+        const size_t o = items + size_t(i) * 0x38;
+        if (o + 0x38 > d.size()) break;
+        Item it;
+        it.id = i + 1;
+        it.name[0] = text(o), it.name[1] = text(o + 4);
+        it.type = s16(d, o + 0x10);
+        it.hp = int(u32(d, o + 0x14)), it.mp = s16(d, o + 0x18);
+        for (int k = 0; k < 5; ++k) it.param[k] = s16(d, o + 0x1a + size_t(k) * 2);
+        it.skills[0] = s16(d, o + 0x30), it.skills[1] = s16(d, o + 0x32);
+        items_.push_back(it);
     }
     if (characters_.empty() || monsters_.empty() || couplings_.empty()) {
         if (error) *error = "battledata: no records";
@@ -108,6 +162,15 @@ const BattleData::Monster* BattleData::monster(int id) const {
 }
 const BattleData::Coupling* BattleData::coupling(int id) const {
     return id >= 1 && id <= int(couplings_.size()) ? &couplings_[size_t(id - 1)] : nullptr;
+}
+const BattleData::Command* BattleData::command(int id) const {
+    return id >= 1 && id <= int(commands_.size()) ? &commands_[size_t(id - 1)] : nullptr;
+}
+const BattleData::Item* BattleData::item(int id) const {
+    return id >= 1 && id <= int(items_.size()) ? &items_[size_t(id - 1)] : nullptr;
+}
+const BattleData::AutoSkill* BattleData::autoSkill(int id) const {
+    return id >= 1 && id <= int(autoSkills_.size()) ? &autoSkills_[size_t(id - 1)] : nullptr;
 }
 
 bool setupBattle(const BattleData& data, int id, const int party[2], BattleSetup& out, std::string* error) {

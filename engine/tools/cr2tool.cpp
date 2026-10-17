@@ -48,6 +48,7 @@
 
 #include "assets/geom.hpp"
 #include "battle/battledata.hpp"
+#include "battle/rules.hpp"
 #include "assets/image.hpp"
 #include "assets/skeleton.hpp"
 #include "assets/mvgl.hpp"
@@ -75,7 +76,8 @@ int usage() {
                  "cr2tool fieldscript <archive> <executable> [map]\n"
                  "cr2tool event <archive> <script> [function]\n"
                  "cr2tool play <archive> <event | all>\n"
-                 "cr2tool battle <archive> <coupling | all>\n");
+                 "cr2tool battle <archive> <coupling | all>\n"
+                 "cr2tool fight <archive> <coupling> [solo | pair] [seed] [a,b]\n");
     return 2;
 }
 
@@ -895,6 +897,56 @@ int battles(const char* path, const char* which) {
     return 0;
 }
 
+// A battle played by its rules (battle/rules.cpp): the party attacking every turn - solo, each at
+// the first monster standing, or as a pair - the monsters choosing their own, to the end
+int fight(const char* path, int coupling, bool pair, uint32_t seed, const int party[2]) {
+    cr2::MvglArchive a;
+    if (!openArchive(a, path)) return 1;
+    std::vector<uint8_t> d;
+    std::string err;
+    cr2::BattleData data;
+    if (!a.read("data\\battledata.dat", d, &err) || !data.parse(d, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
+    cr2::BattleRules r(data, seed);
+    if (!r.start(coupling, party, 0, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
+    for (int i = 0; i < 5; ++i) {
+        const cr2::Fighter& f = r.fighter(i);
+        if (!f.present) continue;
+        std::printf("%d %-12s lv %3d  HP %5d  MP %4d  Atk %4d Mag %4d Def %4d Spd %4d %4d\n", i, f.name.c_str(), f.level, f.maxHp, f.maxMp,
+                    f.param[0], f.param[1], f.param[2], f.param[3], f.param[4]);
+    }
+    auto name = [&](int i) { return i >= 0 ? r.fighter(i).name : std::string("-"); };
+    while (!r.outcome() && r.turn() < 50) {
+        std::vector<cr2::BattleRules::Order> orders;
+        for (int k = 0; k < 2; ++k) {
+            const cr2::Fighter& f = r.fighter(k);
+            if (!f.alive) continue;
+            cr2::BattleRules::Order o;
+            o.actor = k;
+            o.command = f.attack; // (BtlCommand::StepCommandLoop: "attack" is the character's +0x44 either way)
+            for (int m = 2; m < 5; ++m)
+                if (r.fighter(m).alive) {
+                    o.target = m;
+                    break;
+                }
+            orders.push_back(o);
+        }
+        const int turn = r.turn() + 1;
+        for (const auto& e : r.playTurn(pair, orders)) {
+            const cr2::BattleData::Command* c = data.command(e.command);
+            std::printf("turn %2d: %s%s%s %s -> %s: %s%s%s\n", turn, name(e.actor).c_str(), e.partner >= 0 ? " + " : "",
+                        e.partner >= 0 ? name(e.partner).c_str() : "", c ? c->name[1].c_str() : "?", name(e.target).c_str(),
+                        e.hit ? (std::to_string(e.damage) + " damage").c_str() : "missed", e.critical ? " (critical)" : "",
+                        e.defeated ? ", down" : "");
+        }
+        std::printf("         HP:");
+        for (int i = 0; i < 5; ++i)
+            if (r.fighter(i).present) std::printf(" %s %d", r.fighter(i).name.c_str(), r.fighter(i).hp);
+        std::printf("\n");
+    }
+    std::printf("%s after %d turns\n", r.outcome() == 1 ? "won" : r.outcome() == 2 ? "lost" : "undecided", r.turn());
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -913,6 +965,11 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[1], "walk") && argc > 3) return walk(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "images")) return images(argv[2], argc > 3 ? argv[3] : nullptr, argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "battle") && argc > 3) return battles(argv[2], argv[3]);
+    if (!std::strcmp(argv[1], "fight") && argc > 3) {
+        int party[2] = {1, 2};
+        if (argc > 6) std::sscanf(argv[6], "%d,%d", &party[0], &party[1]);
+        return fight(argv[2], std::atoi(argv[3]), argc > 4 && !std::strcmp(argv[4], "pair"), argc > 5 ? uint32_t(std::atoi(argv[5])) : 1, party);
+    }
     if (!std::strcmp(argv[1], "run") && argc > 3) return run(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     return usage();
 }

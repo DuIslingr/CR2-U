@@ -26,6 +26,22 @@ The parameters: 0 Attack, 1 Magic (also magic defence: two thirds of it), 2 Defe
 (the turn order), 4 a fifth. States scale them (GetCharaParam: up x 1.25 for its turns - states
 5..9 -, down - states 13..17).
 
+The party's come from the save's player records (cr3_player_data, 0x4c each: +0 level, +8 HP,
++0xc max HP, +0x10 MP, +0x12 max MP, +0x14 the five parameters, +0x3c weapon, +0x3e armour,
++0x40 accessory, +0x42.. sopia) - Cr3UpdatePlayerData: the level's values, plus bonuses, plus what
+the weapon, armour and accessory add (an item: +0x14 HP, +0x18 MP, +0x1a five parameters, +0x30 /
++0x32 auto skills; 0x38 bytes) - and a new game's from the characters' records (+0x20 the level,
++0x28 the equipment; Cr3InitWorkFromBattleData). Darwin starts at level 1 with a Bronze Longsword
+and Familiar Light Armor: HP 515, MP 86; Orlando at 5: HP 830, MP 142 - as the reference video's
+first battle shows them. "Attack" is the character's +0x44 command (Darwin: Slash), solo or in a
+pair alike (BtlCommand::StepCommandLoop).
+
+A monster's level is its own (+0x3b), else near the party's mean (BtlWork::SetupEnemy): within
+the dungeon level's band (cr3_common_data[0] d: d x 10 + 1 .. (d + 1) x 10), from mean - 5 to mean
++ 2 at random. The coupling's flag lifts the limits on its HP and parameters.
+
+BtlRand(n) is lrand48() % n.
+
 A character's (BtlData): HP = +0x10 + growth(+0x21) x level x 50 / 100 (1 .. 99999); MP from
 +0x14; parameter n = +0x16 + 2n + growth(+0x23 + n) x level x 5 / 100 (0 .. 9999). Darwin at level
 0: HP 450, MP 80, Attack 255, Magic 180, Defense 110, 100, 100. A monster's: HP = +0x1c + 25 a
@@ -40,7 +56,7 @@ level; parameter n = +0x20 + 2n + level x a table's (0x535d90; 0x535d84 for the 
 | +0x44 | s32: power (Slash 150) |
 | +0x49 | u8: 0 physical, 1 magic |
 | +0x4a | u8: the spread, +- percent (Slash 5) |
-| +0x4b | u8: its targets (1 itself, 2 a monster, 3 every monster, 4 one of the party, 6 the party - both of a pair -, 7 anyone) |
+| +0x4b | u8: its targets (from the user's side: 1 itself, 2 an ally, 3 every ally, 4 a foe - and its partner, a pair being struck together -, 6 every foe, 7 anyone) |
 | +0x4c | u8: its element (0 none, 1, 2, 3 the cycle below, 4, 5) |
 | +0x4e | u16: its "specials" (BtlUtilStatus::CheckCommandSpecial, with the fighter's own extra bits): 0 never misses, 1 the defence not counted, 2 pierces armour, 5 the fighter's element, 6, 7 first, 8 can be critical, 9 always critical |
 | +0x38 | its motion (`bb01`, `bx01` ...) |

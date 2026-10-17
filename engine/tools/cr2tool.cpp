@@ -55,6 +55,7 @@
 #include "assets/skeleton.hpp"
 #include "assets/mvgl.hpp"
 #include "assets/release.hpp"
+#include "battle/script.hpp"
 #include "field/character.hpp"
 #include "field/fieldmap.hpp"
 #include "event/runtime.hpp"
@@ -897,6 +898,18 @@ int fight(const char* path, int coupling, bool pair, uint32_t seed, const int pa
     if (!a.read("data\\battledata.dat", d, &err) || !data.parse(d, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
     cr2::BattleRules r(data, seed);
     if (!r.start(coupling, party, 0, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
+    // the battle's script: battle.nut's Battle_Init, the encounter's own then (its calls run to
+    // their ends here, the pages turning by themselves)
+    cr2::GameState state;
+    const int chars[2] = {party[0] - 1, party[1] - 1}, monsters[3] = {r.fighter(2).id, r.fighter(3).id, r.fighter(4).id};
+    cr2::BattleScript script(a, state, r, coupling, chars, monsters);
+    bool scriptOk = script.begin() && script.runToEnd();
+    r.script = [&](const std::string& f) {
+        if (script.own() && scriptOk) scriptOk = script.call(f) && script.runToEnd();
+    };
+    if (script.own() && scriptOk) scriptOk = script.call("Battle_Start") && script.runToEnd();
+    if (!scriptOk) std::printf("script: %s\n", script.error().c_str());
+    std::printf("script: %s%s; charge %d\n", script.name().c_str(), script.own() ? " (its own)" : "", r.charge());
     for (int i = 0; i < 5; ++i) {
         const cr2::Fighter& f = r.fighter(i);
         if (!f.present) continue;
@@ -904,7 +917,7 @@ int fight(const char* path, int coupling, bool pair, uint32_t seed, const int pa
                     f.param[0], f.param[1], f.param[2], f.param[3], f.param[4]);
     }
     auto name = [&](int i) { return i >= 0 ? r.fighter(i).name : std::string("-"); };
-    while (!r.outcome() && r.turn() < 50) {
+    while (!r.outcome() && !r.exited() && r.turn() < 50) {
         std::vector<cr2::BattleRules::Order> orders;
         for (int k = 0; k < 2; ++k) {
             const cr2::Fighter& f = r.fighter(k);
@@ -931,8 +944,16 @@ int fight(const char* path, int coupling, bool pair, uint32_t seed, const int pa
         for (int i = 0; i < 5; ++i)
             if (r.fighter(i).present) std::printf(" %s %d", r.fighter(i).name.c_str(), r.fighter(i).hp);
         std::printf("\n");
+        if (r.exitTimer() >= 0) r.exitBattle(); // (its timer: up before the next turn's input)
     }
-    std::printf("%s after %d turns\n", r.outcome() == 1 ? "won" : r.outcome() == 2 ? "lost" : "undecided", r.turn());
+    if (r.outcome() == 1 && !r.exited()) r.script("Battle_End"); // (BtlResult)
+    std::printf("%s after %d turns\n", r.exited() ? "exited by the script" : r.outcome() == 1 ? "won" : r.outcome() == 2 ? "lost" : "undecided",
+                r.turn());
+    std::printf("script calls:");
+    for (const std::string& c : script.calls()) std::printf(" %s", c.c_str());
+    std::printf("\nstub natives:");
+    for (const auto& [n, k] : script.stubCalls()) std::printf(" %s %d", n.c_str(), k);
+    std::printf("\n");
     return 0;
 }
 

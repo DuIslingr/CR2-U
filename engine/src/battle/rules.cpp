@@ -315,18 +315,27 @@ void BattleRules::moveGauge(const Event& e, const BattleData::Command& c) {
     if (gauge_ == 4 || gauge_ == -4) break_ = 3;
 }
 
-std::vector<BattleRules::Event> BattleRules::playTurn(bool pair, const std::vector<Order>& party) {
-    std::vector<Event> out;
+void BattleRules::beginTurn() {
     for (Fighter& f : fighters_) f.guarding = false;
+    scripted_ = Scripted(); // (BtlCommand::StepInit: none given yet)
+    callScript("Turn_Start");
+}
+
+void BattleRules::chooseTurn(bool pair, const std::vector<Order>& party) {
+    // the turn the script gave (BtlCommand::StepEvent: ReserveCommand's commands, targets, pair)
+    std::vector<Order> given = party;
+    if (scripted_.reserved) {
+        pair = scripted_.pair;
+        given.clear();
+        for (int k = 0; k < 2; ++k)
+            if (scripted_.command[k] > 0) given.push_back({k, scripted_.command[k], scripted_.target[k]});
+    }
     // the party's formation this turn
     const bool canPair = pair && fighters_[0].alive && fighters_[1].alive;
     fighters_[0].partner = canPair ? 1 : -1, fighters_[1].partner = canPair ? 0 : -1;
-    struct Turn {
-        Order o;
-        int point;
-    };
     std::vector<Turn> turns;
-    for (const Order& o : party) {
+    for (int f = 0; f < 5; ++f) current_[f] = 0;
+    for (const Order& o : given) {
         if (o.actor < 0 || o.actor > 1 || !fighters_[size_t(o.actor)].alive) continue;
         if (canPair && o.actor == 1) continue; // (a pair acts once)
         const BattleData::Command* c = data_.command(o.command);
@@ -335,27 +344,115 @@ std::vector<BattleRules::Event> BattleRules::playTurn(bool pair, const std::vect
         if (c && (c->specials >> 7 & 1)) point += 10000;
         if (c && c->kind == 4) point -= 5000;
         turns.push_back({o, point});
+        current_[o.actor] = o.command;
     }
     for (int m = 2; m < 5; ++m) {
         if (!fighters_[size_t(m)].alive) continue;
-        const Order o = enemyChoice(m);
+        Order o = enemyChoice(m);
+        if (scripted_.reserved && scripted_.command[m] > 0) o = {m, scripted_.command[m], scripted_.target[m]};
         if (o.command <= 0) continue;
         const BattleData::Command* c = data_.command(o.command);
         int point = orderPoint(m, -1);
         if (c && (c->specials >> 7 & 1)) point += 10000;
         if (c && c->kind == 4) point -= 5000;
         turns.push_back({o, point});
+        current_[m] = o.command;
     }
     std::stable_sort(turns.begin(), turns.end(), [](const Turn& x, const Turn& y) { return x.point > y.point; });
-    for (const Turn& t : turns) {
-        if (outcome()) break;
-        act(t.o, out);
-    }
+    turnOrder_.clear();
+    for (const Turn& t : turns) turnOrder_.push_back(t.o);
+    next_ = 0;
+}
+
+void BattleRules::startAction() {
+    commandActor_ = nextAction().actor;
+    callScript("Command_Start");
+}
+
+void BattleRules::doAction(std::vector<Event>& out) {
+    const size_t first = out.size();
+    act(nextAction(), out);
+    for (size_t k = first; k < out.size(); ++k) // (BtlActionCtrl::ActionDeadEvent: each downed)
+        if (out[k].defeated) {
+            commandActor_ = out[k].target;
+            callScript("Dead");
+        }
+    commandActor_ = nextAction().actor;
+}
+
+void BattleRules::endAction() {
+    commandActor_ = nextAction().actor;
+    callScript("Command_End");
+    ++next_;
+}
+
+void BattleRules::endTurn() {
+    callScript("Turn_End");
     // BtlTurnEnd: a break ends, or one coming begins
     if (break_ == 1 || break_ == 2) break_ = 0, gauge_ = 0;
     else if (break_ == 3) break_ = gauge_ == 4 ? 1 : 2;
     ++turn_;
+}
+
+std::vector<BattleRules::Event> BattleRules::playTurn(bool pair, const std::vector<Order>& party) {
+    std::vector<Event> out;
+    beginTurn();
+    chooseTurn(pair, party);
+    while (actionsLeft()) {
+        startAction();
+        doAction(out);
+        endAction();
+    }
+    if (!exited()) endTurn();
     return out;
+}
+
+// the fighter record a SetParamI / GetParamI id names, and the field in it: 0 HP, 1 MP, 2..6 the
+// parameters, 7 max HP, 8 max MP (-1: none)
+static bool paramSlot(int id, int& f, int& field) {
+    if (id >= 10 && id <= 23) return f = (id - 10) / 7, field = (id - 10) % 7, true;
+    if (id >= 24 && id <= 41) {
+        f = 2 + (id - 24) / 6, field = (id - 24) % 6;
+        field = field == 0 ? 0 : field + 1; // (no MP)
+        return true;
+    }
+    if (id >= 48 && id <= 51) return f = (id - 48) / 2, field = 7 + (id - 48) % 2, true;
+    if (id >= 52 && id <= 54) return f = 2 + id - 52, field = 7, true;
+    return false;
+}
+
+int BattleRules::paramI(int id) const {
+    int f, field;
+    if (id >= 10 && id <= 41 && paramSlot(id, f, field)) {
+        const Fighter& x = fighters_[size_t(f)];
+        return field == 0 ? x.hp : field == 1 ? x.mp : x.param[field - 2];
+    }
+    if (id == 55) return gauge_;
+    if (id == 56) return break_ == 1;
+    if (id == 57) return break_ == 2;
+    return 0; // (the rest read nothing back: Cr3BattleEvent_GetParamI)
+}
+
+void BattleRules::setParamI(int id, int value) {
+    int f, field;
+    if (id >= 5 && id <= 9) ints_[id - 5] = value;
+    else if (id >= 42 && id <= 47) switches_[id - 42] = value == 1;
+    else if (id == 58) exitTimer_ = float(value) * 0.05f;
+    else if (paramSlot(id, f, field)) {
+        Fighter& x = fighters_[size_t(f)];
+        switch (field) {
+        case 0: x.hp = value < 0 ? x.maxHp : value; break;
+        case 1: x.mp = (value & 0x8000) ? x.maxMp : value; break;
+        case 7: x.maxHp = value; break;
+        case 8: x.maxMp = value; break;
+        default: x.param[field - 2] = value; break;
+        }
+    }
+}
+
+void BattleRules::clearStates() {
+    for (Fighter& f : fighters_)
+        if (f.alive) f.guarding = false; // (the only state kept yet)
 }
 
 } // namespace cr2

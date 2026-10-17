@@ -140,3 +140,61 @@ An attack by the party (SetAttackCamera1): GetAttackToEnemy(kind - 0 / 1 which, 
 and at the hit the next number (SetAttackCamera2: `Cam_BtlPair_SSS1_00`, `..._01`); by a monster
 GetAttackFromEnemy(the base + which - 2, its target: 0, 1, 3 a pair) (`Cam_Btlenemy_SSS2_20`). The
 battle opens on `Cam_Start_<pattern>_00` and the commands are chosen under `Cam_Getset_..._00`.
+
+## The battle's script (BtlEvent)
+
+Every battle runs `script\battle.nut` (BtlEvent::Initialize; the same VM and helper library as
+the events). The game calls its functions by name (BtlEvent::CallScript; the call runs on the
+game's updates and the battle's steps wait while it runs - BtlEvent::IsRunning):
+
+| Function | Called by | When |
+|---|---|---|
+| `Battle_Init` | BtlMainCtrl::StepBattleIn (after flags 0xbeb, 0xbec set) | always |
+| `Battle_Start` | StepBattleIn, after the opening's fade | the encounter's own script |
+| `Turn_Start` | BtlCommand::StepInit, before the commands are chosen | own script (else battle_tuto's Tutorial_Armor, once) |
+| `Command_Start` / `Command_End` | BtlActionCtrl::ActionCommonEventCommandStart / End, around each action | own script (else battle_tuto's Tutorial_Element / _Status) |
+| `Dead` | BtlActionCtrl::ActionDeadEvent, a fighter downed | own script |
+| `Turn_End` | the turn's end (case 1) | own script |
+| `Battle_End` | BtlResult, a battle won | own script |
+
+`battle.nut`'s Battle_Init picks the encounter's own script by its coupling -
+`Cr3Battle.SetScript("battle_221")` for 49 of them (221 .. 349) - which is loaded once the call
+is over (a new VM: Cr3Event ReleaseObject / CreateNewObject / Load / Run) and sets +0x237a, "it
+has its own"; JumpScript(script, function) loads one and calls a function in it. Battle_Init
+also sets the prologue's party (221: HP 3050, MP 340, Attack 651 ...).
+
+The natives (`Cr3Battle`, Cr3BattleEvent_*): GetCoupling, GetTurn (the turn + 1), GetCommandActor
+(+0x235c: the fighter whose action Command_Start / _End / Dead is about), GetCommand (that
+fighter's command this turn, +0x54c), GetPlayer(k) (the character fighting, from 0),
+GetMonster(k); SetCommand(f, command) / SetCommandTarget(f, target) / SetPair / ReserveCommand -
+the turn the script gives (BtlCommand::StepEvent: for all five fighters, in place of the choices);
+Charge(n) (+0x28, the charge gauge, at most 300); Exit (the battle over, BtlMain::NextMode 0 - no
+game over; flag 0x3eb: mode 2); SetParamI / GetParamI(id):
+
+| id | |
+|---|---|
+| 5..9 | values of the script's own (+0x2360..) |
+| 10 + 7k, 11 + 7k, 12 + 7k .. 16 + 7k | the party's fighter k: HP (-1: the maximum), MP (0x8000: the maximum), the five parameters |
+| 24 + 6m, 25 + 6m .. 29 + 6m | monster m: HP, the five parameters |
+| 42..47 | switches (+0x2374..): 42 read by the awakening and the advent, 43..46 by CheckCommandEnable (the commands offered), 47 by the set-up's interface |
+| 48 + 2k, 49 + 2k; 52 + m | the maximum HP, MP; a monster's maximum HP |
+| 55, 56, 57 (Get) | the break gauge; the party's / the monsters' turn break |
+| 58 (Set) | the exit's timer: Exit after n / 20 s (BtlEvent::Update) |
+
+SetParamI2 / GetParamI2(0 | 1, i) keep 32 bytes / 32 integers in the save (cr3_common_data
++0x26c / +0x28c). Invoke(n): 0 every fighter standing rid of its states (BtlStateManager::Clear
+0x21), 1 / 2 the party's status windows shown / hidden (BtlInterfaceCtrl::SetBattleStatusDisplay -
+2 also clears and hides the announcement), 3 / 4 the announcement shown / hidden, 5 / 6 switches
+(+0x237b, +0x237c).
+
+The prologue (221): the boss's AI is three turns (condition 11: the turn), Gehenna Flame on the
+third; its script's Command_Start sets the boss's Magic to 9999 for it, Command_End the exit's
+timer (0.5 s) - a battle lost that ends as the story goes on. The first battle (222): Turn_Start
+of turn 1 hides the status windows, plays a cut-in conversation, the solo / pair tutorial, shows
+them again.
+
+`engine/src/battle/script.cpp` (BattleScript) runs them: `cr2tool fight` (the calls to their
+ends, the pages turning by themselves) and the viewer's fights (each step after the call is over,
+its talks on the screen). All 49 encounters' scripts run without an error; the natives left as
+stubs are the battles' tutorials' pictures (Cr3FieldTutorial), sounds and the field menus'
+switches.

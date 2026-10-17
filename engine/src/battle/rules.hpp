@@ -5,10 +5,17 @@
 // criticals and damage (BtlCalc), until one side is down. No drawing: what happened is a list of
 // events, for the stage to show and for checks.
 //
-// What isn't here yet: the break and charge gauges and their bonuses, states other than guarding,
-// sopia (magic) and items, awakening and advent, escape, the auto skills sopia give.
+// The battle's own script (battle/script.hpp) runs at the turn's steps the game runs it at: a turn
+// is beginTurn (Turn_Start: it may give the turn's commands), chooseTurn, then each action's
+// startAction (Command_Start), doAction (Dead for each one downed), endAction (Command_End), and
+// endTurn (Turn_End) - playTurn does them all, the script's calls finishing at once.
+//
+// What isn't here yet: the charge gauge's filling and its use (awakening and advent), states other
+// than guarding, sopia (magic) and items, escape, the auto skills sopia give.
 
+#include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -83,6 +90,52 @@ public:
     // One turn: the party solo (each its order) or a pair (the first order the pair's), the
     // monsters' own choices, all in their order. Returns the events.
     std::vector<Event> playTurn(bool pair, const std::vector<Order>& party);
+    // ... step by step (BtlCommand / BtlActionCtrl), the script's calls between
+    void beginTurn();
+    void chooseTurn(bool pair, const std::vector<Order>& party);
+    bool actionsLeft() const { return !exited() && !outcome() && next_ < turnOrder_.size(); }
+    const Order& nextAction() const { return turnOrder_[next_]; }
+    void startAction();
+    void doAction(std::vector<Event>& out);
+    void endAction();
+    void endTurn();
+
+    // What the battle's script reads and sets (Cr3Battle: BtlWork)
+    // SetParamI / GetParamI's ids: 10 + 7k (k the fighter: 0, 1 the party) HP (-1: its maximum), 11 + 7k
+    // MP (0x8000: the maximum), 12 + 7k .. 16 + 7k the parameters, 48 + 2k / 49 + 2k the maximum HP /
+    // MP; the monsters 24 + 6m HP, 25 + 6m .. 29 + 6m the parameters, 52 + m the maximum HP; 5..9
+    // values of its own (+0x2360..), 42..47 switches (+0x2374..: 42 the awakening's, 43..46 which
+    // commands are offered, 47 the set-up's interface), 58 the exit's timer (n / 20 s); GetParamI
+    // 55 the break gauge, 56 / 57 the party's / the monsters' turn break
+    int paramI(int id) const;
+    void setParamI(int id, int value);
+    int charge() const { return charge_; }       // +0x28: the charge gauge, 0..300
+    void addCharge(int n) { charge_ = std::clamp(charge_ + n, 0, 300); } // (Cr3BattleEvent_Charge: at most 300)
+    bool scriptSwitch(int n) const { return n >= 42 && n <= 47 && switches_[n - 42]; }
+    int scriptCommandActor() const { return commandActor_; }   // +0x235c
+    int commandOf(int f) const { return f >= 0 && f < 5 ? current_[f] : 0; } // (+0x54c: the fighter's command this turn)
+    // the turn the script gives (ReserveCommand; SetCommand / SetCommandTarget / SetPair): in place of the orders
+    void setScriptCommand(int f, int command) { if (f >= 0 && f < 5) scripted_.command[f] = command; }
+    void setScriptTarget(int f, int target) { if (f >= 0 && f < 5) scripted_.target[f] = target; }
+    void setScriptPair(int f) { if (f >= 0 && f < 2) scripted_.pair = true; }
+    void reserveScriptTurn() { scripted_.reserved = true; }
+    // Invoke(0): every fighter standing rid of its states (BtlStateManager::Clear)
+    void clearStates();
+    // Cr3Battle.Exit: the battle over, on as the game goes (BtlMain::NextMode 0: no game over);
+    // exitTimer() the time a timer gives it first (-1: none)
+    void exitBattle() { exited_ = true; }
+    bool exited() const { return exited_; }
+    float exitTimer() const { return exitTimer_; }
+    void clearExitTimer() { exitTimer_ = -1; }
+    // the timer counted down (BtlEvent::Update: by the frame's time); at 0 the exit
+    void runExitTimer(float dt) {
+        if (exitTimer_ < 0) return;
+        exitTimer_ -= dt;
+        if (exitTimer_ <= 0) exitTimer_ = -1, exited_ = true;
+    }
+    // the battle's own script, called at the steps (the game: only an encounter with a script of
+    // its own, +0x237a, has Turn_Start ... Dead)
+    std::function<void(const std::string& function)> script;
 
     // the formulas, for checks
     int param(int f, int n) const;
@@ -100,6 +153,25 @@ private:
     BattleRandom rand_;
     Fighter fighters_[5];
     int turn_ = 0;
+    // the turn being played
+    struct Turn {
+        Order o;
+        int point;
+    };
+    std::vector<Order> turnOrder_;
+    size_t next_ = 0;
+    int current_[5] = {0, 0, 0, 0, 0};
+    std::vector<int> downed_; // (this action's: Dead for each)
+    // the script's
+    int charge_ = 0, ints_[5] = {0, 0, 0, 0, 0}, commandActor_ = -1;
+    bool switches_[6] = {false, false, false, false, false, false};
+    struct Scripted {
+        bool reserved = false, pair = false;
+        int command[5] = {-1, -1, -1, -1, -1}, target[5] = {-1, -1, -1, -1, -1};
+    } scripted_;
+    bool exited_ = false;
+    float exitTimer_ = -1;
+    void callScript(const char* f) { if (script) script(f); }
     int gauge_ = 0, break_ = 0;
     void moveGauge(const Event& e, const BattleData::Command& c);
 };

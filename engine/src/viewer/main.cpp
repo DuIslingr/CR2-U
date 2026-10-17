@@ -68,6 +68,7 @@
 #include "battle/camera.hpp"
 #include "battle/motion.hpp"
 #include "battle/rules.hpp"
+#include "battle/script.hpp"
 #include "event/runtime.hpp"
 #include "field/character.hpp"
 #include "field/fieldmap.hpp"
@@ -251,6 +252,10 @@ struct Viewer {
     // A tap (Return, a click): the vista's page; the field's - its event's page, else the nearest
     // balloon's function (FldMain::CheckTouchEventExec_Tap, EventExecute), the leader turned to it
     void tap() {
+        if (battleMode) {
+            if (battleScript && battleScript->running()) battleScript->events().advance();
+            return;
+        }
         if (eventMode) {
             if (event) event->advance();
             return;
@@ -874,11 +879,12 @@ struct Viewer {
     void advance(float dt, float sx, float sy, bool run) {
         if (battleMode) {
             battleClock += dt;
+            updateBattleScript(dt);
             updateBattleShow();
             // a fight of the flow over: its last action shown, a moment after
-            if (fightingInFlow && battleRules && battleRules->outcome() && showIndex >= showActions.size() && battleClock > showEnd + 1.5f) {
+            if (fightingInFlow && battleStep == BattleStep::Over && !battleScriptRunning() && battleClock > showEnd + 1.5f) {
                 fightingInFlow = false;
-                SDL_Log("play: battle %s", battleRules->outcome() == 1 ? "won" : "lost (taken as won: no game over yet)");
+                SDL_Log("play: battle %s", battleRules->exited() ? "ended by its script" : battleRules->outcome() == 1 ? "won" : "lost (taken as won: no game over yet)");
                 ++battlesSkipped;
                 afterBattle();
             }
@@ -894,7 +900,10 @@ struct Viewer {
     }
 
     // The events' runtime the screen shows: the vista's, else the field's
-    cr2::EventRuntime* activeEvents() { return eventMode ? event.get() : script ? &script->events() : nullptr; }
+    cr2::EventRuntime* activeEvents() {
+        if (battleMode && battleScript) return &battleScript->events(); // (the battle's talks)
+        return eventMode ? event.get() : script ? &script->events() : nullptr;
+    }
 
     // --play: the game's flow - the field's entry, then what it reserved (GameState::next):
     // another area (SetPopPoint), a battle, a vista event (FldMain::BranchAfterEvent); after a
@@ -1212,6 +1221,26 @@ struct Viewer {
         return "aPos_" + std::string(targetPair ? "pPair" : target == 0 ? "pSoloA" : "pSoloB") + mk;
     }
 
+    // The fight's steps (BtlMainCtrl / BtlCommand / BtlActionCtrl), the battle's script between:
+    // the opening, Battle_Start; each turn Turn_Start, its order, then for each action
+    // Command_Start, the action shown, Command_End; the end - each step after the script's call
+    // is over (BtlEvent::IsRunning), its talks on the screen meanwhile
+    enum class BattleStep { Opening, TurnBegin, TurnChoose, ActionStart, ActionDo, ActionEnd, Over };
+    BattleStep battleStep = BattleStep::Over;
+    std::unique_ptr<cr2::BattleScript> battleScript;
+    float battleScriptClock = 0;
+    bool battleScriptOk = true;
+    // one of the game's updates for the script (20 a second), and the exit's timer
+    void updateBattleScript(float dt) {
+        if (!battleRules) return;
+        battleRules->runExitTimer(dt);
+        if (!battleScript || !battleScriptOk) return;
+        battleScriptClock = std::min(battleScriptClock + dt, 0.25f);
+        for (; battleScriptClock >= cr2::EventRuntime::kTick; battleScriptClock -= cr2::EventRuntime::kTick)
+            if (!(battleScriptOk = battleScript->tick())) SDL_Log("battle script: %s", battleScript->error().c_str());
+    }
+    bool battleScriptRunning() const { return battleScript && battleScriptOk && battleScript->running(); }
+
     void startFight(int mode, uint32_t seed) {
         battleFight = mode;
         battleRules = std::make_unique<cr2::BattleRules>(battleData, seed);
@@ -1223,6 +1252,19 @@ struct Viewer {
             battleRules.reset();
             return;
         }
+        // its script: battle.nut's Battle_Init now (BtlMainCtrl::StepBattleIn), the encounter's own after
+        const int chars[2] = {party[0] - 1, party[1] - 1};
+        const int monsters[3] = {battleRules->fighter(2).id, battleRules->fighter(3).id, battleRules->fighter(4).id};
+        battleScript = std::make_unique<cr2::BattleScript>(archive, game, *battleRules, battle.coupling, chars, monsters);
+        battleScriptClock = 0;
+        battleScriptOk = battleScript->begin() && battleScript->runToEnd(100);
+        if (!battleScriptOk) SDL_Log("battle script: %s", battleScript->error().c_str());
+        else SDL_Log("battle script: %s%s", battleScript->name().c_str(), battleScript->own() ? " (its own)" : "");
+        battleRules->script = [this](const std::string& f) {
+            if (battleScript && battleScriptOk && battleScript->own() && !(battleScriptOk = battleScript->call(f)))
+                SDL_Log("battle script: %s", battleScript->error().c_str());
+        };
+        battleStep = BattleStep::Opening;
         int u = 0;
         for (int k = 0; k < 2; ++k) fighterUnit[k] = party[k] > 0 ? u++ : -1;
         for (int k = 0; k < 3; ++k) fighterUnit[2 + k] = k < int(battle.monsters.size()) ? int(battle.party.size()) + k : -1;
@@ -1258,17 +1300,28 @@ struct Viewer {
         }
     }
 
-    // the next action (or turn) once the last is over
+    // the fight's next step once the last is over and the script's call is
     void stepBattleShow() {
         if (!battleRules || battleFight == 0) return;
-        if (battleClock < showEnd) return;
-        if (showIndex < showActions.size()) ++showIndex;
-        if (showIndex >= showActions.size()) {
-            if (battleRules->outcome()) {
-                setBattleCamera(battle.camera);
-                return;
-            }
-            // a turn: the party attacking the first monster standing
+        if (battleScriptRunning() || battleClock < showEnd) return;
+        if (battleRules->exitTimer() >= 0) return; // (its exit coming: before a win or a loss is shown)
+        if (battleStep != BattleStep::Over && (battleRules->exited() || (battleRules->outcome() && battleStep != BattleStep::ActionEnd))) {
+            if (!battleRules->exited() && battleRules->outcome() == 1) battleRules->script("Battle_End"); // (BtlResult)
+            battleStep = BattleStep::Over;
+            showIndex = showActions.size();
+            setBattleCamera(battle.camera);
+            return;
+        }
+        switch (battleStep) {
+        case BattleStep::Opening: // (the opening over: StepBattleIn's Battle_Start)
+            battleStep = BattleStep::TurnBegin;
+            battleRules->script("Battle_Start");
+            break;
+        case BattleStep::TurnBegin:
+            battleRules->beginTurn();
+            battleStep = BattleStep::TurnChoose;
+            break;
+        case BattleStep::TurnChoose: { // the party attacking the first monster standing
             const bool pair = battleFight == 2;
             std::vector<cr2::BattleRules::Order> orders;
             for (int k = 0; k < 2; ++k) {
@@ -1283,20 +1336,41 @@ struct Viewer {
                     }
                 orders.push_back(o);
             }
-            placeParty(pair && battleRules->fighter(0).alive && battleRules->fighter(1).alive);
+            battleRules->chooseTurn(pair, orders);
+            placeParty(battleRules->fighter(0).partner >= 0);
+            SDL_Log("turn %d", battleRules->turn() + 1);
+            battleStep = BattleStep::ActionStart;
+            break;
+        }
+        case BattleStep::ActionStart:
+            if (!battleRules->actionsLeft()) {
+                battleRules->endTurn();
+                SDL_Log("turn over; gauge %d", battleRules->gauge());
+                battleStep = BattleStep::TurnBegin;
+                break;
+            }
+            battleRules->startAction();
+            battleStep = BattleStep::ActionDo;
+            break;
+        case BattleStep::ActionDo: {
+            std::vector<cr2::BattleRules::Event> events;
+            battleRules->doAction(events);
             showActions.clear(), showIndex = 0;
-            for (const auto& e : battleRules->playTurn(pair, orders)) {
-                if (showActions.empty() || showActions.back().actor != e.actor || showActions.back().command != e.command)
-                    showActions.push_back({e.actor, e.partner, e.command, {}});
+            for (const auto& e : events) {
+                if (showActions.empty()) showActions.push_back({e.actor, e.partner, e.command, {}});
                 showActions.back().hits.push_back(e);
             }
-            SDL_Log("turn %d: %zu actions; gauge %d", battleRules->turn(), showActions.size(), battleRules->gauge());
-            if (showActions.empty()) {
-                setBattleCamera(battle.camera);
-                return;
-            }
+            battleStep = BattleStep::ActionEnd;
+            if (!showActions.empty()) beginShowAction(showActions[0]);
+            break;
         }
-        beginShowAction(showActions[showIndex]);
+        case BattleStep::ActionEnd:
+            showIndex = showActions.size();
+            battleRules->endAction();
+            battleStep = BattleStep::ActionStart;
+            break;
+        case BattleStep::Over: break;
+        }
     }
 
     void beginShowAction(const ShowAction& a) {
@@ -1541,7 +1615,7 @@ struct Viewer {
     }
 
     // a frame between the event's updates: how far past the last one it is (none once it ended)
-    float eventLead() const { return eventMode ? (eventEnded ? 0.0f : eventClock) : fieldClock; }
+    float eventLead() const { return battleMode && battleScript ? battleScriptClock : eventMode ? (eventEnded ? 0.0f : eventClock) : fieldClock; }
 
     void updateEvent(float dt) {
         eventClock = std::min(eventClock + dt, 0.25f);
@@ -2040,6 +2114,7 @@ struct Viewer {
     float commandShownStart = -10;
     void drawBattleHud(int w, int h) {
         if (!battleMode || !battleRules) return;
+        if (battleScript && !battleScript->statusShown()) return; // (its talk on)
         const Mat4 proj = uiProjection(w, h);
         Mat4 camera = cr2::mat4Identity();
         camera[14] = -0.881f;

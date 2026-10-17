@@ -104,8 +104,12 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       sweep, each attack's two shots, the monsters', the commands'
 - [x] The battle's HUD: the party's windows (faces, HP / MP bars and numbers), the break gauge,
       the command's name, the damage numbers - as the reference video shows them
+- [x] Battles' scripts (`script\battle.nut`, the encounters' own `battle_221` ..): run at the
+      battle's steps as the game runs them - the prologue's set party and its scripted end, the
+      first battle's talk and the status windows hidden for it, the turns they give, the charge
+      they fill (`cr2tool fight 221`: all 49 scripted encounters run)
 - [ ] Battles on screen: the commands to choose, the actions' effects,
-      the windows
+      the windows, the battles' tutorials, the charge gauge's use (awakening, advent)
 - [ ] Treasure boxes, the other windows (announcements, tutorials, items), the HUD, the sounds
       between areas
 - [ ] Engine: events, battles, menus

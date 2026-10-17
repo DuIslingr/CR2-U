@@ -19,6 +19,10 @@ struct GameState {
     // (Cr3InitWorkFromBattleData): Darwin and Marie, the pairs 0 2, 1 3, 4 5
     int party[2] = {0, 2};
     int partySets[3][2] = {{0, 2}, {1, 3}, {4, 5}};
+    // what the battles' scripts keep (Cr3Battle.SetParamI2 / GetParamI2: cr3_common_data +0x26c,
+    // 32 bytes; +0x28c, 32 integers)
+    signed char battleBytes[32] = {};
+    int battleInts[32] = {};
     bool flag(int n) const { return n >= 0 && size_t(n) < flags.size() && flags[size_t(n)]; }
     void setFlag(int n, bool on) {
         if (n < 0) return;

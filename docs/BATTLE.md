@@ -210,7 +210,9 @@ move back, ten hit times from +0x1c, the turn, the effect. Where the attacker go
 `battleapos` (GetAposName: by a monster the party's `aPos_<its place><pSoloA | pSoloB | pPairA |
 pPairB>`, by the party a monster's `aPos_<pSoloA | pSoloB | pPair><s, ssL, m, msL ...>`; the
 fighters' indices +0xb48 / +0xb4c, +0xb50 / +0xb54 into BtlAposTable's names). Darwin's Slash
-(`j001bo01`): there over frames 4 - 10, the hit at 11, back over 25 - 32.
+(`j001bo01`): there over frames 4 - 10, the hit at 11, back over 25 - 32. The windows change with
+the hit: the HP, the break gauge and the charge stay as they were until it lands (the reference
+video: "Even" through Slash on a mantis that stands).
 
 The cameras: BtlCameraTable, also built in code (tools/gen_camera_table.py ->
 engine/src/battle/cameratable.inc), numbers into btl_camera_name_table (462 names: the joints of

@@ -1554,6 +1554,9 @@ struct Viewer {
             battleStep = BattleStep::ActionDo;
             break;
         case BattleStep::ActionDo: {
+            hudBefore.hp.clear();
+            for (int k = 0; k < 5; ++k) hudBefore.hp.push_back(battleRules->fighter(k).hp);
+            hudBefore.gauge = battleRules->gauge(), hudBefore.charge = battleRules->charge();
             std::vector<cr2::BattleRules::Event> events;
             battleRules->doAction(events);
             showActions.clear(), showIndex = 0;
@@ -1574,6 +1577,16 @@ struct Viewer {
         }
     }
 
+    // the HUD's as the show has it: until an action's hits land, the HP, the break gauge and the
+    // charge before it (the windows change with the hit, as the reference video's)
+    struct HudValues {
+        std::vector<int> hp;
+        int gauge = 0, charge = 0;
+    } hudBefore;
+    bool hudHeld() const { return showIndex < showActions.size() && !showHitDone && hudBefore.hp.size() == 5; }
+    int shownHp(int f) const { return hudHeld() ? hudBefore.hp[size_t(f)] : battleRules->fighter(f).hp; }
+    int shownGauge() const { return hudHeld() ? hudBefore.gauge : battleRules->gauge(); }
+    int shownCharge() const { return hudHeld() ? hudBefore.charge : battleRules->charge(); }
     void beginShowAction(const ShowAction& a) {
         showStart = battleClock, showHitDone = false;
         const cr2::BattleData::Command* c = battleData.command(a.command);
@@ -2619,7 +2632,8 @@ struct Viewer {
                 poseUi(c, figure, t, loop);
                 return &c;
             };
-            const float hpT = f.hp > 0 ? std::max(float(f.hp) * 5.0f / float(std::max(f.maxHp, 1)), 0.07f) : 0.0f;
+            const int hp = shownHp(k);
+            const float hpT = hp > 0 ? std::max(float(hp) * 5.0f / float(std::max(f.maxHp, 1)), 0.07f) : 0.0f;
             const float mpT = f.maxMp > 0 ? float(f.mp) * 5.0f / float(f.maxMp) : 0.0f;
             if (UiFig* c = child("call_btlHpBar_per", "btlhpbar_per", hpT, false)) drawFigure(c->fig, view.data());
             if (UiFig* c = child("call_btlMpBar_per", "btlmpbar_per", mpT, false)) drawFigure(c->fig, view.data());
@@ -2659,13 +2673,13 @@ struct Viewer {
                 num.fig.place = cr2::Mat34();
                 float x, y;
                 if (uiJoint(num, "call_dotNum_num1", x, y))
-                    drawDigits(std::string(what) == "hpNum" ? f.hp : f.mp, 90, std::string(what) == "hpNum" ? 5 : 4, x, y, proj);
+                    drawDigits(std::string(what) == "hpNum" ? hp : f.mp, 90, std::string(what) == "hpNum" ? 5 : 4, x, y, proj);
             }
         }
         // the charge gauge (BreakWindowMenu::Update -> ChargeGaugeWindow::SetChargeGaugeParameter
         // with charge / 10, 0..30: chggauge played towards that / 20 s - 1.5 s full - forwards or
         // back, at its own speed)
-        const float chargeT = float(std::clamp(battleRules->charge(), 0, 300) / 10) / 20.0f;
+        const float chargeT = float(std::clamp(shownCharge(), 0, 300) / 10) / 20.0f;
         const float step = std::max(battleClock - chargeShownAt, 0.0f);
         chargeShownAt = battleClock;
         chargeShown = chargeShown < chargeT ? std::min(chargeShown + step, chargeT) : std::max(chargeShown - step, chargeT);
@@ -2680,11 +2694,11 @@ struct Viewer {
         drawFigure(bw.fig, view.data());
         UiFig& bg = uiFig("brkgauge");
         bg.fig.place = cr2::Mat34();
-        poseUi(bg, "brkgauge", float(battleRules->gauge() + 4) * 0.5f);
+        poseUi(bg, "brkgauge", float(shownGauge() + 4) * 0.5f);
         drawFigure(bg.fig, view.data());
         UiFig& bi = uiFig("brkinfo");
         bi.fig.place = cr2::Mat34();
-        const int g = battleRules->gauge();
+        const int g = shownGauge();
         poseUi(bi, g > 0 ? "brkinfopl_io" : g < 0 ? "brkinfoen_io" : "brkinfoev_io", 5.0f);
         drawFigure(bi.fig, view.data());
         if (const char* m = SDL_getenv("CR2_MENU")) drawCommandMenu(std::string("btlbtn") + m + "_io", 10.0f, view, {}); // (debugging)

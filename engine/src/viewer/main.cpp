@@ -1086,6 +1086,8 @@ struct Viewer {
             cr2::lightsFromFigure(mg, ms, lighting);
         for (BattleUnit& u : battleUnits) unload(u.fig);
         battleUnits.clear();
+        for (BattleEffect& fx : battleEffects) unload(*fx.fig);
+        battleEffects.clear();
         std::string log;
         auto add = [&](const cr2::BattleSetup::Unit& su) {
             BattleUnit u;
@@ -1885,6 +1887,20 @@ struct Viewer {
                         const std::vector<cr2::Mat34> ww = bu.fig.skeleton.world(pp, bu.fig.place);
                         if (size_t(dj) < ww.size()) p[0] = ww[size_t(dj)].m[3], p[1] = ww[size_t(dj)].m[7], p[2] = ww[size_t(dj)].m[11];
                     }
+                    // the hit's effect there (BtlActionCtrl::HitEffect / ShowCommandHitEffect: the
+                    // command's +0x18 - eff106 for a critical)
+                    if (e.hit && !restore) {
+                        const cr2::BattleData::Command* ec = battleData.command(a.command);
+                        const std::string fx = e.critical ? "eff106" : ec ? ec->hitEffect : "";
+                        // (at the target's DummyDP01 as its motion has it now: the locators lie at
+                        // the origin in the bind pose)
+                        float at[3] = {p[0], p[1], p[2]};
+                        if (dj >= 0 && !bu.fig.posed.empty()) {
+                            const std::vector<cr2::Mat34> pw = bu.fig.skeleton.world(bu.fig.posed, bu.fig.place);
+                            if (size_t(dj) < pw.size()) at[0] = pw[size_t(dj)].m[3], at[1] = pw[size_t(dj)].m[7], at[2] = pw[size_t(dj)].m[11];
+                        }
+                        if (!fx.empty()) spawnEffect(fx, at);
+                    }
                     const float* mm = battleVP.data();
                     const float cw = mm[3] * p[0] + mm[7] * p[1] + mm[11] * p[2] + mm[15];
                     if (cw > 0) {
@@ -1932,6 +1948,50 @@ struct Viewer {
         drawFigure(battleMap, vp.data());
         for (const BattleUnit& u : battleUnits)
             if (!u.hidden) drawFigure(u.fig, vp.data());
+        drawEffects(cw, vp);
+    }
+
+    // The battle's effects (BtlEffectCtrl / BtlEffect: an effNNN figure playing its animation once,
+    // where it was made - turned to the camera, its quads facing it)
+    struct BattleEffect {
+        std::unique_ptr<ViewFigure> fig;
+        float start = 0, length = 0;
+        float at[3] = {0, 0, 0};
+    };
+    std::vector<BattleEffect> battleEffects;
+    void spawnEffect(const std::string& name, const float at[3]) {
+        BattleEffect fx;
+        fx.fig = std::make_unique<ViewFigure>();
+        std::string err;
+        const float keep = time;
+        if (!loadFigure(name + ".geom", *fx.fig, &err)) {
+            SDL_Log("effect %s: %s", name.c_str(), err.c_str());
+            return;
+        }
+        const auto it = std::find(fx.fig->anims.begin(), fx.fig->anims.end(), name + ".anim");
+        if (it != fx.fig->anims.end()) loadAnim(*fx.fig, size_t(it - fx.fig->anims.begin()));
+        time = keep;
+        fx.fig->absolute = true;
+        fx.start = battleClock, fx.length = fx.fig->animLoaded ? fx.fig->anim.duration() : 0.5f;
+        for (int c = 0; c < 3; ++c) fx.at[c] = at[c];
+        battleEffects.push_back(std::move(fx));
+    }
+    void drawEffects(const cr2::Mat34& camera, const Mat4& vp) {
+        for (size_t k = 0; k < battleEffects.size();) {
+            BattleEffect& fx = battleEffects[k];
+            const float t = battleClock - fx.start;
+            if (t > fx.length || t < 0) {
+                unload(*fx.fig);
+                battleEffects.erase(battleEffects.begin() + std::ptrdiff_t(k));
+                continue;
+            }
+            cr2::Mat34 place = camera;
+            for (int c = 0; c < 3; ++c) place.m[c * 4 + 3] = fx.at[c];
+            fx.fig->place = place;
+            pose(*fx.fig, t, false);
+            drawFigure(*fx.fig, vp.data());
+            ++k;
+        }
     }
 
     // The event (--event): its runtime, the vista's map figure, a figure for each of the scene's

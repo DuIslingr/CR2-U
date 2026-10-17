@@ -218,7 +218,11 @@ video: "Even" through Slash on a mantis that stands). The number at the target's
 20, 30, 40 a weakness's, 50 / 60 the restores'), and a mark there (CreateDispState ->
 DamageInfo01: `bonus` with damageinfodata02's animator - 0 `bonus_miss` for a miss, 2
 `bonus_crtcl` for a critical, 1 `bonus_block`, 3 `bonus_blow`; over 1.45 s): the reference video's
-"1342 Critical!". An animator's material channels (beside a figure's own animation) add to the
+"1342 Critical!". The hit's effect (BtlActionCtrl::HitEffect -> ShowCommandHitEffect):
+the command's +0x18 (Slash `eff105`; `eff106` for a critical) - an effNNN figure playing its
+animation once at the one hit, at its DummyDP01 as its motion has it (the locators lie at the
+origin in the bind pose), turned to the camera; the effect table's other placements
+(BtlEffectTable, built by a static initializer) not yet. An animator's material channels (beside a figure's own animation) add to the
 material's value: bonus_crtcl's fade -1 .. 0 about 1, brkInfo's colour -0.5 .. +0.43 .. 0 about its
 0.99 (a flash, then the cream "Even" / "Player" / "Enemy").
 

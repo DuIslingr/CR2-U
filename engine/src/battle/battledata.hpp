@@ -56,6 +56,7 @@ public:
         std::string name[2];
         std::string text[2]; // +0x08, +0x0c: what it does (the lists' help; "\\n" a line break)
         std::string motion;  // +0x38 ("bo01")
+        std::string hitEffect; // +0x18 the effect on the one hit ("eff101": BtlActionCtrl::HitEffect)
         int power = 0;       // +0x44
         int magic = 0;       // +0x49: 0 physical, 1 magic
         int spread = 0;      // +0x4a: +- percent

@@ -278,9 +278,13 @@ chosen - SetCommandTargetCamera). The party chooses on its solo places. The targ
 the one StepBattleIn_Setup keeps for each fighter (BtlWork +0x580, 0x30 each: GetCameraInfo - the
 camera figure at that frame and posed, its first frame held): a party member's GetTarget 0 / 1
 (PCfighter / PCpartner; 2 PCsolo for one alone, 3 PCpair for a pair's command), a monster's GetTarget
-4 + its size (Cam_Command_S / M / L / XL) in the monster's own frame (its position and turn), the
-human patterns' 8 / 9 and 10, the boss's 12, XLXL's 13 in the battle's - over 10 frames from one
-target to the next (the viewer cuts).
+4 + its size (Cam_Command_S / M / L / XL) in the monster's own frame - its DummyCP joint's world
+position and turn (BtlModel::GetPosition / GetRotation("DummyCP")) on its stance's first frame at its
+battledpos, not its feet (Cam_Command_M_00 sits 0.1 below its frame) -, the human patterns' 8 / 9
+and 10, the boss's 12, XLXL's 13 in the battle's. The first target's camera is a cut
+(StartCtrlCamera); from one target to another on the same side the camera moves there over 0.5 s
+(BtlMoveCtrl::SetMovePosition / SetMoveRotation, interpolation 1 with k 10: u + u (1 - u) k / 10 =
+2u - u²), to the other side's at once (time 0).
 
 Options (StepOption / StepOptionLoop: the battle's windows off, BattleOptionMenu - an OptionMenu
 with the battle's labels): the title (`menu`, menuOpt_io), the seat (seatOpt_io) with its labels

@@ -88,6 +88,45 @@ using cr2::Mat4;
 // GL enums the materials' render states use
 constexpr uint32_t kGlSrcAlpha = 0x0302, kGlOneMinusSrcAlpha = 0x0303, kGlFront = 0x0404, kGlBack = 0x0405;
 
+// a place (rotation and translation, no scale) as a quaternion x y z w
+void placeQuat(const cr2::Mat34& a, float q[4]) {
+    const float* m = a.m;
+    const float t = m[0] + m[5] + m[10];
+    if (t > 0) {
+        const float s = std::sqrt(t + 1) * 2;
+        q[3] = s / 4, q[0] = (m[9] - m[6]) / s, q[1] = (m[2] - m[8]) / s, q[2] = (m[4] - m[1]) / s;
+    } else if (m[0] > m[5] && m[0] > m[10]) {
+        const float s = std::sqrt(1 + m[0] - m[5] - m[10]) * 2;
+        q[3] = (m[9] - m[6]) / s, q[0] = s / 4, q[1] = (m[1] + m[4]) / s, q[2] = (m[2] + m[8]) / s;
+    } else if (m[5] > m[10]) {
+        const float s = std::sqrt(1 + m[5] - m[0] - m[10]) * 2;
+        q[3] = (m[2] - m[8]) / s, q[0] = (m[1] + m[4]) / s, q[1] = s / 4, q[2] = (m[6] + m[9]) / s;
+    } else {
+        const float s = std::sqrt(1 + m[10] - m[0] - m[5]) * 2;
+        q[3] = (m[4] - m[1]) / s, q[0] = (m[2] + m[8]) / s, q[1] = (m[6] + m[9]) / s, q[2] = s / 4;
+    }
+}
+
+// between two places at t: the translation straight, the rotation by slerp
+cr2::Mat34 blendPlace(const cr2::Mat34& a, const cr2::Mat34& b, float t) {
+    float qa[4], qb[4];
+    placeQuat(a, qa), placeQuat(b, qb);
+    float d = qa[0] * qb[0] + qa[1] * qb[1] + qa[2] * qb[2] + qa[3] * qb[3];
+    if (d < 0) d = -d, qb[0] = -qb[0], qb[1] = -qb[1], qb[2] = -qb[2], qb[3] = -qb[3];
+    float wa = 1 - t, wb = t;
+    if (d < 0.9995f) {
+        const float th = std::acos(std::min(d, 1.0f)), s = std::sin(th);
+        wa = std::sin((1 - t) * th) / s, wb = std::sin(t * th) / s;
+    }
+    cr2::JointTransform j;
+    float l = 0;
+    for (int k = 0; k < 4; ++k) j.rotation[k] = qa[k] * wa + qb[k] * wb, l += j.rotation[k] * j.rotation[k];
+    l = std::sqrt(l);
+    for (int k = 0; k < 4; ++k) j.rotation[k] /= l;
+    for (int k = 0; k < 3; ++k) j.translation[k] = a.m[3 + 4 * k] + (b.m[3 + 4 * k] - a.m[3 + 4 * k]) * t;
+    return j.matrix();
+}
+
 Mat4 perspective(float fovY, float aspect, float zn, float zf) {
     const float f = 1.0f / std::tan(fovY / 2);
     Mat4 r{};
@@ -1029,6 +1068,10 @@ struct Viewer {
         float motionStart = 0;
         bool loop = true;
         bool hidden = false;
+        // the frame its target camera is in (StepBattleIn_Setup's: its DummyCP on its stance's
+        // first frame there), once found
+        cr2::Mat34 targetFrame;
+        bool targetFrameSet = false;
     };
     std::vector<BattleUnit> battleUnits; // (the party, then the monsters)
     struct CameraFigure {
@@ -1043,9 +1086,15 @@ struct Viewer {
     // held, BtlCameraCtrl::GetCameraInfo's for StartCtrlCamera)
     cr2::Mat34 battleCameraPlace;
     bool battleCameraStill = false;
+    // a move from `battleCameraFrom` (the camera's world when it began) to the camera over 0.5 s
+    // from `battleCameraMoveStart` (< 0: none) - BtlMoveCtrl's interpolation 1, k 10
+    cr2::Mat34 battleCameraFrom;
+    float battleCameraMoveStart = -1;
+    int targetCameraFighter = -1; // (whose target camera it is; -1 another)
     void setBattleCamera(const std::string& name, const cr2::Mat34& place = cr2::Mat34(), bool still = false) {
         if (name.empty() || (name == battleCamera && std::equal(place.m, place.m + 12, battleCameraPlace.m))) return;
         battleCamera = name, battleCameraStart = battleClock, battleCameraPlace = place, battleCameraStill = still;
+        battleCameraMoveStart = -1, targetCameraFighter = -1;
         dev->resetHistory(); // (a cut)
     }
     void setBattleCamera(int number) {
@@ -1155,6 +1204,11 @@ struct Viewer {
                 const std::vector<cr2::Mat34> w = c.skel.world(p);
                 if (size_t(j) >= w.size()) continue;
                 world = battleCameraPlace * w[size_t(j)];
+                if (battleCameraMoveStart >= 0) {
+                    const float u = std::max((battleClock - battleCameraMoveStart) / 0.5f, 0.0f);
+                    if (u >= 1) battleCameraMoveStart = -1;
+                    else world = blendPlace(battleCameraFrom, world, u * (2 - u)); // (u + u (1 - u) k / 10)
+                }
                 fovY = gc.fovY;
                 zn = std::max(gc.near * 0.5f, 0.1f), zf = std::min(gc.far * 5.0f, 5000.0f);
                 zf = std::max(zf, zn * 2);
@@ -1295,15 +1349,41 @@ struct Viewer {
             const int p = battle.pattern;
             const cr2::BattleData::Monster* mo = battleData.monster(battleRules->fighter(f).id);
             k = p == 10 ? 10 : p == 11 ? (f == 2 ? 8 : 9) : p == 12 ? 12 : p == 9 ? 13 : (mo ? mo->size : 0) + 4;
-            if (p != 10 && p != 11 && fighterUnit[f] >= 0) { // (its position and rotation: BtlModel::GetPosition / GetRotation)
-                place = battleUnits[size_t(fighterUnit[f])].home;
-                for (int c = 0; c < 3; ++c) {
-                    const float l = std::sqrt(place.m[c] * place.m[c] + place.m[4 + c] * place.m[4 + c] + place.m[8 + c] * place.m[8 + c]);
-                    if (l > 0) place.m[c] /= l, place.m[4 + c] /= l, place.m[8 + c] /= l;
-                }
-            }
+            if (p != 10 && p != 11 && fighterUnit[f] >= 0) place = targetFrame(battleUnits[size_t(fighterUnit[f])]);
         }
-        if (const char* n = cr2::battleCameraName(cr2::cameraTarget(k))) setBattleCamera(std::string(n), place, true);
+        const char* n = cr2::battleCameraName(cr2::cameraTarget(k));
+        if (!n || f == targetCameraFighter) return;
+        // (another target on the same side: the camera moves there - SetMovePosition /
+        // SetMoveRotation over 0.5 s; the other side's, or the first: a cut, StartCtrlCamera)
+        cr2::Mat34 from;
+        float fov, zn, zf;
+        const bool move = targetCameraFighter >= 0 && (targetCameraFighter < 2) == (f < 2) && battleView(from, fov, zn, zf);
+        setBattleCamera(std::string(n), place, true);
+        targetCameraFighter = f;
+        if (move) battleCameraFrom = from, battleCameraMoveStart = battleClock;
+    }
+    // a monster's target camera's frame (StepBattleIn_Setup: BtlModel::GetPosition / GetRotation
+    // ("DummyCP") - the joint's world place, its turn without scale - on the pose then, its stance's
+    // first frame at its battledpos; its feet if it has none)
+    const cr2::Mat34& targetFrame(BattleUnit& bu) {
+        if (bu.targetFrameSet) return bu.targetFrame;
+        bu.targetFrameSet = true;
+        cr2::Mat34& place = bu.targetFrame;
+        place = bu.home;
+        const int cj = bu.fig.skeleton.joint(cr2::nameHash("DummyCP"));
+        if (cj >= 0) {
+            std::vector<cr2::JointTransform> pose = bu.fig.skeleton.basePose;
+            std::vector<uint8_t> d;
+            cr2::Animation a;
+            if (archive.read(bu.figure + "bb01.anim", d) && a.parse(d) && a.joints() == int(pose.size())) pose = a.poseAbsolute(pose, 0);
+            const std::vector<cr2::Mat34> w = bu.fig.skeleton.world(pose, bu.home);
+            if (size_t(cj) < w.size()) place = w[size_t(cj)];
+        }
+        for (int c = 0; c < 3; ++c) {
+            const float l = std::sqrt(place.m[c] * place.m[c] + place.m[4 + c] * place.m[4 + c] + place.m[8 + c] * place.m[8 + c]);
+            if (l > 0) place.m[c] /= l, place.m[4 + c] /= l, place.m[8 + c] /= l;
+        }
+        return place;
     }
     // a token of --input as a choice
     void inputToken(const std::string& t) {

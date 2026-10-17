@@ -88,16 +88,40 @@ bool EventScene::p000(Mat34& world) const {
     return true;
 }
 
+namespace {
+// a model held at a point or turned (SetPosDirect / ChangeDirection) over its locator's place
+void hold(const EventModel& m, Mat34& p, float lead) {
+    if (m.pinned) p.m[3] = m.pin[0], p.m[7] = m.pin[1], p.m[11] = m.pin[2];
+    if (!m.turned) return;
+    const float a = m.turnSeconds > 0 ? std::clamp((m.turnTime + lead) / m.turnSeconds, 0.0f, 1.0f) : 1.0f;
+    float d = std::remainder(m.turnTo - m.turnFrom, 6.2831853f); // (the shorter way round)
+    const float yaw = m.turnFrom + d * a;
+    const float sc = std::hypot(p.m[0], p.m[4], p.m[8]), c = std::cos(yaw), s = std::sin(yaw);
+    p.m[0] = c * sc, p.m[1] = 0, p.m[2] = s * sc;
+    p.m[4] = 0, p.m[5] = sc, p.m[6] = 0;
+    p.m[8] = -s * sc, p.m[9] = 0, p.m[10] = c * sc;
+}
+} // namespace
+
 void EventScene::place(EventModel& m) {
     if (locators_.count(lower(m.name))) m.place = locator(m.name, m.sceneTime);
-    if (m.pinned) m.place.m[3] = m.pin[0], m.place.m[7] = m.pin[1], m.place.m[11] = m.pin[2];
+    hold(m, m.place, 0);
 }
 
 Mat34 EventScene::placeAt(const EventModel& m, float lead) const {
     if (!m.moving || lead <= 0 || !locators_.count(lower(m.name))) return m.place;
     Mat34 p = locator(m.name, std::min(m.sceneTime + lead, m.moveEnd));
-    if (m.pinned) p.m[3] = m.pin[0], p.m[7] = m.pin[1], p.m[11] = m.pin[2];
+    hold(m, p, lead);
     return p;
+}
+
+void EventScene::turnTo(const std::string& name, const std::string& other, int frames) {
+    EventModel* m = model(name);
+    const EventModel* o = model(other);
+    if (!m || !o) return;
+    m->turnFrom = std::atan2(m->place.m[2], m->place.m[10]);
+    m->turnTo = std::atan2(o->place.m[3] - m->place.m[3], o->place.m[11] - m->place.m[11]);
+    m->turned = true, m->turnSeconds = float(std::max(frames, 0)) * 0.05f, m->turnTime = 0;
 }
 
 void EventScene::pin(const std::string& name, float x, float y, float z) {
@@ -139,6 +163,10 @@ void EventScene::update(float dt) {
         }
         m.animTime += dt;
         m.alphaTime += dt;
+        if (m.turned) {
+            m.turnTime += dt;
+            place(m);
+        }
     }
     cameraTime_ = std::min(cameraTime_ + dt, std::max(cameraEnd_, cameraTime_));
     lightTime_ = std::min(lightTime_ + dt, std::max(lightEnd_, lightTime_));

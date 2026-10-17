@@ -416,7 +416,9 @@ camera, the moves, the animations and the fades where they are by then. The scri
   model's `j<NNN>face` material: EvtModel::ChangeTexture_Face), `ChangeAlpha(model, from, to,
   frames)` (EvtModel::SetAlpha: its alpha over the frames - `ModelFade_Event`),
   `SetPosDirect(model, x, y, z)` / `SetPosLocator(model, other)` (the model - an effect,
-  `PlayEff_Direct` / `PlayEff_Locate` - held at a point, or where the other model is), `SetDrawSkip`,
+  `PlayEff_Direct` / `PlayEff_Locate` - held at a point, or where the other model is),
+  `ChangeDirection(model, other, frames)` (EvtModel::ChangeDirection, FldDirectionManager: turned
+  about y, the shorter way, to face the other over the frames), `SetDrawSkip`,
   `Terminate`; `Cr3System.SetBGColor(r, g, b)` the frame's clear colour (GameMain::Draw's: the
   white behind an awakening's message, the field's layers hidden by `Cr3FieldMap.SetVisibleBG` /
   `FG` / `MG` / `3D`, which the field's drawing now honours);

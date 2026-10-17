@@ -45,6 +45,10 @@ struct EventModel {
     // SetPosDirect / SetPosLocator: held at a point (its figure's position), not where its locator is
     bool pinned = false;
     float pin[3] = {0, 0, 0};
+    // ChangeDirection(model, other, frames) (EvtModel::ChangeDirection - FldDirectionManager): turned
+    // about y to face the other over the frames, then held so
+    bool turned = false;
+    float turnFrom = 0, turnTo = 0, turnSeconds = 0, turnTime = 0;
 };
 
 class EventScene {
@@ -61,6 +65,7 @@ public:
     // SetPosDirect: the model held at a point; SetPosLocator: at another model's place
     void pin(const std::string& model, float x, float y, float z);
     void pinTo(const std::string& model, const std::string& other);
+    void turnTo(const std::string& model, const std::string& other, int frames);
     void cameraMove(float from, float to);
     // VistaEvent.CameraQuake(width, from %, to %, frames) (EvtUtilVistaCameraQuake; VistaMain::Pose):
     // each update the camera moved along its up axis by width x the rate - from .. to over the

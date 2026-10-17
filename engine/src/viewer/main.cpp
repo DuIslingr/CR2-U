@@ -1261,8 +1261,28 @@ struct Viewer {
                     boxOpening.erase(op);
                     playMotion(g, "fn02");
                 }
+                // the script's: its event motion (SetMotion: from when it was set, once unless
+                // looping), its alpha (ChangeAlpha)
+                const auto st = k < gimmickIds.size() ? script->gimmicks().find(gimmickIds[k]) : script->gimmicks().end();
+                if (st != script->gimmicks().end()) {
+                    g.tint[3] = st->second.alpha();
+                    if (!st->second.motion.empty()) {
+                        if (gimmickSerial[k] != st->second.motionSerial) {
+                            gimmickSerial[k] = st->second.motionSerial;
+                            const auto a = std::find(g.anims.begin(), g.anims.end(), st->second.motion + ".anim");
+                            if (a != g.anims.end()) {
+                                const float keep = time;
+                                loadAnim(g, size_t(a - g.anims.begin()));
+                                time = keep;
+                            }
+                        }
+                        pose(g, float(script->ticks() - st->second.motionTick) * cr2::EventRuntime::kTick + fieldClock, st->second.motionLoop);
+                        continue;
+                    }
+                }
                 pose(g, time);
             }
+            if (script) fig.tint[3] = script->playerAlpha();
             if (script && script->events().scene().loaded()) poseEventModels(script->events());
         }
         pose(fig, time);
@@ -1434,6 +1454,8 @@ struct Viewer {
     // the gimmicks shown with a figure: placed by their joints, NPCs idling (FldNPC: <figure>fn01) -
     // as the script has them now
     std::vector<std::string> shownGimmicks;
+    std::vector<std::string> gimmickIds; // (the figures' gimmicks: the script's names for them)
+    std::vector<int> gimmickSerial;      // (the event motion each has loaded: its SetMotion's count)
     void refreshGimmicks() {
         std::vector<std::string> want;
         for (const cr2::Gimmick& gm : field.gimmicks())
@@ -1442,7 +1464,7 @@ struct Viewer {
         shownGimmicks = want;
         std::string err;
         for (ViewFigure& g : gimmicks) unload(g);
-        gimmicks.clear();
+        gimmicks.clear(), gimmickIds.clear(), gimmickSerial.clear();
         for (const cr2::Gimmick& gm : field.gimmicks()) {
             if (gm.figure.empty() || !archive.contains(gm.figure + ".geom") || !script->visible(gm)) continue;
             ViewFigure g;
@@ -1455,6 +1477,7 @@ struct Viewer {
             if (gm.kind == cr2::Gimmick::Npc) playMotion(g, "fn01");
             if (gm.kind == cr2::Gimmick::Box) playMotion(g, game.boxes.isOpen(gm.boxKind, gm.boxNumber) ? "fn02" : "fn01"); // (FldBox: closed fn01, open fn02)
             gimmicks.push_back(std::move(g));
+            gimmickIds.push_back(gm.id), gimmickSerial.push_back(0);
         }
     }
 
@@ -1490,7 +1513,7 @@ struct Viewer {
         actionMark = ActionMark(), sprint = Sprint(), iai = Iai(), aim = Aim(), hakkei = Hakkei(), mystic = Mystic();
         // the dungeon's script sets the area up (evt000: which gimmicks show, which collide)
         if (!script) script = std::make_unique<cr2::FieldScript>(archive, game);
-        script->events().autoPage = pageSeconds;
+        script->events().autoPage = pageSeconds, script->events().askYesNo = true;
         if (!script->enter(map, field.gimmicks(), entry)) SDL_Log("%s's script: %s", map.c_str(), script->error().c_str());
         if (!playMode && script->running() && !script->runToEnd()) // (--field: the area as its set-up leaves it; --play: as it runs)
             SDL_Log("%s's %s: %s", map.c_str(), entry.c_str(), script->error().empty() ? "still running" : script->error().c_str());
@@ -1625,6 +1648,11 @@ struct Viewer {
     float uiClock = 0; // (the menus' seconds: the options', the manual's, the camp's - in a battle or out)
     void advance(float dt, float sx, float sy, bool run) {
         uiClock += dt;
+        if (!inputScript.empty() && (inputScript.front() == "yes" || inputScript.front() == "no") && yesNoShown() &&
+            activeEvents()->yesNoAge() > 0.5f) { // (--input: an event's yes / no)
+            answerYesNo(inputScript.front() == "yes");
+            inputScript.pop_front();
+        }
         audio.setVolumes(float(optionVolume[0]) / 100.0f, float(optionVolume[1]) / 100.0f, float(optionVolume[2]) / 100.0f);
         audio.update(dt);
         if (battleMode) {
@@ -2409,6 +2437,7 @@ struct Viewer {
         const int chars[2] = {party[0] - 1, party[1] - 1};
         const int monsters[3] = {battleRules->fighter(2).id, battleRules->fighter(3).id, battleRules->fighter(4).id};
         battleScript = std::make_unique<cr2::BattleScript>(archive, game, *battleRules, battle.coupling, chars, monsters);
+        battleScript->events().askYesNo = true;
         battleScriptClock = 0;
         battleScriptOk = battleScript->begin() && battleScript->runToEnd(100);
         if (!battleScriptOk) SDL_Log("battle script: %s", battleScript->error().c_str());
@@ -3589,7 +3618,7 @@ struct Viewer {
         if (map != "null" && !loadFigure(map + ".geom", vistaMap, &err)) SDL_Log("vista %s: %s", map.c_str(), err.c_str());
         vistaMap.absolute = true; // (VistaMain::LoadMapData: slot 0)
         event = std::make_unique<cr2::EventRuntime>(archive, game);
-        event->autoPage = pageSeconds;
+        event->autoPage = pageSeconds, event->askYesNo = true;
         if (!event->start(function)) {
             SDL_Log("event %s: %s", function.c_str(), event->error().c_str());
             return false;
@@ -5466,6 +5495,61 @@ struct Viewer {
     }
     // a question on the system window (syswin_io's typeM_L01) with choice_io's Yes / No (call_cBtn_fr11 /
     // 12: circleBtn_fr at those frames) - their taps `yes` / `no`
+    // An event's yes / no buttons (EvtWindow.ShowYesNoButton: BattleYNChoice - choice_io, its
+    // circleBtn_fr 11 yes, 12 no; a tap SE 0xb4): their tap areas kept for a click
+    struct YesNoRect {
+        bool yes;
+        float x0, y0, x1, y1;
+    };
+    std::vector<YesNoRect> yesNoRects;
+    void drawYesNo(cr2::EventRuntime& ev, int w, int h) {
+        yesNoRects.clear();
+        if (!ev.yesNoShown()) return;
+        Mat4 camera = cr2::mat4Identity();
+        camera[14] = -0.881f;
+        const Mat4 view = cr2::mat4Multiply(uiProjection(w, h), camera);
+        cr2::SceneLighting l;
+        dev->setLighting(l);
+        UiFig& ch = uiFig("choice_io");
+        ch.fig.place = cr2::Mat34();
+        poseUi(ch, "choice_io", ev.yesNoAge());
+        drawFigure(ch.fig, view.data());
+        for (int n : {11, 12}) {
+            char jn[24];
+            std::snprintf(jn, sizeof jn, "call_cBtn_fr%d", n);
+            float x, y;
+            if (!uiJoint(ch, jn, x, y)) continue;
+            UiFig& c = uiFig("circlebtn_fr");
+            c.fig.place = cr2::Mat34();
+            c.fig.place.m[3] = x, c.fig.place.m[7] = y;
+            poseUi(c, "circlebtn_fr", float(n) / 20.0f);
+            drawFigure(c.fig, view.data());
+            float sx, sy, ex, ey;
+            if (uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) yesNoRects.push_back({n == 11, sx, sy, ex, ey});
+        }
+    }
+    void answerYesNo(bool yes) {
+        cr2::EventRuntime* ev = activeEvents();
+        if (!ev || !ev->yesNoShown()) return;
+        audio.playSe(0xb4, false);
+        ev->answerYesNo(yes);
+        SDL_Log("yes / no: %s", yes ? "yes" : "no");
+    }
+    bool yesNoShown() {
+        cr2::EventRuntime* ev = activeEvents();
+        return ev && ev->yesNoShown();
+    }
+    bool yesNoClick(float fx, float fy) {
+        if (!yesNoShown()) return false;
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+        for (const YesNoRect& r : yesNoRects)
+            if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
+                answerYesNo(r.yes);
+                break;
+            }
+        return true; // (the buttons take every tap)
+    }
     void drawAsk(const std::string& message, float t, const Mat4& view, int w, int h, int yes, int no) {
         UiFig& win = uiFig("syswin_io");
         win.fig.place = cr2::Mat34();
@@ -6395,6 +6479,10 @@ struct Viewer {
         }
         cr2::EventRuntime* ev = activeEvents();
         if (!ev || !eventDrawingReady) return;
+        struct YesNoLast { // (the buttons over everything else the event shows)
+            Viewer* v; cr2::EventRuntime* ev;
+            ~YesNoLast() { v->dev->clearDepth(), v->drawYesNo(*ev, v->screenW, v->screenH); }
+        } yesNoLast{this, ev};
         const cr2::EventFade& fd = ev->fade();
         const float alpha = fd.at(eventLead() / cr2::EventRuntime::kTick);
         if (alpha > 0 && white.id) {
@@ -6838,6 +6926,11 @@ int main(int argc, char** argv) {
                         SDL_Log("output: %s", describe().c_str());
                         continue;
                     }
+                    if (v.yesNoShown()) { // (an event's yes / no: Y or Return yes, N or Backspace no)
+                        if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) v.answerYesNo(true);
+                        else if (k == SDLK_BACKSPACE || k == SDLK_N) v.answerYesNo(false);
+                        continue;
+                    }
                     if (v.battleMode && v.choosing) {
                         v.battleKey(k);
                         continue;
@@ -6882,7 +6975,8 @@ int main(int argc, char** argv) {
                     dragging = true;
                     float fx, fy;
                     screenFraction(e.button.x, e.button.y, fx, fy);
-                    if (v.battleMode && v.choosing) v.battleClick(fx, fy);
+                    if (v.yesNoClick(fx, fy)) {}
+                    else if (v.battleMode && v.choosing) v.battleClick(fx, fy);
                     else if (v.fieldMode && !v.eventMode && v.keyLock.stage != 0) v.unlockPointer(fx, fy, 0);
                     else if (v.fieldMode && !v.eventMode && v.iai.stage) v.iaiPointer(fx, fy, 0);
                     else if (v.fieldMode && !v.eventMode && v.aim.stage) v.aimPointer(fx, fy, 0);

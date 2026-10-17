@@ -31,6 +31,16 @@ struct GimmickState {
     bool visible = false;   // NPCs start hidden (FldNPC +0x10); objects, effects and boxes shown
     bool collision = true;  // Cr3GimmickData.SetCollision
     bool event = true;      // Cr3GimmickData.SetEventEnable (touching / tapping it does something)
+    // an event's motion (SetMotion: FldObject / FldNPC::SetEventAnim - the animator named, over
+    // its idle; looping unless SetMotionLoop says not), `motionSerial` counting each one set
+    std::string motion;
+    bool motionLoop = true;
+    int motionSerial = 0;
+    int motionTick = 0; // (when: FieldScript::ticks())
+    // its alpha (ChangeAlpha(from, to, updates): FldAlphaManager - from by a step an update to `to`)
+    float alphaFrom = 1, alphaTo = 1;
+    int alphaUpdates = 0, alphaTick = 0;
+    float alpha() const { return alphaUpdates <= 0 || alphaTick >= alphaUpdates ? alphaTo : alphaFrom + (alphaTo - alphaFrom) * float(alphaTick) / float(alphaUpdates); }
 };
 
 class FieldScript {
@@ -78,6 +88,9 @@ public:
     // the leader as the script has it (Cr3FieldMapCharacter): shown (SetVisible), and where an
     // event's scene put it (SetPos_p000 / SetRot_p000: its p000 joint) - taken once
     bool playerVisible() const { return playerVisible_; }
+    // (the leader's alpha: Cr3FieldMapCharacter.ChangeAlpha, as a gimmick's)
+    float playerAlpha() const { return playerAlpha_.alpha(); }
+    int ticks() const { return ticks_; } // (the updates since it was made)
     // the field's two characters (FldPlayer +0x1c: made from the party as the area is - FldMain::
     // Init -, Cr3FieldMapCharacter.ChangeModel(slot, character) changing one, -1 the leader's);
     // the leader the one GameState::active names
@@ -133,6 +146,8 @@ private:
     std::map<std::string, GimmickState> gimmicks_;
     bool layers_[4] = {true, true, true, true};
     bool playerVisible_ = true;
+    GimmickState playerAlpha_;
+    int ticks_ = 0;
     int fieldCharacters_[2] = {0, -1};
     std::vector<Gimmick> fieldGimmicks_;
     std::map<std::string, TouchAction> actions_;

@@ -174,6 +174,20 @@ called - the script moves its object there (`Mystic_Warp`) and makes that spot t
 a tap elsewhere fails. `SkipMessage` shows the page whole
 (the typing skipped); the message stays until a tap or the window's Close.
 
+The gimmicks' own: `Cr3GimmickData.SetMotion(gimmick, animator)` gives an object or an NPC an
+event motion (FldObject / FldNPC::SetEventAnim: bound over its idle, looping unless
+`SetMotionLoop(gimmick, false)` - the iai's gate `obj131fa01` cut once and held), `ChangeAlpha
+(gimmick, from, to, updates)` fades it (FldAlphaManager: a step an update), and
+`Cr3FieldMapCharacter.ChangeAlpha(from, to, updates)` the leader. `Cr3System.ItemGet(item, n)`
+adds n of an item (Cr3UtilGetItem: 0..99), `ItemCheck(item)` says how many.
+
+Questions (EvtWindow.ShowYesNoButton: BattleYNChoice's `choice_io` with the circle buttons 11
+yes and 12 no; SE 0xb4) wait for an answer: `CheckYesNoButton` 0 until then, 1 yes, 2 no, and
+HideYesNoButton takes them away - the scripts' `ShowYesNoButton()` loops on it (the sealed
+evil's device `obj021_00`: challenge it?). The headless checks answer nothing (the scripts going
+on as with the buttons stubbed); the viewer waits for a tap, Y / N, `--input yes` / `no`, or
+with pages turning by themselves answers yes.
+
 An area's script runs on the game's 20 updates a second like an event's, and uses the same
 natives (the scene, the windows, the fades: Events below); while it runs the player stands. The
 windows, the fade and the scene go on updating after it ends. A

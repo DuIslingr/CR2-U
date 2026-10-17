@@ -194,6 +194,11 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
         else ++messagesSet_;
     });
     vm.setNative("EvtWindow", "CheckMessage", [this](NativeCall& c) { c.result(message_ == 0); });
+    vm.setNative("EvtWindow", "ShowYesNoButton", [this](NativeCall&) { yesNoShown_ = true, yesNo_ = 0, yesNoAge_ = 0; });
+    vm.setNative("EvtWindow", "HideYesNoButton", [this](NativeCall&) { yesNoShown_ = false; });
+    vm.setNative("EvtWindow", "CheckYesNoButton", [this](NativeCall& c) {
+        if (askYesNo) c.result(yesNo_);
+    });
     // SkipMessage: the page shown whole at once (EvtWindowMessage::SkipMessage - InterfaceMain::
     // SkipMessageWindowStringDisplay: its typing skipped; the message stays till a tap or Close)
     vm.setNative("EvtWindow", "SkipMessage", [this](NativeCall&) { if (message_ > 0) revealed_ = 1 << 20; });
@@ -242,6 +247,7 @@ void EventRuntime::reset() {
     text_ = TextData(), names_ = TextData();
     windowText_.clear(), tutorialPicture_ = TutorialPicture();
     openWindows_.clear(), opened_.clear(), closing_.clear();
+    yesNoShown_ = false, yesNo_ = 0;
     cutIns_ = {}, cutInImages_.clear();
     messageWindow_ = Vista, message_ = page_ = revealed_ = 0, pageTime_ = 0;
     execution_ = false;
@@ -284,6 +290,7 @@ bool EventRuntime::update(ScriptVM* vm) {
     if (message_ > 0 && !typed()) ++revealed_; // (a character an update; the page's time counts once it's typed)
     else if ((message_ > 0 || execution_) && autoPage > 0 && (pageTime_ += kTick) >= autoPage) advance();
     fade_.update();
+    if (yesNoShown_ && (yesNoAge_ += kTick) >= autoPage && autoPage > 0 && askYesNo && !yesNo_) yesNo_ = 1; // (pages by themselves: yes)
     for (auto& [w, t] : opened_) t += kTick;
     for (auto it = closing_.begin(); it != closing_.end();) // (out animations: a second at most)
         it = (it->second += kTick) > 1.0f ? closing_.erase(it) : std::next(it);

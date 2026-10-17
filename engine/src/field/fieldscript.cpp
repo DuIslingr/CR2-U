@@ -86,6 +86,20 @@ void FieldScript::bind() {
     vm.setNative("Cr3FieldMapCamera", "GetPos_X", [this](NativeCall& c) { c.result(camera_.scripted() ? camera_.x : shownX_); });
     vm.setNative("Cr3FieldMapCamera", "GetPos_Y", [this](NativeCall& c) { c.result(camera_.scripted() ? camera_.y : shownY_); });
     vm.setNative("Cr3FieldMapCharacter", "SetVisible", [this](NativeCall& c) { playerVisible_ = c.boolean(0, true); });
+    auto alpha = [](GimmickState& g, NativeCall& c, int at) {
+        g.alphaFrom = c.number(at), g.alphaTo = c.number(at + 1), g.alphaUpdates = c.integer(at + 2), g.alphaTick = 0;
+    };
+    vm.setNative("Cr3FieldMapCharacter", "ChangeAlpha", [this, alpha](NativeCall& c) { alpha(playerAlpha_, c, 0); });
+    vm.setNative("Cr3GimmickData", "ChangeAlpha", [this, alpha](NativeCall& c) {
+        if (auto it = gimmicks_.find(c.string(0)); it != gimmicks_.end()) alpha(it->second, c, 1);
+    });
+    vm.setNative("Cr3GimmickData", "SetMotion", [this](NativeCall& c) {
+        if (auto it = gimmicks_.find(c.string(0)); it != gimmicks_.end())
+            it->second.motion = c.string(1), it->second.motionLoop = true, ++it->second.motionSerial, it->second.motionTick = ticks_;
+    });
+    vm.setNative("Cr3GimmickData", "SetMotionLoop", [this](NativeCall& c) {
+        if (auto it = gimmicks_.find(c.string(0)); it != gimmicks_.end()) it->second.motionLoop = c.boolean(1);
+    });
     vm.setNative("Cr3FieldMapCharacter", "ChangeModel", [this](NativeCall& c) { // (FldPlayer::ChangeModel)
         const int slot = c.integer(0, -1) == -1 ? state_.active : c.integer(0);
         if (slot == 0 || slot == 1) fieldCharacters_[slot] = c.integer(1);
@@ -118,7 +132,7 @@ void FieldScript::bind() {
 
 bool FieldScript::enter(const std::string& map, const std::vector<Gimmick>& gimmicks, const std::string& entry) {
     error_.clear();
-    playerVisible_ = true, placement_ = Placement(); // (FldMain makes the leader again)
+    playerVisible_ = true, placement_ = Placement(), playerAlpha_ = GimmickState(); // (FldMain makes the leader again)
     fieldCharacters_[0] = state_.party[0], fieldCharacters_[1] = state_.party[1];
     if (state_.party[1] < 0) state_.active = 0;
     if (map.size() < 5) return error_ = map + ": not a map's name", false;
@@ -173,6 +187,10 @@ bool FieldScript::call(const std::string& function) {
 }
 
 bool FieldScript::tick() {
+    ++ticks_;
+    for (auto& [id, g] : gimmicks_)
+        if (g.alphaTick < g.alphaUpdates) ++g.alphaTick; // (FldAlphaManager::Update)
+    if (playerAlpha_.alphaTick < playerAlpha_.alphaUpdates) ++playerAlpha_.alphaTick;
     if (camera_.frames > 0 && camera_.t < camera_.frames) { // (a slide: a frame an update)
         const float k = float(++camera_.t) / float(camera_.frames);
         camera_.x = camera_.fromX + (camera_.toX - camera_.fromX) * k;

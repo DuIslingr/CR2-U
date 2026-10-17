@@ -97,6 +97,16 @@ public:
     void advance();
     // pages turn (and slashes happen) by themselves after this many seconds (0: only advance())
     float autoPage = 3.0f;
+    // The yes / no buttons (EvtWindow.ShowYesNoButton: BattleYNChoice - choice_io, circleBtn_fr 11
+    // and 12 -, CheckYesNoButton its answer, 1 yes, 2 no, 0 none yet; HideYesNoButton). Asked
+    // only when `askYesNo` (a player to answer: the viewer); else the check answers nothing (the
+    // headless runs' scripts go on as without the buttons). With autoPage, yes after that long.
+    bool askYesNo = false;
+    bool yesNoShown() const { return yesNoShown_; }
+    float yesNoAge() const { return yesNoAge_; }
+    void answerYesNo(bool yes) {
+        if (yesNoShown_) yesNo_ = yes ? 1 : 2;
+    }
     int language = 1; // (Cr3UtilOptionLanguage: 1 English)
 
     // The cut-ins' portraits (EvtFace over InterfaceMain's CutInWindowMenus): five layouts -
@@ -145,6 +155,9 @@ private:
     TextData text_, names_;
     std::map<int, TextData> windowText_; // (LoadMessageData(window, name): that window's own)
     TextData itemNames_;                 // (message\ItemName: SetItemMessage's)
+    bool yesNoShown_ = false;
+    int yesNo_ = 0;
+    float yesNoAge_ = 0;
     int itemShown_ = 0;                  // (the item SetItemMessage named: its icon)
     TutorialPicture tutorialPicture_;
     std::set<int> openWindows_;

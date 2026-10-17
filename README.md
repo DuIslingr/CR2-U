@@ -117,6 +117,8 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       party (the sopia's elements and auto skills, the scripts' equipment) - as the reference
       video shows them (`cr2view --battle 222 --fight manual`, `--play`; `--input "solo attack 2
       defend"` gives the choices)
+- [x] Options in battle: the game's window - the volumes, language, orientation, quality,
+      Title Screen and Manual shown, the volumes set by a tap or the keys, Back
 - [x] States: poison, blind, seal, the action cancelled, raised and lowered parameters, the
       special ones - taken by the game's chances and resistances, their effects, their turns, the
       poison at the turn's end, their signs on the party and the targets, their announcements

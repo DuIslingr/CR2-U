@@ -1311,6 +1311,11 @@ struct Viewer {
         static const std::pair<const char*, int> kNames[] = {{"solo", CI::Solo}, {"pair", CI::Pair}, {"escape", CI::Escape},
                                                              {"attack", CI::Attack}, {"defend", CI::Defend}, {"sopia", CI::Sopia},
                                                              {"items", CI::Items}};
+        if (t == "options") {
+            choose(CI::Options);
+            SDL_Log("input options");
+            return;
+        }
         bool ok = false;
         static const std::pair<const char*, SDL_Keycode> kKeys[] = {{"up", SDLK_UP}, {"down", SDLK_DOWN}, {"left", SDLK_LEFT},
                                                                     {"right", SDLK_RIGHT}, {"enter", SDLK_RETURN}};
@@ -1320,7 +1325,8 @@ struct Viewer {
                 SDL_Log("input %s", t.c_str());
                 return;
             }
-        if (t == "back") commandInput.back(), ok = true;
+        if (t == "back" && optionsOpen) optionsOpen = false, ok = true;
+        else if (t == "back") commandInput.back(), ok = true;
         else if (t.size() > 1 && t[0] == 'a' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickAwakening(std::atoi(t.c_str() + 1));
         else if (t.size() > 1 && t[0] == 's' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickSopia(std::atoi(t.c_str() + 1));
         else if (t.size() > 1 && t[0] == 'i' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickItem(std::atoi(t.c_str() + 1));
@@ -1362,7 +1368,10 @@ struct Viewer {
         else if (commandInput.menu() == cr2::CommandInput::Menu::Awake) commandInput.pickAwakening(idOrFighter);
         else if (commandInput.menu() == cr2::CommandInput::Menu::Sopia) commandInput.pickSopia(idOrFighter);
         else if (commandInput.menu() == cr2::CommandInput::Menu::Items) commandInput.pickItem(idOrFighter);
-        else commandInput.press(idOrFighter);
+        else if (commandInput.menu() == cr2::CommandInput::Menu::First && idOrFighter == cr2::CommandInput::Options) {
+            optionsOpen = true, optionsStart = battleClock; // (BtlCommand::StepOption: the window, the HUD gone)
+            return;
+        } else commandInput.press(idOrFighter);
         menuChanged();
     }
     bool keysUsed = false; // (a command button's focus shown once a key moves it: a touch shows none)
@@ -1372,6 +1381,14 @@ struct Viewer {
         const std::vector<int> c = menuChoices();
         const bool target = commandInput.menu() == cr2::CommandInput::Menu::Target;
         // (the awakenings' list goes up and down)
+        if (optionsOpen) { // (the options: Backspace / Return back, Left / Right the focused bar)
+            if (k == SDLK_BACKSPACE || k == SDLK_RETURN || k == SDLK_KP_ENTER) optionsOpen = false;
+            else if (k == SDLK_UP) optionFocus = (optionFocus + 2) % 3;
+            else if (k == SDLK_DOWN) optionFocus = (optionFocus + 1) % 3;
+            else if (k == SDLK_LEFT) optionVolume[optionFocus] = std::max(optionVolume[optionFocus] - 5, 0);
+            else if (k == SDLK_RIGHT) optionVolume[optionFocus] = std::min(optionVolume[optionFocus] + 5, 100);
+            return;
+        }
         if (k == SDLK_BACKSPACE) commandInput.back(), menuChanged();
         else if (c.empty()) return;
         else if (k == (target ? SDLK_RIGHT : SDLK_DOWN)) menuCursor = (menuCursor + 1) % int(c.size());
@@ -1385,6 +1402,15 @@ struct Viewer {
         const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
         for (const TapRect& r : tapRects)
             if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
+                if (optionsOpen) { // (Back; a bar's slide area: its volume by the point across it)
+                    if (r.id == 100) optionsOpen = false;
+                    else if (r.id >= 2000 && r.id < 2003) {
+                        const float a = std::min(r.x0, r.x1), b = std::max(r.x0, r.x1);
+                        optionVolume[r.id - 2000] = std::clamp(int(std::lround((x - a) / std::max(b - a, 1e-4f) * 20.0f)) * 5, 0, 100);
+                        optionFocus = r.id - 2000;
+                    }
+                    return;
+                }
                 if (r.id == 100) commandInput.back(), menuChanged();
                 else if (r.id >= 1000) { // (another row: the focus to it - ScrollListMenu)
                     const std::vector<int> c = menuChoices();
@@ -2918,6 +2944,72 @@ struct Viewer {
     std::function<int(int)> buttonLevel;   // (an awakening button's level)
     std::vector<ListRow> listRows;         // (the skill list as drawn: a tap on a row focuses it)
     // the menu of the choosing's step, the cursor's choice marked (the keys')
+    // BattleOptionMenu (an OptionMenu - InterfaceMain's 0x3e - with the battle's labels): the title
+    // (`menu` with menuOpt_io), the seat (seatOpt_io): its seven labels at typeM_L01..L07 - BGM,
+    // Sound Effects, Voiceovers, Language, Lock Orientation, Title Screen, Manual
+    // (announcemenuname 103, 104, 105, 102, 106, 108, 101: InterfaceMain::m_IdCounter + 4) - and
+    // the quality (143 High, 144 Middle, 145 Low) at typeM_C01; the three volumes (VolumControlBar:
+    // vlmBar_per at call_vlmBar_per13..15, posed at its volume, 0..100, / 20 s - cr3_system_data +0,
+    // +4, +8); circleBtn_fr at call_circleBtn_frNN (frame NN), mainIcon_id at call_mainIcon_idNN;
+    // btlBack to leave. (No sound here: the volumes kept, the other settings shown.)
+    bool optionsOpen = false;
+    float optionsStart = 0;
+    int optionVolume[3] = {100, 100, 100}, optionFocus = 0; // (0..100: GetOptionWork's time the volume / 20)
+    void drawOptions(const Mat4& view, const Mat4& proj, int w, int h) {
+        tapRects.clear();
+        const float t = battleClock - optionsStart;
+        UiFig& title = uiFig("menu");
+        title.fig.place = cr2::Mat34();
+        poseUi(title, "menuopt_io", t);
+        drawFigure(title.fig, view.data());
+        UiFig& seat = uiFig("seatopt_io");
+        seat.fig.place = cr2::Mat34();
+        poseUi(seat, "seatopt_io", t);
+        drawFigure(seat.fig, view.data());
+        static const int kLabels[7] = {103, 104, 105, 102, 106, 108, 101};
+        float x, y;
+        for (int k = 0; k < 7; ++k) {
+            char jn[16];
+            std::snprintf(jn, sizeof jn, "typeM_L%02d", k + 1);
+            if (uiJoint(seat, jn, x, y)) drawUiText(messageText("announcemenuname", kLabels[k]), 26, x, y, w, h, true);
+        }
+        for (const std::string& j : seat.joints) {
+            if (j.rfind("call_vlmBar_per", 0) == 0) {
+                const int k = std::atoi(j.c_str() + 15) - 13;
+                if (k < 0 || k > 2 || !uiJoint(seat, j, x, y)) continue;
+                UiFig& bar = uiFig("vlmbar_per");
+                bar.fig.place = cr2::Mat34();
+                bar.fig.place.m[3] = x, bar.fig.place.m[7] = y;
+                poseUi(bar, "vlmbar_per", float(optionVolume[k]) / 20.0f, false);
+                drawFigure(bar.fig, view.data());
+                float sx, sy, ex, ey;
+                if (uiJoint(bar, "slideAreaS01", sx, sy) && uiJoint(bar, "slideAreaE01", ex, ey)) tapRects.push_back({2000 + k, sx, sy, ex, ey});
+            } else if (j.rfind("call_circleBtn_fr", 0) == 0 && uiJoint(seat, j, x, y)) {
+                UiFig& c = uiFig("circlebtn_fr");
+                c.fig.place = cr2::Mat34();
+                c.fig.place.m[3] = x, c.fig.place.m[7] = y;
+                // (its frame its number - 36 On, 37 Off -; the language's, 99, by the language -
+                // UpdateLanguageButton: 0x534750's 41 Japanese, 42 English, ...)
+                const int n = std::atoi(j.c_str() + 17);
+                poseUi(c, "circlebtn_fr", float(n == 99 ? 42 : n == 98 ? 0 : n) / 20.0f); // (98, the quality's: frame 0, its text over it)
+                drawFigure(c.fig, view.data());
+            } else if (j.rfind("call_mainIcon_id", 0) == 0 && uiJoint(seat, j, x, y)) {
+                UiFig& ic = uiFig("mainicon_id");
+                ic.fig.place = cr2::Mat34();
+                ic.fig.place.m[3] = x, ic.fig.place.m[7] = y;
+                poseUi(ic, "mainicon_id", float(std::atoi(j.c_str() + 16)) / 20.0f);
+                drawFigure(ic.fig, view.data());
+            }
+        }
+        if (uiJoint(seat, "typeM_C01", x, y)) drawUiText(messageText("announcemenuname", 143), 26, x, y, w, h); // (the quality: over its button)
+        UiFig& bk = uiFig("btlback");
+        bk.fig.place = cr2::Mat34();
+        poseUi(bk, "btlback_in", t);
+        drawFigure(bk.fig, view.data());
+        float sx, sy, ex, ey;
+        if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
+        (void)proj;
+    }
     void drawChoosing(const Mat4& view, int w, int h) {
         using CI = cr2::CommandInput;
         tapRects.clear();
@@ -3089,6 +3181,10 @@ struct Viewer {
         dev->setLighting(l);
         if (result.stage >= 3) { // (BtlInterfaceCtrl::HideBattleStatus: the window alone)
             drawResult(view, proj, w, h);
+            return;
+        }
+        if (choosing && optionsOpen) { // (StepOption: SetBattleStatusDisplay off)
+            drawOptions(view, proj, w, h);
             return;
         }
         for (int k = 0; k < 2; ++k) {

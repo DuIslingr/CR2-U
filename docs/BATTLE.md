@@ -282,6 +282,17 @@ camera figure at that frame and posed, its first frame held): a party member's G
 human patterns' 8 / 9 and 10, the boss's 12, XLXL's 13 in the battle's - over 10 frames from one
 target to the next (the viewer cuts).
 
+Options (StepOption / StepOptionLoop: the battle's windows off, BattleOptionMenu - an OptionMenu
+with the battle's labels): the title (`menu`, menuOpt_io), the seat (seatOpt_io) with its labels
+at typeM_L01..L07 - BGM, Sound Effects, Voiceovers, Language, Lock Orientation, Title Screen,
+Manual (announcemenuname 103, 104, 105, 102, 106, 108, 101: the table at InterfaceMain::m_IdCounter
++ 4) - and the quality at typeM_C01 (143 High, 144 Middle, 145 Low) over circleBtn_fr 98 at frame 0;
+the three volumes (VolumControlBar: vlmBar_per at call_vlmBar_per13..15, posed at the volume,
+0..100, / 20 s - GetOptionWork; a tap on its slide area sets it), the language's button (99) at
+0x534750's frame by the language (42 English), Lock Orientation's On / Off (36 / 37), the main
+icons, btlBack to leave. Title Screen asks "Return to title screen?" (announcebattle 0x6d) - not
+yet, nor the sound the volumes set.
+
 Escape (StepEscape: a yes / no; StepEscapeLoop): BtlCalc::Escape - sure in the party's turn
 break, or with skill (4, 3) (HasEncountAbsoluteEscape: the one escaping's, or either of the party
 standing's), or at the first turn with +0x14; else the party's mean level (+0x24: their levels

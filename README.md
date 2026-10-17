@@ -118,7 +118,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       video shows them (`cr2view --battle 222 --fight manual`, `--play`; `--input "solo attack 2
       defend"` gives the choices)
 - [x] Options in battle: the game's window - the volumes, language, orientation, quality,
-      Title Screen and Manual shown, the volumes set by a tap or the keys, Back
+      Title Screen and Manual shown, the volumes set by a tap or the keys, the language and the
+      quality by their arrows (the messages then in that language, a system CJK font for what the
+      game's lacks), Title Screen's yes / no, Back (`--input "options language+ title no back"`)
 - [x] States: poison, blind, seal, the action cancelled, raised and lowered parameters, time
       stopped, the seals, the special ones - taken by the game's chances and resistances, their
       effects (counters, the magic barrier turning a sopia back, revived once, strength doubled,

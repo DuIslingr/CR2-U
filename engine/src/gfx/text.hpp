@@ -27,6 +27,9 @@ public:
     // the same from memory (the APK's fonts): `name` stands for its path
     bool loadMemory(std::vector<uint8_t> bytes, const std::string& name, std::string* error = nullptr);
     bool loaded() const;
+    // a font for the code points the first lacks (as Android's Paint falls back on the system's:
+    // Hangul, simplified Chinese), tried in the order added; false: none could be read
+    bool addFallback(const std::string& path, std::string* error = nullptr);
     const std::string& path() const { return path_; }
 
     // one line of UTF-8 at `sizePx` (rows top first): white, the coverage in alpha. Empty when the

@@ -1009,6 +1009,14 @@ struct Viewer {
         afterBattle();
     }
     bool fightingInFlow = false;
+    // the battle dropped (the options' Title Screen)
+    void leaveBattle() {
+        battleMode = fightingInFlow = choosing = optionsOpen = optionsAsk = false;
+        battleScript.reset(), battleRules.reset();
+        battleFight = 0, battleStep = BattleStep::Over;
+        showActions.clear(), showIndex = 0, regenPending.clear(), regenStarted = false;
+        announceQueue.clear(), commandShown.clear();
+    }
     // BtlMain::Exit: a vista reserved goes on to it, else the field (evt100)
     void afterBattle() {
         cr2::GameState::Next& n = game.next;
@@ -1405,6 +1413,16 @@ struct Viewer {
                 SDL_Log("input %s", t.c_str());
                 return;
             }
+        // (the options' own: the Title Screen button, its question's answers, the language's and the
+        // quality's arrows)
+        static const std::pair<const char*, int> kOptionTaps[] = {{"title", 3101}, {"manual", 3102}, {"quality-", 3103}, {"quality+", 3104},
+                                                                  {"language-", 3105}, {"language+", 3106}, {"yes", 3201}, {"no", 3202}};
+        for (const auto& [n, id] : kOptionTaps)
+            if (t == n && (optionsOpen || optionsAsk)) {
+                optionTap(id);
+                SDL_Log("input %s", t.c_str());
+                return;
+            }
         if (t == "back" && optionsOpen) optionsOpen = false, ok = true;
         else if (t == "back") commandInput.back(), ok = true;
         else if (t.size() > 1 && t[0] == 'a' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickAwakening(std::atoi(t.c_str() + 1));
@@ -1461,6 +1479,11 @@ struct Viewer {
         const std::vector<int> c = menuChoices();
         const bool target = commandInput.menu() == cr2::CommandInput::Menu::Target;
         // (the awakenings' list goes up and down)
+        if (optionsAsk) { // (the question: Return yes, Backspace no)
+            if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) optionTap(3201);
+            else if (k == SDLK_BACKSPACE || k == SDLK_N) optionTap(3202);
+            return;
+        }
         if (optionsOpen) { // (the options: Backspace / Return back, Left / Right the focused bar)
             if (k == SDLK_BACKSPACE || k == SDLK_RETURN || k == SDLK_KP_ENTER) optionsOpen = false;
             else if (k == SDLK_UP) optionFocus = (optionFocus + 2) % 3;
@@ -1482,8 +1505,13 @@ struct Viewer {
         const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
         for (const TapRect& r : tapRects)
             if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
+                if (optionsAsk) {
+                    if (r.id == 3201 || r.id == 3202) optionTap(r.id);
+                    return;
+                }
                 if (optionsOpen) { // (Back; a bar's slide area: its volume by the point across it)
                     if (r.id == 100) optionsOpen = false;
+                    else if ((r.id >= 3100 && r.id < 3300) || r.id == 4098 || r.id == 4099) optionTap(r.id);
                     else if (r.id >= 2000 && r.id < 2003) {
                         const float a = std::min(r.x0, r.x1), b = std::max(r.x0, r.x1);
                         optionVolume[r.id - 2000] = std::clamp(int(std::lround((x - a) / std::max(b - a, 1e-4f) * 20.0f)) * 5, 0, 100);
@@ -1803,7 +1831,7 @@ struct Viewer {
         if (d.empty() && !archive.read("message\\" + file + ".dat", d)) return {};
         auto u32 = [&](size_t o) { return o + 4 <= d.size() ? uint32_t(d[o] | d[o + 1] << 8 | d[o + 2] << 16 | uint32_t(d[o + 3]) << 24) : 0u; };
         if (id < 1 || uint32_t(id) > u32(8)) return {};
-        const size_t o = size_t(u32(4)) + u32(size_t(u32(0)) + size_t(id - 1) * 0x20 + 4); // (English: the second)
+        const size_t o = size_t(u32(4)) + u32(size_t(u32(0)) + size_t(id - 1) * 0x20 + 4u * size_t(std::clamp(optionLanguage, 0, 7))); // (the option's language: English the second)
         std::string s;
         for (size_t k = o; k < d.size() && d[k]; ++k) s += char(d[k]);
         return s;
@@ -2466,8 +2494,18 @@ struct Viewer {
         if (!loadFigure("msgcsr_loop.geom", conversationCursor, &err)) SDL_Log("page cursor: %s", err.c_str());
         if (!fontPath.empty() && !font.load(fontPath, &err)) SDL_Log("font: %s", err.c_str());
         else if (fontPath.empty() && !fontBytes.empty() && !font.loadMemory(std::move(fontBytes), fontName, &err)) SDL_Log("font: %s", err.c_str());
-        SDL_Log("message windows: vista %zu meshes, narration %zu joints; font %s", vistaWindow.fig.meshes.size(),
-                narrationWindow.joints.size(), font.loaded() ? font.path().c_str() : "none (no text)");
+        // (the code points the game's font lacks - Hangul, simplified Chinese - from the system's, as
+        // Android's: CR2_FONT_FALLBACK, else a Noto CJK where the distributions put it)
+        const char* fb = std::getenv("CR2_FONT_FALLBACK");
+        const std::string fallback = cr2::TextRasterizer::firstFont({fb ? fb : "", "/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc",
+                                                                     "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+                                                                     "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Bold.ttc",
+                                                                     "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+                                                                     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"});
+        if (font.loaded() && !fallback.empty() && !font.addFallback(fallback, &err)) SDL_Log("font: %s", err.c_str());
+        SDL_Log("message windows: vista %zu meshes, narration %zu joints; font %s%s%s", vistaWindow.fig.meshes.size(),
+                narrationWindow.joints.size(), font.loaded() ? font.path().c_str() : "none (no text)", fallback.empty() ? "" : ", then ",
+                fallback.c_str());
     }
 
     // the interface's projection over a w x h screen: UI units to clip space (z: the camera's
@@ -3098,6 +3136,66 @@ struct Viewer {
     // btlBack to leave. (No sound here: the volumes kept, the other settings shown.)
     bool optionsOpen = false;
     float optionsStart = 0;
+    // the language (cr3_system_data +0xc, Cr3UtilOptionLanguage: the messages' own order - 0
+    // Japanese, 1 English, 2 French, 3 German, 4 Spanish, 5 / 6 simplified / traditional Chinese,
+    // 7 Korean) and the quality (+0x11, SetOffScreenMode: 0 High, 1 Middle, 2 Low - labels 143..145)
+    int optionLanguage = 1, optionQuality = 0;
+    // the Title Screen's question (BattleOptionMenu::Update 3, 5, 6: the window closed, a system
+    // window with announcebattle 0x6d, choice_io's Yes / No - yes to the title, no back)
+    bool optionsAsk = false, toTitle = false;
+    float optionsAskStart = 0;
+    // OptionMenu::TouchSimpleRelease: the seat's tap areas 1 Title Screen, 2 Manual, 3 / 4 the
+    // quality back / on (circle 98 on), 5 / 6 the language back / on (circle 99 on); the question's
+    // 3201 yes, 3202 no
+    void optionTap(int id) {
+        switch (id) {
+        case 3101:
+            optionsOpen = false, optionsAsk = true, optionsAskStart = battleClock;
+            break;
+        case 3102: // (BattleOptionMenu 4 -> 9 -> 0x22: InstructionsWindowMenu, the tutorials' list)
+            SDL_Log("options: the manual (InstructionsWindowMenu) - not yet");
+            break;
+        case 3103: optionQuality = (optionQuality + 2) % 3; break;
+        case 3104: case 4098: optionQuality = (optionQuality + 1) % 3; break;
+        case 3105: optionLanguage = (optionLanguage + 7) % 8; break;
+        case 3106: case 4099: optionLanguage = (optionLanguage + 1) % 8; break;
+        case 3201: // (8: the music stopped, InterfaceMain to the title, 0x1d)
+            optionsAsk = false, toTitle = true;
+            SDL_Log("options: to the title screen");
+            break;
+        case 3202: // (7: the options again)
+            optionsAsk = false, optionsOpen = true, optionsStart = battleClock;
+            break;
+        default: break;
+        }
+        if (id >= 3103 && id <= 3106) SDL_Log("options: language %d, quality %d", optionLanguage, optionQuality);
+    }
+    void drawOptionsAsk(const Mat4& view, int w, int h) {
+        tapRects.clear();
+        const float t = battleClock - optionsAskStart;
+        UiFig& win = uiFig("syswin_io");
+        win.fig.place = cr2::Mat34();
+        poseUi(win, "syswin_io", t);
+        drawFigure(win.fig, view.data());
+        float x, y;
+        if (uiJoint(win, "typeM_L01", x, y)) drawUiText(announce(0x6d), 26, x, y, w, h);
+        UiFig& ch = uiFig("choice_io");
+        ch.fig.place = cr2::Mat34();
+        poseUi(ch, "choice_io", t);
+        drawFigure(ch.fig, view.data());
+        for (int n : {11, 12}) { // (call_cBtn_fr11 Yes, 12 No: circleBtn_fr at those frames)
+            char jn[24];
+            std::snprintf(jn, sizeof jn, "call_cBtn_fr%d", n);
+            if (!uiJoint(ch, jn, x, y)) continue;
+            UiFig& c = uiFig("circlebtn_fr");
+            c.fig.place = cr2::Mat34();
+            c.fig.place.m[3] = x, c.fig.place.m[7] = y;
+            poseUi(c, "circlebtn_fr", float(n) / 20.0f);
+            drawFigure(c.fig, view.data());
+            float sx, sy, ex, ey;
+            if (uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) tapRects.push_back({n == 11 ? 3201 : 3202, sx, sy, ex, ey});
+        }
+    }
     int optionVolume[3] = {100, 100, 100}, optionFocus = 0; // (0..100: GetOptionWork's time the volume / 20)
     void drawOptions(const Mat4& view, const Mat4& proj, int w, int h) {
         tapRects.clear();
@@ -3135,8 +3233,11 @@ struct Viewer {
                 // (its frame its number - 36 On, 37 Off -; the language's, 99, by the language -
                 // UpdateLanguageButton: 0x534750's 41 Japanese, 42 English, ...)
                 const int n = std::atoi(j.c_str() + 17);
-                poseUi(c, "circlebtn_fr", float(n == 99 ? 42 : n == 98 ? 0 : n) / 20.0f); // (98, the quality's: frame 0, its text over it)
+                static const int kLanguageFrame[8] = {41, 42, 44, 45, 46, 47, 48, 40}; // (0x534728)
+                poseUi(c, "circlebtn_fr", float(n == 99 ? kLanguageFrame[std::clamp(optionLanguage, 0, 7)] : n == 98 ? 0 : n) / 20.0f); // (98, the quality's: frame 0, its text over it)
                 drawFigure(c.fig, view.data());
+                float sx, sy, ex, ey;
+                if ((n == 98 || n == 99) && uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) tapRects.push_back({4000 + n, sx, sy, ex, ey});
             } else if (j.rfind("call_mainIcon_id", 0) == 0 && uiJoint(seat, j, x, y)) {
                 UiFig& ic = uiFig("mainicon_id");
                 ic.fig.place = cr2::Mat34();
@@ -3145,7 +3246,13 @@ struct Viewer {
                 drawFigure(ic.fig, view.data());
             }
         }
-        if (uiJoint(seat, "typeM_C01", x, y)) drawUiText(messageText("announcemenuname", 143), 26, x, y, w, h); // (the quality: over its button)
+        if (uiJoint(seat, "typeM_C01", x, y)) drawUiText(messageText("announcemenuname", 143 + optionQuality), 26, x, y, w, h); // (the quality: over its button)
+        for (int k = 1; k <= 6; ++k) { // (the seat's own tap areas)
+            char sa[16], ea[16];
+            std::snprintf(sa, sizeof sa, "tapAreaS%02d", k), std::snprintf(ea, sizeof ea, "tapAreaE%02d", k);
+            float sx, sy, ex, ey;
+            if (uiJoint(seat, sa, sx, sy) && uiJoint(seat, ea, ex, ey)) tapRects.push_back({3100 + k, sx, sy, ex, ey});
+        }
         UiFig& bk = uiFig("btlback");
         bk.fig.place = cr2::Mat34();
         poseUi(bk, "btlback_in", t);
@@ -3329,6 +3436,10 @@ struct Viewer {
         }
         if (choosing && optionsOpen) { // (StepOption: SetBattleStatusDisplay off)
             drawOptions(view, proj, w, h);
+            return;
+        }
+        if (choosing && optionsAsk) {
+            drawOptionsAsk(view, w, h);
             return;
         }
         for (int k = 0; k < 2; ++k) {
@@ -3897,6 +4008,14 @@ int main(int argc, char** argv) {
                 } else if (e.type == SDL_EVENT_MOUSE_WHEEL && !v.fieldMode) {
                     v.zoom = std::clamp(v.zoom * (e.wheel.y > 0 ? 0.9f : 1.1f), 0.05f, 20.0f);
                 }
+            }
+            if (v.toTitle) { // (the options' Title Screen, yes: --play from a new game again; else the end - no title screen here)
+                v.toTitle = false;
+                if (v.playMode) {
+                    v.leaveBattle();
+                    v.newGame();
+                    if (!v.loadField(fieldName, at, binary, data, callEntry)) running = false;
+                } else running = false;
             }
             if (period) {
                 const Uint64 t = SDL_GetTicksNS();

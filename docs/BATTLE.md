@@ -293,9 +293,19 @@ Manual (announcemenuname 103, 104, 105, 102, 106, 108, 101: the table at Interfa
 + 4) - and the quality at typeM_C01 (143 High, 144 Middle, 145 Low) over circleBtn_fr 98 at frame 0;
 the three volumes (VolumControlBar: vlmBar_per at call_vlmBar_per13..15, posed at the volume,
 0..100, / 20 s - GetOptionWork; a tap on its slide area sets it), the language's button (99) at
-0x534750's frame by the language (42 English), Lock Orientation's On / Off (36 / 37), the main
-icons, btlBack to leave. Title Screen asks "Return to title screen?" (announcebattle 0x6d) - not
-yet, nor the sound the volumes set.
+0x534728's frame by the language (41 Japanese, 42 English, 44 French, 45 German, 46 Spanish, 47 /
+48 simplified / traditional Chinese, 40 Korean), Lock Orientation's On / Off (36 / 37), the main
+icons, btlBack to leave. The taps (OptionMenu::TouchSimpleRelease): the seat's tap areas 1 Title
+Screen, 2 Manual, 3 / 4 the quality back / on (cr3_system_data +0x11: 0 High, 1 Middle, 2 Low;
+circle 98 on), 5 / 6 the language back / on (+0xc, 0..7 - the messages' own order, Japanese,
+English, French, German, Spanish, the two Chinese, Korean; circle 99 on: the messages then in it,
+the code points the game's TBGothic lacks from a system font, as Android's Paint falls back);
+Back (100) out. Title Screen (BattleOptionMenu::Update 3, 5, 6): the window closed, a system
+window (syswin_io, its typeM_L01) asking "Return to title screen?" (announcebattle 0x6d) over
+choice_io's circle buttons (call_cBtn_fr11 Yes, fr12 No) - yes to the title (8, the music
+stopped; the viewer: `--play` from a new game again, else its end), no back to the options (7).
+Manual (4, 9: InterfaceMain's 0x22, InstructionsWindowMenu - the tutorials' list from
+`message\Instructions`) not yet, nor the sound the volumes set.
 
 Escape (StepEscape: a yes / no; StepEscapeLoop): BtlCalc::Escape - sure in the party's turn
 break, or with skill (4, 3) (HasEncountAbsoluteEscape: the one escaping's, or either of the party

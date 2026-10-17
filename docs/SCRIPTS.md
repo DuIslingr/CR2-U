@@ -270,7 +270,11 @@ begins (ActionAttackWaitAttackMotion, ActionSopia / ItemStandby): a shot - the c
 its plain attack's when it has no motion of its own (CreateShotEffect) - +0x28 from the motion's
 effect place to the one hit, arriving at the hit, straight or falling (its setting's +0x3c;
 BtlEffectCtrl::ControlShot), with +0x30 on that one; then its launch effect, +0x20, on the one
-acting (every sopia's eff103).
+acting (every sopia's eff103) - an advent's too, unless its setting's +0x32 is 7 (eff302) - and
+for the j007 / m507 figures their warp, eff110, on each of a pair (CreateWarpEffect), with the
+plain attack's launch effect for that attack (CreateAttackObject). A sopia turned back by a
+magic barrier (state 29; ActionSopiaMirror / CreateMirrorEffect): eff227 on each that holds
+it - at its side's middle were its locator 7 - and the sound 0x92.
 
 A battle's special scene may be skipped (BtlActionCtrl::ActionAwakeMain / AdventMain): from its
 start (ActionAwake / AdventStandby) until a SetSkipEnable step turns it off, a tap - but for

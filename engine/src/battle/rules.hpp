@@ -136,6 +136,7 @@ public:
         bool hit = false, critical = false, weak = false, defeated = false;
         int damage = 0;
         int burst = 0; // (+0xf74: the element that beat the target's, 1..3 - HitEffect's eff218 .. eff220)
+        std::vector<int> mirrors; // (the action's: those whose magic barrier turned it back - ActionSopiaMirror)
         int heal = 0, healMp = 0; // (a restore's: BtlCalc::Restore)
         bool revived = false;
         // downed but back (state 33, revived once - BtlActionCtrl::ActionDeadWaitDeadMotion, then
@@ -259,7 +260,8 @@ public:
     bool critical(int actor, int target, const BattleData::Command& c);
 
 private:
-    int lastBurst_ = 0; // (damage()'s: the element that beat the target's)
+    int lastBurst_ = 0;
+    std::vector<int> mirrors_; // (the action's barrier holders) // (damage()'s: the element that beat the target's)
     bool isPairAction(int f) const;
     Order enemyChoice(int m);
     int orderPoint(int f, int partner) const;

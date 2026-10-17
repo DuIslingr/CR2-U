@@ -3401,6 +3401,13 @@ struct Viewer {
                 if (a.command == plainId && pc && !pc->launchEffect.empty() && cr2::effectSetting(pc->launchEffect).pairLocator != 7) // (IsAttackAction: the attack's flow)
                     commandEffect(pc->launchEffect, a.actor, a.partner >= 0);
             }
+            // (ActionSopiaMirror / CreateMirrorEffect: on each whose magic barrier turns it back,
+            // eff227 - at its side's middle when its setting says 7 - and SE 0x92)
+            for (int m : a.hits.empty() ? std::vector<int>() : a.hits.front().mirrors) {
+                const cr2::EffectSetting& ms = cr2::effectSetting("eff227");
+                commandEffect("eff227", m, false, ms.locator == 7 ? (m < 2 ? 0 : 1) : -1);
+                battleSe(0x92);
+            }
             if (!c->launchEffect.empty()) {
                 const cr2::EffectSetting& ls = cr2::effectSetting(c->launchEffect);
                 if (ls.pairLocator != 7) commandEffect(c->launchEffect, a.actor, a.partner >= 0); // (ShowCommandLaunchEffect: its +0x32 7 left out - every caller passes true)

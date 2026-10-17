@@ -469,6 +469,7 @@ BattleRules::Order BattleRules::enemyChoice(int mi) {
 }
 
 void BattleRules::act(const Order& o, std::vector<Event>& out) {
+    mirrors_.clear();
     Fighter& a = fighters_[size_t(o.actor)];
     if (!a.alive) return;
     if (a.canceled || a.hasState(21)) return; // (its action cancelled this turn; time stopped)
@@ -555,8 +556,8 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
         if (mirrored) {
             for (int t : targets) {
                 const Fighter& tf = fighters_[size_t(t)];
-                if (tf.hasState(29)) tf.useState(29);
-                if (tf.partner >= 0 && fighters_[size_t(tf.partner)].hasState(29)) fighters_[size_t(tf.partner)].useState(29);
+                if (tf.hasState(29)) tf.useState(29), mirrors_.push_back(t);
+                if (tf.partner >= 0 && fighters_[size_t(tf.partner)].hasState(29)) fighters_[size_t(tf.partner)].useState(29), mirrors_.push_back(tf.partner);
             }
             targets.clear();
             if (c->target == 6) {
@@ -754,6 +755,7 @@ void BattleRules::doAction(std::vector<Event>& out) {
     const size_t first = out.size();
     counters_.clear();
     act(nextAction(), out);
+    for (size_t k = first; k < out.size(); ++k) out[k].mirrors = mirrors_;
     // (BtlActionCtrl::PostCommandAction, CheckAttachSelf: the command's +0x71 1..3 lends the one
     // acting - and its partner in a pair - that element, 4 takes it; none for an action not done)
     const BattleData::Command* done = data_.command(nextAction().command);

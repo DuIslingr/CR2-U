@@ -19,6 +19,22 @@ void FieldScript::bind() {
     vm.setNative("Cr3System", "SetDifficulty", [this](NativeCall& c) { state_.difficulty = c.integer(0); }); // (Cr3UtilSetDifficulty)
     vm.setNative("Cr3System", "GetDifficulty", [this](NativeCall& c) { c.result(state_.difficulty); });
     vm.setNative("Cr3GimmickData", "GetItemID", [this](NativeCall& c) { c.result(boxItem); });
+    vm.setNative("Cr3GimmickData", "SetTouchActionEnable", [this](NativeCall& c) {
+        if (TouchAction* a = findAction(c.integer(0), c.string(1))) a->enabled = c.boolean(2);
+    });
+    vm.setNative("Cr3GimmickData", "AddSpot", [this](NativeCall& c) {
+        TouchAction* a = findAction(c.integer(0), c.string(1));
+        const std::string spot = c.string(2);
+        if (!a || spot.empty()) return;
+        for (const Gimmick& g : fieldGimmicks_)
+            if (g.kind == Gimmick::Spot && g.name.find(spot) != std::string::npos) {
+                a->spots.push_back({g.position[0], g.position[1], g.position[2]});
+                return;
+            }
+    });
+    vm.setNative("Cr3GimmickData", "ResetSpot", [this](NativeCall& c) {
+        if (TouchAction* a = findAction(c.integer(0), c.string(1))) a->spots.clear();
+    });
     auto gimmick = [this](NativeCall& c) -> GimmickState* {
         const auto it = gimmicks_.find(c.string(0));
         return it == gimmicks_.end() ? nullptr : &it->second;
@@ -112,6 +128,8 @@ bool FieldScript::enter(const std::string& map, const std::vector<Gimmick>& gimm
         script_ = script;
     }
     gimmicks_.clear();
+    actions_.clear();
+    fieldGimmicks_ = gimmicks;
     camera_ = Camera();
     for (int k = 0; k < 4; ++k) layers_[k] = true;
     for (const Gimmick& g : gimmicks) {
@@ -122,6 +140,15 @@ bool FieldScript::enter(const std::string& map, const std::vector<Gimmick>& gimm
     events_->reset();
     if (!vm_->hasFunction(entry)) return true; // (a dungeon without one)
     return call(entry);
+}
+
+FieldScript::TouchAction* FieldScript::findAction(int kind, const std::string& name) {
+    static const char* const kKinds[7] = {"sprint", "hjump", nullptr, "mystic", "iai", "aim", "marts"};
+    if (kind < 0 || kind > 6 || !kKinds[kind] || name.empty()) return nullptr;
+    for (const Gimmick& g : fieldGimmicks_)
+        if (g.kind == Gimmick::Ability && g.name.find(kKinds[kind]) != std::string::npos && g.name.find(name) != std::string::npos)
+            return &actions_[g.name];
+    return nullptr;
 }
 
 bool FieldScript::call(const std::string& function) {

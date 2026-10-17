@@ -326,6 +326,7 @@ struct Viewer {
             script->events().advance();
             return;
         }
+        if (const int s = sprintAt(); s >= 0) return startSprint(s); // (FldMain: a sprint's before the balloons)
         if (nearestBalloon < 0 || keyLock.stage != 0) return;
         const cr2::Gimmick& g = field.gimmicks()[size_t(nearestBalloon)];
         heading = std::atan2(g.position[0] - player[0], g.position[2] - player[2]);
@@ -417,6 +418,10 @@ struct Viewer {
         if (keyLock.gimmick < 0 || size_t(keyLock.gimmick) >= field.gimmicks().size()) return false;
         const cr2::Gimmick& g = field.gimmicks()[size_t(keyLock.gimmick)];
         const float p[3] = {g.position[0], g.position[1] + 0.125f, g.position[2]};
+        return uiPlace(p, x, y);
+    }
+    // a field point's place in the interface's units (Cr3UtilSetBalloonPos, / 2048)
+    bool uiPlace(const float p[3], float& x, float& y) {
         const float* m = fieldScene.data();
         const float cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
         if (cw <= 0) return false;
@@ -445,6 +450,107 @@ struct Viewer {
             if (keyLock.spread >= kUnlockSpread) unlockEnd(true);
         }
     }
+    // A sprint (FldSprint): the leader within 0.15 of an enabled one's place, a tap within 128 (x
+    // 2048: FldUtilCheckTouchPosCollision) of its marker (obj151) - or Return - starts it
+    // (FldMain step 0x15): crouched (fj01), then a hop to each of its spots in turn (fj02, SE
+    // 0x155: a parabola under 0.98 - up 0.04 above the higher of the two -, Cr3Calculate...ArrivesAt;
+    // fj03 to land, fj01 0.2 s before it, SE 0x156), then idle (fn01)
+    struct Sprint {
+        int stage = 0; // 0 none, 1 crouched, 2 a hop
+        std::vector<std::array<float, 3>> to;
+        size_t k = 0;
+        float t = 0, T = 0, v = 0, vx = 0, vz = 0;
+        float from[3] = {0, 0, 0};
+        int air = 0; // (the hop's motions: 0 fj02, 1 fj03, 2 fj01)
+    } sprint;
+    int sprintAt() const {
+        if (!fieldTabShown() || sprint.stage || !script) return -1;
+        const std::vector<cr2::Gimmick>& gs = field.gimmicks();
+        for (size_t i = 0; i < gs.size(); ++i) {
+            const cr2::Gimmick& g = gs[i];
+            if (g.kind != cr2::Gimmick::Ability || g.name.find("sprint") == std::string::npos || !script->visible(g)) continue;
+            const cr2::FieldScript::TouchAction* a = script->touchAction(g.name);
+            if (!a || !a->enabled || a->spots.empty()) continue;
+            if (std::hypot(g.position[0] - playerCur[0], g.position[1] - playerCur[1], g.position[2] - playerCur[2]) <= 0.15f) return int(i);
+        }
+        return -1;
+    }
+    bool sprintTap(float fx, float fy) { // (a click: on the marker)
+        const int i = sprintAt();
+        if (i < 0) return false;
+        float mx, my;
+        if (!uiPlace(field.gimmicks()[size_t(i)].position, mx, my)) return false;
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+        if (std::hypot(x - mx, y - my) * 2048.0f > 128.0f) return false;
+        startSprint(i);
+        return true;
+    }
+    void startSprint(int i) {
+        const cr2::Gimmick& g = field.gimmicks()[size_t(i)];
+        sprint = Sprint();
+        sprint.to = script->touchAction(g.name)->spots;
+        sprint.stage = 1;
+        heading = std::atan2(g.position[0] - player[0], g.position[2] - player[2]); // (FldPlayer::SetDirection to it)
+        playMotion(fig, "fj01"), time = 0;
+        SDL_Log("%s: sprint %s - %zu spots", field.info().name.c_str(), g.name.c_str(), sprint.to.size());
+    }
+    void sprintHop() {
+        Sprint& s = sprint;
+        const std::array<float, 3>& to = s.to[s.k];
+        std::memcpy(s.from, player, sizeof s.from);
+        const float h = to[1] >= s.from[1] ? to[1] - s.from[1] + 0.04f : 0.04f, dy = to[1] - s.from[1];
+        s.v = std::sqrt(1.96f * h);
+        const float r = std::sqrt(std::max(s.v * s.v - 1.96f * dy, 0.0f));
+        s.T = std::max((r - s.v) / -0.98f, (-s.v - r) / -0.98f);
+        if (s.T <= 0) s.T = 0.1f;
+        s.vx = (to[0] - s.from[0]) / s.T, s.vz = (to[2] - s.from[2]) / s.T;
+        heading = std::atan2(to[0] - s.from[0], to[2] - s.from[2]);
+        s.t = 0, s.air = 0, s.stage = 2;
+        playMotion(fig, "fj02"), time = 0;
+        audio.playSe(0x155, false);
+    }
+    void updateSprint(float dt) {
+        Sprint& s = sprint;
+        if (!s.stage) return;
+        s.t += dt;
+        if (s.stage == 1) {
+            if (s.t >= 0.15f) sprintHop(); // (the crouch's blend)
+            return;
+        }
+        const float t = std::min(s.t, s.T);
+        player[0] = s.from[0] + s.vx * t, player[1] = s.from[1] + s.v * t - 0.49f * t * t, player[2] = s.from[2] + s.vz * t;
+        if (s.air == 0 && s.t >= 0.15f) { // (fj03, ending as it lands)
+            s.air = 1;
+            playMotion(fig, "fj03");
+            const float d = fig.animLoaded ? fig.anim.duration() : 0.0f;
+            time = std::max(d - (s.T - s.t - 0.2f), 0.0f);
+        } else if (s.air == 1 && s.t >= s.T - 0.2f) {
+            s.air = 2;
+            playMotion(fig, "fj01"), time = 0;
+        }
+        if (s.t < s.T) {
+            std::memcpy(playerPrev, player, sizeof player), std::memcpy(playerCur, player, sizeof player);
+            return;
+        }
+        const std::array<float, 3>& to = s.to[s.k];
+        player[0] = to[0], player[1] = to[1], player[2] = to[2];
+        std::memcpy(playerPrev, player, sizeof player), std::memcpy(playerCur, player, sizeof player);
+        audio.playSe(0x156, false);
+        if (++s.k < s.to.size()) {
+            sprintHop();
+            return;
+        }
+        s.stage = 0; // (on the last: idle, the controller there)
+        playMotion(fig, "fn01");
+        controller->setPosition({player[0], player[1] + 0.02f, player[2]});
+        for (int k = 0; k < 4; ++k) controller->update({0, 0, 0});
+        const cr2::Vec3& p = controller->position();
+        player[0] = p[0], player[1] = p[1] - 0.02f, player[2] = p[2];
+        std::memcpy(playerPrev, player, sizeof player), std::memcpy(playerCur, player, sizeof player);
+        checkBalloons();
+    }
+
     void drawKeyMark(int w, int h) {
         if (!fieldMode || eventMode || keyLock.gimmick < 0) return;
         const cr2::Gimmick& g = field.gimmicks()[size_t(keyLock.gimmick)];
@@ -1180,9 +1286,10 @@ struct Viewer {
         } else if (fieldMode) {
             fieldUpdate(dt);
             updateChange(dt);
+            updateSprint(dt);
             fieldInput();
             if (fieldMode && !eventMode) {
-                const bool held = fieldScriptRunning() || keyLock.stage != 0 || changeStage != 0;
+                const bool held = fieldScriptRunning() || keyLock.stage != 0 || changeStage != 0 || sprint.stage != 0;
                 walk(dt, held ? 0 : sx, held ? 0 : sy, run);
             }
         }
@@ -4754,7 +4861,7 @@ struct Viewer {
     float fieldTabAt = -10; // (uiClock: when it last began to open or close)
     bool fieldTabShown() const {
         return fieldMode && !eventMode && !battleMode && script && !script->running() && !campOpen && !mapOpen && !saveStage &&
-               keyLock.stage == 0 && changeStage == 0;
+               keyLock.stage == 0 && changeStage == 0 && sprint.stage == 0;
     }
     float fieldTabPose(UiFig& tab) {
         const float d = tab.fig.animLoaded ? tab.fig.anim.duration() : 0.0f;
@@ -5748,6 +5855,7 @@ struct Viewer {
     bool fieldToken(const std::string& t) {
         if (t == "tap" && fieldTabShown()) tap(); // (the leader's tap: the nearest balloon's)
         else if (t == "change" && fieldTabShown()) startChange(); // (the character change's button)
+        else if (t == "sprint" && sprintAt() >= 0) startSprint(sprintAt());
         else if (t == "tab" && fieldTabShown()) fieldTabTap(1);
         else if (t == "camp" && fieldTabShown()) fieldTabOpen = true, fieldTabAt = -10, fieldTabTap(2);
         else if (t == "map" && fieldTabShown()) fieldTabOpen = true, fieldTabAt = -10, fieldTabTap(3);
@@ -6409,6 +6517,7 @@ int main(int argc, char** argv) {
                     screenFraction(e.button.x, e.button.y, fx, fy);
                     if (v.battleMode && v.choosing) v.battleClick(fx, fy);
                     else if (v.fieldMode && !v.eventMode && v.keyLock.stage != 0) v.unlockPointer(fx, fy, 0);
+                    else if (v.fieldMode && !v.eventMode && v.sprintTap(fx, fy)) {}
                     else if (v.fieldMode && !v.eventMode && v.fieldClick(fx, fy)) {
                     } else if (v.eventMode || v.fieldMode || v.battleMode) v.tap();
                 }

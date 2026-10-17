@@ -91,7 +91,7 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] Field event scenes: the event's models among the field's figures, the leader hidden and
       put back where the scene ends
 - [x] Talking: the balloons over what the leader can tap, a tap (Return, a click) calling the
-      nearest one's script (`cr2tool fieldscript`: all 137 a new game can tap play to their end)
+      nearest one's script (`cr2tool fieldscript`: all 136 a new game can tap play to their end)
 - [x] Battles' stage: the encounters' tables (`data\battledata.dat`), the map, the party and the
       monsters on their places for the monsters' size pattern, the commands' camera (`cr2view
       --battle 222`; `cr2tool battle all`: all 340 encounters' figures, places and cameras there)
@@ -160,6 +160,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] The field's HUD: the tab, the character change (its button, the leader darkened and the other
       lit in its place; the leader's figure the field's character - `ChangeModel`); the
       announcements' window (annoWin, as the tutorials')
+- [x] Sprints: the scripts' touch actions (on / off, their spots) and the sprint's hops between its
+      spots (a tap on its marker, Return, `--input sprint`)
+- [ ] The other touch actions: high jump, mystic, iai, aim, hakkei
 - [ ] Engine: events, battles, menus
 
 ## What you need

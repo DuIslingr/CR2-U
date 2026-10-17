@@ -133,7 +133,18 @@ The d01 script, for one, makes it Orlando and Darwin. The change (FldChangeChara
 by `Cr3ChangeCharacter.SetEnable` (cr3_field_data +0x32) and shown once flag 0x3fb is set
 (SetAllUIVisible: CharaTradeMenu's `chrTrade` button, its tapArea; SE 0xb4): the leader darkened
 over 16 frames, the other put in its place and facing, lit over 32 (ChangeCharacterExecute);
-`ExeQuick(n)` changes at once unless n leads already. The leader and the change go in the save. `SkipMessage` shows the page whole
+`ExeQuick(n)` changes at once unless n leads already. The leader and the change go in the save.
+
+The touch actions - sprint, high jump, mystic, iai, aim, hakkei (FldSprint .. FldHakkei; their
+gimmicks `sprintNN`, `hjumpNN`, `mysticNN`, `iaiNN`, `aimNN`, `martsNN`, kinds 0, 1, 3, 4, 5, 6
+in the natives) - are off as an area is made; the area's script turns them on
+(`Cr3GimmickData.SetTouchActionEnable(kind, gimmick, on)`) and gives each the spots it goes by
+(`AddSpot(kind, gimmick, spot)`: the `spotNN` joint's place appended; `ResetSpot` empties them).
+A sprint (its marker `obj151` on its place) starts when the leader is within 0.15 of it and the
+player taps within 128 of the marker (the interface's units x 2048): crouched (`fj01`), then a
+hop to each spot in turn (`fj02`, SE 0x155) on a parabola under 0.98 - rising 0.04 over the higher
+end (Cr3CalculateVelocityArrivesAtHeight: v = sqrt(1.96 h); ...TimeArrivesAtHeight: the later
+root) -, `fj03` ending as it lands and `fj01` 0.2 s before, SE 0x156 at each landing, then idle. `SkipMessage` shows the page whole
 (the typing skipped); the message stays until a tap or the window's Close.
 
 An area's script runs on the game's 20 updates a second like an event's, and uses the same

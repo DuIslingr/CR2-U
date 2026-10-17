@@ -11,6 +11,7 @@
 // next (GameState::next). The entry runs as the game runs it: a coroutine, its WaitFrames counted
 // in the game's updates (tick()).
 
+#include <array>
 #include <map>
 #include <memory>
 #include <string>
@@ -82,6 +83,19 @@ public:
     // the leader the one GameState::active names
     int fieldCharacter(int slot) const { return slot == 0 || slot == 1 ? fieldCharacters_[slot] : -1; }
     int leader() const { return fieldCharacter(state_.active); }
+    // The touch actions (FldSprint, FldHighJump, FldMystic, FldIai, FldAim, FldHakkei - kinds 0, 1,
+    // 3, 4, 5, 6 in the natives: sprint, hjump, mystic, iai, aim, marts gimmicks): on or not
+    // (Cr3GimmickData.SetTouchActionEnable - off as the area is made), and the spots they go by
+    // (AddSpot(kind, gimmick, spot): the spot gimmick's place appended - FldGimmickDataManager::
+    // AddSpotLink; ResetSpot emptying them)
+    struct TouchAction {
+        bool enabled = false;
+        std::vector<std::array<float, 3>> spots;
+    };
+    const TouchAction* touchAction(const std::string& gimmick) const {
+        const auto it = actions_.find(gimmick);
+        return it == actions_.end() ? nullptr : &it->second;
+    }
     struct Placement {
         bool position = false, heading = false;
         float at[3] = {0, 0, 0};
@@ -104,6 +118,9 @@ private:
     bool layers_[4] = {true, true, true, true};
     bool playerVisible_ = true;
     int fieldCharacters_[2] = {0, -1};
+    std::vector<Gimmick> fieldGimmicks_;
+    std::map<std::string, TouchAction> actions_;
+    TouchAction* findAction(int kind, const std::string& name);
     Placement placement_;
     Camera camera_;
     float shownX_ = 0, shownY_ = 0;

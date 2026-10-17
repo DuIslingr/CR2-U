@@ -56,7 +56,7 @@ std::vector<CommandInput::SopiaCommand> CommandInput::sopiaCommands() const {
             const BattleData::Sopia* so = r.data().sopia(s);
             const int level = so ? (sopiaLevel_ ? sopiaLevel_(s) : so->startLevel) : 0;
             if (!so || level <= 0) continue;
-            for (int k = 0; k < level && k < 10; ++k) {
+            for (int k = 0; k < level && k < 5; ++k) {
                 const int id = so->commands[k];
                 if (id <= 0 || std::any_of(out.begin(), out.end(), [id](const SopiaCommand& x) { return x.command == id; })) continue;
                 const BattleData::Command* c = r.data().command(id);

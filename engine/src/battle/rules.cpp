@@ -24,7 +24,7 @@ BattleRules::BattleRules(const BattleData& data, uint32_t seed) : data_(data) {
     if (seed) rand_.seed48(seed);
 }
 
-bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std::string* error) {
+bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std::string* error, const signed char* sopiaLevel, const short (*equip)[8]) {
     BattleSetup setup;
     if (!setupBattle(data_, coupling, party, setup, error)) return false;
     for (Fighter& f : fighters_) f = Fighter();
@@ -36,6 +36,8 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
         if (party[k] <= 0) continue;
         const BattleData::Character* c = data_.character(party[k]);
         if (!c) continue;
+        int eq[8];
+        for (int e = 0; e < 8; ++e) eq[e] = equip && c->id >= 1 && c->id <= 9 ? equip[c->id - 1][e] : c->equip[e];
         Fighter& f = fighters_[size_t(k)];
         f.present = f.alive = true;
         f.side = 0, f.id = c->id, f.name = c->name[1], f.level = c->level;
@@ -43,7 +45,7 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
         f.maxMp = std::clamp(c->mp + c->mpGrowth * f.level * 5 / 100, 0, 9999);
         for (int n = 0; n < 5; ++n) f.param[n] = std::clamp(c->param[n] + c->paramGrowth[n] * f.level * 5 / 100, 0, 9999);
         for (int e = 0; e < 3; ++e) {
-            const BattleData::Item* it = data_.item(c->equip[e]);
+            const BattleData::Item* it = data_.item(eq[e]);
             if (!it) continue;
             f.maxHp += it->hp, f.maxMp += it->mp;
             for (int n = 0; n < 5; ++n) f.param[n] += it->param[n];
@@ -55,7 +57,31 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
         }
         f.hp = f.maxHp, f.mp = f.maxMp;
         f.attack = c->attack, f.pairAttack = c->pairAttack;
-        for (int k = 0; k < 5; ++k) f.sopia[k] = c->equip[3 + k];
+        for (int k = 0; k < 5; ++k) f.sopia[k] = eq[3 + k];
+        // BtlWork::SetupPlayerSkill: the element of the first sopia with one, and each sopia's auto
+        // skills up to its level - the element they lend in its place, if they agree on one
+        for (int s : f.sopia)
+            if (const BattleData::Sopia* so = data_.sopia(s); so && so->element) {
+                f.element = so->element;
+                break;
+            }
+        int attach = 0;
+        bool agree = true;
+        for (int s : f.sopia) {
+            const BattleData::Sopia* so = data_.sopia(s);
+            if (!so) continue;
+            const int level = sopiaLevel && s >= 0 && s < 32 ? sopiaLevel[s] : so->startLevel;
+            for (int k = 0; k < level && k < 5; ++k)
+                if (const BattleData::AutoSkill* a = data_.autoSkill(so->skills[k])) {
+                    for (int g = 0; g < 7; ++g) f.skills[g] |= a->groups[g];
+                    for (int r = 0; r < 7; ++r) f.resist[r] = std::max(f.resist[r], a->resist[r]);
+                    if (agree && a->attach) {
+                        if (!attach) attach = a->attach;
+                        else if (attach != a->attach) agree = false, attach = 0;
+                    }
+                }
+        }
+        if (attach) f.element = attach;
         levels += f.level, ++count;
     }
     // BtlWork::CheckChargeSkill: the charge at 100 when the first standing has the skill (5, 4)

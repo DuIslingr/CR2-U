@@ -35,6 +35,18 @@ struct GameState {
             if (p.items[k] > 0 && p.items[k] < 300) itemCount[p.items[k]] = static_cast<short>(p.counts[k]);
         oz = p.oz;
     }
+    // the characters' equipment (cr3_player_data +0x3c, 0x4c bytes a character from 0): weapon,
+    // armour, accessory, then the five sopia - a new game's the battle data's (initEquip);
+    // Cr3System.SetEquip / GetEquip
+    short equip[9][8] = {};
+    bool equipReady = false;
+    template <class Data> void initEquip(const Data& data) {
+        if (equipReady) return;
+        equipReady = true;
+        for (int c = 0; c < 9; ++c)
+            if (const auto* ch = data.character(c + 1))
+                for (int e = 0; e < 8; ++e) equip[c][e] = static_cast<short>(ch->equip[e]);
+    }
     signed char sopiaLevel[32] = {};
     int sopiaExp[32] = {};
     bool sopiaReady = false;

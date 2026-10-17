@@ -50,6 +50,7 @@ public:
     struct Command {
         int id = 0;
         std::string name[2];
+        std::string text[2]; // +0x08, +0x0c: what it does (the lists' help; "\\n" a line break)
         std::string motion;  // +0x38 ("bo01")
         int power = 0;       // +0x44
         int magic = 0;       // +0x49: 0 physical, 1 magic
@@ -62,19 +63,21 @@ public:
         int mp = 0;          // +0x42: its MP (BtlUtilStatus::CalcUseMp)
         int icon = 0;        // +0x72: its icon (mainIcon_id's frame)
     };
-    // a sopia (GetSopiaDataPointer, from 1; 0x2c bytes): the command it gives at each level (+0x18,
-    // s16 each: the first `level` of them), the level it starts at (+0x12), its level-up table
-    // (+0x10: 0 the characters' own, 1 the others')
+    // a sopia (GetSopiaDataPointer, from 1; 0x2c bytes): the command it gives at each of its five
+    // levels (+0x18, s16 each: the first `level` of them; 0 none), the auto skill at each (+0x22,
+    // BtlWork::SetupPlayerSkill), the element it lends (+0x16: the first of the five with one), the
+    // level it starts at (+0x12), its level-up table (+0x10: 0 the characters' own, 1 the others')
     struct Sopia {
         int id = 0;
         std::string name[2];
-        int growth = 0, startLevel = 1;
-        int commands[10] = {};
+        int growth = 0, startLevel = 1, element = 0;
+        int commands[5] = {}, skills[5] = {};
     };
     // an item (GetItemDataPointer, from 1): what it adds worn (Cr3UpdatePlayerData)
     struct Item {
         int id = 0;
         std::string name[2];
+        std::string text[2]; // +0x08, +0x0c: what it does
         int type = 0;        // +0x10
         int hp = 0, mp = 0, param[5] = {0, 0, 0, 0, 0}; // +0x14, +0x18, +0x1a
         int skills[2] = {-1, -1}; // +0x30, +0x32: auto skills it gives
@@ -95,6 +98,7 @@ public:
         int id = 0;
         int resist[7] = {}, stateResist[5] = {}; // +0x17, +0x1e
         unsigned groups[7] = {}; // +0x26..+0x32: the fighter's skill bits (+0xfac..+0xfb8)
+        int attach = 0;          // +0x34 the element it lends (GetAutoSkillAttach; 0 none)
     };
     // an encounter (GetCouplingDataPointer, from 1; FldEncount::SetBattle)
     struct Coupling {

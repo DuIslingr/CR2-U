@@ -1032,15 +1032,26 @@ struct Viewer {
     } battleCameras[2];
     std::string battleCamera;
     float battleClock = 0, battleCameraStart = 0; // (the camera's animation runs from its start)
-    void setBattleCamera(const std::string& name) {
-        if (name.empty() || name == battleCamera) return;
-        battleCamera = name, battleCameraStart = battleClock;
+    // (`place`: the frame it is in - a target's camera its monster's -, `still`: its first frame
+    // held, BtlCameraCtrl::GetCameraInfo's for StartCtrlCamera)
+    cr2::Mat34 battleCameraPlace;
+    bool battleCameraStill = false;
+    void setBattleCamera(const std::string& name, const cr2::Mat34& place = cr2::Mat34(), bool still = false) {
+        if (name.empty() || (name == battleCamera && std::equal(place.m, place.m + 12, battleCameraPlace.m))) return;
+        battleCamera = name, battleCameraStart = battleClock, battleCameraPlace = place, battleCameraStill = still;
         dev->resetHistory(); // (a cut)
     }
     void setBattleCamera(int number) {
         if (const char* n = cr2::battleCameraName(number)) setBattleCamera(std::string(n));
     }
 
+    // a new game's party state (Cr3InitWorkFromBattleData): the sopia's levels, the items, the
+    // equipment - before the scripts change them
+    void newGame() {
+        std::vector<uint8_t> d;
+        if (!archive.read("data\\battledata.dat", d) || !battleData.parse(d)) return;
+        game.initSopia(battleData), game.initItems(battleData), game.initEquip(battleData);
+    }
     bool startBattle(int id, const int party[2]) {
         std::vector<uint8_t> d;
         std::string err;
@@ -1050,6 +1061,7 @@ struct Viewer {
         }
         game.initSopia(battleData); // (a new game's levels, the first time)
         game.initItems(battleData); // (and items)
+        game.initEquip(battleData); // (and equipment)
         cr2::Skeleton dpos;
         if (!archive.read("battledpos.skel", d, &err) || !cr2::parseSkeleton(d, dpos, &err)) {
             SDL_Log("battledpos: %s", err.c_str());
@@ -1128,11 +1140,12 @@ struct Viewer {
                 std::vector<cr2::JointTransform> p = c.skel.basePose;
                 if (c.animated) {
                     const float frames = float(std::max(c.anim.frames() - 1, 1));
-                    p = c.anim.poseAbsolute(c.skel.basePose, std::clamp((battleClock - battleCameraStart) * c.anim.sampleRate(), 0.0f, frames));
+                    const float at = battleCameraStill ? 0.0f : (battleClock - battleCameraStart) * c.anim.sampleRate();
+                    p = c.anim.poseAbsolute(c.skel.basePose, std::clamp(at, 0.0f, frames));
                 }
                 const std::vector<cr2::Mat34> w = c.skel.world(p);
                 if (size_t(j) >= w.size()) continue;
-                world = w[size_t(j)];
+                world = battleCameraPlace * w[size_t(j)];
                 fovY = gc.fovY;
                 zn = std::max(gc.near * 0.5f, 0.1f), zf = std::min(gc.far * 5.0f, 5000.0f);
                 zf = std::max(zf, zn * 2);
@@ -1260,6 +1273,29 @@ struct Viewer {
                  commandInput.menu() == CI::Menu::Items)
             setBattleCamera(commandInput.pairTurn() ? 0x1d : commandInput.actor() == 0 ? 0x1a : 0x1b);
     }
+    // the camera a target is chosen under (BtlCommand::SetCommandTargetCamera: the fighter's
+    // camera, StepBattleIn_Setup's BtlWork +0x580 - a party member's GetTarget 0 / 1, 2 for the one
+    // alone, 3 for a pair's; a monster's by its size, 4 + 0..3, in its own frame, the human
+    // patterns' 8 / 9 (Hpair), 10 (Hsolo), the boss's 12, XLXL's 13 in the battle's)
+    void setTargetCamera(int f) {
+        if (f < 0 || f >= 5) return;
+        cr2::Mat34 place;
+        int k;
+        if (f < 2) k = !commandInput.pairTurn() ? (battleRules->fighter(1).present ? f : 2) : 3;
+        else {
+            const int p = battle.pattern;
+            const cr2::BattleData::Monster* mo = battleData.monster(battleRules->fighter(f).id);
+            k = p == 10 ? 10 : p == 11 ? (f == 2 ? 8 : 9) : p == 12 ? 12 : p == 9 ? 13 : (mo ? mo->size : 0) + 4;
+            if (p != 10 && p != 11 && fighterUnit[f] >= 0) { // (its position and rotation: BtlModel::GetPosition / GetRotation)
+                place = battleUnits[size_t(fighterUnit[f])].home;
+                for (int c = 0; c < 3; ++c) {
+                    const float l = std::sqrt(place.m[c] * place.m[c] + place.m[4 + c] * place.m[4 + c] + place.m[8 + c] * place.m[8 + c]);
+                    if (l > 0) place.m[c] /= l, place.m[4 + c] /= l, place.m[8 + c] /= l;
+                }
+            }
+        }
+        if (const char* n = cr2::battleCameraName(cr2::cameraTarget(k))) setBattleCamera(std::string(n), place, true);
+    }
     // a token of --input as a choice
     void inputToken(const std::string& t) {
         using CI = cr2::CommandInput;
@@ -1320,7 +1356,7 @@ struct Viewer {
         else commandInput.press(idOrFighter);
         menuChanged();
     }
-    bool keysUsed = false; // (the cursor shown once a key moves it)
+    bool keysUsed = false; // (a command button's focus shown once a key moves it: a touch shows none)
     void battleKey(SDL_Keycode k) {
         if (!choosing) return;
         keysUsed = true;
@@ -1373,7 +1409,7 @@ struct Viewer {
         std::string err;
         int party[2] = {0, 0};
         for (size_t k = 0; k < battle.party.size() && k < 2; ++k) party[k] = battle.party[k].id;
-        if (!battleRules->start(battle.coupling, party, 0, &err)) {
+        if (!battleRules->start(battle.coupling, party, 0, &err, game.sopiaLevel, game.equip)) {
             SDL_Log("fight: %s", err.c_str());
             battleRules.reset();
             return;
@@ -1456,6 +1492,7 @@ struct Viewer {
                                        [this](int f) { return game.flag(f); },
                                        [this](int s) { return s >= 0 && s < 32 ? int(game.sopiaLevel[s]) : 0; });
                     choosing = true;
+                    placeParty(false); // (the choosing in the solo places: BtlCommand's)
                     menuChanged();
                     inputNext = battleClock + 0.4f;
                 }
@@ -1463,6 +1500,10 @@ struct Viewer {
                     inputToken(inputScript.front());
                     inputScript.pop_front();
                     inputNext = battleClock + 0.4f;
+                }
+                if (commandInput.menu() == cr2::CommandInput::Menu::Target) { // (the focused target's camera)
+                    const std::vector<int> c = menuChoices();
+                    if (!c.empty()) setTargetCamera(c[size_t(std::clamp(menuCursor, 0, int(c.size()) - 1))]);
                 }
                 if (commandInput.menu() != cr2::CommandInput::Menu::Done) break;
                 choosing = false;
@@ -2236,6 +2277,34 @@ struct Viewer {
             dev->drawQuad(*tex, v, proj.data(), rgba);
         }
     }
+    // BattleWindowEnchant2::SetSign: sign n (EnchantParamPackTable's u0, v0, u1, v1 of
+    // hud_enchant) a 0.048-unit square at (x, y) - 1 white "i" (no element), 2 red, 3 cyan, 4 green
+    // (the elements 1..3), 25 the clock, the others the states
+    void drawEnchant(int sign, float x, float y, const Mat4& proj) {
+        static const float kEnchant[26][4] = {
+            {0, 0, 0, 0},
+            {0.188f, 1, 0.375f, 0.813f}, {0.375f, 1, 0.563f, 0.813f}, {0.563f, 1, 0.75f, 0.813f}, {0.75f, 1, 0.938f, 0.813f},
+            {0, 0.813f, 0.188f, 0.625f}, {0.188f, 0.813f, 0.375f, 0.625f}, {0.375f, 0.813f, 0.563f, 0.625f},
+            {0.563f, 0.813f, 0.75f, 0.625f}, {0.75f, 0.813f, 0.938f, 0.625f},
+            {0, 0.625f, 0.188f, 0.438f}, {0.188f, 0.625f, 0.375f, 0.438f}, {0.375f, 0.625f, 0.563f, 0.438f},
+            {0.563f, 0.625f, 0.75f, 0.438f}, {0.75f, 0.625f, 0.938f, 0.438f},
+            {0, 0.438f, 0.188f, 0.25f}, {0.188f, 0.438f, 0.375f, 0.25f}, {0.375f, 0.438f, 0.563f, 0.25f},
+            {0.563f, 0.438f, 0.75f, 0.25f}, {0.75f, 0.438f, 0.938f, 0.25f},
+            {0, 0.25f, 0.188f, 0.062f}, {0.188f, 0.25f, 0.375f, 0.062f}, {0.375f, 0.25f, 0.563f, 0.062f},
+            {0.563f, 0.25f, 0.75f, 0.062f}, {0.75f, 0.25f, 0.938f, 0.062f},
+            {0, 1, 0.188f, 0.813f}};
+        cr2::Texture* tex = texture("hud_enchant", false);
+        if (!tex || sign <= 0 || sign >= 26) return;
+        const float* g = kEnchant[sign];
+        const float s = 0.024f, x0 = x - s, x1 = x + s, y0 = y - s, y1 = y + s;
+        const float v[24] = {x0, y0, g[0], g[3], x1, y0, g[2], g[3], x1, y1, g[2], g[1],
+                             x0, y0, g[0], g[3], x1, y1, g[2], g[1], x0, y1, g[0], g[1]};
+        const float rgba[4] = {1, 1, 1, 1};
+        dev->drawQuad(*tex, v, proj.data(), rgba);
+    }
+    // a fighter's element sign (BtlInterfaceCtrl::GetCharaUIState: elements 1..3 bits 1..3, any
+    // other bit 0 - SetStatusIcon's bit k sign k + 1)
+    static int elementSign(const cr2::Fighter& f) { return f.element >= 1 && f.element <= 3 ? f.element + 1 : 1; }
     // a line of text at a UI place (centred), made once
     std::map<std::string, TextQuad> uiTexts;
     // `left`: from x (typeS_L: the text's left), else centred on it; `shade` its colour's
@@ -2321,6 +2390,7 @@ struct Viewer {
                     const cr2::Fighter& fi = battleRules->fighter(f);
                     float lx, ly;
                     if (uiJoint(c, "call_dotNum_id30", lx, ly)) drawDigits(fi.level, 120, 3, lx, ly, uiProjection(w, h));
+                    if (uiJoint(c, "call_enchant_id00", lx, ly)) drawEnchant(elementSign(fi), lx, ly, uiProjection(w, h)); // (CircleBtn::SetStatusIcon's first)
                     float hx, hy;
                     if (uiJoint(c, "call_hpBar_per20", hx, hy)) {
                         UiFig& bar = uiFig("btlhpbar_per");
@@ -2344,6 +2414,7 @@ struct Viewer {
         std::string name;
         int number = 0, icon = 0;
         bool selectable = true;
+        std::string help; // (the command's or item's text: "\\n" between its lines)
     };
     // the rows centred on the focused one (ScrollListMenu::PartsPose: two either side shown; the
     // row's own place the one above it), the list's tab (ListTag: tabWin_io, its tabName_id at
@@ -2359,6 +2430,19 @@ struct Viewer {
         int fi = 0;
         for (size_t k = 0; k < rows.size(); ++k)
             if (rows[k].id == focused) fi = int(k);
+        // its thumb (scrlMtr_per, in place: SetScrollBarLength - posed at the part of the list
+        // shown, 5 rows, / 20 s by percent; SetScrollBarPosition - lower by the rows above the first
+        // shown, of those that do not fit, between the bar's barLimitUp and barLimitLow)
+        float ux, uy, lx, ly;
+        if (uiJoint(bar, "barLimitUp", ux, uy) && uiJoint(bar, "barLimitLow", lx, ly)) {
+            const int n = std::max(int(rows.size()), 1), first = std::clamp(fi - 2, 0, std::max(n - 5, 0));
+            const float shown = std::min(5.0f / float(n), 1.0f);
+            UiFig& th = uiFig("scrlmtr_per");
+            th.fig.place = cr2::Mat34();
+            th.fig.place.m[7] = n > 5 ? -(uy - ly) * (1.0f - shown) * float(first) / float(n - 5) : 0.0f;
+            poseUi(th, "scrlmtr_per", shown * 100.0f / 20.0f);
+            drawFigure(th.fig, view.data());
+        }
         for (int k = std::max(fi - 2, 0); k < int(rows.size()) && k <= fi + 2; ++k) {
             const ListRow& r = rows[size_t(k)];
             UiFig& b = uiFig("scrlbtn");
@@ -2391,12 +2475,24 @@ struct Viewer {
                 UiFig& sl = uiFig("sbtnslct");
                 sl.fig.place = cr2::Mat34();
                 sl.fig.place.m[3] = x, sl.fig.place.m[7] = y;
-                poseUi(sl, "sbtnslct", t, true);
+                poseUi(sl, "sbtnslct", t);
                 drawFigure(sl.fig, view.data());
             }
             float sx, sy, ex, ey; // (a tap: the focused row's pick, another's focus - its id + 1000)
             if (uiJoint(b, "tapAreaS01", sx, sy) && uiJoint(b, "tapAreaE01", ex, ey))
                 tapRects.push_back({k == fi ? (r.selectable ? r.id : -1) : 1000 + k, sx, sy, ex, ey});
+        }
+        // the focused row's help (scrlWin: its lines at typeS_L01, typeS_L02)
+        if (fi < int(rows.size()) && !rows[size_t(fi)].help.empty()) {
+            UiFig& win = uiFig("scrlwin");
+            win.fig.place = cr2::Mat34();
+            poseUi(win, "scrlwin_io", t);
+            drawFigure(win.fig, view.data());
+            const std::string& s = rows[size_t(fi)].help; // (its break the text's "\\n")
+            const size_t br = s.find("\\n");
+            float x, y;
+            if (uiJoint(win, "typeS_L01", x, y)) drawUiText(s.substr(0, br), 22, x, y, w, h, true);
+            if (br != std::string::npos && uiJoint(win, "typeS_L02", x, y)) drawUiText(s.substr(br + 2), 22, x, y, w, h, true);
         }
         UiFig& tag = uiFig("tabwin_io");
         tag.fig.place = cr2::Mat34();
@@ -2430,25 +2526,27 @@ struct Viewer {
         const std::vector<int> c = menuChoices();
         const int cursor = c.empty() ? -1 : c[size_t(std::clamp(menuCursor, 0, int(c.size()) - 1))];
         if (commandInput.menu() == CI::Menu::Target) {
-            // BattleSelectMenu: a target button a target (43 ..), its name on it
+            // BattleSelectMenu: a target button a target, its name on it - n of them the last n of
+            // the five places (43 + 5 - n ..)
             std::vector<int> ids;
             std::map<int, std::string> names;
-            for (size_t k = 0; k < commandInput.targets().size() && k < 5; ++k) {
-                const int f = commandInput.targets()[k];
-                ids.push_back(CI::TargetFirst + int(k));
-                names[CI::TargetFirst + int(k)] = battleRules->fighter(f).name;
+            const int n = std::min(int(commandInput.targets().size()), 5), first = CI::TargetFirst + 5 - n;
+            for (int k = 0; k < n; ++k) {
+                const int f = commandInput.targets()[size_t(k)];
+                ids.push_back(first + k);
+                names[first + k] = battleRules->fighter(f).name;
             }
-            buttonLook = [&](int id) { return commandInput.targets()[size_t(id - CI::TargetFirst)] == cursor && keysUsed ? 2 : 1; };
-            buttonFighter = [&](int id) { return commandInput.targets()[size_t(id - CI::TargetFirst)]; };
+            buttonLook = [&](int id) { return commandInput.targets()[size_t(id - first)] == cursor ? 2 : 1; };
+            buttonFighter = [&](int id) { return commandInput.targets()[size_t(id - first)]; };
             drawCommandMenu("btlbtn3rd_io", t, view, ids, names, w, h, CI::TargetFirst);
             buttonLook = nullptr, buttonFighter = nullptr;
-            for (TapRect& r : tapRects) r.id = commandInput.targets()[size_t(r.id - CI::TargetFirst)]; // (a click: the fighter)
+            for (TapRect& r : tapRects) r.id = commandInput.targets()[size_t(r.id - first)]; // (a click: the fighter)
         } else if (commandInput.menu() == CI::Menu::Items) {
             // the items (BattleItemListMenu: its icon, its count, the tab's frame 7)
             std::vector<ListRow> rows;
             for (const auto& e : commandInput.items()) {
                 const cr2::BattleData::Item* it = battleData.item(e.item);
-                rows.push_back({e.item, it ? it->name[1] : "?", e.count, it ? it->icon : 0, e.selectable});
+                rows.push_back({e.item, it ? it->name[1] : "?", e.count, it ? it->icon : 0, e.selectable, it ? it->text[1] : ""});
             }
             listRows = rows;
             drawSkillList(rows, cursor, t, view, w, h, 7, -1);
@@ -2460,12 +2558,12 @@ struct Viewer {
             if (commandInput.menu() == CI::Menu::Awake)
                 for (const auto& a : commandInput.awakenings()) {
                     const cr2::BattleData::Command* c = battleData.command(a.command);
-                    rows.push_back({a.command, c ? c->name[1] : "?", a.level, 71, a.selectable});
+                    rows.push_back({a.command, c ? c->name[1] : "?", a.level, 71, a.selectable, c ? c->text[1] : ""});
                 }
             else
                 for (const auto& sc : commandInput.sopiaCommands()) {
                     const cr2::BattleData::Command* c = battleData.command(sc.command);
-                    rows.push_back({sc.command, c ? c->name[1] : "?", sc.mp, c ? c->icon : 0, sc.selectable});
+                    rows.push_back({sc.command, c ? c->name[1] : "?", sc.mp, c ? c->icon : 0, sc.selectable, c ? c->text[1] : ""});
                 }
             listRows = rows;
             const bool sopia = commandInput.menu() == CI::Menu::Sopia;
@@ -2549,6 +2647,13 @@ struct Viewer {
                 const float rgba[4] = {1, 1, 1, 1};
                 dev->drawQuad(*tex, v, proj.data(), rgba);
             }
+            // the signs (BattleStatusMenu::SetPlayerStatusIcon: pcNNinfo's call_enchant_id00 the
+            // first - the element -, id01 / id07 six states each, id13, id14)
+            UiFig& info = uiFig(n + "info");
+            info.fig.place = cr2::Mat34();
+            poseUi(info, n + "info", 0);
+            float ex, ey;
+            if (uiJoint(info, "call_enchant_id00", ex, ey)) drawEnchant(elementSign(f), ex, ey, proj);
             for (const char* what : {"hpNum", "mpNum"}) {
                 UiFig& num = uiFig(n + (std::string(what) == "hpNum" ? "hpnum" : "mpnum"));
                 num.fig.place = cr2::Mat34();
@@ -2650,6 +2755,7 @@ struct Viewer {
     // the event's UI, over the resolved scene: the fade, then the windows over it (their depths
     // in front of the fade windows')
     void drawEventUi() {
+        dev->clearDepth(); // (the scene's depths behind all of it: a near camera's ground too)
         drawBalloons(screenW, screenH);
         drawBattleHud(screenW, screenH);
         cr2::EventRuntime* ev = activeEvents();
@@ -2871,6 +2977,7 @@ int main(int argc, char** argv) {
         v.initEventDrawing();
         v.pageSeconds = page;
     }
+    v.newGame();
     if (!fieldName.empty()) {
         if (!v.loadField(fieldName, at, binary, data, callEntry)) return 1;
     } else if (lights != "none") {

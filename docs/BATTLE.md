@@ -36,6 +36,15 @@ and Familiar Light Armor: HP 515, MP 86; Orlando at 5: HP 830, MP 142 - as the r
 first battle shows them. "Attack" is the character's +0x44 command (Darwin: Slash), solo or in a
 pair alike (BtlCommand::StepCommandLoop).
 
+The scripts change the equipment (Cr3System.SetEquip / GetEquip, Cr3UtilSetCharaEquip: the
+character from 0, the slot - 0 weapon, 1 armour, 2 accessory, 6 the second sopia, 3..5 the third
+to fifth -, the id): the prologue gives Darwin the sopia 30 and 31 for the opening battle (221)
+and takes them back after it, so in the forest (222) he has no element. A fighter's element
+(BtlWork::SetupPlayerSkill, +0xfba) is that of the first of its five sopia with one (a sopia's
++0x16: Orlando's 2 wind), else none; each sopia gives its auto skills (+0x22, one a level) up to
+its level, and those that lend an element (an auto skill's +0x34, GetAutoSkillAttach) set it in
+its place if they agree on one.
+
 A monster's level is its own (+0x3b), else near the party's mean (BtlWork::SetupEnemy): within
 the dungeon level's band (cr3_common_data[0] d: d x 10 + 1 .. (d + 1) x 10), from mean - 5 to mean
 + 2 at random. The coupling's flag lifts the limits on its HP and parameters.
@@ -165,7 +174,13 @@ the awakening's level), its icon (mainIcon_id at call_mainIcon_id11, its frame /
 command's +0x72; 71 "Awake", 70 "Advent"), the number's mark (cost_id at call_cost_id13: 12
 "MP/", 13 "Charge Lv."), the focused one's sBtnSlct (call_sBtnSlct14); the tab (ListTag:
 tabWin_io, tabName_id at call_tabName_id01 at frame 9 "Sopia", 11 "Awake", 13 "Advent"); scrlBack
-to go back. As the reference video shows them (the prologue's Sopia list: Seal Strike focused).
+to go back. The focused row's help over them (scrlWin, scrlWin_io: the command's or item's +0xc,
+its two lines - split at a "\n" in the text - at typeS_L01 / typeS_L02). The bar's thumb
+(scrlMtr_per, in place): SetScrollBarLength poses it at the part of the list shown (5 rows of
+the count, at most all) x 100 / 20 s; SetScrollBarPosition lowers it by the rows above the first
+shown, of those that do not fit. sBtnSlct (0.15 s, once) lights the focused row across. As the
+reference video shows them (the prologue's Sopia list: Preemptive Strike focused, its help on
+two lines, the thumb the bar's length).
 
 A turn the script reserves (ReserveCommand) is played without the menus (BtlCommand::StepEvent):
 the first battle with an advent (226) gives the pair Gale Roar so.
@@ -220,7 +235,7 @@ targets), posed at frame NN (its own animation: NN / 20 s), which picks its icon
 | 27 | Pair (+0x44: switch 47, both standing) | | 18 | Sopia (+0x41) |
 | 28 | Escape (not in an event battle, +0x1fb4) | | 16 | Items (+0x42 and items to use) |
 | 20 | Options | | 33 | Defend (+0x43) |
-| 43..47 | a target: its name (typeM_C01), level (DotNumId2, 3 digits of set 120 at call_dotNum_id30, the ones), HP bar (btlHpBar_per at call_hpBar_per20, HP x 5 / max s, at least 0.07) | | 29 / 30 | Awake (+0x3e) / Advent (+0x3f), in one place |
+| 43..47 | a target, n of them in the last n places (43 + 5 - n ..): its name (typeM_C01), level (DotNumId2, 3 digits of set 120 at call_dotNum_id30, the ones), HP bar (btlHpBar_per at call_hpBar_per20, HP x 5 / max s, at least 0.07), its signs (SetStatusIcon: the element's at call_enchant_id00, the states' from call_enchant_id01) | | 29 / 30 | Awake (+0x3e) / Advent (+0x3f), in one place |
 
 CheckCommandEnable sets the second menu's switches: +0x40 from the script's switch 43 (and not
 state 22), +0x41 switch 44 (not 2 or 23), +0x42 switch 45 (not 25), +0x43 switch 46 (not 24) -
@@ -228,7 +243,15 @@ the switches on at the battle's start but 42. A tap hits a button inside its tap
 tapAreaE01 joints (Cr3UtilCheckHitCollision); `btlBack` (fit 3, `btlBack_in`) goes back. A button
 not selectable is drawn at half its colour (CircleBtn::ChangeTapButtonColor 0.5: every
 material's DiffuseColor), one focused with its PRG_shiftR material's texture half across
-(OffsetSet1 U 0.5; 2.0).
+(OffsetSet1 U 0.5; 2.0) - on a touch screen only the button pressed; among the targets the one
+chosen, the first at first, always (the reference video).
+
+The signs (BattleWindowEnchant2: SetSign's n a 0.048-unit square of hud_enchant at
+EnchantParamPackTable's 16-byte UVs, the icons of a row 0.04 apart; GetCharaUIState's bit k sign
+k + 1): 1 a white "i" (no element), 2 red, 3 cyan, 4 green (the elements 1, 2, 3), the states
+after, 25 a clock. The party's on pc01info / pc02info (BattleStatusMenu::SetPlayerStatusIcon:
+call_enchant_id00 the element, id01 and id07 six states each, id13, id14 two) - the reference
+video's Orlando a green one, Darwin white.
 
 The steps: the first menu (StepGetsetFirst / StepGetset: Cam_Getset, the party on its solo
 places) - its result 0 solo, 1 pair, 2 escape, 3 options; then the command menu for the first
@@ -237,7 +260,13 @@ second's, 0x1d the pair's) - its result 0 attack (the character's +0x44, a pair'
 +0x46 as it acts), 1 sopia, 2 items, 3 defend (StepNextCheck: state 4, both for a pair; the
 data's command 5), 4 awake / advent, 99 back (the second's back to the first's, else the first
 menu); for one on a single foe the target (StepTarget: the target buttons, the camera on the one
-chosen - SetCommandTargetCamera).
+chosen - SetCommandTargetCamera). The party chooses on its solo places. The target's camera is
+the one StepBattleIn_Setup keeps for each fighter (BtlWork +0x580, 0x30 each: GetCameraInfo - the
+camera figure at that frame and posed, its first frame held): a party member's GetTarget 0 / 1
+(PCfighter / PCpartner; 2 PCsolo for one alone, 3 PCpair for a pair's command), a monster's GetTarget
+4 + its size (Cam_Command_S / M / L / XL) in the monster's own frame (its position and turn), the
+human patterns' 8 / 9 and 10, the boss's 12, XLXL's 13 in the battle's - over 10 frames from one
+target to the next (the viewer cuts).
 
 Escape (StepEscape: a yes / no; StepEscapeLoop): BtlCalc::Escape - sure in the party's turn
 break, or with skill (4, 3) (HasEncountAbsoluteEscape: the one escaping's, or either of the party

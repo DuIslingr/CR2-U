@@ -15,5 +15,6 @@ int cameraStart(int k) { return at(k); }
 int cameraPattern(int p) { return at(0xec + p); }
 int cameraAttackToEnemy(int kind, int n) { return at(0x94 + kind * 22 + n); }
 int cameraAttackFromEnemy(int n, int t) { return at(0x3c + n * 4 + t); }
+int cameraTarget(int k) { return at(0x1e + k); }
 
 } // namespace cr2

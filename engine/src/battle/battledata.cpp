@@ -118,6 +118,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         Command c;
         c.id = i + 1;
         c.name[0] = text(o), c.name[1] = text(o + 4); // (+0 Japanese, +4 English)
+        c.text[0] = text(o + 8), c.text[1] = text(o + 0xc);
         c.motion = cstr(d, o + 0x38, 6);
         c.power = int(u32(d, o + 0x44));
         c.magic = d[o + 0x49], c.spread = d[o + 0x4a], c.target = d[o + 0x4b], c.element = d[o + 0x4c];
@@ -134,8 +135,8 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         Sopia s;
         s.id = i + 1;
         s.name[0] = text(o), s.name[1] = text(o + 4);
-        s.growth = d[o + 0x10], s.startLevel = d[o + 0x12];
-        for (int k = 0; k < 10; ++k) s.commands[k] = s16(d, o + 0x18 + size_t(k) * 2);
+        s.growth = d[o + 0x10], s.startLevel = d[o + 0x12], s.element = s16(d, o + 0x16);
+        for (int k = 0; k < 5; ++k) s.commands[k] = s16(d, o + 0x18 + size_t(k) * 2), s.skills[k] = s16(d, o + 0x22 + size_t(k) * 2);
         sopias_.push_back(s);
     }
     for (int i = 0, n = s16(d, 0x3e); i < n; ++i) {
@@ -146,6 +147,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         for (int k = 0; k < 7; ++k) a.resist[k] = d[o + 0x17 + size_t(k)];
         for (int k = 0; k < 5; ++k) a.stateResist[k] = d[o + 0x1e + size_t(k)];
         for (int k = 0; k < 7; ++k) a.groups[k] = uint16_t(s16(d, o + 0x26 + size_t(k) * 2));
+        a.attach = static_cast<signed char>(d[o + 0x34]);
         autoSkills_.push_back(a);
     }
     for (int i = 0, n = s16(d, 0x44); i < n; ++i) {
@@ -154,6 +156,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         Item it;
         it.id = i + 1;
         it.name[0] = text(o), it.name[1] = text(o + 4);
+        it.text[0] = text(o + 8), it.text[1] = text(o + 0xc);
         it.type = s16(d, o + 0x10);
         it.hp = int(u32(d, o + 0x14)), it.mp = s16(d, o + 0x18);
         for (int k = 0; k < 5; ++k) it.param[k] = s16(d, o + 0x1a + size_t(k) * 2);

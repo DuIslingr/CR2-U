@@ -102,6 +102,13 @@ public:
     // only when `askYesNo` (a player to answer: the viewer); else the check answers nothing (the
     // headless runs' scripts go on as without the buttons). With autoPage, yes after that long.
     bool askYesNo = false;
+    // The fast-forward button (FastForward: `speedUp` on the message windows 0 .. 6, shown with a
+    // page while EvtWindow.SetSkipButtonEnable allows - each Open allows it again): held
+    // (EvtWindow::IsSkip), a page shows whole and turns at once, without a tap
+    bool fastForward = false;
+    bool fastForwardShown() const {
+        return message_ > 0 && messageWindow_ >= 0 && messageWindow_ <= 6 && !skipOff_.count(messageWindow_);
+    }
     bool yesNoShown() const { return yesNoShown_; }
     float yesNoAge() const { return yesNoAge_; }
     void answerYesNo(bool yes) {
@@ -161,6 +168,7 @@ private:
     int itemShown_ = 0;                  // (the item SetItemMessage named: its icon)
     TutorialPicture tutorialPicture_;
     std::set<int> openWindows_;
+    std::set<int> skipOff_; // (SetSkipButtonEnable false)
     std::map<int, float> opened_, closing_; // (window -> seconds since)
     std::array<Portrait, kCutIns> cutIns_;
     std::vector<std::pair<int, std::string>> cutInImages_; // (id, image: the first of an id counts)

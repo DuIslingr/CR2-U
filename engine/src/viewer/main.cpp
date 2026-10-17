@@ -1781,8 +1781,24 @@ struct Viewer {
     // A frame's time: the vista's event, else the field (its script, then the leader - held while
     // the script runs)
     float uiClock = 0; // (the menus' seconds: the options', the manual's, the camp's - in a battle or out)
+    // the fast-forward button's place as last drawn (id 0: not shown), whether it is held (the
+    // mouse on it, or F), and --input fast's two seconds of it
+    struct { int id = 0; float x0 = 0, y0 = 0, x1 = 0, y1 = 0; } fastRect;
+    bool fastHeld = false;
+    float fastUntil = -1;
+    bool overFast(float fx, float fy) const {
+        if (fastRect.id == 0) return false;
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+        return x >= std::min(fastRect.x0, fastRect.x1) && x <= std::max(fastRect.x0, fastRect.x1) && y >= std::min(fastRect.y0, fastRect.y1) &&
+               y <= std::max(fastRect.y0, fastRect.y1);
+    }
     void advance(float dt, float sx, float sy, bool run) {
         uiClock += dt;
+        if (cr2::EventRuntime* ev = activeEvents()) {
+            if (!inputScript.empty() && inputScript.front() == "fast" && ev->fastForwardShown()) inputScript.pop_front(), fastUntil = uiClock + 2.0f;
+            ev->fastForward = fastHeld || uiClock < fastUntil;
+        }
         if (!inputScript.empty() && (inputScript.front() == "yes" || inputScript.front() == "no") && yesNoShown() &&
             activeEvents()->yesNoAge() > 0.5f) { // (--input: an event's yes / no)
             answerYesNo(inputScript.front() == "yes");
@@ -7422,6 +7438,20 @@ struct Viewer {
         for (WindowLayout* wl : {&annoWindow, &announceWindow, &helpWindow, &systemWindow})
             if (ev->windowOpen(wl->window) || ev->windowClosing(wl->window))
                 drawWindow(*wl, message && ev->messageWindow() == wl->window, screenW, screenH);
+        // the fast-forward button (FastForward: speedUp, its loop, at its own place - over the
+        // message's window while allowed); held, the pages race by (fastHeld)
+        fastRect.id = 0;
+        if (message && ev->fastForwardShown() && ev->windowOpen(ev->messageWindow())) {
+            Mat4 camera = cr2::mat4Identity();
+            camera[14] = -0.881f;
+            const Mat4 view = cr2::mat4Multiply(uiProjection(screenW, screenH), camera);
+            UiFig& ff = uiFig("speedup");
+            ff.fig.place = cr2::Mat34();
+            poseUi(ff, "speedup", uiClock, true);
+            drawFigure(ff.fig, view.data());
+            float sx, sy, ex, ey;
+            if (uiJoint(ff, "tapAreaS01", sx, sy) && uiJoint(ff, "tapAreaE01", ex, ey)) fastRect.id = 1, fastRect.x0 = sx, fastRect.y0 = sy, fastRect.x1 = ex, fastRect.y1 = ey;
+        }
         if (ev->windowOpen(7) || ev->windowClosing(7)) {
             drawWindow(itemWindow, message && ev->messageWindow() == 7, screenW, screenH);
             const cr2::BattleData::Item* it = ev->windowOpen(7) && ev->itemShown() > 0 ? battleData.item(ev->itemShown()) : nullptr;
@@ -7899,7 +7929,8 @@ int main(int argc, char** argv) {
                     dragging = true;
                     float fx, fy;
                     screenFraction(e.button.x, e.button.y, fx, fy);
-                    if (v.yesNoClick(fx, fy)) {}
+                    if (v.overFast(fx, fy)) v.fastHeld = true; // (the fast-forward button: held, not a tap)
+                    else if (v.yesNoClick(fx, fy)) {}
                     else if (v.battleMode && v.choosing) v.battleClick(fx, fy);
                     else if (v.fieldMode && !v.eventMode && v.keyLock.stage != 0) v.unlockPointer(fx, fy, 0);
                     else if (v.fieldMode && !v.eventMode && v.iai.stage) v.iaiPointer(fx, fy, 0);
@@ -7912,6 +7943,7 @@ int main(int argc, char** argv) {
                 }
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
                     dragging = false;
+                    v.fastHeld = false;
                     if (v.fieldMode && v.keyLock.stage == 1) v.unlockPointer(0, 0, 2);
                     if (v.fieldMode && v.aim.stage == 2) {
                         float fx, fy;
@@ -7963,6 +7995,8 @@ int main(int argc, char** argv) {
             if (!v.paused && v.battleMode && !v.fieldMode && !v.eventMode) v.advance(dt, 0, 0, false);
             if (!v.paused && (v.eventMode || v.fieldMode)) { // the arrows / WASD run, with Shift walk
                 const bool* keys = SDL_GetKeyboardState(nullptr);
+                if (keys[SDL_SCANCODE_F]) v.fastHeld = true; // (F held: the fast-forward button's)
+                else if (!(SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK)) v.fastHeld = false;
                 const float sx = float((keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) - (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]));
                 const float sy = float((keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W]) - (keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S]));
                 v.advance(dt, sx, sy, !(keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]));

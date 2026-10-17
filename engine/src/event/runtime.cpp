@@ -132,6 +132,7 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     vm.setNative("EvtWindow", "Open", [this](NativeCall& c) {
         const int w = c.integer(0, Vista);
         if (openWindows_.insert(w).second) opened_[w] = 0, closing_.erase(w);
+        skipOff_.erase(w); // (EvtWindow::Open: the skip button allowed again)
     });
     auto close = [this](int w) {
         if (openWindows_.erase(w)) opened_.erase(w), closing_[w] = 0;
@@ -201,6 +202,10 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     });
     // SkipMessage: the page shown whole at once (EvtWindowMessage::SkipMessage - InterfaceMain::
     // SkipMessageWindowStringDisplay: its typing skipped; the message stays till a tap or Close)
+    vm.setNative("EvtWindow", "SetSkipButtonEnable", [this](NativeCall& c) {
+        if (c.boolean(1)) skipOff_.erase(c.integer(0, Vista));
+        else skipOff_.insert(c.integer(0, Vista));
+    });
     vm.setNative("EvtWindow", "SkipMessage", [this](NativeCall&) { if (message_ > 0) revealed_ = 1 << 20; });
     // the fades: (type, frames), the 2s (type, frames, from %, to %)
     vm.setNative("Cr3Fade", "FadeIn", [this](NativeCall& c) { fade_.start(fadeColour(c.integer(0)), c.integer(1), 1, 0); });
@@ -287,7 +292,10 @@ bool EventRuntime::update(ScriptVM* vm) {
         wait_ = 0;
         if (!vm->resume()) return error_ = vm->error(), false;
     }
-    if (message_ > 0 && !typed()) ++revealed_; // (a character an update; the page's time counts once it's typed)
+    if (fastForward && fastForwardShown()) { // (the button held: the page whole, then the next at once)
+        if (!typed()) revealed_ = 1 << 20;
+        else advance();
+    } else if (message_ > 0 && !typed()) ++revealed_; // (a character an update; the page's time counts once it's typed)
     else if ((message_ > 0 || execution_) && autoPage > 0 && (pageTime_ += kTick) >= autoPage) advance();
     fade_.update();
     if (yesNoShown_ && (yesNoAge_ += kTick) >= autoPage && autoPage > 0 && askYesNo && !yesNo_) yesNo_ = 1; // (pages by themselves: yes)

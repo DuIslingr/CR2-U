@@ -173,6 +173,12 @@ spots: a tap within 128 of one names it (`GetMysticTapSpotName`), SE 0x164 and t
 called - the script moves its object there (`Mystic_Warp`) and makes that spot the active one -;
 a tap elsewhere fails. `SkipMessage` shows the page whole
 (the typing skipped); the message stays until a tap or the window's Close.
+`SetSkipButtonEnable(window, on)` shows or hides the window's fast-forward button (FastForward:
+`speedUp` on its loop, on ConversationWindowMenu, VistaConversationWindowMenu, NarrationWindowMenu,
+HelpWindowMenu and SystemWindowMenu - windows 0 .. 6 -, shown with each page while allowed; each
+`Open` allows it again, and the scripts' `Msg_Open` hides it for the vista's window 1 and the
+System window 5). Held (EvtWindow::IsSkip - the finger on it), a page shows whole and turns at
+once, without a tap.
 
 The gimmicks' own: `Cr3GimmickData.SetMotion(gimmick, animator)` gives an object or an NPC an
 event motion (FldObject / FldNPC::SetEventAnim: bound over its idle, looping unless

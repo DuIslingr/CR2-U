@@ -180,6 +180,12 @@ HelpWindowMenu and SystemWindowMenu - windows 0 .. 6 -, shown with each page whi
 System window 5). Held (EvtWindow::IsSkip - the finger on it), a page shows whole and turns at
 once, without a tap.
 
+The vista events' skip button (`EvtSkip.ButtonCreate` / `ButtonDelete` / `ButtonSetVisible`:
+VistaFastButtonMenu, `speedUp` again, 0.1 nearer; FldUtilGetVistaSkipEnable's flag is set in the
+data and never cleared): held, `EvtSkip.CheckButtonTouch` says so - TestApp::onUpdate then runs
+GameMain::Update five times a frame, the scripts' `PlaySE` stays quiet, and the windows' pages
+race as above.
+
 The gimmicks' own: `Cr3GimmickData.SetMotion(gimmick, animator)` gives an object or an NPC an
 event motion (FldObject / FldNPC::SetEventAnim: bound over its idle, looping unless
 `SetMotionLoop(gimmick, false)` - the iai's gate `obj131fa01` cut once and held), `ChangeAlpha

@@ -106,6 +106,12 @@ public:
     // page while EvtWindow.SetSkipButtonEnable allows - each Open allows it again): held
     // (EvtWindow::IsSkip), a page shows whole and turns at once, without a tap
     bool fastForward = false;
+    // the vista's skip button (EvtSkip: VistaFastButtonMenu - speedUp again; FldUtilGetVistaSkipEnable
+    // is always on): from ButtonCreate till ButtonDelete, unless ButtonSetVisible(false). Held
+    // (CheckButtonTouch: TestApp::onUpdate's), the game runs five updates a frame, the scripts'
+    // PlaySE stays quiet and the pages race as the windows' button makes them
+    bool skipButtonShown() const { return skipButton_; }
+    bool skipHeld() const { return fastForward && skipButton_; }
     bool fastForwardShown() const {
         return message_ > 0 && messageWindow_ >= 0 && messageWindow_ <= 6 && !skipOff_.count(messageWindow_);
     }
@@ -169,6 +175,7 @@ private:
     TutorialPicture tutorialPicture_;
     std::set<int> openWindows_;
     std::set<int> skipOff_; // (SetSkipButtonEnable false)
+    bool skipButton_ = false;
     std::map<int, float> opened_, closing_; // (window -> seconds since)
     std::array<Portrait, kCutIns> cutIns_;
     std::vector<std::pair<int, std::string>> cutInImages_; // (id, image: the first of an id counts)

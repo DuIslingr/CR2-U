@@ -88,8 +88,10 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] The cut-ins' conversations: the portraits (their five layouts sliding in and out, the faces,
       the listener dimmed) behind the conversation window, fitted as the game fits them (checked
       against the reference video: `cr2view --play d0105 --call D01_01_0502`)
-- [x] The messages' fast-forward button (speedUp, where the scripts allow it): held - the mouse on
-      it, or F - the pages race by (`--input fast`: two seconds of it)
+- [x] The messages' fast-forward button (speedUp, where the scripts allow it) and the vista
+      events' skip button (the same figure, while the event has it): held - the mouse on it, or F -
+      the pages race by, a vista at five times its speed and its sounds quiet (`--input fast`: two
+      seconds of it, each)
 - [x] Field event scenes: the event's models among the field's figures, the leader hidden and
       put back where the scene ends
 - [x] Talking: the balloons over what the leader can tap, a tap (Return, a click) calling the

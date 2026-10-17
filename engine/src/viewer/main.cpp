@@ -1805,7 +1805,8 @@ struct Viewer {
     void advance(float dt, float sx, float sy, bool run) {
         uiClock += dt;
         if (cr2::EventRuntime* ev = activeEvents()) {
-            if (!inputScript.empty() && inputScript.front() == "fast" && ev->fastForwardShown()) inputScript.pop_front(), fastUntil = uiClock + 2.0f;
+            if (!inputScript.empty() && inputScript.front() == "fast" && uiClock >= fastUntil && (ev->fastForwardShown() || ev->skipButtonShown()))
+                inputScript.pop_front(), fastUntil = uiClock + 2.0f; // (each two seconds of it, one after the other)
             ev->fastForward = fastHeld || uiClock < fastUntil;
         }
         if (!inputScript.empty() && (inputScript.front() == "yes" || inputScript.front() == "no") && yesNoShown() &&
@@ -1831,7 +1832,7 @@ struct Viewer {
                 afterBattle();
             }
         } else if (eventMode) {
-            updateEvent(dt);
+            updateEvent(event && event->skipHeld() ? dt * 5 : dt); // (the skip button held: five updates a frame)
         } else if (fieldMode && (campOpen || mapOpen || saveStage || world.stage || shop.stage || party.stage || library.stage == 1)) { // (FldMain steps 5 .. 7, 10: the camp, the map, saving, the world select - the field held)
             updateManual(dt);
             if (saveStage == 2 && uiClock - saveStart > 1.0f) saveStage = 0; // (a second, then closed)
@@ -1841,7 +1842,7 @@ struct Viewer {
             }
             fieldInput();
         } else if (fieldMode) {
-            fieldUpdate(dt);
+            fieldUpdate(script && script->events().skipHeld() ? dt * 5 : dt);
             updateChange(dt);
             updateSprint(dt);
             updateIai();
@@ -7451,7 +7452,7 @@ struct Viewer {
         // the fast-forward button (FastForward: speedUp, its loop, at its own place - over the
         // message's window while allowed); held, the pages race by (fastHeld)
         fastRect.id = 0;
-        if (message && ev->fastForwardShown() && ev->windowOpen(ev->messageWindow())) {
+        if ((message && ev->fastForwardShown() && ev->windowOpen(ev->messageWindow())) || ev->skipButtonShown()) { // (or the vista's skip button: the same figure)
             Mat4 camera = cr2::mat4Identity();
             camera[14] = -0.881f;
             const Mat4 view = cr2::mat4Multiply(uiProjection(screenW, screenH), camera);

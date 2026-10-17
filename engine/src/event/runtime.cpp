@@ -223,8 +223,11 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     };
     vm.setNative("Cr3Fade", "FadeIn2", fade2);
     vm.setNative("Cr3Fade", "FadeOut2", fade2);
-    // the skip button: never touched here
-    vm.setNative("EvtSkip", "CheckButtonTouch", [](NativeCall& c) { c.result(false); });
+    // the vista's skip button (EvtSkip): held - the viewer's fastForward while it shows
+    vm.setNative("EvtSkip", "CheckButtonTouch", [this](NativeCall& c) { c.result(skipHeld()); });
+    vm.setNative("EvtSkip", "ButtonCreate", [this](NativeCall&) { skipButton_ = true; });
+    vm.setNative("EvtSkip", "ButtonDelete", [this](NativeCall&) { skipButton_ = false; });
+    vm.setNative("EvtSkip", "ButtonSetVisible", [this](NativeCall& c) { skipButton_ = c.boolean(0); });
     // the sound (Cr3Sound -> Cr3UtilSound*: soundHooks, the player's; none set - silence, GetState
     // -2): PlayBGM(track, fade frames), StopBGM(frames), ReleaseBGM, GetState(0 the music, 1 the
     // effects), PlaySE(clip) / PlaySE_Repeat(clip: looping, its slot), StopSE(slot, frames),
@@ -300,7 +303,7 @@ bool EventRuntime::update(ScriptVM* vm) {
         wait_ = 0;
         if (!vm->resume()) return error_ = vm->error(), false;
     }
-    if (fastForward && fastForwardShown()) { // (the button held: the page whole, then the next at once)
+    if ((fastForward && fastForwardShown()) || (skipHeld() && message_ > 0)) { // (a button held: the page whole, then the next at once - EvtWindow::IsSkip)
         if (!typed()) revealed_ = 1 << 20;
         else advance();
     } else if (message_ > 0 && !typed()) ++revealed_; // (a character an update; the page's time counts once it's typed)

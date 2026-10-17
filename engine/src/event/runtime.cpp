@@ -94,6 +94,9 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
             m->alphaFrom = c.number(1), m->alphaTo = c.number(2), m->alphaSeconds = float(std::max(c.integer(3), 0)) * kTick, m->alphaTime = 0;
     });
     vm.setNative("EvtScene", "SetPosDirect", [this](NativeCall& c) { scene_.pin(c.string(0), c.number(1), c.number(2), c.number(3)); });
+    vm.setNative("EvtScene", "ChangeModelColor", [this](NativeCall& c) {
+        if (EventModel* m = scene_.model(c.string(0))) m->color = std::clamp(c.integer(1), -1, 3);
+    });
     vm.setNative("EvtScene", "ShadowVisible", [this](NativeCall& c) {
         if (EventModel* m = scene_.model(c.string(0))) m->shadow = c.boolean(1);
     });

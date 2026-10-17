@@ -51,6 +51,9 @@ struct EventModel {
     float turnFrom = 0, turnTo = 0, turnSeconds = 0, turnTime = 0;
     // its shadow (EvtModel::Init: a FldShadow for a c / v model, shown; EvtScene.ShadowVisible)
     bool shadow = true;
+    // ChangeModelColor(model, n) (Cr3UtilMakeChangeTextureName: m<its number><a .. d>01 and its
+    // normal map "n", on every material); -1 its own
+    int color = -1;
     bool hasShadow() const { return !figure.empty() && (figure[0] == 'c' || figure[0] == 'v'); }
 };
 

@@ -4105,8 +4105,16 @@ struct Viewer {
             // EvtModel::ChangeTexture_Face: the j<NNN>face material's colour texture
             const auto face = ev.faces().find(m.face);
             const uint32_t faceMaterial = cr2::nameHash(("j" + m.figure.substr(1, 3) + "face").c_str());
-            for (ViewMesh& vm : f.meshes)
-                vm.texture = texture(face != ev.faces().end() && vm.baseMaterial.hash == faceMaterial ? face->second : vm.baseMaterial.diffuse());
+            // ChangeModelColor: its variant's textures on every material (EvtModel::ChangeTexture_Color)
+            const std::string colour = m.color < 0 || m.figure.size() < 4 ? std::string() : "m" + m.figure.substr(1, 3) + "abcd"[m.color] + "01";
+            cr2::Texture* ct = colour.empty() ? nullptr : texture(colour);
+            cr2::Texture* cn = colour.empty() ? nullptr : texture(colour + "n");
+            for (ViewMesh& vm : f.meshes) {
+                vm.texture = face != ev.faces().end() && vm.baseMaterial.hash == faceMaterial ? texture(face->second)
+                             : ct                                                              ? ct
+                                                                                               : texture(vm.baseMaterial.diffuse());
+                vm.normalMap = cn ? cn : texture(vm.baseMaterial.texture(0x35)); // (else its own)
+            }
             f.place = ev.scene().placeAt(m, eventLead());
             f.tint[3] = m.alpha(eventLead()); // (ChangeAlpha)
             pose(f, m.animTime + eventLead(), m.loop);

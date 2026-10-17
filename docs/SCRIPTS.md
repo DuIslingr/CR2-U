@@ -407,7 +407,13 @@ camera, the moves, the animations and the fades where they are by then. The scri
   `PlayEffect` / `PlayEffectLoop(model)` (shown, its own animation - alone in slot 0, absolute -
   from the start, once or looping: an effect's, `eff284`),
   `SetFaceTexture(slot, image)` / `ChangeModelFace(model, slot)` (the colour texture of the
-  model's `j<NNN>face` material: EvtModel::ChangeTexture_Face), `SetDrawSkip`, `Terminate`;
+  model's `j<NNN>face` material: EvtModel::ChangeTexture_Face), `ChangeAlpha(model, from, to,
+  frames)` (EvtModel::SetAlpha: its alpha over the frames - `ModelFade_Event`),
+  `SetPosDirect(model, x, y, z)` / `SetPosLocator(model, other)` (the model - an effect,
+  `PlayEff_Direct` / `PlayEff_Locate` - held at a point, or where the other model is), `SetDrawSkip`,
+  `Terminate`; `Cr3System.SetBGColor(r, g, b)` the frame's clear colour (GameMain::Draw's: the
+  white behind an awakening's message, the field's layers hidden by `Cr3FieldMap.SetVisibleBG` /
+  `FG` / `MG` / `3D`, which the field's drawing now honours);
 - **the timelines** (`VistaEvent`, in the scene's frames - 20 a second): `SetMove(model, from,
   to)` (the model along its locator), `CameraMove(from, to)` / `LightMove` (to + 1: the frame's
   end). The vista camera's near plane is at least 0.05, its far 5 x the camera's (at most 5000;

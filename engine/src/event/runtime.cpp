@@ -87,6 +87,14 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     };
     vm.setNative("EvtScene", "PlayEffect", [effect](NativeCall& c) { effect(c, false); });
     vm.setNative("EvtScene", "PlayEffectLoop", [effect](NativeCall& c) { effect(c, true); });
+    // ChangeAlpha(model, from, to, frames) (Cr3EvtSceneSetAlpha); SetPosDirect(model, x, y, z) /
+    // SetPosLocator(model, other) (Cr3EvtSceneSetEvtModelPosition*: an effect where another model is)
+    vm.setNative("EvtScene", "ChangeAlpha", [this](NativeCall& c) {
+        if (EventModel* m = scene_.model(c.string(0)))
+            m->alphaFrom = c.number(1), m->alphaTo = c.number(2), m->alphaSeconds = float(std::max(c.integer(3), 0)) * kTick, m->alphaTime = 0;
+    });
+    vm.setNative("EvtScene", "SetPosDirect", [this](NativeCall& c) { scene_.pin(c.string(0), c.number(1), c.number(2), c.number(3)); });
+    vm.setNative("EvtScene", "SetPosLocator", [this](NativeCall& c) { scene_.pinTo(c.string(0), c.string(1)); });
     vm.setNative("EvtScene", "SetFaceTexture", [this](NativeCall& c) { faces_[c.integer(0)] = c.string(1); });
     vm.setNative("EvtScene", "ChangeModelFace", [this](NativeCall& c) {
         if (EventModel* m = scene_.model(c.string(0))) m->face = c.integer(1, -1);

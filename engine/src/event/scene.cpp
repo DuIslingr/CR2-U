@@ -90,11 +90,25 @@ bool EventScene::p000(Mat34& world) const {
 
 void EventScene::place(EventModel& m) {
     if (locators_.count(lower(m.name))) m.place = locator(m.name, m.sceneTime);
+    if (m.pinned) m.place.m[3] = m.pin[0], m.place.m[7] = m.pin[1], m.place.m[11] = m.pin[2];
 }
 
 Mat34 EventScene::placeAt(const EventModel& m, float lead) const {
     if (!m.moving || lead <= 0 || !locators_.count(lower(m.name))) return m.place;
-    return locator(m.name, std::min(m.sceneTime + lead, m.moveEnd));
+    Mat34 p = locator(m.name, std::min(m.sceneTime + lead, m.moveEnd));
+    if (m.pinned) p.m[3] = m.pin[0], p.m[7] = m.pin[1], p.m[11] = m.pin[2];
+    return p;
+}
+
+void EventScene::pin(const std::string& name, float x, float y, float z) {
+    if (EventModel* m = model(name)) {
+        m->pinned = true, m->pin[0] = x, m->pin[1] = y, m->pin[2] = z;
+        place(*m);
+    }
+}
+
+void EventScene::pinTo(const std::string& name, const std::string& other) {
+    if (const EventModel* o = model(other)) pin(name, o->place.m[3], o->place.m[7], o->place.m[11]);
 }
 
 void EventScene::setMove(const std::string& name, float from, float to) {
@@ -124,6 +138,7 @@ void EventScene::update(float dt) {
             place(m);
         }
         m.animTime += dt;
+        m.alphaTime += dt;
     }
     cameraTime_ = std::min(cameraTime_ + dt, std::max(cameraEnd_, cameraTime_));
     lightTime_ = std::min(lightTime_ + dt, std::max(lightEnd_, lightTime_));

@@ -1411,6 +1411,13 @@ struct Viewer {
         dev->sceneSize(fw, fh, rw, rh);
         const float kx = float(rw) / float(fw), ky = float(rh) / float(fh);
         dev->setViewport(screenX * kx, screenY * ky, screenW * kx, screenH * ky);
+        if ((game.bgColor[0] > 0 || game.bgColor[1] > 0 || game.bgColor[2] > 0) && white.id) { // (SetBGColor: GameMain::Draw's clear colour)
+            static const float kScreen[24] = {-1, -1, 0, 0, 1, -1, 1, 0, 1, 1, 1, 1, -1, -1, 0, 0, 1, 1, 1, 1, -1, 1, 0, 1};
+            const Mat4 id = cr2::mat4Identity();
+            const float rgba[4] = {game.bgColor[0], game.bgColor[1], game.bgColor[2], 1};
+            dev->drawQuad(white, kScreen, id.data(), rgba);
+            dev->clearDepth();
+        }
         drawScene(screenW, screenH);
         dev->endScene();
         dev->setViewport(float(screenX), float(screenY), float(screenW), float(screenH));
@@ -1448,9 +1455,11 @@ struct Viewer {
             std::memcpy(l.camera, fr.camera, sizeof l.camera);
             l.time = time;
             dev->setLighting(l);
-            drawLayer(field.backgroundImage(), fr.background);
-            drawLayer(field.midgroundImage(), fr.midground);
-            drawFigure(mapFigure, fr.scene.data());
+            // (the layers the script hid - Cr3FieldMap.SetVisibleBG / MG / 3D / FG - left out)
+            auto shown = [this](int layer) { return !script || script->layerVisible(layer); };
+            if (shown(0)) drawLayer(field.backgroundImage(), fr.background);
+            if (shown(2)) drawLayer(field.midgroundImage(), fr.midground);
+            if (shown(3)) drawFigure(mapFigure, fr.scene.data());
             for (const ViewFigure& g : gimmicks) drawFigure(g, fr.scene.data());
             drawResidents(fr.scene.data());
             // an event's scene in the field (EvtScene in FldMain: its models among the field's
@@ -1461,7 +1470,7 @@ struct Viewer {
                     if (models[i].visible) drawFigure(eventFigures[i], fr.scene.data());
             }
             if (!script || script->playerVisible()) drawFigure(fig, fr.scene.data());
-            drawLayer(field.foregroundImage(), fr.foreground, field.info().foregroundShift == 1 ? -1152.0f : 0.0f);
+            if (shown(1)) drawLayer(field.foregroundImage(), fr.foreground, field.info().foregroundShift == 1 ? -1152.0f : 0.0f);
             return;
         }
         const float yr = yaw * 3.14159265f / 180, pr = pitch * 3.14159265f / 180, d = fig.radius * 2.6f * zoom;
@@ -3902,6 +3911,7 @@ struct Viewer {
             for (ViewMesh& vm : f.meshes)
                 vm.texture = texture(face != ev.faces().end() && vm.baseMaterial.hash == faceMaterial ? face->second : vm.baseMaterial.diffuse());
             f.place = ev.scene().placeAt(m, eventLead());
+            f.tint[3] = m.alpha(eventLead()); // (ChangeAlpha)
             pose(f, m.animTime + eventLead(), m.loop);
         }
     }

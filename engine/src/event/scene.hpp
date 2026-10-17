@@ -36,6 +36,15 @@ struct EventModel {
     Mat34 place;          // the locator's world matrix at sceneTime
     int face = -1;        // ChangeModelFace: the face texture slot (EvtScene.SetFaceTexture) on its
                           // j<NNN>face material; -1 its own
+    // ChangeAlpha(model, from, to, frames) (EvtModel::SetAlpha): its alpha from .. to over the frames
+    float alphaFrom = 1, alphaTo = 1, alphaSeconds = 0, alphaTime = 0;
+    float alpha(float lead = 0) const {
+        const float t = alphaTime + lead;
+        return alphaSeconds <= 0 || t >= alphaSeconds ? alphaTo : alphaFrom + (alphaTo - alphaFrom) * t / alphaSeconds;
+    }
+    // SetPosDirect / SetPosLocator: held at a point (its figure's position), not where its locator is
+    bool pinned = false;
+    float pin[3] = {0, 0, 0};
 };
 
 class EventScene {
@@ -49,6 +58,9 @@ public:
 
     // the script's controls (times in the scene's frames)
     void setMove(const std::string& model, float from, float to);
+    // SetPosDirect: the model held at a point; SetPosLocator: at another model's place
+    void pin(const std::string& model, float x, float y, float z);
+    void pinTo(const std::string& model, const std::string& other);
     void cameraMove(float from, float to);
     void lightMove(float from, float to);
 

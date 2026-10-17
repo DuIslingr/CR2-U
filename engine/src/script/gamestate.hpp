@@ -66,6 +66,8 @@ struct GameState {
     // the library's shelf (InterfaceWindow.SetArchiveID: InterfaceMain +0xd8, its category) and the
     // entry being read (GetLibraryID: ArchiveWindowMenu +0x2c) - not saved
     int libraryArchive = 0, libraryId = 0;
+    // the frame's clear colour (Cr3System.SetBGColor - Cr3UtilSetBGColor, GameMain::Draw's) - not saved
+    float bgColor[3] = {0, 0, 0};
     TreasureBoxes boxes;
     bool equipReady = false;
     template <class Data> void initEquip(const Data& data, const int* levelExp) {

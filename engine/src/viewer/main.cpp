@@ -332,7 +332,7 @@ struct Viewer {
         SDL_Log("%s: tapped %s - %s", field.info().name.c_str(), g.name.c_str(), g.function.c_str());
         std::string function = g.function;
         if (g.kind == cr2::Gimmick::Box) { // (FldMain's balloon of a box: opened, then its function - box_msg)
-            if (g.boxKind == 1 && game.party[0] != 1) function = "Message_obox"; // (a key box: only Orlando opens it)
+            if (g.boxKind == 1 && script->leader() != 1) function = "Message_obox"; // (a key box: only Orlando opens it)
             else if (g.boxKind == 1) return startUnlock(nearestBalloon); // (FldUnlock first)
             else openBox(g);
         }
@@ -410,7 +410,7 @@ struct Viewer {
                 if (g.kind == cr2::Gimmick::Box && g.boxKind == 1) at = int(i);
             }
         if (at != k.gimmick) k.gimmick = at, k.markAt = uiClock;
-        k.orlando = game.party[0] == 1;
+        k.orlando = script->leader() == 1;
     }
     // the mark's place in the interface's units (the box's, 0.125 above, through the field's camera)
     bool keyMarkPlace(float& x, float& y) {
@@ -1135,6 +1135,7 @@ struct Viewer {
             const bool wasRunning = script->running();
             if (!script->tick()) SDL_Log("%s's script: %s", field.info().name.c_str(), script->error().c_str());
             updateKeyLock();
+            refreshLeader(); // (ChangeModel, ExeQuick)
             if (!wasRunning) continue;
             refreshGimmicks();
             if (script->events().scene().loaded()) syncEventFigures(script->events());
@@ -1178,9 +1179,10 @@ struct Viewer {
             fieldInput();
         } else if (fieldMode) {
             fieldUpdate(dt);
+            updateChange(dt);
             fieldInput();
             if (fieldMode && !eventMode) {
-                const bool held = fieldScriptRunning() || keyLock.stage != 0;
+                const bool held = fieldScriptRunning() || keyLock.stage != 0 || changeStage != 0;
                 walk(dt, held ? 0 : sx, held ? 0 : sy, run);
             }
         }
@@ -3283,7 +3285,8 @@ struct Viewer {
     // the tutorial's - EvtTutoWindow, window 4 -; 1, 0xe: helpWin - EvtAnnounceBWindow, window 3):
     // white text, three lines a page at typeM_L01..L03, centred ones at typeM_C11..C13, their in /
     // out animators, wider across a screen wider than 3:2 (SetScale: aspect / 1.5)
-    WindowLayout helpWindow, annoWindow;
+    // (EvtAnnounceAWindow - window 2 - opens annoWin as the tutorials' does: SetHelpWindowParameter 0)
+    WindowLayout helpWindow, annoWindow, announceWindow;
     // the system window (EvtSystemWindow, window 5 - SetSystemMessageWindowParameter, interface 0x20:
     // SystemWindowMenu, sysWin_io): three lines at typeM_L01..L03 (its slot table, 0x5afff8), its io
     // animator forward as it opens and back as it closes (InterfaceCloseAnimeSet: ChangeAnime 2)
@@ -3328,7 +3331,8 @@ struct Viewer {
         conversationWindow.inAnim = "msgwin_in.anim", conversationWindow.outAnim = "msgwin_out.anim";
         loadCutIns();
         for (auto [wl, name, window] : {std::tuple<WindowLayout*, const char*, int>{&helpWindow, "helpwin", cr2::EventRuntime::AnnounceB},
-                                         {&annoWindow, "annowin", cr2::EventRuntime::Tutorial}}) {
+                                         {&annoWindow, "annowin", cr2::EventRuntime::Tutorial},
+                                         {&announceWindow, "annowin", cr2::EventRuntime::AnnounceA}}) {
             loadWindow(*wl, name);
             wl->linesPerPage = 3, wl->centredSlots = wl->stretch = true;
             wl->slots = {"01", "02", "03", "11", "12", "13"};
@@ -4748,7 +4752,10 @@ struct Viewer {
     // opens the camp (FldMain step 5, FldCamp); the others are not here yet.
     bool fieldTabOpen = false;
     float fieldTabAt = -10; // (uiClock: when it last began to open or close)
-    bool fieldTabShown() const { return fieldMode && !eventMode && !battleMode && script && !script->running() && !campOpen && !mapOpen && !saveStage && keyLock.stage == 0; }
+    bool fieldTabShown() const {
+        return fieldMode && !eventMode && !battleMode && script && !script->running() && !campOpen && !mapOpen && !saveStage &&
+               keyLock.stage == 0 && changeStage == 0;
+    }
     float fieldTabPose(UiFig& tab) {
         const float d = tab.fig.animLoaded ? tab.fig.anim.duration() : 0.0f;
         const float e = std::clamp(uiClock - fieldTabAt, 0.0f, d);
@@ -5724,6 +5731,7 @@ struct Viewer {
         for (const TapRect& r : tapRects)
             if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
                 if (r.id > 6000 && r.id <= 6005) fieldTabTap(r.id - 6000);
+                else if (r.id == 6100) startChange();
                 else if (saveStage == 1 && (r.id == 7401 || r.id == 7402)) saveAnswer(r.id == 7401);
                 else if (campOpen && optionsTapped(r, x)) {
                 } else if (campOpen && campUse) campUseTap(r.id);
@@ -5739,6 +5747,7 @@ struct Viewer {
     // "equip", "options", "category"; the options' own (as in battle); false - not one of these
     bool fieldToken(const std::string& t) {
         if (t == "tap" && fieldTabShown()) tap(); // (the leader's tap: the nearest balloon's)
+        else if (t == "change" && fieldTabShown()) startChange(); // (the character change's button)
         else if (t == "tab" && fieldTabShown()) fieldTabTap(1);
         else if (t == "camp" && fieldTabShown()) fieldTabOpen = true, fieldTabAt = -10, fieldTabTap(2);
         else if (t == "map" && fieldTabShown()) fieldTabOpen = true, fieldTabAt = -10, fieldTabTap(3);
@@ -5776,6 +5785,68 @@ struct Viewer {
         SDL_Log("input %s", t.c_str());
         return true;
     }
+    // The leader's figure (FldPlayer::CreatePlayer: c + its character's 001..007), the field's
+    // character the script has leading - unless --model gave one
+    bool leaderFollows = false;
+    void refreshLeader() {
+        if (!leaderFollows || !fieldMode || !script) return;
+        const int c = script->leader();
+        if (c < 0 || c > 6) return;
+        char want[16];
+        std::snprintf(want, sizeof want, "c%03d.geom", c + 1);
+        if (fig.name == want) return;
+        const auto it = std::find(models.begin(), models.end(), want);
+        if (it == models.end()) return;
+        const float keep = time;
+        load(size_t(it - models.begin()));
+        time = keep;
+        playMotion(fig, "fn01");
+    }
+    // The character change (FldChangeCharacter: CharaTradeMenu's chrTrade button, shown in the
+    // field once allowed - Cr3ChangeCharacter.SetEnable - and flag 0x3fb set, the second of the
+    // two there; its tap SE 0xb4): FldMain::ChangeCharacterExecute - the leader darkened over 16
+    // frames (its materials' diffuse 1 - n / 16), then the other in its place (its idle), lit over
+    // 32 (n / 32)
+    int changeStage = 0; // 0 none, 1 out, 2 in
+    float changeFrames = 0;
+    bool changeButtonShown() const {
+        return fieldTabShown() && game.changeEnable && game.flag(0x3fb) && script && script->fieldCharacter(1) >= 0;
+    }
+    void startChange() {
+        if (changeStage || !changeButtonShown()) return;
+        audio.playSe(0xb4, false);
+        changeStage = 1, changeFrames = 0;
+    }
+    void updateChange(float dt) {
+        if (!changeStage) return;
+        changeFrames += dt * 60;
+        if (changeStage == 1) {
+            const float k = std::max(1 - changeFrames / 16, 0.0f);
+            for (int c = 0; c < 3; ++c) fig.tint[c] = k;
+            if (changeFrames < 16) return;
+            game.active = game.active == 0 ? 1 : 0;
+            SDL_Log("%s: the leader now character %d", field.info().name.c_str(), script->leader());
+            refreshLeader();
+            changeStage = 2, changeFrames = 0;
+            for (int c = 0; c < 3; ++c) fig.tint[c] = 0;
+            return;
+        }
+        const float k = std::min(changeFrames / 32, 1.0f);
+        for (int c = 0; c < 3; ++c) fig.tint[c] = k;
+        if (changeFrames >= 32) changeStage = 0;
+    }
+    void drawChangeButton(const Mat4& view) {
+        if (!changeButtonShown()) return;
+        UiFig& b = uiFig("chrtrade");
+        b.fig.place = cr2::Mat34();
+        poseUi(b, "chrtrade", 0);
+        drawFigure(b.fig, view.data());
+        float sx, sy, ex, ey;
+        for (const std::string& j : b.joints)
+            if (j.compare(0, 8, "tapAreaS") == 0 && uiJoint(b, j, sx, sy) && uiJoint(b, "tapAreaE" + j.substr(8), ex, ey))
+                tapRects.push_back({6100, sx, sy, ex, ey});
+    }
+
     void drawFieldUi(int w, int h) {
         if (!fieldMode || battleMode || eventMode) return;
         const bool tabShown = fieldTabShown();
@@ -5793,6 +5864,7 @@ struct Viewer {
         else {
             tapRects.clear();
             drawFieldTab(view);
+            drawChangeButton(view);
         }
     }
 
@@ -5879,7 +5951,7 @@ struct Viewer {
             drawFigure(pic.fig, view.data());
             dev->clearDepth();
         }
-        for (WindowLayout* wl : {&annoWindow, &helpWindow, &systemWindow})
+        for (WindowLayout* wl : {&annoWindow, &announceWindow, &helpWindow, &systemWindow})
             if (ev->windowOpen(wl->window) || ev->windowClosing(wl->window))
                 drawWindow(*wl, message && ev->messageWindow() == wl->window, screenW, screenH);
         if (ev->windowOpen(7) || ev->windowClosing(7)) {
@@ -6062,7 +6134,8 @@ int main(int argc, char** argv) {
         if (e.name.size() > 5 && e.name.compare(e.name.size() - 5, 5, ".geom") == 0) v.models.push_back(e.name);
     std::sort(v.models.begin(), v.models.end());
     if (v.models.empty()) return std::fprintf(stderr, "no models in %s\n", data.c_str()), 1;
-    if (model.empty() && (!fieldName.empty() || !playFrom.empty())) model = "c001"; // (the leader: Darwin)
+    const bool leaderDefaulted = model.empty() && (!fieldName.empty() || !playFrom.empty() || continueSave);
+    if (leaderDefaulted) model = "c001"; // (the leader: Darwin - then the field's, refreshLeader)
     size_t start = 0;
     if (!model.empty()) {
         const std::string want = model.size() > 5 && model.compare(model.size() - 5, 5, ".geom") == 0 ? model : model + ".geom";
@@ -6151,6 +6224,7 @@ int main(int argc, char** argv) {
         else SDL_Log("lights: %s has none (the engine's defaults)", lights.c_str());
     }
     v.load(start);
+    if (model == "c001" && leaderDefaulted) v.leaderFollows = true, v.refreshLeader();
     v.stateArg = stateArg;
     v.chargeArg = chargeArg;
     if (battleId > 0 && !v.startBattle(battleId, battleParty)) return 1;

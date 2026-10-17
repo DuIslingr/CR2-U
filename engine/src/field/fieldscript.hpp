@@ -77,6 +77,11 @@ public:
     // the leader as the script has it (Cr3FieldMapCharacter): shown (SetVisible), and where an
     // event's scene put it (SetPos_p000 / SetRot_p000: its p000 joint) - taken once
     bool playerVisible() const { return playerVisible_; }
+    // the field's two characters (FldPlayer +0x1c: made from the party as the area is - FldMain::
+    // Init -, Cr3FieldMapCharacter.ChangeModel(slot, character) changing one, -1 the leader's);
+    // the leader the one GameState::active names
+    int fieldCharacter(int slot) const { return slot == 0 || slot == 1 ? fieldCharacters_[slot] : -1; }
+    int leader() const { return fieldCharacter(state_.active); }
     struct Placement {
         bool position = false, heading = false;
         float at[3] = {0, 0, 0};
@@ -98,6 +103,7 @@ private:
     std::map<std::string, GimmickState> gimmicks_;
     bool layers_[4] = {true, true, true, true};
     bool playerVisible_ = true;
+    int fieldCharacters_[2] = {0, -1};
     Placement placement_;
     Camera camera_;
     float shownX_ = 0, shownY_ = 0;

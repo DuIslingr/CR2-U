@@ -58,6 +58,18 @@ void FieldScript::bind() {
     vm.setNative("Cr3FieldMapCamera", "GetPos_X", [this](NativeCall& c) { c.result(camera_.scripted() ? camera_.x : shownX_); });
     vm.setNative("Cr3FieldMapCamera", "GetPos_Y", [this](NativeCall& c) { c.result(camera_.scripted() ? camera_.y : shownY_); });
     vm.setNative("Cr3FieldMapCharacter", "SetVisible", [this](NativeCall& c) { playerVisible_ = c.boolean(0, true); });
+    vm.setNative("Cr3FieldMapCharacter", "ChangeModel", [this](NativeCall& c) { // (FldPlayer::ChangeModel)
+        const int slot = c.integer(0, -1) == -1 ? state_.active : c.integer(0);
+        if (slot == 0 || slot == 1) fieldCharacters_[slot] = c.integer(1);
+    });
+    // the character change (FldChangeCharacter): its button allowed, the leader, a change at once
+    // (FldMain::ChangeCharacterQuick: the other of the two, unless it leads already)
+    vm.setNative("Cr3ChangeCharacter", "SetEnable", [this](NativeCall& c) { state_.changeEnable = c.boolean(0); });
+    vm.setNative("Cr3ChangeCharacter", "GetEnable", [this](NativeCall& c) { c.result(state_.changeEnable); });
+    vm.setNative("Cr3ChangeCharacter", "GetActive", [this](NativeCall& c) { c.result(state_.active); });
+    vm.setNative("Cr3ChangeCharacter", "ExeQuick", [this](NativeCall& c) {
+        if (c.integer(0) != state_.active) state_.active = state_.active == 0 ? 1 : 0;
+    });
     vm.setNative("Cr3FieldMapCharacter", "SetPos_p000", [this](NativeCall&) {
         Mat34 w;
         if (!events_->scene().p000(w)) return;
@@ -79,6 +91,8 @@ void FieldScript::bind() {
 bool FieldScript::enter(const std::string& map, const std::vector<Gimmick>& gimmicks, const std::string& entry) {
     error_.clear();
     playerVisible_ = true, placement_ = Placement(); // (FldMain makes the leader again)
+    fieldCharacters_[0] = state_.party[0], fieldCharacters_[1] = state_.party[1];
+    if (state_.party[1] < 0) state_.active = 0;
     if (map.size() < 5) return error_ = map + ": not a map's name", false;
     // the dungeon table (FldMap::GetCr3FieldDataDungeonNumFromFieldMapNum): the town 0, dNN NN; the
     // area the map's last two digits - 1

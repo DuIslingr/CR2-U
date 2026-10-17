@@ -123,7 +123,17 @@ interface's units x 2048 - Cr3UtilSetBalloonPos; the ring scaled 1 + spread / 10
 open it - SE 0x164, the ring out, 20 updates on its function called and FldBox::Open (SE 0x153),
 SE 0x154. One finger, or letting go early, fails it (SE 0x165, the mark anew). The viewer takes
 the mouse as one finger, the other mirrored about the mark (`--input unlock` / `unlockfail`).
-The boxes' table and which are set and open go in the save. `SkipMessage` shows the page whole
+The boxes' table and which are set and open go in the save.
+
+The field has the party's two (FldMain +0xac: two FldPlayers, their characters - +0x1c - the
+party's as the area is made, `Cr3FieldMapCharacter.ChangeModel(slot, character)` changing one,
+slot -1 the leader's), one leading (cr3_field_data +8, `Cr3ChangeCharacter.GetActive`), its
+figure `c` + 001..007 by its character (FldPlayer::CreatePlayer); the other stands 30000 below.
+The d01 script, for one, makes it Orlando and Darwin. The change (FldChangeCharacter) is allowed
+by `Cr3ChangeCharacter.SetEnable` (cr3_field_data +0x32) and shown once flag 0x3fb is set
+(SetAllUIVisible: CharaTradeMenu's `chrTrade` button, its tapArea; SE 0xb4): the leader darkened
+over 16 frames, the other put in its place and facing, lit over 32 (ChangeCharacterExecute);
+`ExeQuick(n)` changes at once unless n leads already. The leader and the change go in the save. `SkipMessage` shows the page whole
 (the typing skipped); the message stays until a tap or the window's Close.
 
 An area's script runs on the game's 20 updates a second like an event's, and uses the same

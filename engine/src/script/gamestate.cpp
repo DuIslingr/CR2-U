@@ -86,6 +86,7 @@ std::string GameState::save(const std::map<std::string, std::string>& extra) con
     o << '\n';
     for (const auto& [k, v] : work) o << "work " << k << ' ' << v << '\n';
     o << "party " << party[0] << ' ' << party[1] << '\n';
+    o << "active " << active << ' ' << int(changeEnable) << '\n';
     for (int s = 0; s < 3; ++s) o << "pairs " << s << ' ' << partySets[s][0] << ' ' << partySets[s][1] << '\n';
     for (int id = 1; id < 300; ++id)
         if (itemCount[id]) o << "item " << id << ' ' << itemCount[id] << '\n';
@@ -130,6 +131,10 @@ bool GameState::load(const std::string& text, std::map<std::string, std::string>
             if (l >> k >> v) work[k] = v;
         } else if (key == "party") {
             l >> party[0] >> party[1];
+        } else if (key == "active") {
+            int e = 0;
+            l >> active >> e;
+            active = active == 1 ? 1 : 0, changeEnable = e != 0;
         } else if (key == "pairs") {
             int s = -1;
             if (l >> s && s >= 0 && s < 3) l >> partySets[s][0] >> partySets[s][1];

@@ -181,6 +181,7 @@ private:
     TutorialPicture tutorialPicture_;
     std::set<int> openWindows_;
     std::set<int> skipOff_; // (SetSkipButtonEnable false)
+    std::set<int> pageSendOff_; // (SetWaitButtonEnable false)
     bool skipButton_ = false;
     bool touched_ = false;
     float touchWait_ = 0;

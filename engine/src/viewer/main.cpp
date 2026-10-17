@@ -963,7 +963,11 @@ struct Viewer {
             touchEvents(p);
             checkBalloons();
         }
-        playMotion(fig, speed == 0 ? "fn01" : run ? "ff02" : "ff01");
+        if (script && script->playerState().motionSerial != leaderMotionSerial) // (Cr3FieldMapCharacter.SetMotion)
+            leaderMotionSerial = script->playerState().motionSerial, leaderMotion = script->playerState().motion,
+            SDL_Log("leader: motion %s", leaderMotion.c_str());
+        if (speed != 0) leaderMotion.clear(); // (moving again: its own motions)
+        playMotion(fig, !leaderMotion.empty() ? leaderMotion.c_str() : speed == 0 ? "fn01" : run ? "ff02" : "ff01");
         if (!exitTo.empty()) {
             SDL_Log("exit %s", exitTo.c_str());
             enterMap(exitTo.substr(0, 5), exitTo);
@@ -1114,6 +1118,8 @@ struct Viewer {
 
     // A field motion of the character (FldPlayer::CreatePlayer: c<id> + "fn01" idle, "ff01" walk,
     // "ff02" run, "fj01".. jumps, "fp01".. its own), if it has it and isn't playing it already
+    std::string leaderMotion; // (a script's: held while the leader stands)
+    int leaderMotionSerial = 0;
     void playMotion(ViewFigure& f, const char* motion) {
         const std::string want = f.name.substr(0, f.name.size() - 5) + motion + ".anim";
         const auto it = std::find(f.anims.begin(), f.anims.end(), want);

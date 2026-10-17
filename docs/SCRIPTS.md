@@ -340,6 +340,10 @@ After a field event the game goes on as FldMain::BranchAfterEvent orders it: an 
 (`SetPopPoint`, or `Cr3System.ChangeDungeon(d, a)` / `ChangeArea(a)` - the area's own entry
 place), a battle, a vista, then the world select, the camp (`ReserveCamp`), the shop, the party,
 the pub (`ReservePUB`: not in yet), the chapter select, the library, the title (`ReserveTitle`).
+`Cr3FieldMapCharacter.SetMotion(n, frames)` gives the leader motion n (FldPlayer::CreatePlayer's
+c<id> + "", fn01, ff01, ff02, fj01 .. fj03, fp01 .. fp06 - the touch actions' poses), held while it
+stands; `EvtWindow.SetMessageText(window, text)` shows a text itself, `SetWaitButtonEnable(window,
+off)` keeps the page from turning by a tap (the script ends it; Open allows it again).
 `OZSet(n)` sets the Oz (0 .. 9,999,999), `OZCheck()` reads it; `SetEncountEnable(on)` keeps the
 scripts' encounters switch. `Cr3Touch.GetTouchState()` is 1 once after a tap (WaitTouch waits for
 exactly that; with pages turning by themselves, once it has waited that long), `Cr3TabMenu.GetEnable`

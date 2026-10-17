@@ -186,7 +186,7 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     vm.setNative("EvtWindow", "Open", [this](NativeCall& c) {
         const int w = c.integer(0, Vista);
         if (openWindows_.insert(w).second) opened_[w] = 0, closing_.erase(w);
-        skipOff_.erase(w); // (EvtWindow::Open: the skip button allowed again)
+        skipOff_.erase(w), pageSendOff_.erase(w); // (EvtWindow::Open: the skip and wait buttons allowed again)
     });
     auto close = [this](int w) {
         if (openWindows_.erase(w)) opened_.erase(w), closing_[w] = 0;
@@ -231,6 +231,20 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
         page_ = 0, pageTime_ = 0, revealed_ = 0;
         if (parsed_.pages.empty()) message_ = 0;
         else ++messagesSet_;
+    });
+    // SetMessageText(window, text): the text itself as the message (EvtWindow::SetMessage(char*))
+    vm.setNative("EvtWindow", "SetMessageText", [this](NativeCall& c) {
+        messageWindow_ = c.integer(0, Vista), message_ = 0x7fff;
+        parsed_ = parseMessage(c.string(1));
+        page_ = 0, pageTime_ = 0, revealed_ = 0;
+        if (parsed_.pages.empty()) message_ = 0;
+        else ++messagesSet_;
+    });
+    // SetWaitButtonEnable(window, on) (PermitPageSend): off, a tap or the page time doesn't turn the
+    // page - the script ends it (each Open allows it again)
+    vm.setNative("EvtWindow", "SetWaitButtonEnable", [this](NativeCall& c) {
+        if (c.boolean(1)) pageSendOff_.erase(c.integer(0, Vista));
+        else pageSendOff_.insert(c.integer(0, Vista));
     });
     // SetItemMessage(window, item): announce 0x75 ("... %s ...") with the item's name (EvtWindow::SetItemMessage)
     vm.setNative("EvtWindow", "SetItemMessage", [this](NativeCall& c) {
@@ -392,6 +406,7 @@ void EventRuntime::advance() {
         revealed_ = 1 << 20;
         return;
     }
+    if (pageSendOff_.count(messageWindow_)) return; // (SetWaitButtonEnable false: the script's to end)
     revealed_ = 0;
     if (++page_ >= int(parsed_.pages.size())) message_ = 0, page_ = 0;
 }

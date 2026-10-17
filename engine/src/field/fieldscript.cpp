@@ -156,6 +156,16 @@ void FieldScript::bind() {
         placement_.heading = true;
         placement_.yaw = std::atan2(w.m[2], w.m[10]); // (where its +z faces)
     });
+    // Cr3FieldMapCharacter.SetMotion(n, frames) (FldUtilFieldMapPlayerSetMotion - FldMotionManager: the
+    // leader's motion n of FldPlayer::CreatePlayer's c<id> + "", fn01, ff01, ff02, fj01 .. fj03, fp01 ..
+    // fp06, blended over the frames)
+    vm.setNative("Cr3FieldMapCharacter", "SetMotion", [this](NativeCall& c) {
+        static const char* const kMotions[13] = {"", "fn01", "ff01", "ff02", "fj01", "fj02", "fj03", "fp01", "fp02", "fp03", "fp04", "fp05", "fp06"};
+        const int n = c.integer(0);
+        if (n < 1 || n > 12) return;
+        playerAlpha_.motion = kMotions[n], playerAlpha_.motionLoop = true, ++playerAlpha_.motionSerial, playerAlpha_.motionTick = ticks_;
+    });
+    vm.setNative("Cr3System", "RefreshMemory", [](NativeCall&) {}); // (Cr3UtilRefreshMemory: the resources' cache freed - nothing to free here)
     vm.setNative("Cr3FieldMapCamera", "QuakeStart", [this](NativeCall& c) {
         quake_ = Quake();
         quake_.on = true, quake_.width = float(c.integer(0)), quake_.from = float(c.integer(1)) * 0.01f;

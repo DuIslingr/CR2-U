@@ -31,9 +31,10 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] The script VM: the game's own Squirrel 2.2.4 (`engine/third_party/squirrel2`); every
       script loads and runs its `main` in all three releases (`cr2tool scripts`), events run up to
       their first wait with the native API stubbed (`cr2tool run`)
-- [ ] The native API (222 functions) for real: the field's set-up natives (flags, work values,
-      the area, the gimmicks' display / collision / events, the layers) and the events' (the
-      scene, its timelines, the message window, the fades) so far
+- [ ] The native API (222 functions) for real: all but five so far - the field's, the events',
+      the vistas', the menus' reservations; left: an event model's shadow, move and colour
+      (`EvtScene.ShadowVisible` / `Move` / `ChangeModelColor`), the rock-break effect, and a vista's
+      `ChangeModel` (`cr2tool play all` / `fieldscript` list the stubs a run reaches)
 - [x] A model viewer (`cr2view`): any figure of any of the three releases, textured; rendered with
       Vulkan 1.3 by default, OpenGL 3.3 where Vulkan can't start (`--renderer opengl`) - CR1:U's
       device layer, with CR2's vertices and the game's shading

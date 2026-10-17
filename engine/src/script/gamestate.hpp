@@ -3,6 +3,7 @@
 // they have asked for next (cr3_script_work: FldUtilSet* / Reserve*), which the engine acts on
 // when the script running has finished (FldMain::BranchAfterEvent, VistaMain::BranchAfterVista).
 
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
@@ -54,14 +55,20 @@ struct GameState {
     }
     signed char sopiaLevel[32] = {};
     int sopiaExp[32] = {};
+    // which are had (cr3_common_data +0x268, a bit by number: Cr3System.SopiaGet / SopiaCheck) - a
+    // new game's Darwin's (1); a new game's EXP that of the starting level (its growth's table,
+    // `expAt`: battle/battledata.hpp's sopiaExp)
+    uint32_t sopiaOwned = 0;
     bool sopiaReady = false;
-    template <class Data> void initSopia(const Data& data) {
+    template <class Data> void initSopia(const Data& data, int (*expAt)(bool, int) = nullptr) {
         if (sopiaReady) return;
         sopiaReady = true;
         for (int k = 0; k < 32; ++k) {
             const auto* s = k < data.sopias() ? data.sopia(k) : nullptr;
             sopiaLevel[k] = static_cast<signed char>(s ? s->startLevel : 1);
+            sopiaExp[k] = s && expAt ? expAt(s->growth != 0, s->startLevel) : 0;
         }
+        sopiaOwned = 1u << 1;
     }
     bool flag(int n) const { return n >= 0 && size_t(n) < flags.size() && flags[size_t(n)]; }
     void setFlag(int n, bool on) {

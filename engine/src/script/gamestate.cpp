@@ -50,6 +50,19 @@ void bindGameState(ScriptVM& vm, GameState& state) {
         const int ch = c.integer(0), s = c.integer(1);
         c.result(ch >= 0 && ch < 9 && s >= 0 && s < 7 ? int(state.equip[ch][kEquipSlot[s]]) : 0);
     });
+    // Cr3UtilGetSopia (had, at level 1, no EXP) / CheckSopia / GetSopiaLv
+    vm.setNative("Cr3System", "SopiaGet", [&state](NativeCall& c) {
+        const int s = c.integer(0);
+        if (s >= 0 && s < 32) state.sopiaOwned |= 1u << s, state.sopiaLevel[s] = 1, state.sopiaExp[s] = 0;
+    });
+    vm.setNative("Cr3System", "SopiaCheck", [&state](NativeCall& c) {
+        const int s = c.integer(0);
+        c.result(s >= 0 && s < 32 && (state.sopiaOwned >> s & 1) != 0);
+    });
+    vm.setNative("Cr3System", "GetSopiaLv", [&state](NativeCall& c) {
+        const int s = c.integer(0);
+        c.result(s >= 0 && s < 32 ? int(state.sopiaLevel[s]) : 0);
+    });
     vm.setNative("Cr3System", "SetPopPoint", [&next](NativeCall& c) { next.popPoint = c.string(0); }); // (FldUtilSetPopPoint)
     vm.setNative("Cr3System", "SetComeFromBattleToField", [&next](NativeCall&) { next.fieldMode = 1; });
     vm.setNative("Cr3System", "SetComeFromVistaToField", [&next](NativeCall&) { next.fieldMode = 2; });

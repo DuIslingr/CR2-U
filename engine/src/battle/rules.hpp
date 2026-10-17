@@ -121,6 +121,13 @@ public:
     int charge() const { return charge_; }       // +0x28: the charge gauge, 0..300
     // what the monsters downed give (BtlActionCtrl::CheckDead: BtlWork +0xabc EXP, +0xac0 SP,
     // +0xac4 Oz - each its GetMonsterEXP / SP / OZ, at most 9999999)
+    // and what they leave (BtlActionCtrl::CheckDropItem / CheckDropSopia at each one down -
+    // BtlCalc's: by the party's mean level less the monsters' added up through -5 / 0 / 4, 20 30
+    // 40 50 in 100 an item - 30 in 90 of those its rare one, else its own, by its level -, the
+    // same for its sopia if not had (sopiaOwned) nor left already, the monster at its level)
+    int dropped(int item) const { return item > 0 && item < 300 ? drops_[item] : 0; }
+    bool sopiaDropped(int sopia) const { return sopia >= 0 && sopia < 32 && sopiaDrops_[sopia]; }
+    void setSopiaOwned(uint32_t bits) { sopiaOwned_ = bits; }
     int expGained() const { return exp_; }
     int spGained() const { return sp_; }
     int ozGained() const { return oz_; }
@@ -201,6 +208,10 @@ private:
     // the script's
     int charge_ = 0, ints_[5] = {0, 0, 0, 0, 0}, commandActor_ = -1;
     int exp_ = 0, sp_ = 0, oz_ = 0;
+    short drops_[300] = {};
+    bool sopiaDrops_[32] = {};
+    uint32_t sopiaOwned_ = 0;
+    void checkDrops(const Fighter& monster, const BattleData::Monster& m);
     short items_[300] = {};
     bool switches_[6] = {false, true, true, true, true, true}; // (BtlWork::InitializeVariables: 42 off, 43..47 on)
     struct Scripted {

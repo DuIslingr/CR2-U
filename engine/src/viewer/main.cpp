@@ -1057,7 +1057,7 @@ struct Viewer {
     void newGame() {
         std::vector<uint8_t> d;
         if (!archive.read("data\\battledata.dat", d) || !battleData.parse(d)) return;
-        game.initSopia(battleData), game.initItems(battleData), game.initEquip(battleData, cr2::levelExpTable());
+        game.initSopia(battleData, cr2::sopiaExp), game.initItems(battleData), game.initEquip(battleData, cr2::levelExpTable());
     }
     bool startBattle(int id, const int party[2]) {
         std::vector<uint8_t> d;
@@ -1066,7 +1066,7 @@ struct Viewer {
             SDL_Log("battle %d: %s", id, err.c_str());
             return false;
         }
-        game.initSopia(battleData); // (a new game's levels, the first time)
+        game.initSopia(battleData, cr2::sopiaExp); // (a new game's levels, the first time)
         game.initItems(battleData); // (and items)
         game.initEquip(battleData, cr2::levelExpTable()); // (and equipment, levels)
         cr2::Skeleton dpos;
@@ -1430,6 +1430,7 @@ struct Viewer {
         if (!battleScriptOk) SDL_Log("battle script: %s", battleScript->error().c_str());
         else SDL_Log("battle script: %s%s", battleScript->name().c_str(), battleScript->own() ? " (its own)" : "");
         for (int id = 1; id < 300; ++id) battleRules->setItemCount(id, game.itemCount[id]); // (BtlWork +0x52)
+        battleRules->setSopiaOwned(game.sopiaOwned); // (the drops: a sopia not had yet)
         battleRules->script = [this](const std::string& f) {
             if (battleScript && battleScriptOk && battleScript->own() && !(battleScriptOk = battleScript->call(f)))
                 SDL_Log("battle script: %s", battleScript->error().c_str());
@@ -1600,7 +1601,9 @@ struct Viewer {
     // BtlResult, a battle won: a moment (Battle_End, the music fading: 1.2 s), then "Victory!"
     // (announce 6) with the party standing in its victory motion (bb03) under Cam_Win_*, a tap
     // (or 5 s), then the result window (ResultMenu) - over 60 frames the EXP goes in and the HP
-    // back (ProcessLvup; a tap: at once) -, then a tap (or 5 s) and the battle is over
+    // back (ProcessLvup; a tap: at once) -, then a tap (or 5 s): its messages in the window, a tap
+    // (or 3 s) each (ProcessLvup1 / 2: the levels gained; ProcessResult: CheckSpUp - the sopia's
+    // SP, what they learn -, CheckOz, CheckDropItem, CheckDropSopia), and the battle is over
     struct ResultMember {
         int ch = -1, id = 0, level = 1, exp0 = 0, gain = 0, hp0 = 0, hpMax = 1, mp = 0, mpMax = 0;
     };
@@ -1610,20 +1613,90 @@ struct Viewer {
         bool tapped = false;
         int exp = 0, sp = 0, oz = 0;
         ResultMember member[2];
+        std::vector<std::string> messages; // (once the EXP is in)
+        int message = -1;                  // (the one shown; -1 "Victory!")
+        float messageAt = 0;
     } result;
     static constexpr float kTransfer = 2.0f; // (ProcessLvup's 60 frames at 30 a second)
     // the battle's announcements (BtlAnnounceData, message\announcebattle.dat: u32 the records'
     // offset, the texts', the count; a record 0x20 bytes - eight languages' text offsets)
-    std::vector<uint8_t> announceData;
-    std::string announce(int id) {
-        if (announceData.empty() && !archive.read("message\\announcebattle.dat", announceData)) return {};
-        const std::vector<uint8_t>& d = announceData;
+    // - and the names', the same: message\\charaname, sopianame, commandname, autoskillname,
+    // itemname (by number, from 1)
+    std::map<std::string, std::vector<uint8_t>> messageFiles;
+    std::string announce(int id) { return messageText("announcebattle", id); }
+    std::string messageText(const std::string& file, int id) {
+        std::vector<uint8_t>& d = messageFiles[file];
+        if (d.empty() && !archive.read("message\\" + file + ".dat", d)) return {};
         auto u32 = [&](size_t o) { return o + 4 <= d.size() ? uint32_t(d[o] | d[o + 1] << 8 | d[o + 2] << 16 | uint32_t(d[o + 3]) << 24) : 0u; };
         if (id < 1 || uint32_t(id) > u32(8)) return {};
         const size_t o = size_t(u32(4)) + u32(size_t(u32(0)) + size_t(id - 1) * 0x20 + 4); // (English: the second)
         std::string s;
         for (size_t k = o; k < d.size() && d[k]; ++k) s += char(d[k]);
         return s;
+    }
+    // BtlAnnounce::SetAnnounce's %s / %d, in turn
+    static std::string formatAnnounce(std::string t, const std::vector<std::string>& args) {
+        size_t a = 0;
+        for (size_t p = 0; (p = t.find('%', p)) != std::string::npos;) {
+            if (p + 1 < t.size() && (t[p + 1] == 's' || t[p + 1] == 'd')) {
+                const std::string v = a < args.size() ? args[a++] : "";
+                t.replace(p, 2, v);
+                p += v.size();
+            } else ++p;
+        }
+        return t;
+    }
+    // ProcessLvup1 / 2, ProcessResult: the result's messages - and the party's state after it: the
+    // levels and EXP, the sopia's SP and levels, the Oz, the items and sopia left
+    void finishResult() {
+        std::vector<std::string>& out = result.messages;
+        for (const ResultMember& r : result.member) {
+            if (r.ch < 0 || r.ch >= 9) continue;
+            const ResultNow n = resultNow(r);
+            const int up = n.level - r.level;
+            const std::string name = messageText("charaname", r.id);
+            if (up == 1) out.push_back(formatAnnounce(announce(0x11), {name}));
+            else if (up > 1) out.push_back(formatAnnounce(announce(0x12), {name, std::to_string(up)}));
+            game.level[r.ch] = n.level, game.exp[r.ch] = n.exp;
+        }
+        // CheckSpUp: each sopia the party carries (once), its SP, a level each time it passes its
+        // table's next (5 at most) - each level's command (or auto skill) learned
+        if (result.sp > 0) {
+            std::vector<int> seen;
+            for (const ResultMember& r : result.member)
+                for (int k = 3; r.ch >= 0 && r.ch < 9 && k < 8; ++k) {
+                    const int s = game.equip[r.ch][k];
+                    if (s <= 0 || s >= 32 || std::find(seen.begin(), seen.end(), s) != seen.end()) continue;
+                    seen.push_back(s);
+                    const cr2::BattleData::Sopia* so = battleData.sopia(s);
+                    if (!so) continue;
+                    const int from = std::max(int(game.sopiaLevel[s]), 1);
+                    int level = from;
+                    game.sopiaExp[s] = std::min(game.sopiaExp[s] + result.sp, 99999999);
+                    while (level < 5 && game.sopiaExp[s] >= cr2::sopiaExp(so->growth != 0, level + 1)) ++level;
+                    for (int l = from; l < level; ++l) {
+                        const int cmd = so->commands[l];
+                        out.push_back(formatAnnounce(announce(cmd > 0 ? 0x16 : 0x17),
+                                                     {messageText("sopianame", s), cmd > 0 ? messageText("commandname", cmd) : messageText("autoskillname", so->skills[l])}));
+                    }
+                    game.sopiaLevel[s] = static_cast<signed char>(level);
+                }
+        }
+        if (result.oz > 0) out.push_back(formatAnnounce(announce(0xf), {std::to_string(result.oz)}));
+        game.oz = std::min(game.oz + result.oz, 99999999);
+        for (int id = 1; id < 300; ++id) {
+            const int n = battleRules->dropped(id);
+            if (n <= 0) continue;
+            out.push_back(n == 1 ? formatAnnounce(announce(0x14), {messageText("itemname", id)})
+                                 : formatAnnounce(announce(0x15), {messageText("itemname", id), std::to_string(n)}));
+            game.itemCount[id] = static_cast<short>(std::min(game.itemCount[id] + n, 99));
+        }
+        for (int s = 1; s < 32; ++s)
+            if (battleRules->sopiaDropped(s)) { // (Cr3UtilGetSopia: had, at level 1)
+                out.push_back(formatAnnounce(announce(0x13), {messageText("sopianame", s)}));
+                game.sopiaOwned |= 1u << s, game.sopiaLevel[s] = 1, game.sopiaExp[s] = 0;
+            }
+        for (const std::string& s : out) SDL_Log("result: %s", s.c_str());
     }
     bool announceHeld = false; // (the banner kept: the victory's)
     void beginResult() {
@@ -1684,14 +1757,13 @@ struct Viewer {
             result.transferEnd = result.transferStart + kTransfer;
         } else if (result.stage == 3) {
             if (tapped && battleClock < result.transferEnd) result.transferStart = result.transferEnd = battleClock; // (all at once)
-            else if (battleClock >= result.transferEnd && (tapped || battleClock - result.transferEnd > 5.0f)) {
-                // ProcessResult: the levels and EXP kept, the Oz added
-                for (const ResultMember& r : result.member) {
-                    if (r.ch < 0 || r.ch >= 9) continue;
-                    const ResultNow n = resultNow(r);
-                    game.level[r.ch] = n.level, game.exp[r.ch] = n.exp;
-                }
-                game.oz = std::min(game.oz + result.oz, 99999999);
+            else if (battleClock >= result.transferEnd && result.message < 0 && (tapped || battleClock - result.transferEnd > 5.0f)) {
+                finishResult();
+                result.message = 0, result.messageAt = battleClock;
+            } else if (result.message >= 0 && (tapped || battleClock - result.messageAt > 3.0f)) {
+                ++result.message, result.messageAt = battleClock;
+            }
+            if (result.message >= int(result.messages.size()) && result.message >= 0) {
                 result.stage = 4;
                 SDL_Log("result: EXP %d, SP %d, Oz %d", result.exp, result.sp, result.oz);
             }
@@ -2847,7 +2919,8 @@ struct Viewer {
             }
         }
         UiFig& sys = part("syswin_io", "syswin_io");
-        if (uiJoint(sys, "typeM_L01", x, y)) drawUiText(announce(16), 24, x, y, w, h, true);
+        const std::string& text = result.message >= 0 && result.message < int(result.messages.size()) ? result.messages[size_t(result.message)] : announce(16);
+        if (uiJoint(sys, "typeM_L01", x, y)) drawUiText(text, 24, x, y, w, h, true);
     }
     void drawBattleHud(int w, int h) {
         if (!battleMode || !battleRules) return;

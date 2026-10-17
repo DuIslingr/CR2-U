@@ -87,6 +87,7 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
     // BtlWork::CheckChargeSkill: the charge at 100 when the first standing has the skill (5, 4)
     charge_ = 0;
     exp_ = sp_ = oz_ = 0;
+    std::fill(std::begin(drops_), std::end(drops_), short(0)), std::fill(std::begin(sopiaDrops_), std::end(sopiaDrops_), false); // (InitializeDrop)
     for (int k = 0; k < 2; ++k)
         if (fighters_[size_t(k)].alive) {
             if (fighters_[size_t(k)].has(5, 4)) charge_ = 100;
@@ -430,6 +431,7 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
                     exp_ = std::min(exp_ + tf.level * tf.level + m->exp, 9999999);
                     sp_ = std::min(sp_ + m->sp, 9999999);
                     oz_ = std::min(oz_ + tf.level * 10 + m->oz, 9999999);
+                    checkDrops(tf, *m);
                 }
             }
         }
@@ -630,6 +632,29 @@ bool BattleRules::tryEscape() {
         sure = rand_.below(100) < kChance[i];
     }
     return escaped_ = sure;
+}
+
+void BattleRules::checkDrops(const Fighter& monster, const BattleData::Monster& m) {
+    int levels = 0, count = 0, monsters = 0;
+    for (int k = 0; k < 5; ++k) {
+        const Fighter& f = fighters_[size_t(k)];
+        if (!f.present) continue;
+        if (k < 2) levels += f.level, ++count;
+        else monsters += f.level;
+    }
+    static const int kThresholds[3] = {-5, 0, 4}, kChance[4] = {20, 30, 40, 50};
+    int i = 0;
+    while (i < 3 && kThresholds[i] < (count ? levels / count : 0) - monsters) ++i; // (CheckResult)
+    const int band = monster.level < 20 ? 0 : monster.level < 40 ? 1 : 2; // (BtlUtilData::GetDropIndex)
+    // the item (auto skills ItemUp / RareGetter: not yet)
+    if (rand_.below(100) < kChance[i]) {
+        const int item = rand_.below(90) < 30 ? m.rareDrops[band] : m.drops[band];
+        if (item > 0 && item < 300 && itemCount(item) + drops_[item] < 99) ++drops_[item];
+    }
+    // the sopia
+    const int s = m.sopia;
+    if (s > 0 && s < 32 && monster.level >= m.sopiaLevel && !(sopiaOwned_ >> s & 1) && !sopiaDrops_[s] && rand_.below(100) < kChance[i])
+        sopiaDrops_[s] = true;
 }
 
 void BattleRules::clearStates() {

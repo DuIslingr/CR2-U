@@ -301,9 +301,22 @@ SetResultWindowParameter: ResultMenu, CharaStatusWindowMenu, SystemWindowMenu - 
 frames (ProcessLvup; a tap: at once) its EXP goes in - the level rising as it passes the next's
 (lvup_exp: tools/gen_level_table.py -> engine/src/battle/leveltable.inc; Darwin 0 at 1, 15 at 2;
 Orlando 495 at 5, 885 at 6) - and its HP back to the most (Cr3RestorePlayerHP); NEXT the EXP to
-the next level, its bar the part of this level's gone. ProcessResult keeps the levels and EXP and
-adds the Oz; the SP to the sopia (CheckSpUp), the dropped items and sopia, the bonuses (CheckBonus:
-states 0x26..0x28 and the auto skills doubling or adding a fifth) not yet.
+the next level, its bar the part of this level's gone. Then the window's messages, a tap each
+(announcebattle; the names from message\\charaname / sopianame / commandname / autoskillname /
+itemname, by number): ProcessLvup1 / 2 a member's levels gained (0x11 "%s leveled up!", 0x12 by
+%d); ProcessResult - CheckSpUp: each sopia the party carries, once, gets the SP (cr3_common_data
++0x28c), rising a level each time it reaches its growth's next (chara_sopia_lvup_exp 0 100 300 800
+1500, mons_ 0 50 150 400 800; 5 at most), each level's command learned (0x16) or, with none, its
+auto skill (0x17); CheckOz (0xf "Obtained %d OZ!"); CheckDropItem (0x14 / 0x15 with a count);
+CheckDropSopia (0x13: had from then on, at level 1 - cr3_common_data +0x268's bit, the scripts'
+SopiaGet / SopiaCheck; a new game has Darwin's, 1). The drops are rolled at each monster down
+(BtlActionCtrl::CheckDead -> CheckDropItem, CheckDropSopia): BtlCalc's chance by the party's mean
+level less the monsters' added up through -5 / 0 / 4 - 20, 30, 40, 50 in 100 -, then 30 in 90 its
+rare item (+0xba) else its item (+0xb4), each of three by its level (under 20, under 40, more:
+GetDropIndex), at most 99 had; its sopia (+0x18) the same chance if not had nor left already and
+it is at +0x52's level. The reference video's first result: "Obtained 30 OZ!", "Obtained Chocolate
+×2!". The bonuses (CheckBonus: states 0x26..0x28 and auto skills - ExpUp, SpUp, OzUp, ItemUp,
+RareGetter) not yet.
 
 ## The battle's script (BtlEvent)
 

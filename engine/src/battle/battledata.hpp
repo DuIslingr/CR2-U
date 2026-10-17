@@ -38,6 +38,8 @@ public:
         int param[5] = {0, 0, 0, 0, 0}; // +0x20 (GetMonsterParam: + 7, 6, 4, 6, 6 a level)
         int exp = 0, sp = 0, oz = 0; // +0x2c, +0x30, +0x34 its rewards (GetMonsterEXP: + the level
                                      // squared; GetMonsterSP; GetMonsterOZ: + 10 a level)
+        int sopia = 0, sopiaLevel = 0; // +0x18 the sopia it may leave, +0x52 the level it must be at
+        int drops[3] = {}, rareDrops[3] = {}; // +0xb4, +0xba: by its level - under 20, under 40, more
         int level = 0;      // +0x3b its own (0: the party's, BtlWork::SetupEnemy)
         int resist[7] = {0, 0, 0, 0, 0, 0, 0}; // +0x3c: elements 1..5, physical, magic (1 weak, 2 resists)
         int stateResist[5] = {0, 0, 0, 0, 0};  // +0x43

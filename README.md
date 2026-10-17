@@ -118,11 +118,12 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       video shows them (`cr2view --battle 222 --fight manual`, `--play`; `--input "solo attack 2
       defend"` gives the choices)
 - [x] A battle won: "Victory!", the party's victory motion and camera, the result window (the
-      EXP and SP gained, the levels, HP, MP and NEXT, the EXP going in, the levels kept) - as the
-      reference video's first battle
+      EXP and SP gained, the levels, HP, MP and NEXT, the EXP going in, the levels kept), its
+      messages - levels gained, the sopia's SP and what they learn, the Oz, the items and sopia
+      left (rolled as each monster falls) - as the reference video's first battle
 - [ ] Battles on screen: Options, the advents' list, the awakenings' own scenes, the
       states (the sopia's buffs and ailments, their signs), the actions' effects, the battles'
-      tutorials; the result's SP to the sopia, drops and bonuses
+      tutorials; the result's bonuses
 - [ ] Treasure boxes, the other windows (announcements, tutorials, items), the HUD, the sounds
       between areas
 - [ ] Engine: events, battles, menus

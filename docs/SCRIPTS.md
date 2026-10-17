@@ -212,6 +212,16 @@ the dungeon (`GetSelectDungeonNum`, saved) and the difficulty, the level less on
 town's `WarpTask` (CallEvent: the warp's tutorial, effect and jump to the dungeon); no asks
 again, Back steps back to the field. (CheckCoupling's party conditions on a dungeon: not yet.)
 
+The chapter select (the town's book, `obj005_00` on t0104: `ReserveChapter` - FldMain step 0xe,
+FldChapterSelect; InterfaceMain's ChapterSelectMenu, ChapterSelectTitleMenu's `menu` on
+menuCpt_io, ChapterSelectPicMenu's `mapPic` wearing mapPic_cNN - the focused row's place + 1) is
+the same list: its rows the chapters whose flags are set (0x5355a8: 11, 18, 19, 20), their ids
+0x5355b4 (1, 5, 7, 8), named announcemenuname 0x5355c4 (14 .. 17); picked, the question (the
+chapter, announce 0x8b). Yes: the chapter (`InterfaceWindow.GetChapterID`), the town's
+`chapter_select` called (its flags and jump: `ChapterJump_N_M`); no: the chapters again; Back: the
+field. An event ended at once (a map's `--call` run on entry) is followed by what it reserved, as
+any other.
+
 The shop (Piupiu, `c103_00`: `ReserveShop` - FldMain step 0xb, FldShop; InterfaceMain::
 SetFieldShopParameter): ShopTitleMenu's `menu` (menuShop_io), Piupiu's cut-in (`cutIn` on
 cutInSgl_io wearing cutIn102_L02), the Oz window; ShopFirstMenu (`shopBtn_io`: circle buttons 13

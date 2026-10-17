@@ -1613,6 +1613,7 @@ struct Viewer {
         if (!playMode && script->running() && !script->runToEnd()) // (--field: the area as its set-up leaves it; --play: as it runs)
             SDL_Log("%s's %s: %s", map.c_str(), entry.c_str(), script->error().empty() ? "still running" : script->error().c_str());
         SDL_Log("%s: %s %s", map.c_str(), entry.c_str(), script->running() ? "running" : "done");
+        if (playMode && !script->running()) pendingBranch = true; // (ended at once: what it reserved, as after any event)
         if (!script->flagMarks().empty()) {
             std::string marks;
             for (const std::string& f : script->flagMarks()) marks += " " + f;
@@ -1835,6 +1836,11 @@ struct Viewer {
         if (n.worldSelect) { // (FldMain step 10: the world select, then WarpTask)
             n.worldSelect = false;
             openWorldSelect();
+            return;
+        }
+        if (n.chapter) { // (FldMain step 0xe: the chapter select)
+            n.chapter = false;
+            openChapterSelect();
             return;
         }
         if (n.shop) { // (FldMain step 0xb: the shop)
@@ -6604,7 +6610,17 @@ struct Viewer {
     // question (the System window: the dungeon, the level, announce 0x80 - yes / no). Yes: the
     // dungeon chosen (GetSelectDungeonNum), the difficulty the level less one (Cr3UtilSetDifficulty),
     // the town's WarpTask called; no: the levels again; back: the dungeons, then the field.
+    //
+    // The chapter select (the town's book: ReserveChapter - FldMain step 0xe, FldChapterSelect;
+    // InterfaceMain's ChapterSelectMenu / ChapterSelectTitleMenu - `menu` on menuCpt_io - /
+    // ChapterSelectPicMenu - `mapPic` wearing mapPic_cNN, the focused row's place + 1) works the
+    // same way: its rows (SetChapterList) the chapters whose flags are set (0x5355a8: 11, 18, 19,
+    // 20), their ids 0x5355b4 (1, 5, 7, 8), named by announcemenuname 0x5355c4 (14 .. 17); picked,
+    // the question (the System window: the chapter, announce 0x8b). Yes: the chapter chosen
+    // (InterfaceWindow.GetChapterID), the town's chapter_select called; no: the chapters again;
+    // back: the field.
     struct WorldSelect {
+        bool chapters = false; // (the chapter select)
         int stage = 0; // 0 shut, 1 the dungeons, 2 the levels, 3 the question
         float at = 0;  // (since: uiClock)
         int focus = 0, dungeonFocus = 0;
@@ -6615,7 +6631,15 @@ struct Viewer {
         static const int kDungeons[13] = {1, 9, 6, 7, 8, 4, 3, 5, 2, 10, 11, 12, 13};
         static const int kLevelFlags[11] = {0, 1081, 1082, 1083, 1084, 1085, 1086, 1086, 1087, 1087, 1088};
         std::vector<ListRow> rows;
-        if (world.stage == 1) {
+        if (world.chapters) {
+            static const int kChapterFlags[4] = {11, 18, 19, 20}, kChapters[4] = {1, 5, 7, 8};
+            for (int i = 0; i < 4; ++i)
+                if (game.flag(kChapterFlags[i])) {
+                    ListRow r;
+                    r.id = kChapters[i], r.name = menuName(14 + i), r.number = -1;
+                    rows.push_back(r);
+                }
+        } else if (world.stage == 1) {
             for (int i = 0; i < 13; ++i)
                 if (game.flag(kFlags[i])) {
                     ListRow r;
@@ -6638,15 +6662,22 @@ struct Viewer {
         SDL_Log("world select: %zu dungeons", worldRows().size());
         if (worldRows().empty()) world.stage = 0, pendingBranch = true;
     }
+    void openChapterSelect() {
+        world = WorldSelect();
+        world.chapters = true, world.stage = 1, world.at = uiClock;
+        SDL_Log("chapter select: %zu chapters", worldRows().size());
+        if (worldRows().empty()) world.stage = 0, pendingBranch = true;
+    }
     void worldPick(const ListRow& r) {
         audio.playSe(0xb4, false);
-        if (world.stage == 1) world.dungeon = r.id, world.dungeonFocus = world.focus, world.stage = 2, world.focus = 0;
+        if (world.stage == 1 && world.chapters) world.dungeon = r.id, world.dungeonFocus = world.focus, world.stage = 3;
+        else if (world.stage == 1) world.dungeon = r.id, world.dungeonFocus = world.focus, world.stage = 2, world.focus = 0;
         else if (world.stage == 2) world.level = r.id, world.stage = 3;
         world.at = uiClock;
     }
     void worldBack() {
         audio.playSe(0xb5, false);
-        if (world.stage == 2) world.stage = 1, world.focus = world.dungeonFocus, world.at = uiClock;
+        if (world.stage == 2 || (world.stage == 3 && world.chapters)) world.stage = 1, world.focus = world.dungeonFocus, world.at = uiClock;
         else if (world.stage == 3) world.stage = 2, world.at = uiClock;
         else world.stage = 0, pendingBranch = true; // (back to the field: what else was reserved)
     }
@@ -6654,6 +6685,12 @@ struct Viewer {
         if (world.stage != 3) return;
         if (!yes) return worldBack();
         audio.playSe(0xb4, false);
+        if (world.chapters) { // (FldMain step 0xe: CallEvent("chapter_select"))
+            game.selectChapter = world.dungeon;
+            SDL_Log("chapter select: chapter %d", world.dungeon);
+            world.stage = 0;
+            return callGimmick("chapter_select");
+        }
         game.selectDungeon = world.dungeon, game.difficulty = world.level - 1;
         SDL_Log("world select: dungeon %d, level %d", world.dungeon, world.level);
         world.stage = 0;
@@ -6687,8 +6724,12 @@ struct Viewer {
         const float t = uiClock - world.at;
         UiFig& title = uiFig("menu"); // (MapSelectTitleMenu)
         title.fig.place = cr2::Mat34();
-        poseUi(title, "menuwld_io", uiClock - world.at + (world.stage > 1 ? 10.0f : 0.0f));
+        poseUi(title, world.chapters ? "menucpt_io" : "menuwld_io", uiClock - world.at + (world.stage > 1 ? 10.0f : 0.0f));
         drawFigure(title.fig, view.data());
+        if (world.stage == 3 && world.chapters) {
+            const std::string q = menuName(14 + std::clamp(world.dungeonFocus, 0, 3)) + "\\n" + announce(0x8b);
+            return drawAsk(q, t, view, w, h, 7601, 7602);
+        }
         if (world.stage == 3) {
             const std::string q = menuName(world.dungeon) + "\\n" + menuName(0x14 + world.level) + "\\n" + announce(0x80);
             return drawAsk(q, t, view, w, h, 7601, 7602);
@@ -6696,10 +6737,10 @@ struct Viewer {
         const std::vector<ListRow> rows = worldRows();
         if (rows.empty()) return;
         world.focus = std::clamp(world.focus, 0, int(rows.size()) - 1);
-        const int shown = world.stage == 1 ? rows[size_t(world.focus)].id : world.dungeon;
-        UiFig& pic = uiFig("mappic"); // (MapSelectPicMenu: the dungeon's picture)
+        const int shown = world.chapters ? world.focus + 1 : world.stage == 1 ? rows[size_t(world.focus)].id : world.dungeon;
+        UiFig& pic = uiFig("mappic"); // (MapSelectPicMenu: the dungeon's picture; ChapterSelectPicMenu the chapter's)
         char tex[24];
-        std::snprintf(tex, sizeof tex, "mapPic_d%02d", shown);
+        std::snprintf(tex, sizeof tex, world.chapters ? "mapPic_c%02d" : "mapPic_d%02d", shown);
         if (cr2::Texture* tx = texture(tex))
             for (ViewMesh& vm : pic.fig.meshes) vm.texture = tx;
         pic.fig.place = cr2::Mat34();

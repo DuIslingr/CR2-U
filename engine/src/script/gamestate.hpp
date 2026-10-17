@@ -62,6 +62,7 @@ struct GameState {
     int difficulty = 0;
     // the dungeon the world select chose last (FldWorldSelect::m_nSelectDungeonNum: GetSelectDungeonNum)
     int selectDungeon = 0;
+    int selectChapter = -1; // (the chapter select's pick: InterfaceWindow.GetChapterID - not saved)
     TreasureBoxes boxes;
     bool equipReady = false;
     template <class Data> void initEquip(const Data& data, const int* levelExp) {
@@ -118,6 +119,7 @@ struct GameState {
         bool worldSelect = false; // (ReserveWorldSelect: cr3_script_work[4] - FldMain step 10)
         bool shop = false;        // (ReserveShop - FldMain step 0xb)
         bool party = false;       // (ReserveParty - FldMain step 0xc)
+        bool chapter = false;     // (ReserveChapter - FldMain step 0xe)
     } next;
 };
 

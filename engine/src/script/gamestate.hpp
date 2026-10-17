@@ -19,10 +19,20 @@ struct GameState {
     // (Cr3InitWorkFromBattleData): Darwin and Marie, the pairs 0 2, 1 3, 4 5
     int party[2] = {0, 2};
     int partySets[3][2] = {{0, 2}, {1, 3}, {4, 5}};
-    // what the battles' scripts keep (Cr3Battle.SetParamI2 / GetParamI2: cr3_common_data +0x26c,
-    // 32 bytes; +0x28c, 32 integers)
-    signed char battleBytes[32] = {};
-    int battleInts[32] = {};
+    // the sopia's levels and EXP (cr3_common_data +0x26c, a byte each, by the sopia's number; +0x28c,
+    // 32 integers) - what Cr3Battle.SetParamI2 / GetParamI2 (0 / 1) read and set. A new game's
+    // (Cr3InitWorkFromBattleData): each sopia's starting level (initSopia)
+    signed char sopiaLevel[32] = {};
+    int sopiaExp[32] = {};
+    bool sopiaReady = false;
+    template <class Data> void initSopia(const Data& data) {
+        if (sopiaReady) return;
+        sopiaReady = true;
+        for (int k = 0; k < 32; ++k) {
+            const auto* s = k < data.sopias() ? data.sopia(k) : nullptr;
+            sopiaLevel[k] = static_cast<signed char>(s ? s->startLevel : 1);
+        }
+    }
     bool flag(int n) const { return n >= 0 && size_t(n) < flags.size() && flags[size_t(n)]; }
     void setFlag(int n, bool on) {
         if (n < 0) return;

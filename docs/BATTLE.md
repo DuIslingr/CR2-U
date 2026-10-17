@@ -131,6 +131,34 @@ on a single foe goes on to its target. The charge is spent as it acts (ActionAwa
 not with the script's switch 42 on: the prologue (221) sets it, and its Battle_Start the flags
 3001 / 3002 for the length of the battle.
 
+The sopia (BtlCommand::GetSopia / GetPairSopia / SetCommandSopiaList / StepSopiaLoop): a sopia
+record (0x2c bytes, GetSopiaDataPointer; the header's +0x1c, count +0x40) gives a command at each
+level from +0x18 (s16, 0 where a level gives none: Marie's Banish at 1, Healing Hand at 3); +0x12
+the level it starts at, +0x10 which level-up table. A character carries five (cr3_player_data
++0x42..+0x4a; a new game's from its record's +0x2e..+0x36 - Darwin's own and the prologue's OP1
+and OP2, at level 5), their levels and EXP in the save (cr3_common_data +0x26c by the sopia's
+number, +0x28c - what Cr3Battle.SetParamI2 / GetParamI2 read and set). The list offers each
+command once, the pair's both lists; one is selectable when the MP covers it (CalcUseMp: half with
+skill (5, 3), half again as much with (0, 10), either of a pair's - both pay it), the revivals
+(kinds 24, 25) only with the partner down. The MP is taken as it acts (ActionCommonCommandStart),
+the action lost short of it. Its target: a foe (4, 7), one of the party (2: the revivals' one
+down), none (1 itself, 3 the allies, 6 the foes).
+
+The restores (BtlCalc::Restore): kinds 18 / 19 HP / MP ceil(spread(Magic - the pair's both - x
+(power + CommandY) / 100)), 20 / 21 HP / MP the power, 22 / 25 all the HP, 23 all of both, 24 a
+revival with (CommandY + 50) % of the HP (1 .. 100); x 1.5 for a command with MP and skill (0, 10),
+x 2 with (0, 9) but for 22, 23, 25. Their numbers on the screen: set 50 (green) HP, 60 MP.
+
+The lists (Sopia, Awake; BattleSkillListMenu, a ScrollListMenu - GetModelDataName's scrlMtr_per,
+scrlBar, scrlWin, scrlBtn ...): scrlBar (scrlBar_io) the frame; a scrlBtn (scrlBtn_io) a row, 0.08
+apart (GetColumnSpacing), centred on the focused one, two either side (PartsPose) - its name
+(typeS_L00; half grey not selectable), its number (DotNumId2 set 90 at call_dotNum_id01: the MP,
+the awakening's level), its icon (mainIcon_id at call_mainIcon_id11, its frame / 20 s: the
+command's +0x72; 71 "Awake", 70 "Advent"), the number's mark (cost_id at call_cost_id13: 12
+"MP/", 13 "Charge Lv."), the focused one's sBtnSlct (call_sBtnSlct14); the tab (ListTag:
+tabWin_io, tabName_id at call_tabName_id01 at frame 9 "Sopia", 11 "Awake", 13 "Advent"); scrlBack
+to go back. As the reference video shows them (the prologue's Sopia list: Seal Strike focused).
+
 A turn the script reserves (ReserveCommand) is played without the menus (BtlCommand::StepEvent):
 the first battle with an advent (226) gives the pair Gale Roar so.
 

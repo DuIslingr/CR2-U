@@ -108,12 +108,12 @@ void BattleScript::bind() {
     vm.setNative("Cr3Battle", "SetParamI2", [this](NativeCall& c) {
         const int kind = c.integer(0), i = c.integer(1), v = c.integer(2);
         if (i < 0 || i >= 32) return;
-        if (kind == 0) state_.battleBytes[i] = static_cast<signed char>(v);
-        else if (kind == 1) state_.battleInts[i] = v;
+        if (kind == 0) state_.sopiaLevel[i] = static_cast<signed char>(v);
+        else if (kind == 1) state_.sopiaExp[i] = v;
     });
     vm.setNative("Cr3Battle", "GetParamI2", [this](NativeCall& c) {
         const int kind = c.integer(0), i = c.integer(1);
-        c.result(i < 0 || i >= 32 ? 0 : kind == 0 ? int(state_.battleBytes[i]) : kind == 1 ? state_.battleInts[i] : 0);
+        c.result(i < 0 || i >= 32 ? 0 : kind == 0 ? int(state_.sopiaLevel[i]) : kind == 1 ? state_.sopiaExp[i] : 0);
     });
     vm.setNative("Cr3Battle", "SetParamF", [](NativeCall&) {});
     vm.setNative("Cr3Battle", "SetParamS", [](NativeCall&) {});

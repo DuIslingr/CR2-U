@@ -55,6 +55,7 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
         }
         f.hp = f.maxHp, f.mp = f.maxMp;
         f.attack = c->attack, f.pairAttack = c->pairAttack;
+        for (int k = 0; k < 5; ++k) f.sopia[k] = c->equip[3 + k];
         levels += f.level, ++count;
     }
     // BtlWork::CheckChargeSkill: the charge at 100 when the first standing has the skill (5, 4)
@@ -161,12 +162,7 @@ int BattleRules::damage(int actor, int target, const BattleData::Command& c, boo
     const Fighter& t = fighters_[size_t(target)];
     const bool pair = isPairAction(actor);
     auto hasPair = [&](int group, int bit) { return a.has(group, bit) || (pair && fighters_[size_t(a.partner)].has(group, bit)); };
-    // CommandY: the power's additions
-    int y = 0;
-    if (breakBonus(actor)) y += 100;
-    if (pair) y += 25;
-    if (actor > 1) y += 50;
-    if (crit) y += hasPair(2, 3) ? 100 : 50;
+    const int y = commandY(actor, crit);
     // Damage1
     float d;
     if (c.kind == 7) {
@@ -209,6 +205,63 @@ int BattleRules::damage(int actor, int target, const BattleData::Command& c, boo
     if (breakBonus(target)) d *= 0.5f;
     if (!pair && t.has(5, 9) && !a.has(5, 0) && !(c.specials >> 2 & 1)) d *= 0.1f; // (armour)
     return int(std::ceil(d));
+}
+
+int BattleRules::commandY(int actor, bool crit) const {
+    const Fighter& a = fighters_[size_t(actor)];
+    const bool pair = isPairAction(actor);
+    auto hasPair = [&](int group, int bit) { return a.has(group, bit) || (pair && fighters_[size_t(a.partner)].has(group, bit)); };
+    int y = 0;
+    if (breakBonus(actor)) y += 100;
+    if (pair) y += 25;
+    if (actor > 1) y += 50;
+    if (crit) y += hasPair(2, 3) ? 100 : 50;
+    return y;
+}
+
+void BattleRules::restore(int actor, int target, const BattleData::Command& c, Event& e) {
+    Fighter& a = fighters_[size_t(actor)];
+    Fighter& t = fighters_[size_t(target)];
+    const bool pair = isPairAction(actor);
+    auto hasPair = [&](int group, int bit) { return a.has(group, bit) || (pair && fighters_[size_t(a.partner)].has(group, bit)); };
+    int magic = param(actor, 1);
+    if (pair) magic += param(a.partner, 1);
+    auto formula = [&] {
+        float v = float(magic) * float(c.power + commandY(actor, false)) / 100.0f;
+        if (c.spread) v = v * float((100 - c.spread) + rand_.below(c.spread * 2 + 1)) / 100.0f; // (CommandSwing)
+        return int(std::ceil(v));
+    };
+    int hp = -1, mp = -1;
+    bool doubles = true;
+    switch (c.kind) {
+    case 18: hp = formula(); break;
+    case 19: mp = formula(); break;
+    case 20: hp = c.power; break;
+    case 21: mp = c.power; break;
+    case 22: case 25: hp = t.maxHp, doubles = false; break;
+    case 23: hp = t.maxHp, mp = t.maxMp, doubles = false; break;
+    case 24: {
+        const int y = commandY(actor, false);
+        const int p = y < -49 ? 1 : std::min(y + 50, 100);
+        hp = p * t.maxHp / 100;
+        break;
+    }
+    default: return;
+    }
+    if (c.mp > 0 && hasPair(0, 10)) { // (the power boost)
+        if (hp >= 0) hp += hp * 50 / 100;
+        if (mp >= 0) mp += mp * 50 / 100;
+    }
+    if (doubles && hasPair(0, 9)) {
+        if (hp >= 0) hp *= 2;
+        if (mp >= 0) mp *= 2;
+    }
+    const bool revive = c.kind == 24 || c.kind == 25;
+    if (revive && !t.alive && t.present) t.alive = true, t.hp = 0, e.revived = true;
+    if (!t.alive) return;
+    if (hp > 0) e.heal = std::min(hp, t.maxHp - t.hp), t.hp += e.heal;
+    if (mp > 0) e.healMp = std::min(mp, t.maxMp - t.mp), t.mp += e.healMp;
+    e.hit = true;
 }
 
 int BattleRules::orderPoint(int f, int partner) const {
@@ -294,6 +347,23 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
         }
     } else if (c->target == 1) {
         targets.push_back(o.actor);
+    } else if (c->target == 2 || c->target == 3) { // (an ally, the allies: the revivals' those down)
+        const bool revive = c->kind == 24 || c->kind == 25;
+        for (int i = 0; i < 5; ++i) {
+            const Fighter& f = fighters_[size_t(i)];
+            if (!f.present || f.side != a.side || f.alive == revive) continue;
+            if (c->target == 2 && i != o.target) continue;
+            targets.push_back(i);
+        }
+        if (targets.empty() && c->target == 2 && !revive) targets.push_back(o.actor);
+    }
+    // its MP (ActionCommonCommandStart: the party's, both a pair's - short of it, the action fails)
+    if (o.actor < 2 && c->mp > 0) {
+        const int partner = isPairAction(o.actor) ? a.partner : -1;
+        const int cost = useMp(o.actor, partner, c->mp);
+        if (a.mp < cost || (partner >= 0 && fighters_[size_t(partner)].mp < cost)) return;
+        a.mp -= cost;
+        if (partner >= 0) fighters_[size_t(partner)].mp -= cost;
     }
     // an awakening's charge (BtlActionCtrl::ActionAwakeStandby: 100 / 200 / 300 by its level, none
     // with the script's switch 42 on - the prologue's)
@@ -301,7 +371,16 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
         static const int kCost[3] = {100, 200, 300};
         charge_ = std::max(charge_ - kCost[c->awaken - 1], 0);
     }
-    if (c->kind != 0 && c->kind != 7 && c->kind != 5 && c->kind != 12) return; // (states, restores: not yet)
+    if (c->kind >= 18 && c->kind <= 25) { // the restores
+        for (int t : targets) {
+            Event e;
+            e.actor = o.actor, e.partner = isPairAction(o.actor) ? a.partner : -1, e.command = o.command, e.target = t;
+            restore(o.actor, t, *c, e);
+            out.push_back(e);
+        }
+        return;
+    }
+    if (c->kind != 0 && c->kind != 7 && c->kind != 5 && c->kind != 12 && c->kind != 27) return; // (states: not yet)
     for (int t : targets) {
         Fighter& tf = fighters_[size_t(t)];
         if (!tf.alive) continue;
@@ -481,6 +560,15 @@ void BattleRules::setParamI(int id, int value) {
         default: x.param[field - 2] = value; break;
         }
     }
+}
+
+int BattleRules::useMp(int f, int partner, int mp) const {
+    auto has = [&](int group, int bit) {
+        return fighters_[size_t(f)].has(group, bit) || (partner >= 0 && fighters_[size_t(partner)].has(group, bit));
+    };
+    if (has(5, 3)) mp -= mp * 50 / 100; // (BtlCalcValue(mp, -50))
+    if (has(0, 10)) mp += mp * 50 / 100;
+    return mp;
 }
 
 bool BattleRules::tryEscape() {

@@ -1048,6 +1048,7 @@ struct Viewer {
             SDL_Log("battle %d: %s", id, err.c_str());
             return false;
         }
+        game.initSopia(battleData); // (a new game's levels, the first time)
         cr2::Skeleton dpos;
         if (!archive.read("battledpos.skel", d, &err) || !cr2::parseSkeleton(d, dpos, &err)) {
             SDL_Log("battledpos: %s", err.c_str());
@@ -1254,7 +1255,7 @@ struct Viewer {
         menuStart = battleClock, menuCursor = 0;
         using CI = cr2::CommandInput;
         if (commandInput.menu() == CI::Menu::First) setBattleCamera(battle.camera);
-        else if (commandInput.menu() == CI::Menu::Command || commandInput.menu() == CI::Menu::Awake) setBattleCamera(commandInput.pairTurn() ? 0x1d : commandInput.actor() == 0 ? 0x1a : 0x1b);
+        else if (commandInput.menu() == CI::Menu::Command || commandInput.menu() == CI::Menu::Awake || commandInput.menu() == CI::Menu::Sopia) setBattleCamera(commandInput.pairTurn() ? 0x1d : commandInput.actor() == 0 ? 0x1a : 0x1b);
     }
     // a token of --input as a choice
     void inputToken(const std::string& t) {
@@ -1273,12 +1274,15 @@ struct Viewer {
             }
         if (t == "back") commandInput.back(), ok = true;
         else if (t.size() > 1 && t[0] == 'a' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickAwakening(std::atoi(t.c_str() + 1));
+        else if (t.size() > 1 && t[0] == 's' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickSopia(std::atoi(t.c_str() + 1));
         else if (t == "awake") ok = commandInput.press(cr2::CommandInput::Awake);
         else if (!t.empty() && std::isdigit(static_cast<unsigned char>(t[0]))) ok = commandInput.pick(std::atoi(t.c_str()));
         else
             for (const auto& [n, id] : kNames)
                 if (t == n) ok = commandInput.press(id);
         SDL_Log("input %s%s", t.c_str(), ok ? "" : " (not taken)");
+        if (!ok && commandInput.menu() == cr2::CommandInput::Menu::Sopia) // (what it offers)
+            for (const auto& sc : commandInput.sopiaCommands()) SDL_Log("  sopia %d: MP %d%s", sc.command, sc.mp, sc.selectable ? "" : " (not selectable)");
         menuChanged();
     }
     // the menu's choices in order (the buttons selectable, or the targets)
@@ -1290,6 +1294,11 @@ struct Viewer {
                 if (a.selectable) out.push_back(a.command);
             return out;
         }
+        if (commandInput.menu() == cr2::CommandInput::Menu::Sopia) {
+            for (const auto& sc : commandInput.sopiaCommands())
+                if (sc.selectable) out.push_back(sc.command);
+            return out;
+        }
         for (const auto& b : commandInput.buttons())
             if (b.selectable) out.push_back(b.id);
         return out;
@@ -1297,6 +1306,7 @@ struct Viewer {
     void choose(int idOrFighter) {
         if (commandInput.menu() == cr2::CommandInput::Menu::Target) commandInput.pick(idOrFighter);
         else if (commandInput.menu() == cr2::CommandInput::Menu::Awake) commandInput.pickAwakening(idOrFighter);
+        else if (commandInput.menu() == cr2::CommandInput::Menu::Sopia) commandInput.pickSopia(idOrFighter);
         else commandInput.press(idOrFighter);
         menuChanged();
     }
@@ -1321,7 +1331,14 @@ struct Viewer {
         for (const TapRect& r : tapRects)
             if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
                 if (r.id == 100) commandInput.back(), menuChanged();
-                else choose(r.id);
+                else if (r.id >= 1000) { // (another row: the focus to it - ScrollListMenu)
+                    const std::vector<int> c = menuChoices();
+                    const size_t row = size_t(r.id - 1000);
+                    if (row < listRows.size()) {
+                        const auto it = std::find(c.begin(), c.end(), listRows[row].id);
+                        if (it != c.end()) menuCursor = int(it - c.begin());
+                    }
+                } else if (r.id >= 0) choose(r.id);
                 return;
             }
     }
@@ -1424,7 +1441,8 @@ struct Viewer {
             if (manualCommands && !battleRules->scriptTurnReserved()) {
                 if (!choosing) {
                     commandInput.begin(*battleRules, battleData.coupling(battle.coupling) && battleData.coupling(battle.coupling)->flag,
-                                       [this](int f) { return game.flag(f); });
+                                       [this](int f) { return game.flag(f); },
+                                       [this](int s) { return s >= 0 && s < 32 ? int(game.sopiaLevel[s]) : 0; });
                     choosing = true;
                     menuChanged();
                     inputNext = battleClock + 0.4f;
@@ -1475,7 +1493,7 @@ struct Viewer {
         case BattleStep::ActionStart:
             if (!battleRules->actionsLeft()) {
                 battleRules->endTurn();
-                SDL_Log("turn over; gauge %d, charge %d", battleRules->gauge(), battleRules->charge());
+                SDL_Log("turn over; gauge %d, charge %d; MP %d %d", battleRules->gauge(), battleRules->charge(), battleRules->fighter(0).mp, battleRules->fighter(1).mp);
                 battleStep = BattleStep::TurnBegin;
                 break;
             }
@@ -1593,7 +1611,9 @@ struct Viewer {
                 const int u = fighterUnit[e.target];
                 if (u < 0) continue;
                 BattleUnit& bu = battleUnits[size_t(u)];
-                if (e.hit) playMotion(bu, "bd01", battleClock);
+                const bool restore = e.heal > 0 || e.healMp > 0 || e.revived;
+                if (e.hit && !restore) playMotion(bu, "bd01", battleClock);
+                if (e.revived) bu.hidden = false;
                 if (e.hit) { // (the number at its DummyDP01 - else its middle - on the screen, in UI units)
                     float p[3] = {bu.fig.place.m[3], bu.fig.place.m[7] + 0.15f, bu.fig.place.m[11]};
                     const int dj = bu.fig.skeleton.joint(cr2::nameHash("DummyDP01"));
@@ -1607,14 +1627,20 @@ struct Viewer {
                     if (cw > 0) {
                         const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
                         DamageShown ds;
-                        ds.value = e.damage, ds.set = 20, ds.start = battleClock;
+                        ds.value = e.damage, ds.set = 20, ds.start = battleClock; // (the restores: HP green 50, MP 60)
+                        if (restore) ds.value = e.heal > 0 || e.healMp == 0 ? e.heal : e.healMp, ds.set = e.heal > 0 || e.healMp == 0 ? 50 : 60;
                         ds.x = (mm[0] * p[0] + mm[4] * p[1] + mm[8] * p[2] + mm[12]) / cw * float(screenW) * 0.5f / k;
                         ds.y = (mm[1] * p[0] + mm[5] * p[1] + mm[9] * p[2] + mm[13]) / cw * float(screenH) * 0.5f / k;
                         damageShown.push_back(ds);
                     }
                 }
-                SDL_Log("    %s -> %s: %s", battleRules->fighter(e.actor).name.c_str(), battleRules->fighter(e.target).name.c_str(),
-                        e.hit ? (std::to_string(e.damage) + (e.critical ? " critical" : "") + (e.defeated ? ", down" : "")).c_str() : "missed");
+                {
+                    const cr2::BattleData::Command* ec = battleData.command(e.command);
+                    const std::string what = ec && ec->kind == 2 ? std::string("defends")
+                                             : restore ? (e.revived ? "revived, " : "") + std::string("+") + std::to_string(e.heal) + " HP" + (e.healMp ? " +" + std::to_string(e.healMp) + " MP" : "")
+                                             : e.hit ? std::to_string(e.damage) + (e.critical ? " critical" : "") + (e.defeated ? ", down" : "") : "missed";
+                    SDL_Log("    %s -> %s: %s", battleRules->fighter(e.actor).name.c_str(), battleRules->fighter(e.target).name.c_str(), what.c_str());
+                }
             }
         }
         for (const auto& e : a.hits)
@@ -2200,7 +2226,8 @@ struct Viewer {
     }
     // a line of text at a UI place (centred), made once
     std::map<std::string, TextQuad> uiTexts;
-    void drawUiText(const std::string& text, float size, float x, float y, int w, int h) {
+    // `left`: from x (typeS_L: the text's left), else centred on it; `shade` its colour's
+    void drawUiText(const std::string& text, float size, float x, float y, int w, int h, bool left = false, float shade = 1) {
         if (text.empty() || !font.loaded()) return;
         const float k = std::min(float(w) / 0.96f, float(h) / 0.64f);
         const int px = std::max(1, int(size / 1000.0f * k + 0.5f));
@@ -2217,9 +2244,9 @@ struct Viewer {
             it = uiTexts.emplace(key, q).first;
         }
         const TextQuad& q = it->second;
-        const float x0 = x - q.w / 2, x1 = x + q.w / 2, y0 = y - q.h / 2, y1 = y + q.h / 2;
+        const float x0 = left ? x : x - q.w / 2, x1 = x0 + q.w, y0 = y - q.h / 2, y1 = y + q.h / 2;
         const float v[24] = {x0, y0, 0, 1, x1, y0, 1, 1, x1, y1, 1, 0, x0, y0, 0, 1, x1, y1, 1, 0, x0, y1, 0, 0};
-        const float rgba[4] = {1, 1, 1, 1};
+        const float rgba[4] = {shade, shade, shade, 1};
         dev->drawQuad(q.tex, v, uiProjection(w, h).data(), rgba);
     }
 
@@ -2294,10 +2321,95 @@ struct Viewer {
             }
         }
     }
+    // The skill list (BattleSkillListMenu: a ScrollListMenu of scrlMtr_per / scrlBar / scrlWin /
+    // scrlBtn ... - GetModelDataName): the frame scrlBar (scrlBar_io), a row scrlBtn (scrlBtn_io)
+    // each 0.08 lower (GetColumnSpacing) - its name at typeS_L00 (white; half, not selectable), its
+    // number (MP, or the awakening's level: DotNumId2, set 90) at call_dotNum_id01, its icon
+    // (mainIcon_id at its frame / 20 s) at call_mainIcon_id11, the focused one's sBtnSlct at
+    // call_sBtnSlct14 -, scrlBack (scrlBack_io) to go back. Each row's tap area kept: its id
+    struct ListRow {
+        int id = 0;
+        std::string name;
+        int number = 0, icon = 0;
+        bool selectable = true;
+    };
+    // the rows centred on the focused one (ScrollListMenu::PartsPose: two either side shown; the
+    // row's own place the one above it), the list's tab (ListTag: tabWin_io, its tabName_id at
+    // call_tabName_id posed at the list's frame / 20 s)
+    // `tagFrame` / `costIcon`: BattleSkillListMenu::SetListItemParam's by the list - the sopia 9
+    // ("Sopia") / 12 ("MP"), the awakenings 11 ("Awake") / 13 ("Charge Lv."), the advents 13 / 13
+    // (as the frames read; their main icons 71 "Awake", 70 "Advent")
+    void drawSkillList(const std::vector<ListRow>& rows, int focused, float t, const Mat4& view, int w, int h, int tagFrame, int costIcon) {
+        UiFig& bar = uiFig("scrlbar");
+        bar.fig.place = cr2::Mat34();
+        poseUi(bar, "scrlbar_io", t);
+        drawFigure(bar.fig, view.data());
+        int fi = 0;
+        for (size_t k = 0; k < rows.size(); ++k)
+            if (rows[k].id == focused) fi = int(k);
+        for (int k = std::max(fi - 2, 0); k < int(rows.size()) && k <= fi + 2; ++k) {
+            const ListRow& r = rows[size_t(k)];
+            UiFig& b = uiFig("scrlbtn");
+            b.fig.place = cr2::Mat34();
+            b.fig.place.m[7] = 0.08f * float(fi - k);
+            poseUi(b, "scrlbtn_io", t);
+            for (ViewMesh& vm : b.fig.meshes) {
+                vm.material.params[0x33] = !r.selectable ? std::vector<float>{0.5f, 0.5f, 0.5f, 1.0f} : vm.baseMaterial.params[0x33];
+                if (vm.material.params[0x33].empty()) vm.material.params.erase(0x33);
+            }
+            drawFigure(b.fig, view.data());
+            float x, y;
+            if (uiJoint(b, "typeS_L00", x, y)) drawUiText(r.name, 24, x, y, w, h, true, r.selectable ? 1.0f : 0.5f);
+            if (uiJoint(b, "call_dotNum_id01", x, y)) drawDigits(r.number, 90, 4, x, y, uiProjection(w, h), r.selectable ? 1.0f : 0.5f);
+            if (r.icon > 0 && uiJoint(b, "call_mainIcon_id11", x, y)) {
+                UiFig& ic = uiFig("mainicon_id");
+                ic.fig.place = cr2::Mat34();
+                ic.fig.place.m[3] = x, ic.fig.place.m[7] = y;
+                poseUi(ic, "mainicon_id", r.icon == 0x1c ? 1.45f : r.icon == 0x1d ? 1.4f : float(r.icon) / 20.0f);
+                drawFigure(ic.fig, view.data());
+            }
+            if (uiJoint(b, "call_cost_id13", x, y)) { // (the number's mark: "MP" ...)
+                UiFig& co = uiFig("cost_id");
+                co.fig.place = cr2::Mat34();
+                co.fig.place.m[3] = x, co.fig.place.m[7] = y;
+                poseUi(co, "cost_id", float(costIcon) / 20.0f);
+                drawFigure(co.fig, view.data());
+            }
+            if (k == fi && uiJoint(b, "call_sBtnSlct14", x, y)) {
+                UiFig& sl = uiFig("sbtnslct");
+                sl.fig.place = cr2::Mat34();
+                sl.fig.place.m[3] = x, sl.fig.place.m[7] = y;
+                poseUi(sl, "sbtnslct", t, true);
+                drawFigure(sl.fig, view.data());
+            }
+            float sx, sy, ex, ey; // (a tap: the focused row's pick, another's focus - its id + 1000)
+            if (uiJoint(b, "tapAreaS01", sx, sy) && uiJoint(b, "tapAreaE01", ex, ey))
+                tapRects.push_back({k == fi ? (r.selectable ? r.id : -1) : 1000 + k, sx, sy, ex, ey});
+        }
+        UiFig& tag = uiFig("tabwin_io");
+        tag.fig.place = cr2::Mat34();
+        poseUi(tag, "tabwin_io", t);
+        drawFigure(tag.fig, view.data());
+        float x, y;
+        if (uiJoint(tag, "call_tabName_id01", x, y)) {
+            UiFig& tn = uiFig("tabname_id");
+            tn.fig.place = cr2::Mat34();
+            tn.fig.place.m[3] = x, tn.fig.place.m[7] = y;
+            poseUi(tn, "tabname_id", float(tagFrame) / 20.0f);
+            drawFigure(tn.fig, view.data());
+        }
+        UiFig& bk = uiFig("scrlback");
+        bk.fig.place = cr2::Mat34();
+        poseUi(bk, "scrlback_io", t);
+        drawFigure(bk.fig, view.data());
+        float sx, sy, ex, ey;
+        if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
+    }
     // a button's look as drawn: 0 not selectable, 1 as it is, 2 focused (the keys' cursor)
     std::function<int(int)> buttonLook;
     std::function<int(int)> buttonFighter; // (a target button's fighter, -1 none)
     std::function<int(int)> buttonLevel;   // (an awakening button's level)
+    std::vector<ListRow> listRows;         // (the skill list as drawn: a tap on a row focuses it)
     // the menu of the choosing's step, the cursor's choice marked (the keys')
     void drawChoosing(const Mat4& view, int w, int h) {
         using CI = cr2::CommandInput;
@@ -2319,28 +2431,24 @@ struct Viewer {
             drawCommandMenu("btlbtn3rd_io", t, view, ids, names, w, h, CI::TargetFirst);
             buttonLook = nullptr, buttonFighter = nullptr;
             for (TapRect& r : tapRects) r.id = commandInput.targets()[size_t(r.id - CI::TargetFirst)]; // (a click: the fighter)
-        } else if (commandInput.menu() == CI::Menu::Awake) {
-            // the awakenings on the select menu's buttons (BtlInterfaceCtrl::AddCommandAwake: its
-            // name and level, not selectable when the charge can't pay for it)
-            const std::vector<CI::Awakening> list = commandInput.awakenings();
-            std::vector<int> ids;
-            std::map<int, std::string> names;
-            for (size_t k = 0; k < list.size() && k < 5; ++k) {
-                const cr2::BattleData::Command* c = battleData.command(list[k].command);
-                ids.push_back(CI::TargetFirst + int(k));
-                names[CI::TargetFirst + int(k)] = c ? c->name[1] : "?";
-            }
-            buttonLook = [&](int id) {
-                const CI::Awakening& a = list[size_t(id - CI::TargetFirst)];
-                return !a.selectable ? 0 : a.command == cursor && keysUsed ? 2 : 1;
-            };
-            buttonLevel = [&](int id) { return list[size_t(id - CI::TargetFirst)].level; };
-            drawCommandMenu("btlbtn3rd_io", t, view, ids, names, w, h, CI::TargetFirst);
-            buttonLook = nullptr, buttonLevel = nullptr;
-            for (TapRect& r : tapRects) {
-                const CI::Awakening& a = list[size_t(r.id - CI::TargetFirst)];
-                r.id = a.selectable ? a.command : -1;
-            }
+        } else if (commandInput.menu() == CI::Menu::Awake || commandInput.menu() == CI::Menu::Sopia) {
+            // the awakenings (AddCommandAwake: the level its number) or the sopia (AddCommandSopia:
+            // its MP) on the skill list
+            std::vector<ListRow> rows;
+            if (commandInput.menu() == CI::Menu::Awake)
+                for (const auto& a : commandInput.awakenings()) {
+                    const cr2::BattleData::Command* c = battleData.command(a.command);
+                    rows.push_back({a.command, c ? c->name[1] : "?", a.level, 71, a.selectable});
+                }
+            else
+                for (const auto& sc : commandInput.sopiaCommands()) {
+                    const cr2::BattleData::Command* c = battleData.command(sc.command);
+                    rows.push_back({sc.command, c ? c->name[1] : "?", sc.mp, c ? c->icon : 0, sc.selectable});
+                }
+            listRows = rows;
+            const bool sopia = commandInput.menu() == CI::Menu::Sopia;
+            drawSkillList(rows, cursor, t, view, w, h, sopia ? 9 : 11, sopia ? 12 : 13);
+            return; // (its own back button)
         } else {
             std::vector<int> ids;
             for (const auto& b : commandInput.buttons()) ids.push_back(b.id);
@@ -2582,6 +2690,7 @@ int main(int argc, char** argv) {
     int fightMode = 0;
     std::string inputArg; // (--input: the commands chosen, as tokens)
     std::vector<int> flagsArg;
+    std::vector<std::pair<int, int>> sopiaArg;
     bool skipBattlesOpt = false;
     uint32_t fightSeed = 1;
     int battleId = 0, battleParty[2] = {1, 2}; // (--battle: Darwin and Orlando unless --party)
@@ -2616,6 +2725,11 @@ int main(int argc, char** argv) {
         else if (a == "--fight" && next) fightMode = !std::strcmp(next, "pair") ? 2 : !std::strcmp(next, "manual") ? 3 : 1, ++i;
         else if (a == "--input" && next) inputArg = next, ++i;
         else if (a == "--flag" && next) flagsArg.push_back(std::atoi(next)), ++i; // (a story flag set to begin with: tests)
+        else if (a == "--sopia" && next) { // (a sopia's level: id:level, tests)
+            int id = 0, level = 0;
+            if (std::sscanf(next, "%d:%d", &id, &level) == 2) sopiaArg.push_back({id, level});
+            ++i;
+        }
         else if (a == "--seed" && next) fightSeed = uint32_t(std::atoi(next)), ++i;
         else if (a == "--party" && next) std::sscanf(next, "%d,%d", &battleParty[0], &battleParty[1]), ++i;
         else if (a == "--vista" && next) vista = next, ++i;
@@ -2752,6 +2866,8 @@ int main(int argc, char** argv) {
         p = e + 1;
     }
     for (int f : flagsArg) v.game.setFlag(f, true);
+    for (const auto& [id, level] : sopiaArg)
+        if (id >= 0 && id < 32) v.game.sopiaLevel[id] = static_cast<signed char>(level);
     if (battleId > 0 && fightMode) v.startFight(fightMode == 3 ? 2 : fightMode, fightSeed);
     if (!eventName.empty()) {
         if (!v.startEvent(eventName, vista, page)) return 1;

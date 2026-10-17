@@ -6,8 +6,9 @@
 
 namespace cr2 {
 
-void CommandInput::begin(const BattleRules& rules, bool eventBattle, std::function<bool(int)> flag) {
-    rules_ = &rules, eventBattle_ = eventBattle, flag_ = std::move(flag);
+void CommandInput::begin(const BattleRules& rules, bool eventBattle, std::function<bool(int)> flag,
+                         std::function<int(int)> sopiaLevel) {
+    rules_ = &rules, eventBattle_ = eventBattle, flag_ = std::move(flag), sopiaLevel_ = std::move(sopiaLevel);
     costs_.clear();
     menu_ = Menu::First, actor_ = 0, pair_ = false, escape_ = false, pending_ = 0;
     targets_.clear(), orders_.clear();
@@ -29,7 +30,7 @@ std::vector<CommandInput::Shown> CommandInput::buttons() const {
         // CheckCommandEnable: Attack switch 43, Sopia 44, Items 45, Defend 46 (and the states
         // that forbid them - none kept yet); Awake / Advent shown when one can be (+0x3e / +0x3f)
         out.push_back({Attack, r.scriptSwitch(43)});
-        out.push_back({Sopia, false && r.scriptSwitch(44)}); // (not yet)
+        out.push_back({Sopia, r.scriptSwitch(44)});
         out.push_back({Items, false && r.scriptSwitch(45)}); // (not yet)
         out.push_back({Defend, r.scriptSwitch(46)});
         // CheckCommandAwake: Awake when one of the party has an awakening it can pay for
@@ -39,6 +40,71 @@ std::vector<CommandInput::Shown> CommandInput::buttons() const {
         if (awake) out.push_back({Awake, true});
     }
     return out;
+}
+
+std::vector<CommandInput::SopiaCommand> CommandInput::sopiaCommands() const {
+    std::vector<SopiaCommand> out;
+    if (!rules_) return out;
+    const BattleRules& r = *rules_;
+    std::vector<int> who = {actor_};
+    if (pair_) who = {0, 1};
+    for (int f : who) {
+        const Fighter& fi = r.fighter(f);
+        if (!fi.present) continue;
+        for (int s : fi.sopia) {
+            const BattleData::Sopia* so = r.data().sopia(s);
+            const int level = so ? (sopiaLevel_ ? sopiaLevel_(s) : so->startLevel) : 0;
+            if (!so || level <= 0) continue;
+            for (int k = 0; k < level && k < 10; ++k) {
+                const int id = so->commands[k];
+                if (id <= 0 || std::any_of(out.begin(), out.end(), [id](const SopiaCommand& x) { return x.command == id; })) continue;
+                const BattleData::Command* c = r.data().command(id);
+                if (!c) continue;
+                SopiaCommand sc;
+                sc.command = id;
+                sc.mp = r.useMp(pair_ ? 0 : actor_, pair_ ? 1 : -1, c->mp);
+                sc.selectable = r.fighter(pair_ ? 0 : actor_).mp >= sc.mp && (!pair_ || r.fighter(1).mp >= sc.mp);
+                const bool partnerDown = !r.fighter(1 - actor_).alive && r.fighter(1 - actor_).present;
+                if ((c->kind == 24 || c->kind == 25) && !pair_ && !partnerDown) sc.selectable = false;
+                out.push_back(sc);
+            }
+        }
+    }
+    return out;
+}
+
+bool CommandInput::pickSopia(int command) {
+    if (menu_ != Menu::Sopia) return false;
+    for (const SopiaCommand& sc : sopiaCommands())
+        if (sc.command == command && sc.selectable) {
+            toTarget(command, 0);
+            return true;
+        }
+    return false;
+}
+
+void CommandInput::toTarget(int command, int cost) {
+    // StepTarget's list by the command's target (+0x4b): 4 / 7 a foe, 2 one of the party (the
+    // revivals: one down), else none to choose (itself, the allies, the foes)
+    const BattleData::Command* c = rules_->data().command(command);
+    const int t = c ? c->target : 0;
+    targets_.clear();
+    if (t == 4 || t == 7) {
+        for (int m = 2; m < 5; ++m)
+            if (rules_->fighter(m).alive) targets_.push_back(m);
+    } else if (t == 2) {
+        const bool revive = c && (c->kind == 24 || c->kind == 25);
+        for (int k = 0; k < 2; ++k)
+            if (rules_->fighter(k).present && rules_->fighter(k).alive != revive) targets_.push_back(k);
+    }
+    if (targets_.empty()) {
+        orders_.push_back({actor_, command, t == 1 ? actor_ : -1});
+        costs_.push_back(cost);
+        next();
+        return;
+    }
+    pending_ = command, pendingCost_ = cost, pendingFrom_ = menu_;
+    menu_ = Menu::Target;
 }
 
 int CommandInput::awakeCost(int level) { return level >= 1 && level <= 3 ? kAwakeCost[level - 1] : 100; }
@@ -72,18 +138,7 @@ bool CommandInput::pickAwakening(int command) {
     if (menu_ != Menu::Awake) return false;
     for (const Awakening& a : awakenings())
         if (a.command == command && a.selectable) {
-            const BattleData::Command* c = rules_->data().command(command);
-            if (c && (c->target == 4 || c->target == 7)) { // (StepAwakeLoop: on to the target, step 0x10)
-                pending_ = command, pendingCost_ = a.cost;
-                targets_.clear();
-                for (int m = 2; m < 5; ++m)
-                    if (rules_->fighter(m).alive) targets_.push_back(m);
-                menu_ = Menu::Target;
-                return true;
-            }
-            orders_.push_back({actor_, command, -1}); // (all the foes, or the allies)
-            costs_.push_back(a.cost);
-            next();
+            toTarget(command, a.cost); // (StepAwakeLoop: on to the target, step 0x10)
             return true;
         }
     return false;
@@ -112,6 +167,10 @@ bool CommandInput::press(int id) {
         menu_ = Menu::Awake;
         return true;
     }
+    if (id == Sopia) { // (StepSopia: the list)
+        menu_ = Menu::Sopia;
+        return true;
+    }
     if (id == Defend) { // (StepNextCheck: state 4 for it - both, a pair)
         orders_.push_back({actor_, kDefend, actor_});
         costs_.push_back(0);
@@ -119,11 +178,7 @@ bool CommandInput::press(int id) {
         return true;
     }
     // Attack: the character's +0x44 (a pair's swapped for +0x46 as it acts), on a foe
-    pending_ = r.fighter(actor_).attack, pendingCost_ = 0;
-    targets_.clear();
-    for (int m = 2; m < 5; ++m)
-        if (r.fighter(m).alive) targets_.push_back(m);
-    menu_ = Menu::Target;
+    toTarget(r.fighter(actor_).attack, 0);
     return true;
 }
 
@@ -143,8 +198,9 @@ void CommandInput::next() {
 
 void CommandInput::back() {
     switch (menu_) {
-    case Menu::Target: menu_ = pendingCost_ ? Menu::Awake : Menu::Command; break;
-    case Menu::Awake: menu_ = Menu::Command; break;
+    case Menu::Target: menu_ = pendingFrom_; break;
+    case Menu::Awake:
+    case Menu::Sopia: menu_ = Menu::Command; break;
     case Menu::Command: // (StepCommandLoop: the second's back to the first's, else the first menu)
         if (!pair_ && actor_ == 1 && rules_->fighter(0).alive) {
             if (!orders_.empty()) orders_.pop_back();

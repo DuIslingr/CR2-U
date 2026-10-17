@@ -52,6 +52,7 @@ struct Fighter {
     int partner = -1;   // (+0xb02: -1 solo)
     bool guarding = false; // (state 4: this turn)
     int attack = 0, pairAttack = 0; // a character's commands
+    int sopia[5] = {0, 0, 0, 0, 0};  // a character's sopia equipped (cr3_player_data +0x42..; a new game's)
     const BattleData::Monster* monster = nullptr;
     bool has(int group, int bit) const { return group >= 0 && group <= 5 && (skills[group + 1] >> bit & 1u) != 0; }
 };
@@ -87,6 +88,8 @@ public:
         int actor = -1, partner = -1, command = 0, target = -1;
         bool hit = false, critical = false, weak = false, defeated = false;
         int damage = 0;
+        int heal = 0, healMp = 0; // (a restore's: BtlCalc::Restore)
+        bool revived = false;
     };
     // One turn: the party solo (each its order) or a pair (the first order the pair's), the
     // monsters' own choices, all in their order. Returns the events.
@@ -145,10 +148,21 @@ public:
     // its own, +0x237a, has Turn_Start ... Dead)
     std::function<void(const std::string& function)> script;
 
+    // a command's MP for a fighter, or a pair (BtlUtilStatus::CalcUseMp: half with skill (5, 3), half
+    // as much again with (0, 10) - either of a pair's)
+    int useMp(int f, int partner, int mp) const;
     // the formulas, for checks
     int param(int f, int n) const;
     int damage(int actor, int target, const BattleData::Command& c, bool critical, bool* weak = nullptr);
     bool hit(int actor, int target, const BattleData::Command& c);
+    // BtlCalc::CommandY: the power's additions (a turn break 100, a pair 25, a monster 50, a
+    // critical 50 - 100 with skill (2, 3))
+    int commandY(int actor, bool critical) const;
+    // BtlCalc::Restore on one target: kinds 18 / 19 HP / MP by Magic x (power + CommandY) / 100
+    // (spread), 20 / 21 HP / MP by the power, 22 / 25 all the HP, 23 all of both, 24 a revival
+    // with (CommandY + 50) % of the HP (1 .. 100); x 1.5 for a command with MP and skill (0, 10),
+    // x 2 with (0, 9) (but the "all" kinds) - either of a pair's
+    void restore(int actor, int target, const BattleData::Command& c, Event& e);
     bool critical(int actor, int target, const BattleData::Command& c);
 
 private:

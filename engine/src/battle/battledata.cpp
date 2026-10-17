@@ -55,7 +55,7 @@ bool fail(std::string* error, const std::string& why) {
 } // namespace
 
 bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
-    characters_.clear(), monsters_.clear(), couplings_.clear();
+    characters_.clear(), monsters_.clear(), couplings_.clear(), commands_.clear(), items_.clear(), autoSkills_.clear(), sopias_.clear();
     if (d.size() < 0x40) {
         if (error) *error = "battledata: too short";
         return false;
@@ -124,7 +124,19 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         c.specials = uint16_t(s16(d, o + 0x4e));
         c.kind = d[o + 0x6f];
         c.awaken = d[o + 0x48];
+        c.mp = s16(d, o + 0x42), c.icon = d[o + 0x72];
         commands_.push_back(c);
+    }
+    const uint32_t sopias = u32(d, 0x1c);
+    for (int i = 0, n = s16(d, 0x40); i < n; ++i) {
+        const size_t o = sopias + size_t(i) * 0x2c;
+        if (o + 0x2c > d.size()) break;
+        Sopia s;
+        s.id = i + 1;
+        s.name[0] = text(o), s.name[1] = text(o + 4);
+        s.growth = d[o + 0x10], s.startLevel = d[o + 0x12];
+        for (int k = 0; k < 10; ++k) s.commands[k] = s16(d, o + 0x18 + size_t(k) * 2);
+        sopias_.push_back(s);
     }
     for (int i = 0, n = s16(d, 0x3e); i < n; ++i) {
         const size_t o = autoSkills + size_t(i) * 0x38;
@@ -169,6 +181,9 @@ const BattleData::Command* BattleData::command(int id) const {
 }
 const BattleData::Item* BattleData::item(int id) const {
     return id >= 1 && id <= int(items_.size()) ? &items_[size_t(id - 1)] : nullptr;
+}
+const BattleData::Sopia* BattleData::sopia(int id) const {
+    return id >= 1 && id <= int(sopias_.size()) ? &sopias_[size_t(id - 1)] : nullptr;
 }
 const BattleData::AutoSkill* BattleData::autoSkill(int id) const {
     return id >= 1 && id <= int(autoSkills_.size()) ? &autoSkills_[size_t(id - 1)] : nullptr;

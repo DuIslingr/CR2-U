@@ -23,7 +23,8 @@ public:
         int hp = 0, mp = 0, param[5] = {0, 0, 0, 0, 0}; // +0x10, +0x14, +0x16 at level 0
         int hpGrowth = 0, mpGrowth = 0, paramGrowth[5] = {0, 0, 0, 0, 0}; // +0x21, +0x22, +0x23
         int level = 1;       // +0x20 a new game's
-        int equip[8] = {0, 0, 0, 0, 0, 0, 0, 0}; // +0x28 a new game's: weapon, armour, accessory, items
+        int equip[8] = {0, 0, 0, 0, 0, 0, 0, 0}; // +0x28 a new game's: weapon, armour, accessory, then
+                                                 // its five sopia (+0x2e..: Cr3InitWorkFromBattleData)
         int specials[3] = {0, 0, 0}; // +0x38 its own skills (Darwin: Executioner ...)
         int attack = 0, pairAttack = 0; // +0x44 the command "attack" gives, +0x46 the pair's
     };
@@ -58,6 +59,17 @@ public:
         int element = 0;     // +0x4c
         unsigned specials = 0; // +0x4e (CheckCommandSpecial's bits)
         int kind = 0;        // +0x6f: 0 damage, 2 defend, ...
+        int mp = 0;          // +0x42: its MP (BtlUtilStatus::CalcUseMp)
+        int icon = 0;        // +0x72: its icon (mainIcon_id's frame)
+    };
+    // a sopia (GetSopiaDataPointer, from 1; 0x2c bytes): the command it gives at each level (+0x18,
+    // s16 each: the first `level` of them), the level it starts at (+0x12), its level-up table
+    // (+0x10: 0 the characters' own, 1 the others')
+    struct Sopia {
+        int id = 0;
+        std::string name[2];
+        int growth = 0, startLevel = 1;
+        int commands[10] = {};
     };
     // an item (GetItemDataPointer, from 1): what it adds worn (Cr3UpdatePlayerData)
     struct Item {
@@ -88,6 +100,8 @@ public:
     const Command* command(int id) const;
     const Item* item(int id) const;
     const AutoSkill* autoSkill(int id) const;
+    const Sopia* sopia(int id) const;
+    int sopias() const { return int(sopias_.size()); }
     int couplings() const { return int(couplings_.size()); }
 
 private:
@@ -97,6 +111,7 @@ private:
     std::vector<Command> commands_;
     std::vector<Item> items_;
     std::vector<AutoSkill> autoSkills_;
+    std::vector<Sopia> sopias_;
 };
 
 // A battle's set-up (BtlMainCtrl::StepInit, BtlWork::SetStartWork): the map, the monsters' size

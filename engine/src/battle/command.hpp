@@ -18,14 +18,26 @@ public:
         Items = 16, Sopia = 18, Options = 20, Solo = 26, Pair = 27, Escape = 28, Awake = 29, Advent = 30, Attack = 31,
         Defend = 33, TargetFirst = 43, // (43..47: the target buttons)
     };
-    enum class Menu { First, Command, Awake, Target, Done };
+    enum class Menu { First, Command, Sopia, Awake, Target, Done };
     struct Shown {
         int id = 0;
         bool selectable = true;
     };
     // a turn's choosing begins (BtlCommand::StepGetsetFirst / SetGetsetUI); `eventBattle` the
     // coupling's (+0x18: no escape); `flag` the story's flags (the awakenings need theirs)
-    void begin(const BattleRules& rules, bool eventBattle, std::function<bool(int)> flag = nullptr);
+    // `sopiaLevel` a sopia's level (cr3_common_data +0x26c)
+    void begin(const BattleRules& rules, bool eventBattle, std::function<bool(int)> flag = nullptr,
+               std::function<int(int)> sopiaLevel = nullptr);
+    // the sopia's commands the one choosing has (BtlCommand::GetSopia / GetPairSopia /
+    // SetCommandSopiaList: each sopia equipped gives its commands up to its level, each once - the
+    // pair's both theirs; selectable when the MP covers it - both a pair's - and the revivals
+    // (kinds 24, 25) only with the partner down)
+    struct SopiaCommand {
+        int command = 0, mp = 0;
+        bool selectable = false;
+    };
+    std::vector<SopiaCommand> sopiaCommands() const;
+    bool pickSopia(int command);
     // the awakenings the one choosing has (SetCommandAwakeList: its character's, those whose flag
     // is set; selectable while the charge less what this turn has set aside covers the cost)
     struct Awakening {
@@ -60,12 +72,15 @@ private:
     int reserved() const; // (the charge set aside this turn: CheckCommandAwake's +0x2c)
     const BattleRules* rules_ = nullptr;
     std::function<bool(int)> flag_;
+    std::function<int(int)> sopiaLevel_;
+    void toTarget(int command, int cost); // (a command's target, by its kind: foes, the party, none)
     std::vector<int> costs_; // (each order's charge)
     bool eventBattle_ = false;
     Menu menu_ = Menu::Done;
     int actor_ = 0;
     bool pair_ = false, escape_ = false;
     int pending_ = 0, pendingCost_ = 0; // (the command waiting for its target, its charge)
+    Menu pendingFrom_ = Menu::Command;  // (the menu it came from: back goes there)
     std::vector<int> targets_;
     std::vector<BattleRules::Order> orders_;
 };

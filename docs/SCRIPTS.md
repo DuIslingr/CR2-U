@@ -84,13 +84,39 @@ from the story's flags (`Cr3Flag.Check`), which gimmicks show (`Cr3GimmickData.D
 the area's own set-up (`D01_01_01_set`: an event when its flags say). Gimmicks are named by
 their joints (FORMATS.md: `c208_00`, `eff104_01`, `tbox_07`, `evt021_00`); NPCs start hidden,
 objects, effects and boxes shown. A gimmick's touch / tap calls the script function of its id
-(an event box's: its first six characters, `evt021`).
+(an event box's: its first six characters, `evt021`). An event box without `_check` in its name
+fires on touch: the player's body entering its shape (a box, ball or capsule in its joint's frame,
+sized by the joint's scale / 100) calls the function once, until the player has left it again.
+
+An area's script runs on the game's 20 updates a second like an event's, and uses the same
+natives (the scene, the windows, the fades: Events below); while it runs the player stands. The
+field's camera is the script's when it says (`Cr3FieldMapCamera`, in pixels of a 960-wide screen,
+the scroll negated): `SetPos(x, y)` puts it there, `CalcParameter(frames, fromX, fromY, toX,
+toY)` slides it a frame an update, `GetPos_X` / `GetPos_Y` read it, `SetMode(0)` gives it back to
+following the player.
 
 `engine/src/field/fieldscript.cpp` implements those natives (`Cr3Flag`, `Cr3Work`, the dungeon
-and area, `Cr3GimmickData`'s display / collision / event switches, `Cr3FieldMap`'s layers);
-`cr2tool fieldscript <archive> <executable>`: from a new game's state `evt000` runs on 216 of
-the 217 maps in all three releases - d0103's starts a story event, which waits on its first
-message.
+and area, `Cr3GimmickData`'s display / collision / event switches, `Cr3FieldMap`'s layers, the
+camera); `cr2tool fieldscript <archive> <executable>`: from a new game's state `evt000` runs to
+its end on all 217 maps in all three releases (an event's pages turning by themselves), and
+every event box's function is in its dungeon's script.
+
+## The game's flow
+
+What comes after a field's or an event's script is what it reserved, in `cr3_script_work`
+(FldUtil): `Cr3System.SetVistaFuncName(function)` / `SetVistaMapName(map)` (a vista event),
+`BattleIN(id)` (a battle; `SetBattleParty`), `SetPopPoint(point)` (where the player arrives),
+`SetComeFromBattleToField()` / `SetComeFromVistaToField()` (the next area's entry: `evt100` /
+`evt200`). When a field's script ends, FldMain::BranchAfterEvent takes the first reserved of: an
+area change, a battle, a vista, then the world select, the camp, a shop, ..., the title. When a
+vista's ends, VistaMain::BranchAfterVista: a battle, another vista, the credits, else back to the
+field.
+
+A new game starts on map d1020 (area 19), its set-up `D10_01_01_set`: `NewGameFlgSet`,
+`PartySet`, the field event `D10_01_0104`, then `D10_01_0101` - the prologue's vista
+(`D10_01_0101_evt` in `d1053v`) and its battle. `engine/src/script/gamestate.cpp` holds the
+flags, the work values and the reservations; `cr2view --play` follows them from d1020 (battles,
+not in yet, taken as won).
 
 ## Events
 
@@ -130,7 +156,7 @@ camera, the moves, the animations and the fades where they are by then. The scri
 - **the fades** (`Cr3Fade.FadeIn / FadeOut(type, frames)`, the `2`s with from / to %): the colour
   0 black (the interface's `fadeB`), 1 white (`fadeW`), 2 `fadeF`, 3 the encounter's wipe
   (Cr3FadeIn's table; the colours the fade figures' DiffuseColor), linear over the frames;
-- **the end**: `Cr3System.BattleIN(id)` and the like.
+- **the end**: `Cr3System.BattleIN(id)` and the like (the game's flow above).
 
 `engine/src/event/` implements them (`scene.cpp`: the figures and timelines; `runtime.cpp`: the
 script, the window's messages, the fades); `cr2tool play <archive> all` plays every event script

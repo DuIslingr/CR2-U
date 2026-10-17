@@ -19,7 +19,7 @@
 #include "assets/mvgl.hpp"
 #include "assets/text.hpp"
 #include "event/scene.hpp"
-#include "field/fieldscript.hpp"
+#include "script/gamestate.hpp"
 #include "script/vm.hpp"
 
 namespace cr2 {
@@ -50,6 +50,13 @@ public:
     // one update; false: the script failed
     bool tick();
     bool running() const;     // the script hasn't ended
+
+    // The same natives for another script (a field's: its events use the scene, the windows, the
+    // fades too), and one update for it - the scene, its wait counted down (and it resumed), the
+    // windows, the fade. reset(): every state back to none (a new scene).
+    void bindNatives(ScriptVM& vm);
+    bool update(ScriptVM* vm);
+    void reset();
     int frame() const { return frame_; }
 
     EventScene& scene() { return scene_; }
@@ -83,13 +90,12 @@ public:
     int language = 1; // (Cr3UtilOptionLanguage: 1 English)
 
     // where the event went at its end: BattleIN's battle (-1 none)
-    int battle() const { return battle_; }
+    int battle() const { return state_.next.battle; }
 
     const std::string& error() const { return error_; }
     std::map<std::string, int> stubCalls() const;
 
 private:
-    void bind();
     bool loadText(const std::string& name, TextData& into);
     const MvglArchive& archive_;
     GameState& state_;
@@ -105,7 +111,7 @@ private:
     ParsedMessage parsed_;
     bool execution_ = false;
     bool terminated_ = false, drawSkip_ = false;
-    int wait_ = 0, frame_ = 0, battle_ = -1;
+    int wait_ = 0, frame_ = 0;
     std::string error_;
 };
 

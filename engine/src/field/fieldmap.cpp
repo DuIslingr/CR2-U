@@ -201,7 +201,14 @@ void FieldMap::groundAxes(Vec3& right, Vec3& forward) const {
     forward = flat(-cameraWorld_[8], -cameraWorld_[10]);  // its view: -Z
 }
 
-FieldFrame FieldMap::frame(int w, int h, const float* focus) const {
+FieldFrame FieldMap::frame(int w, int h, const float* focus) const { return frameAt(w, h, focus, nullptr); }
+
+FieldFrame FieldMap::frameScrolled(int w, int h, const float* focus, float scriptX, float scriptY) const {
+    const float s[2] = {scriptX, scriptY};
+    return frameAt(w, h, focus, s);
+}
+
+FieldFrame FieldMap::frameAt(int w, int h, const float* focus, const float* script) const {
     FieldFrame out;
     const float W = float(std::max(w, 1)), H = float(std::max(h, 1));
     const float vh = kVirtualWidth * H / W; // the virtual screen's height
@@ -218,6 +225,7 @@ FieldFrame FieldMap::frame(int w, int h, const float* focus) const {
     const float cw = vp[3] * fx + vp[7] * fy + vp[11] * fz + vp[15];
     float sx = cw != 0 ? -(cx / cw) * W * scale3d : 0.0f;
     float sy = cw != 0 ? -(cy / cw) * H * scale3d : 0.0f;
+    if (script) sx = -script[0] * (W / 960.0f), sy = -script[1] * (W / 960.0f); // (a script's camera)
     // SetScrollStop / CalcScrollStop: within the painting (1024 or 2048 units of a 960-wide screen)
     float bx = sx, by = sy;
     if (!info_.sharedBackground) {

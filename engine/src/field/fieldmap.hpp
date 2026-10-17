@@ -78,12 +78,16 @@ public:
 
     // The frame for a screen of w x h pixels with the player at `focus` (world space)
     FieldFrame frame(int w, int h, const float* focus) const;
+    // the same with the scroll a script set (Cr3FieldMapCamera: x, y in a 960-wide screen's
+    // pixels, the scroll's negation - FldUtilSetFieldMapCameraPos / SetDirectScroll), not the focus's
+    FieldFrame frameScrolled(int w, int h, const float* focus, float scriptX, float scriptY) const;
 
     // The painted layers' quad: corners (x, y) and texture coordinates for drawQuad, 4096 units
     // square centred on the origin (`shiftX`: the foreground's offset)
     static void layerQuad(float* vertices24, float shiftX = 0.0f);
 
 private:
+    FieldFrame frameAt(int w, int h, const float* focus, const float* script) const;
     MapInfo info_;
     std::string bg_, mg_, fg_, figure_;
     Geom c_, p_;

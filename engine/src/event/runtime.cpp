@@ -35,18 +35,17 @@ bool EventRuntime::loadText(const std::string& name, TextData& into) {
     return archive_.read("message\\" + lower(name) + ".dat", d) && into.parse(d);
 }
 
-void EventRuntime::bind() {
-    ScriptVM& vm = *vm_;
-    bindGameState(vm, state_);
+void EventRuntime::bindNatives(ScriptVM& vm) {
     // WaitFrame(n): the script waits n updates (ScriptLib::WaitFrame; WaitProcessor)
     vm.setNative("", "WaitFrame", [this](NativeCall& c) {
         wait_ = std::max(1, c.integer(0, 1));
         c.suspend();
     });
     // the scene
-    vm.setNative("EvtScene", "Init", [this](NativeCall& c) {
+    ScriptVM* owner = &vm;
+    vm.setNative("EvtScene", "Init", [this, owner](NativeCall& c) {
         std::string err;
-        if (!scene_.load(archive_, c.string(0), &err)) vm_->appendError("EvtScene.Init: " + err + "\n");
+        if (!scene_.load(archive_, c.string(0), &err)) owner->appendError("EvtScene.Init: " + err + "\n");
         terminated_ = drawSkip_ = false;
     });
     vm.setNative("EvtScene", "Terminate", [this](NativeCall&) { terminated_ = true; });
@@ -134,12 +133,9 @@ void EventRuntime::bind() {
     vm.setNative("Cr3Fade", "FadeOut2", fade2);
     // the skip button: never touched here
     vm.setNative("EvtSkip", "CheckButtonTouch", [](NativeCall& c) { c.result(false); });
-    // where the event leads
-    vm.setNative("Cr3System", "BattleIN", [this](NativeCall& c) { battle_ = c.integer(0); });
 }
 
-bool EventRuntime::start(const std::string& function) {
-    error_.clear();
+void EventRuntime::reset() {
     scene_ = EventScene();
     fade_ = EventFade();
     faces_.clear();
@@ -147,9 +143,16 @@ bool EventRuntime::start(const std::string& function) {
     openWindows_.clear(), messageWindow_ = Vista, message_ = page_ = revealed_ = 0, pageTime_ = 0;
     execution_ = false;
     terminated_ = drawSkip_ = false;
-    wait_ = frame_ = 0, battle_ = -1;
+    wait_ = frame_ = 0;
+}
+
+bool EventRuntime::start(const std::string& function) {
+    error_.clear();
+    reset();
+    state_.next.battle = -1;
     vm_ = std::make_unique<ScriptVM>();
-    bind();
+    bindGameState(*vm_, state_);
+    bindNatives(*vm_);
     std::vector<uint8_t> bytecode;
     const std::string script = "script\\" + lower(function) + ".nut";
     if (!archive_.read(script, bytecode, &error_) || !vm_->load(bytecode, script) || !vm_->runMain()) {
@@ -164,12 +167,14 @@ bool EventRuntime::start(const std::string& function) {
 
 bool EventRuntime::running() const { return vm_ && vm_->waiting(); }
 
-bool EventRuntime::tick() {
+bool EventRuntime::tick() { return update(vm_.get()); }
+
+bool EventRuntime::update(ScriptVM* vm) {
     ++frame_;
     scene_.update(kTick);
-    if (vm_ && vm_->waiting() && --wait_ <= 0) {
+    if (vm && vm->waiting() && --wait_ <= 0) {
         wait_ = 0;
-        if (!vm_->resume()) return error_ = vm_->error(), false;
+        if (!vm->resume()) return error_ = vm->error(), false;
     }
     if (message_ > 0 && !typed()) ++revealed_; // (a character an update; the page's time counts once it's typed)
     else if ((message_ > 0 || execution_) && autoPage > 0 && (pageTime_ += kTick) >= autoPage) advance();

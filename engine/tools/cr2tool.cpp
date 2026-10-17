@@ -451,6 +451,7 @@ int fieldScripts(const char* path, const char* binary, const char* only) {
     std::vector<cr2::MapInfo> table;
     if (!openArchive(a, path) || !readTable(binary, table)) return 1;
     size_t maps = 0, ran = 0, npcs = 0, npcsShown = 0;
+    size_t events = 0, reserved = 0, eventBoxes = 0, eventFunctions = 0, faded = 0;
     std::map<std::string, int> stubs;
     for (const cr2::MapInfo& info : table) {
         if (only && info.name != only) continue;
@@ -459,8 +460,30 @@ int fieldScripts(const char* path, const char* binary, const char* only) {
         ++maps;
         cr2::GameState state; // (a new game's: every flag clear)
         cr2::FieldScript script(a, state);
-        const bool ok = script.enter(info.name, f.gimmicks());
+        // (to its end: an area's set-up may play an event, its pages turning by themselves)
+        bool ok = script.enter(info.name, f.gimmicks());
+        const bool waited = ok && script.running();
+        if (ok) ok = script.runToEnd();
+        if (!ok && script.error().empty()) {
+            std::printf("  %s: still running after 10 minutes of the game's updates\n", info.name.c_str());
+        }
         ran += ok;
+        events += waited;
+        if (ok && script.events().fade().alpha > 0.01f) { // (a fade the set-up leaves on the screen)
+            ++faded;
+            if (only) std::printf("  fade left: colour %d at %.0f%%\n", script.events().fade().colour, script.events().fade().alpha * 100);
+        }
+        if (!state.next.vistaFunction.empty() || state.next.battle >= 0 || !state.next.popPoint.empty()) {
+            ++reserved;
+            if (only) std::printf("  next: vista %s (%s), battle %d, pop point %s\n", state.next.vistaFunction.c_str(),
+                                  state.next.vistaMap.c_str(), state.next.battle, state.next.popPoint.c_str());
+        }
+        for (const cr2::Gimmick& g : f.gimmicks()) // (the event boxes' functions: in the script?)
+            if (g.kind == cr2::Gimmick::Event) {
+                ++eventBoxes;
+                if (script.hasFunction(g.function)) ++eventFunctions;
+                else if (only) std::printf("  event box %s: no function %s\n", g.name.c_str(), g.function.c_str());
+            }
         std::string shown;
         for (const cr2::Gimmick& g : f.gimmicks()) {
             if (g.kind != cr2::Gimmick::Npc) continue;
@@ -471,7 +494,9 @@ int fieldScripts(const char* path, const char* binary, const char* only) {
                                     shown.c_str());
         for (const auto& [k, n] : script.stubCalls()) stubs[k] += n;
     }
-    std::printf("%zu maps: evt000 ran on %zu; NPCs %zu, shown %zu (a new game's flags)\n", maps, ran, npcs, npcsShown);
+    std::printf("%zu event boxes, %zu with their function in the dungeon's script\n", eventBoxes, eventFunctions);
+    std::printf("%zu maps: evt000 ran to its end on %zu (%zu waiting on the way, %zu reserving what comes next, %zu leaving a fade); NPCs %zu, shown %zu (a new game's flags)\n",
+                maps, ran, events, reserved, faded, npcs, npcsShown);
     std::vector<std::pair<int, std::string>> top;
     for (const auto& [k, n] : stubs) top.push_back({n, k});
     std::sort(top.rbegin(), top.rend());

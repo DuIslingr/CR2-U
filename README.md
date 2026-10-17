@@ -71,7 +71,11 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] Gimmicks: the maps' NPCs, objects, effects and treasure boxes placed and drawn (NPCs idling),
       solid as in the game; `cr2tool walk` runs from every map's arrival points
 - [x] Which gimmicks the story shows: each area's entry (`evt000`) runs in the dungeon's script on
-      entering it (`cr2tool fieldscript`: 216 of 217 maps from a new game's state)
+      entering it (`cr2tool fieldscript`: to its end on all 217 maps from a new game's state)
+- [x] The game's flow: what a script reserves (a vista, a battle, a pop point, the next area's
+      entry) followed as the game branches, the event boxes firing on touch, the field camera as
+      the scripts move it - `cr2view --play` plays a new game from its first map (battles taken as
+      won)
 - [x] Vista events: the event's script at the game's 20 updates a second - its scene's models on
       their locators with their animations and faces, the animated camera and lights, the fades,
       the messages' pages (`cr2view --event D01_01_0101_evt --vista d0151b`; `cr2tool play all`:
@@ -81,8 +85,8 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       (checked against the reference video within a pixel), the speaker's name, the lines typing
       in your release's font (`--font`: Android's TypeBank faces, the Vita's; else a system
       font; FreeType), the page cursor
-- [ ] The other windows (portraits' cut-ins, announcements, tutorials, items), field events (talking / tapping,
-      event boxes), the HUD, the fades and sounds between areas
+- [ ] The other windows (portraits' cut-ins, announcements, tutorials, items), field event
+      scenes, talking / tapping, the HUD, the sounds between areas
 - [ ] Engine: events, battles, menus
 
 ## What you need
@@ -103,6 +107,7 @@ One or more of:
 | `cr2view --data <archive> --event <function> [--vista map] [--page s]` | an event: Return or a click turns a message's page |
 | `cr2view ... [--resolution WxH] [--upscaler off\|fsr3] [--quality native\|quality\|balanced\|performance\|ultra] [--sharpness 0..1] [--size WxH] [--fps n] [--run s]` | the output in any mode: 60 frames a second (`--fps`), frames of a resolution up to 3840 x 2160 (F1 steps through the window's size and 720p .. 2160p), FSR 3.1 (F2 steps through its modes), the window's size; a capture `--run`s that long first |
 | `cr2view --data <archive> --field <map> [--model c001] [--at point] [--binary file] [--walk sx,sy,s]` | a field: the arrow keys run the character (Shift walks) on the floors and against the walls; the maps' table comes from the executable beside the iPad's / Vita's archive, or `--binary` (Android: `lib/armeabi-v7a/libChaosRings2.so`) |
+| `cr2view --data <archive> --play [map] [--binary file]` | a new game (or from a map): the field's scripts, events and vistas one after another as the game chains them; Return or a click turns a page |
 | `cr2tool check / scripts / run / images / models / compare-models / animations / pose / shaders / walk / exits / fieldscript` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared, the shader keys against their GLSL, the field player on every map, every map's exits, every map's entry script |
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
 | `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |

@@ -1,5 +1,6 @@
 #include "field/gimmicks.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -10,6 +11,20 @@ namespace cr2 {
 const char* Gimmick::kindName() const {
     static const char* kNames[] = {"npc", "object", "effect", "box", "ability", "event", "pop point", "exit", "spot", "other"};
     return kNames[kind];
+}
+
+bool Gimmick::touches(const float* p, float r) const {
+    // into the joint's frame (the rotation undone)
+    const float d[3] = {p[0] - position[0], p[1] - position[1], p[2] - position[2]};
+    const float x = -rotation[0], y = -rotation[1], z = -rotation[2], w = rotation[3];
+    const float tx = 2 * (y * d[2] - z * d[1]), ty = 2 * (z * d[0] - x * d[2]), tz = 2 * (x * d[1] - y * d[0]);
+    const float l[3] = {d[0] + w * tx + (y * tz - z * ty), d[1] + w * ty + (z * tx - x * tz), d[2] + w * tz + (x * ty - y * tx)};
+    const float sx = jointScale[0] / 100.0f, sy = jointScale[1] / 100.0f, sz = jointScale[2] / 100.0f;
+    if (shape == ShapeBox) return std::fabs(l[0]) <= sx + r && std::fabs(l[1]) <= sy + r && std::fabs(l[2]) <= sz + r;
+    const float half = shape == Capsule ? sy : 0.0f; // (the capsule along its y)
+    const float cy = std::max(-half, std::min(half, l[1]));
+    const float dx = l[0], dy = l[1] - cy, dz = l[2];
+    return dx * dx + dy * dy + dz * dz <= (sx + r) * (sx + r);
 }
 
 namespace {

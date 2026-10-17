@@ -34,6 +34,7 @@ add_library(cr2core STATIC
     src/gfx/material.cpp
     src/gfx/text.cpp
     src/script/vm.cpp
+    src/script/gamestate.cpp
 )
 target_include_directories(cr2core PUBLIC src)
 target_link_libraries(cr2core PUBLIC squirrel2)

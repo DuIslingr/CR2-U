@@ -39,6 +39,9 @@ struct Gimmick {
     bool check = false;                        // _check: tapped
     enum Shape { Ball, ShapeBox, Capsule } shape = Ball;
     const char* kindName() const;
+    // a sphere of radius r at p meets the gimmick's shape (its joint's scale / 100: a ball's
+    // radius, a box's half extents - turned by the joint - a capsule's radius and half height)
+    bool touches(const float* p, float r) const;
 };
 
 // The gimmicks of a <map>p figure: its skeleton, the joints' names (the .name file's order)

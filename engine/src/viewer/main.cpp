@@ -51,6 +51,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <set>
 #include <memory>
 #include <string>
 #include <vector>
@@ -181,6 +182,29 @@ struct Viewer {
     // substeps shows the player between the last two; the figure stands 0.02 below the sphere.
     float playerPrev[3] = {0, 0, 0}, playerCur[3] = {0, 0, 0};
     int substep = 0;
+
+    // The event boxes the leader walks into (Gimmick::Event, not _check - those are tapped):
+    // entering one with its event on (Cr3GimmickData.SetEventEnable) calls its function, the
+    // script's coroutine then running as the area's entry does (FldMain::CallEvent)
+    std::set<std::string> insideEvents;
+    bool pendingBranch = false;
+    void touchEvents(const cr2::Vec3& p) {
+        if (!script) return;
+        std::set<std::string> now;
+        for (const cr2::Gimmick& g : field.gimmicks()) {
+            if (g.kind != cr2::Gimmick::Event || g.check) continue;
+            const float at[3] = {p[0], p[1], p[2]};
+            if (!g.touches(at, controller->radius)) continue;
+            now.insert(g.name);
+            const auto st = script->gimmicks().find(g.id);
+            const bool enabled = st == script->gimmicks().end() || st->second.event;
+            if (insideEvents.count(g.name) || !enabled || script->running()) continue;
+            SDL_Log("%s: touched %s - %s", field.info().name.c_str(), g.name.c_str(), g.function.c_str());
+            if (!script->call(g.function)) SDL_Log("%s", script->error().c_str());
+            else if (!script->running() && playMode) pendingBranch = true; // (acted on at the next update: not mid-walk)
+        }
+        insideEvents.swap(now);
+    }
     void walk(float dt, float sx, float sy, bool run) {
         if (!controller) return;
         cr2::Vec3 right, forward;
@@ -204,6 +228,7 @@ struct Viewer {
             const std::string exit = field.exitTouched(p, controller->radius);
             if (exit.empty()) exitsArmed = true;
             else if (exitsArmed && exit.size() >= 5) exitTo = exit;
+            touchEvents(p);
         }
         playMotion(fig, speed == 0 ? "fn01" : run ? "ff02" : "ff01");
         if (!exitTo.empty()) {
@@ -558,7 +583,7 @@ struct Viewer {
         drawScene(screenW, screenH);
         dev->endScene();
         dev->setViewport(float(screenX), float(screenY), float(screenW), float(screenH));
-        if (eventMode) drawEventUi();
+        drawEventUi(); // (the vista's, or the field's events')
     }
 
     void drawScene(int w, int h) {
@@ -568,7 +593,20 @@ struct Viewer {
         }
         if (fieldMode) {
             // FldMain's order: the background (and midground), the 3D figures, the foreground
-            const cr2::FieldFrame fr = field.frame(w, h, player);
+            // the scroll: following the leader, else the script's camera (a slide drawn on between updates)
+            cr2::FieldFrame fr;
+            if (script && script->camera().scripted()) {
+                const cr2::FieldScript::Camera& c = script->camera();
+                float cx = c.x, cy = c.y;
+                if (c.frames > 0 && c.t < c.frames) {
+                    const float k = std::clamp(fieldClock / cr2::EventRuntime::kTick, 0.0f, 1.0f) / float(c.frames);
+                    cx += (c.toX - c.fromX) * k, cy += (c.toY - c.fromY) * k;
+                }
+                fr = field.frameScrolled(w, h, player, cx, cy);
+            } else {
+                fr = field.frame(w, h, player);
+            }
+            if (script) script->setShownScroll(-fr.scroll[0] / (float(w) / 960.0f), -fr.scroll[1] / (float(w) / 960.0f));
             dev->setCamera(fr.zNear, fr.zFar, fr.fovY * 3.14159265f / 180);
             cr2::SceneLighting l = field.lighting();
             std::memcpy(l.camera, fr.camera, sizeof l.camera);
@@ -619,8 +657,35 @@ struct Viewer {
         return false;
     }
 
-    // A map: its table row, layers and figures, the character dropped at the point `at`
-    bool enterMap(const std::string& map, const std::string& at) {
+    // the gimmicks shown with a figure: placed by their joints, NPCs idling (FldNPC: <figure>fn01) -
+    // as the script has them now
+    std::vector<std::string> shownGimmicks;
+    void refreshGimmicks() {
+        std::vector<std::string> want;
+        for (const cr2::Gimmick& gm : field.gimmicks())
+            if (!gm.figure.empty() && archive.contains(gm.figure + ".geom") && script->visible(gm)) want.push_back(gm.name);
+        if (want == shownGimmicks) return;
+        shownGimmicks = want;
+        std::string err;
+        for (ViewFigure& g : gimmicks) unload(g);
+        gimmicks.clear();
+        for (const cr2::Gimmick& gm : field.gimmicks()) {
+            if (gm.figure.empty() || !archive.contains(gm.figure + ".geom") || !script->visible(gm)) continue;
+            ViewFigure g;
+            cr2::JointTransform t;
+            std::memcpy(t.rotation, gm.rotation.data(), sizeof t.rotation);
+            std::memcpy(t.translation, gm.position, sizeof t.translation);
+            t.scale[0] = t.scale[1] = t.scale[2] = gm.scale;
+            g.place = t.matrix();
+            if (!loadFigure(gm.figure + ".geom", g, &err)) continue;
+            if (gm.kind == cr2::Gimmick::Npc) playMotion(g, "fn01");
+            gimmicks.push_back(std::move(g));
+        }
+    }
+
+    // A map: its table row, layers and figures, the character dropped at the point `at` (empty:
+    // where it stood, the field re-entered after a vista or a battle), the area's `entry` started
+    bool enterMap(const std::string& map, const std::string& at, const std::string& entry = "evt000") {
         const auto row = std::find_if(table.begin(), table.end(), [&](const cr2::MapInfo& m) { return m.name == map; });
         if (row == table.end()) {
             SDL_Log("%s: not one of the %zu maps (%s)", map.c_str(), table.size(), tableFrom.c_str());
@@ -638,27 +703,21 @@ struct Viewer {
         mapFigure.absolute = true; // (FldMap::ChangeArea: BindAnimator(figure, 0, ...))
         // the dungeon's script sets the area up (evt000: which gimmicks show, which collide)
         if (!script) script = std::make_unique<cr2::FieldScript>(archive, game);
-        if (!script->enter(map, field.gimmicks())) SDL_Log("%s's script: %s", map.c_str(), script->error().c_str());
+        script->events().autoPage = pageSeconds;
+        if (!script->enter(map, field.gimmicks(), entry)) SDL_Log("%s's script: %s", map.c_str(), script->error().c_str());
+        if (!playMode && script->running() && !script->runToEnd()) // (--field: the area as its set-up leaves it; --play: as it runs)
+            SDL_Log("%s's %s: %s", map.c_str(), entry.c_str(), script->error().empty() ? "still running" : script->error().c_str());
+        SDL_Log("%s: %s %s", map.c_str(), entry.c_str(), script->running() ? "running" : "done");
+        fieldClock = 0;
         field.setSolidGimmicks([this](const cr2::Gimmick& g) {
             const auto it = script->gimmicks().find(g.id);
             return script->visible(g) && (it == script->gimmicks().end() || it->second.collision);
         });
-        // the gimmicks shown with a figure: placed by their joints, NPCs idling (FldNPC: <figure>fn01)
-        for (ViewFigure& g : gimmicks) unload(g);
-        gimmicks.clear();
-        for (const cr2::Gimmick& gm : field.gimmicks()) {
-            if (gm.figure.empty() || !archive.contains(gm.figure + ".geom") || !script->visible(gm)) continue;
-            ViewFigure g;
-            cr2::JointTransform t;
-            std::memcpy(t.rotation, gm.rotation.data(), sizeof t.rotation);
-            std::memcpy(t.translation, gm.position, sizeof t.translation);
-            t.scale[0] = t.scale[1] = t.scale[2] = gm.scale;
-            g.place = t.matrix();
-            if (!loadFigure(gm.figure + ".geom", g, &err)) continue;
-            if (gm.kind == cr2::Gimmick::Npc) playMotion(g, "fn01");
-            gimmicks.push_back(std::move(g));
-        }
-        if (!field.point(at, player)) {
+        shownGimmicks.clear();
+        refreshGimmicks();
+        if (at.empty()) {
+            // (where the leader stood)
+        } else if (!field.point(at, player)) {
             SDL_Log("%s: no point %s; the points:", map.c_str(), at.c_str());
             for (const std::string& n : field.pointNames()) SDL_Log("  %s", n.c_str());
         }
@@ -673,6 +732,11 @@ struct Viewer {
         std::memcpy(playerPrev, player, sizeof player);
         std::memcpy(playerCur, player, sizeof player);
         stepClock = 0, substep = 0;
+        insideEvents.clear();
+        { // (where the leader stands as the area starts: those boxes don't fire till it leaves them)
+            for (const cr2::Gimmick& g : field.gimmicks())
+                if (g.kind == cr2::Gimmick::Event && !g.check && g.touches(player, 0.02f)) insideEvents.insert(g.name);
+        }
         std::string exits;
         for (const std::string& e : field.exitNames()) exits += " " + e;
         SDL_Log("%zu gimmicks, %zu with figures; layers bg [%s] fg [%s]", field.gimmicks().size(), gimmicks.size(), field.backgroundImage().c_str(), field.foregroundImage().c_str());
@@ -688,6 +752,112 @@ struct Viewer {
         return loadTable(binary, dataPath) && enterMap(map, at);
     }
 
+    // The field's script, a coroutine stepped at the game's 20 updates a second (its events'
+    // scene, windows and fades with it); the leader held while it runs, as FldMain holds it
+    float fieldClock = 0, pageSeconds = 3.0f;
+    bool fieldScriptRunning() const { return script && script->running(); }
+    void fieldUpdate(float dt) {
+        if (!script) return;
+        fieldClock = std::min(fieldClock + dt, 0.25f);
+        for (; fieldClock >= cr2::EventRuntime::kTick; fieldClock -= cr2::EventRuntime::kTick) {
+            if (pendingBranch) {
+                pendingBranch = false;
+                branchAfterField();
+                if (!fieldMode) return;
+                continue;
+            }
+            if (!script->running()) continue;
+            if (!script->tick()) SDL_Log("%s's script: %s", field.info().name.c_str(), script->error().c_str());
+            refreshGimmicks();
+            if (!script->running()) {
+                SDL_Log("%s: the script ended", field.info().name.c_str());
+                if (playMode) branchAfterField();
+                if (!fieldMode) return; // (gone to a vista)
+            }
+        }
+    }
+
+    // A frame's time: the vista's event, else the field (its script, then the leader - held while
+    // the script runs)
+    void advance(float dt, float sx, float sy, bool run) {
+        if (eventMode) {
+            updateEvent(dt);
+        } else if (fieldMode) {
+            fieldUpdate(dt);
+            if (fieldMode && !eventMode) {
+                const bool held = fieldScriptRunning();
+                walk(dt, held ? 0 : sx, held ? 0 : sy, run);
+            }
+        }
+    }
+
+    // The events' runtime the screen shows: the vista's, else the field's
+    cr2::EventRuntime* activeEvents() { return eventMode ? event.get() : script ? &script->events() : nullptr; }
+
+    // --play: the game's flow - the field's entry, then what it reserved (GameState::next):
+    // another area (SetPopPoint), a battle, a vista event (FldMain::BranchAfterEvent); after a
+    // vista, its battle, another vista, else the field again (VistaMain::BranchAfterVista: evt200
+    // after SetComeFromVistaToField); after a battle the field (evt100). Battles aren't in yet:
+    // one is taken as won.
+    bool playMode = false;
+    std::string returnMap;
+    float returnPlayer[3] = {0, 0, 0}, returnHeading = 0;
+    void branchAfterField() {
+        cr2::GameState::Next& n = game.next;
+        if (!n.popPoint.empty()) {
+            const std::string pp = n.popPoint;
+            n.popPoint.clear();
+            SDL_Log("play: to %s", pp.c_str());
+            enterMap(pp.substr(0, 5), pp);
+        } else if (n.battle >= 0) {
+            returnMap = field.info().name, std::memcpy(returnPlayer, player, sizeof player), returnHeading = heading;
+            skipBattle();
+        } else if (n.vista) {
+            returnMap = field.info().name, std::memcpy(returnPlayer, player, sizeof player), returnHeading = heading;
+            n.vista = false;
+            SDL_Log("play: vista %s in %s", n.vistaFunction.c_str(), n.vistaMap.c_str());
+            if (!startVista(n.vistaFunction, n.vistaMap)) returnToField(-1);
+        }
+    }
+    void skipBattle() {
+        cr2::GameState::Next& n = game.next;
+        SDL_Log("play: battle %d - battles aren't in yet: taken as won", n.battle);
+        n.battle = -1;
+        ++battlesSkipped;
+        if (n.vista) { // (BtlMain::Exit: a vista reserved goes on to it)
+            n.vista = false;
+            if (startVista(n.vistaFunction, n.vistaMap)) return;
+        }
+        returnToField(1);
+    }
+    int battlesSkipped = 0;
+    void branchAfterVista() {
+        cr2::GameState::Next& n = game.next;
+        if (n.battle >= 0) skipBattle();
+        else if (n.vista) {
+            n.vista = false;
+            SDL_Log("play: vista %s in %s", n.vistaFunction.c_str(), n.vistaMap.c_str());
+            if (!startVista(n.vistaFunction, n.vistaMap)) returnToField(n.fieldMode);
+        } else returnToField(n.fieldMode);
+    }
+    void returnToField(int mode) {
+        cr2::GameState::Next& n = game.next;
+        const std::string entry = mode == 1 ? "evt100" : mode == 2 ? "evt200" : "evt000";
+        n.fieldMode = -1;
+        eventMode = false;
+        dev->resetHistory();
+        if (!n.popPoint.empty()) {
+            const std::string pp = n.popPoint;
+            n.popPoint.clear();
+            SDL_Log("play: to %s (%s)", pp.c_str(), entry.c_str());
+            enterMap(pp.substr(0, 5), pp, entry);
+        } else {
+            SDL_Log("play: back to %s (%s)", returnMap.c_str(), entry.c_str());
+            std::memcpy(player, returnPlayer, sizeof player), heading = returnHeading;
+            enterMap(returnMap, "", entry);
+        }
+    }
+
     // The event (--event): its runtime, the vista's map figure, a figure for each of the scene's
     // models (in its order)
     std::unique_ptr<cr2::EventRuntime> event;
@@ -701,7 +871,15 @@ struct Viewer {
     bool eventEnded = false, messageLogged = false;
 
     bool startEvent(const std::string& function, const std::string& map, float page) {
-        std::string err;
+        initEventDrawing();
+        pageSeconds = page;
+        return startVista(function, map);
+    }
+
+    bool eventDrawingReady = false;
+    void initEventDrawing() {
+        if (eventDrawingReady) return;
+        eventDrawingReady = true;
         // the fades' colours (InterfaceMain's fade windows: the figures fadeb, fadew, fadef, their
         // material's DiffuseColor); the encounter's wipe black
         const char* fades[3] = {"fadeb", "fadew", "fadef"};
@@ -715,10 +893,20 @@ struct Viewer {
         px.width = px.height = 1;
         px.rgba = {255, 255, 255, 255};
         white = dev->upload(px);
+    }
+
+    // VistaMain: the map's figure, the event's script (its scene's figures follow it)
+    bool startVista(const std::string& function, const std::string& map) {
+        std::string err;
+        unload(vistaMap);
+        vistaMap = ViewFigure();
+        for (ViewFigure& f : eventFigures) unload(f);
+        eventFigures.clear(), eventFigureNames.clear();
+        eventEnded = false, eventClock = 0, messageLogged = false;
         if (map != "null" && !loadFigure(map + ".geom", vistaMap, &err)) SDL_Log("vista %s: %s", map.c_str(), err.c_str());
         vistaMap.absolute = true; // (VistaMain::LoadMapData: slot 0)
         event = std::make_unique<cr2::EventRuntime>(archive, game);
-        event->autoPage = page;
+        event->autoPage = pageSeconds;
         if (!event->start(function)) {
             SDL_Log("event %s: %s", function.c_str(), event->error().c_str());
             return false;
@@ -742,6 +930,10 @@ struct Viewer {
             eventEnded = true;
             SDL_Log("event ended at frame %d (%.2f s)%s", event->frame(), event->frame() * cr2::EventRuntime::kTick,
                     event->battle() >= 0 ? (": battle " + std::to_string(event->battle())).c_str() : "");
+            if (playMode) {
+                branchAfterVista();
+                return;
+            }
         }
         if (event->messageShown() != messageLogged) {
             messageLogged = event->messageShown();
@@ -763,11 +955,11 @@ struct Viewer {
     }
 
     // a frame between the event's updates: how far past the last one it is (none once it ended)
-    float eventLead() const { return eventEnded ? 0.0f : eventClock; }
+    float eventLead() const { return eventMode ? (eventEnded ? 0.0f : eventClock) : fieldClock; }
 
     void updateEvent(float dt) {
         eventClock = std::min(eventClock + dt, 0.25f);
-        for (; eventClock >= cr2::EventRuntime::kTick; eventClock -= cr2::EventRuntime::kTick) stepEvent();
+        for (; eventClock >= cr2::EventRuntime::kTick && eventMode; eventClock -= cr2::EventRuntime::kTick) stepEvent();
     }
 
     // the models where the scene has them, playing what the script chose (ChangeAnimator: their
@@ -934,10 +1126,12 @@ struct Viewer {
     }
 
     void drawWindow(WindowLayout& wl, bool showsMessage, int w, int h) {
+        cr2::EventRuntime* ev = activeEvents();
+        if (!ev) return;
         const float aspect = float(w) / float(std::max(h, 1));
         wl.fig.place = cr2::Mat34();
         if (wl.stretch && aspect >= 1.5f) wl.fig.place.m[0] = aspect / 1.5f;
-        const std::string speaker = showsMessage && wl.nameTag ? event->speakerName() : std::string();
+        const std::string speaker = showsMessage && wl.nameTag ? ev->speakerName() : std::string();
         if (wl.nameTag) { // (the vista's: the name line in while someone speaks)
             const std::string want = speaker.empty() ? "vstwin_io.anim" : "vstwin_talk.anim";
             const auto anim = std::find(wl.fig.anims.begin(), wl.fig.anims.end(), want);
@@ -959,8 +1153,8 @@ struct Viewer {
         // the page's text: made again when it changes (or the screen's scale does)
         const float k = std::min(float(w) / 0.96f, float(h) / 0.64f);
         const int px = int(k + 0.5f);
-        std::string key = std::to_string(event->messageWindow()) + "\n" + speaker + "\n" + std::to_string(event->page()) + "\n";
-        for (const cr2::TextLine& ln : event->message().pages[size_t(event->page())].lines) key += ln.text + "\n";
+        std::string key = std::to_string(ev->messageWindow()) + "\n" + speaker + "\n" + std::to_string(ev->page()) + "\n";
+        for (const cr2::TextLine& ln : ev->message().pages[size_t(ev->page())].lines) key += ln.text + "\n";
         if (key != shownText || px != shownPx) {
             for (TextQuad& q : textQuads) dev->destroy(q.tex);
             textQuads.clear();
@@ -995,7 +1189,7 @@ struct Viewer {
                 cr2::textColour(colour, q.rgb);
                 textQuads.push_back(q);
             };
-            const std::vector<cr2::TextLine>& lines = event->message().pages[size_t(event->page())].lines;
+            const std::vector<cr2::TextLine>& lines = ev->message().pages[size_t(ev->page())].lines;
             if (wl.nameTag) {
                 add(speaker, 0, 0, true);
                 const bool centred = !lines.empty() && lines[0].centred;
@@ -1008,7 +1202,7 @@ struct Viewer {
             // as far as it has typed (MenuText: the characters shown so far, the rest cut off)
             float tw = q.w;
             if (q.from >= 0 && !q.pen.empty()) {
-                const int n = std::clamp(event->revealed() - q.from, 0, int(q.pen.size()) - 1);
+                const int n = std::clamp(ev->revealed() - q.from, 0, int(q.pen.size()) - 1);
                 if (n == 0) continue;
                 tw = std::min(q.w, q.pen[size_t(n)]);
             }
@@ -1020,7 +1214,7 @@ struct Viewer {
         }
         // the page cursor, looping, once the page is typed
         float cx, cy;
-        if (event->typed() && !pageCursor.meshes.empty() && !wl.cursorJoint.empty() && windowJoint(wl, wl.cursorJoint, cx, cy)) {
+        if (ev->typed() && !pageCursor.meshes.empty() && !wl.cursorJoint.empty() && windowJoint(wl, wl.cursorJoint, cx, cy)) {
             pageCursor.place = cr2::Mat34();
             pageCursor.place.m[3] = cx, pageCursor.place.m[7] = cy;
             pose(pageCursor, time);
@@ -1031,7 +1225,9 @@ struct Viewer {
     // the event's UI, over the resolved scene: the fade, then the windows over it (their depths
     // in front of the fade windows')
     void drawEventUi() {
-        const cr2::EventFade& fd = event->fade();
+        cr2::EventRuntime* ev = activeEvents();
+        if (!ev || !eventDrawingReady) return;
+        const cr2::EventFade& fd = ev->fade();
         const float alpha = fd.at(eventLead() / cr2::EventRuntime::kTick);
         if (alpha > 0 && white.id) {
             static const float kScreen[24] = {-1, -1, 0, 0, 1, -1, 1, 0, 1, 1, 1, 1, -1, -1, 0, 0, 1, 1, 1, 1, -1, 1, 0, 1};
@@ -1040,11 +1236,11 @@ struct Viewer {
             const float rgba[4] = {c[0], c[1], c[2], alpha};
             dev->drawQuad(white, kScreen, id.data(), rgba);
         }
-        const bool message = event->messageShown() && event->page() < int(event->message().pages.size());
-        if (event->windowOpen(cr2::EventRuntime::Vista))
-            drawWindow(vistaWindow, message && event->messageWindow() == cr2::EventRuntime::Vista, screenW, screenH);
-        if (event->windowOpen(cr2::EventRuntime::Narration))
-            drawWindow(narrationWindow, message && event->messageWindow() == cr2::EventRuntime::Narration, screenW, screenH);
+        const bool message = ev->messageShown() && ev->page() < int(ev->message().pages.size());
+        if (ev->windowOpen(cr2::EventRuntime::Vista))
+            drawWindow(vistaWindow, message && ev->messageWindow() == cr2::EventRuntime::Vista, screenW, screenH);
+        if (ev->windowOpen(cr2::EventRuntime::Narration))
+            drawWindow(narrationWindow, message && ev->messageWindow() == cr2::EventRuntime::Narration, screenW, screenH);
     }
 };
 
@@ -1081,7 +1277,7 @@ std::string upscaleName(const cr2::UpscaleSettings& u) {
 int main(int argc, char** argv) {
     std::string data, model, capture, animName, renderer = "vulkan", lights = "d0101c", fieldName, at = "defaultPos", binary;
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
-    std::string eventName, vista = "null", fontPath;
+    std::string eventName, vista = "null", fontPath, playFrom;
     float page = 3.0f;
     int width = 0, height = 0;    // the window (--size; else the resolution's, fitted to the display)
     int resW = 0, resH = 0;       // --resolution: the output frames (else the window's)
@@ -1111,6 +1307,7 @@ int main(int argc, char** argv) {
         else if (a == "--vista" && next) vista = next, ++i;
         else if (a == "--page" && next) page = float(std::atof(next)), ++i;
         else if (a == "--font" && next) fontPath = next, ++i;
+        else if (a == "--play") playFrom = next && next[0] != '-' ? (++i, next) : "d1020";
         else if (a == "--resolution" && next) std::sscanf(next, "%dx%d", &resW, &resH), ++i;
         else if (a == "--upscaler" && next) upscaler = next, ++i;
         else if (a == "--quality" && next) quality = next, ++i;
@@ -1200,6 +1397,18 @@ int main(int argc, char** argv) {
     v.upscale = upscale;
     dev->setUpscaler(upscale);
     v.shaders = std::make_unique<cr2::ShaderLibrary>(v.archive);
+    if (!playFrom.empty()) fieldName = playFrom, v.playMode = true; // (a new game: every flag clear)
+    if (!fieldName.empty() || !eventName.empty()) {
+        // the font: --font, CR2_FONT, the Vita's beside its archive, else the system's
+        std::string dataDir = data.substr(0, data.find_last_of("/\\") == std::string::npos ? 0 : data.find_last_of("/\\") + 1);
+        const char* envFont = SDL_getenv("CR2_FONT");
+        const std::string fp = cr2::TextRasterizer::firstFont({fontPath, envFont ? envFont : "", dataDir + "font/TBGoPro-Bold.otf",
+                                                               "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+                                                               "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/liberation/LiberationSans-Regular.ttf"});
+        v.loadMessageWindow(fp);
+        v.initEventDrawing();
+        v.pageSeconds = page;
+    }
     if (!fieldName.empty()) {
         if (!v.loadField(fieldName, at, binary, data)) return 1;
     } else if (lights != "none") {
@@ -1208,13 +1417,6 @@ int main(int argc, char** argv) {
     }
     v.load(start);
     if (!eventName.empty()) {
-        // the font: --font, CR2_FONT, the Vita's beside its archive, else the system's
-        std::string dataDir = data.substr(0, data.find_last_of("/\\") == std::string::npos ? 0 : data.find_last_of("/\\") + 1);
-        const char* envFont = SDL_getenv("CR2_FONT");
-        const std::string fp = cr2::TextRasterizer::firstFont({fontPath, envFont ? envFont : "", dataDir + "font/TBGoPro-Bold.otf",
-                                                               "/usr/share/fonts/noto/NotoSans-Regular.ttf",
-                                                               "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/liberation/LiberationSans-Regular.ttf"});
-        v.loadMessageWindow(fp);
         if (!v.startEvent(eventName, vista, page)) return 1;
         for (float t = 0; t + cr2::EventRuntime::kTick * 0.5f < startTime; t += cr2::EventRuntime::kTick) v.stepEvent();
         startTime = 0;
@@ -1226,7 +1428,17 @@ int main(int argc, char** argv) {
         v.loadAnim(v.fig, size_t(it - v.fig.anims.begin()));
     }
     if (v.fieldMode && animName.empty()) v.playMotion(v.fig, "fn01");
-    for (float t = 0; v.fieldMode && t < walkSeconds; t += 1.0f / 60.0f) v.walk(1.0f / 60.0f, walkX, walkY, true);
+    if (v.playMode) { // --time: the game played that long first (60 frames a second), then --walk
+        for (float t = 0; t + 0.5f / 60.0f < startTime; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, 0, 0, false);
+        for (float t = 0; t < walkSeconds; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, walkX, walkY, true);
+        for (float t = 0; t < runSeconds; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, 0, 0, false); // (--run: on after the walk)
+        runSeconds = 0;
+        SDL_Log("play: after %.2f s (+ %.2f s walking) %s, %d battles skipped", startTime, walkSeconds,
+                v.eventMode ? ("in the vista " + v.status).c_str() : ("on " + v.field.info().name).c_str(), v.battlesSkipped);
+        startTime = 0;
+    } else {
+        for (float t = 0; v.fieldMode && t < walkSeconds; t += 1.0f / 60.0f) v.walk(1.0f / 60.0f, walkX, walkY, true);
+    }
     if (v.fieldMode && walkSeconds > 0) SDL_Log("after --walk: %s at (%.3f %.3f %.3f)", v.field.info().name.c_str(), v.player[0], v.player[1], v.player[2]);
     v.time = startTime;
     v.pose();
@@ -1262,8 +1474,7 @@ int main(int argc, char** argv) {
         // --run: frames as the window would show them, the event and animations going on
         for (int k = 0; k < int(runSeconds * 60.0f + 0.5f); ++k) {
             v.time += 1.0f / 60.0f;
-            if (v.eventMode) v.updateEvent(1.0f / 60.0f);
-            if (v.fieldMode) v.walk(1.0f / 60.0f, walkX, walkY, true); // (on in --walk's direction)
+            v.advance(1.0f / 60.0f, walkX, walkY, true); // (the field on in --walk's direction)
             v.pose();
             v.draw(w, h);
             dev->endFrame(false);
@@ -1316,10 +1527,8 @@ int main(int argc, char** argv) {
                         SDL_Log("output: %s", describe().c_str());
                         continue;
                     }
-                    if (v.eventMode) {
-                        if (k == SDLK_RETURN || k == SDLK_KP_ENTER) v.event->advance();
-                        continue;
-                    }
+                    if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && v.activeEvents()) v.activeEvents()->advance(); // (a tap)
+                    if (v.eventMode) continue;
                     ViewFigure& f = v.fig;
                     if (v.fieldMode) {
                         if ((k == SDLK_PAGEUP || k == SDLK_PAGEDOWN) && !f.anims.empty())
@@ -1335,7 +1544,7 @@ int main(int argc, char** argv) {
                         v.loadAnim(f, (f.animIndex + (k == SDLK_DOWN ? 1 : f.anims.size() - 1)) % f.anims.size());
                 } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
                     dragging = true;
-                    if (v.eventMode) v.event->advance();
+                    if ((v.eventMode || v.fieldMode) && v.activeEvents()) v.activeEvents()->advance();
                 }
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) dragging = false;
                 else if (e.type == SDL_EVENT_MOUSE_MOTION && dragging && !v.fieldMode) {
@@ -1359,12 +1568,11 @@ int main(int argc, char** argv) {
             }
             if (!v.paused) v.time += dt;
             last = now;
-            if (v.eventMode && !v.paused) v.updateEvent(dt);
-            if (v.fieldMode) { // the arrows / WASD run, with Shift walk
+            if (!v.paused && (v.eventMode || v.fieldMode)) { // the arrows / WASD run, with Shift walk
                 const bool* keys = SDL_GetKeyboardState(nullptr);
                 const float sx = float((keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) - (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]));
                 const float sy = float((keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W]) - (keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S]));
-                v.walk(dt, sx, sy, !(keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]));
+                v.advance(dt, sx, sy, !(keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]));
             }
             if (v.fig.animLoaded && v.time > v.fig.anim.duration()) v.time = std::fmod(v.time, std::max(v.fig.anim.duration(), 0.05f));
             v.pose();

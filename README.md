@@ -134,6 +134,7 @@ One or more of:
 | `tools/msg.py` | the text: `check` every message, `show` one in your terminal |
 | `tools/anim.py` | Edge animations: evaluate a pose at any frame; `check` every animation |
 | `tools/skel.py` | Edge skeletons: base pose, hierarchy, world matrices; `check` against the inverse binds |
+| `tools/gen_motion_table.py` | the battle motions' timing table (BtlMotionTable, built in the game's code) from the decompilation, as `engine/src/battle/motiontable.inc` |
 | `tools/sq_bindings.py` | the scripts' native API, from the Android library's decompilation |
 | `tools/re_setup.sh` | Ghidra groundwork in `re/` (never committed): the Android library (x86 and armv7, named), the iPad and Vita builds named from it |
 | `tools/vita_self.py` | the Vita's eboot (a fake-signed SELF) to an ELF plus its imports |

@@ -1438,6 +1438,7 @@ struct Viewer {
             // FldMain's order: the background (and midground), the 3D figures, the foreground
             // the scroll: following the leader, else the script's camera (a slide drawn on between updates)
             cr2::FieldFrame fr;
+            field.setQuake(script ? script->quakeOffset() : 0.0f); // (Cr3FieldMapCamera.QuakeStart)
             if (script && script->camera().scripted()) {
                 const cr2::FieldScript::Camera& c = script->camera();
                 float cx = c.x, cy = c.y;

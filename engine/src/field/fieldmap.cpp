@@ -239,6 +239,7 @@ FieldFrame FieldMap::frameAt(int w, int h, const float* focus, const float* scri
         bx = sx * 0.4f, by = sy * 0.4f;
     }
     out.scroll[0] = sx, out.scroll[1] = sy;
+    if (quakeY_ != 0) sy += quakeY_ * (W / 960.0f), by += quakeY_ * (W / 960.0f); // (the quake: after the hold)
     out.zNear = near_, out.zFar = far_, out.fovY = fovY_;
     // (the game keeps the offsets as ints)
     const float ox = std::trunc(sx), oy = std::trunc(sy);

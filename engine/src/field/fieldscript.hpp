@@ -65,6 +65,11 @@ public:
     // one of the game's updates: the field's event state, the script resumed when its wait is up.
     // False: it failed
     bool tick();
+    // Cr3FieldMapCamera.QuakeStart(width, from %, to %, frames) (FldUtilFieldMapCameraQuakeStart:
+    // the rates x 0.01, the frames x 0.05 s; FldMap::UpdateQuake): each update the scroll moved
+    // width x the rate - from .. to over the time, then held, or stopped when it ends at 0 -, one
+    // way then the other (in a 960-wide screen's pixels); QuakeStop
+    float quakeOffset() const { return quake_.on ? quake_.offset : 0.0f; }
     bool running() const { return vm_ && vm_->waiting(); }
     bool hasFunction(const std::string& f) const { return vm_ && vm_->hasFunction(f); }
     // ticks until the script finishes (its pages turning by themselves) and the fade or camera
@@ -185,6 +190,11 @@ private:
     int dungeon_ = 0, area_ = 0;
     std::map<std::string, GimmickState> gimmicks_;
     bool layers_[4] = {true, true, true, true};
+    struct Quake {
+        bool on = false;
+        float width = 0, from = 0, to = 0, seconds = 0, time = 0, offset = 0;
+        int parity = 0;
+    } quake_;
     bool playerVisible_ = true;
     GimmickState playerAlpha_;
     int ticks_ = 0;

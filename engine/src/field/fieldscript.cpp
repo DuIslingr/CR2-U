@@ -1,4 +1,3 @@
-#include <cstdio>
 #include "field/fieldscript.hpp"
 
 #include <algorithm>
@@ -157,6 +156,12 @@ void FieldScript::bind() {
         placement_.heading = true;
         placement_.yaw = std::atan2(w.m[2], w.m[10]); // (where its +z faces)
     });
+    vm.setNative("Cr3FieldMapCamera", "QuakeStart", [this](NativeCall& c) {
+        quake_ = Quake();
+        quake_.on = true, quake_.width = float(c.integer(0)), quake_.from = float(c.integer(1)) * 0.01f;
+        quake_.to = float(c.integer(2)) * 0.01f, quake_.seconds = float(c.integer(3)) * 0.05f;
+    });
+    vm.setNative("Cr3FieldMapCamera", "QuakeStop", [this](NativeCall&) { quake_ = Quake(); });
     vm.setNative("Cr3FieldMap", "SetVisibleBG", [this](NativeCall& c) { layers_[0] = c.boolean(0); });
     vm.setNative("Cr3FieldMap", "SetVisibleFG", [this](NativeCall& c) { layers_[1] = c.boolean(0); });
     vm.setNative("Cr3FieldMap", "SetVisibleMG", [this](NativeCall& c) { layers_[2] = c.boolean(0); });
@@ -231,6 +236,21 @@ bool FieldScript::tick() {
     for (auto& [id, g] : gimmicks_)
         if (g.alphaTick < g.alphaUpdates) ++g.alphaTick; // (FldAlphaManager::Update)
     if (playerAlpha_.alphaTick < playerAlpha_.alphaUpdates) ++playerAlpha_.alphaTick;
+    if (quake_.on) { // (FldMap::Update -> UpdateQuake, an update's time)
+        float rate = quake_.from;
+        if (quake_.seconds >= 0) {
+            quake_.time += EventRuntime::kTick;
+            if (quake_.time >= quake_.seconds) {
+                quake_.time = quake_.seconds;
+                if (quake_.to <= 0) quake_ = Quake();
+            }
+            if (quake_.seconds > 0) rate = quake_.from + (quake_.to - quake_.from) * (quake_.time / quake_.seconds);
+        }
+        if (quake_.on) {
+            quake_.offset = (quake_.parity == 0 ? -rate : rate) * quake_.width;
+            quake_.parity = (quake_.parity + 1) % 2;
+        }
+    }
     if (camera_.frames > 0 && camera_.t < camera_.frames) { // (a slide: a frame an update)
         const float k = float(++camera_.t) / float(camera_.frames);
         camera_.x = camera_.fromX + (camera_.toX - camera_.fromX) * k;

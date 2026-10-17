@@ -315,6 +315,11 @@ no camera or lights of its own) puts its models among the field's figures, seen 
 field's camera; the scripts hide the leader meanwhile (`Cr3FieldMapCharacter.SetVisible`) and at
 the end put it where the scene's `ev_p000` joint is (`SetPos_p000` / `SetRot_p000`). The event
 ends on a fade to black; what called it (the area's set-up, `D01_01_05_set`) fades back in. The
+field's camera shakes with `Cr3FieldMapCamera.QuakeStart(width, from %, to %, frames)` (FldUtil's
+assembly scales the rates by 0.01 and the frames by 0.05 s, which the decompilation hides;
+FldMap::UpdateQuake): each update the scroll's y moves width x the rate - from .. to over the time,
+then held, or stopped when it ends at 0 - one way then the other, added after the scroll is held
+in the painting (the midground half of it); `QuakeStop` ends it. The
 field's camera is the script's when it says (`Cr3FieldMapCamera`, in pixels of a 960-wide screen,
 the scroll negated): `SetPos(x, y)` puts it there, `CalcParameter(frames, fromX, fromY, toX,
 toY)` slides it a frame an update, `GetPos_X` / `GetPos_Y` read it, `SetMode(0)` gives it back to

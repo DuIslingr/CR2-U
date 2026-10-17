@@ -80,6 +80,7 @@ public:
     float windowAge(int w) const;
     bool windowClosing(int w) const { return closing_.count(w) != 0; }
     int messageWindow() const { return messageWindow_; }
+    int itemShown() const { return itemShown_; } // (window 7's item: EvtWindow::SetItemMessage)
     bool messageShown() const { return message_ > 0; }
     const ParsedMessage& message() const { return parsed_; }
     int page() const { return page_; }
@@ -143,6 +144,8 @@ private:
     std::map<int, std::string> faces_;
     TextData text_, names_;
     std::map<int, TextData> windowText_; // (LoadMessageData(window, name): that window's own)
+    TextData itemNames_;                 // (message\ItemName: SetItemMessage's)
+    int itemShown_ = 0;                  // (the item SetItemMessage named: its icon)
     TutorialPicture tutorialPicture_;
     std::set<int> openWindows_;
     std::map<int, float> opened_, closing_; // (window -> seconds since)

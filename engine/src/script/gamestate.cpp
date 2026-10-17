@@ -98,6 +98,11 @@ std::string GameState::save(const std::map<std::string, std::string>& extra) con
     }
     for (int s = 0; s < 32; ++s) o << "sopia " << s << ' ' << int(sopiaLevel[s]) << ' ' << sopiaExp[s] << '\n';
     o << "owned " << sopiaOwned << '\n';
+    o << "difficulty " << difficulty << '\n';
+    o << "boxes " << boxes.table;
+    for (int k = 0; k < 3; ++k)
+        for (int n = 0; n < 10; ++n) o << ' ' << int(boxes.set[k][n]) * 1 + int(boxes.open[k][n]) * 2;
+    o << '\n';
     o << "global";
     for (int v : globalWork) o << ' ' << v;
     o << '\n';
@@ -144,6 +149,16 @@ bool GameState::load(const std::string& text, std::map<std::string, std::string>
             if (l >> s >> lv >> e && s >= 0 && s < 32) sopiaLevel[s] = static_cast<signed char>(lv), sopiaExp[s] = e;
         } else if (key == "owned") {
             l >> sopiaOwned;
+        } else if (key == "difficulty") {
+            l >> difficulty;
+        } else if (key == "boxes") {
+            l >> boxes.table;
+            for (int k = 0; k < 3; ++k)
+                for (int n = 0; n < 10; ++n) {
+                    int v = 0;
+                    l >> v;
+                    boxes.set[k][n] = v & 1, boxes.open[k][n] = (v & 2) != 0;
+                }
         } else if (key == "global") {
             for (int& v : globalWork) l >> v;
         } else if (extra) {

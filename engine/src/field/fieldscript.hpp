@@ -69,6 +69,8 @@ public:
 
     const std::map<std::string, GimmickState>& gimmicks() const { return gimmicks_; }
     bool visible(const Gimmick& g) const;
+    // the box tapped last's item (Cr3GimmickData.GetItemID: FldMain's box - its box_msg's)
+    int boxItem = -1;
     int dungeon() const { return dungeon_; }
     int area() const { return area_; }
     bool layerVisible(int layer) const { return layers_[layer]; } // 0 bg, 1 fg, 2 mg, 3 the 3D figure

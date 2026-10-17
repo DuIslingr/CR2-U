@@ -37,6 +37,9 @@ struct Gimmick {
     float jointScale[3] = {1, 1, 1};          // (the collision box's size x 100)
     float scale = 1;                           // the figure's: _scaleNNN / 100
     bool check = false;                        // _check: tapped
+    // a treasure box's kind (0 tbox, 1 obox - a key box -, 2 fbox) and number (the name's two digits:
+    // Cr3UtilGetNumberFromLocatorName); -1 not one
+    int boxKind = -1, boxNumber = -1;
     enum Shape { Ball, ShapeBox, Capsule } shape = Ball;
     const char* kindName() const;
     // a sphere of radius r at p meets the gimmick's shape (its joint's scale / 100: a ball's
@@ -45,7 +48,7 @@ struct Gimmick {
     // Tapping it (FldMain::CheckBalloon / CheckGimmickStart): a _check gimmick shown, its event on,
     // within its check length of the leader gets a balloon - NPCs, objects 0.2 (FldNPC / FldObject
     // +0x14), event boxes and effects 0.15 - and a tap anywhere calls the nearest one's function.
-    // 0: not one to tap (treasure boxes open by themselves: not yet)
+    // treasure boxes 0.2 (FldBox +0x14); 0: not one to tap
     float checkLength() const;
     // the balloon's height over it (FldUtilGetBalloonPosOffset: the table by name - c001 0.21,
     // obj002 0.23, ... - else NPCs 0.2, objects and events 0.25, effects 0.1)

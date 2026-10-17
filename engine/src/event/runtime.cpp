@@ -177,8 +177,26 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
         if (parsed_.pages.empty()) message_ = 0;
         else ++messagesSet_;
     });
+    // SetItemMessage(window, item): announce 0x75 ("... %s ...") with the item's name (EvtWindow::SetItemMessage)
+    vm.setNative("EvtWindow", "SetItemMessage", [this](NativeCall& c) {
+        const int w = c.integer(0, 7), id = c.integer(1, 0);
+        if (id <= 0) return;
+        if (itemNames_.count() == 0) loadText("ItemName", itemNames_);
+        const auto own = windowText_.find(w);
+        TextData announce;
+        if (own == windowText_.end()) loadText("AnnounceBattle", announce);
+        std::string t = (own != windowText_.end() ? own->second : announce).message(0x75, language);
+        if (const size_t p = t.find("%s"); p != std::string::npos) t.replace(p, 2, itemNames_.message(id, language));
+        messageWindow_ = w, message_ = 0x75, itemShown_ = id;
+        parsed_ = parseMessage(t);
+        page_ = 0, pageTime_ = 0, revealed_ = 0;
+        if (parsed_.pages.empty()) message_ = 0;
+        else ++messagesSet_;
+    });
     vm.setNative("EvtWindow", "CheckMessage", [this](NativeCall& c) { c.result(message_ == 0); });
-    vm.setNative("EvtWindow", "SkipMessage", [this](NativeCall&) { message_ = 0; });
+    // SkipMessage: the page shown whole at once (EvtWindowMessage::SkipMessage - InterfaceMain::
+    // SkipMessageWindowStringDisplay: its typing skipped; the message stays till a tap or Close)
+    vm.setNative("EvtWindow", "SkipMessage", [this](NativeCall&) { if (message_ > 0) revealed_ = 1 << 20; });
     // the fades: (type, frames), the 2s (type, frames, from %, to %)
     vm.setNative("Cr3Fade", "FadeIn", [this](NativeCall& c) { fade_.start(fadeColour(c.integer(0)), c.integer(1), 1, 0); });
     vm.setNative("Cr3Fade", "FadeOut", [this](NativeCall& c) { fade_.start(fadeColour(c.integer(0)), c.integer(1), 0, 1); });

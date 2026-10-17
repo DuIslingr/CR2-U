@@ -16,7 +16,9 @@ void FieldScript::bind() {
     vm.setNative("Cr3System", "GetDungeonNum", [this](NativeCall& c) { c.result(dungeon_); });
     vm.setNative("Cr3System", "GetAreaNum", [this](NativeCall& c) { c.result(area_); });
     vm.setNative("Cr3System", "GetSelectDungeonNum", [this](NativeCall& c) { c.result(dungeon_); });
-    vm.setNative("Cr3System", "GetDifficulty", [](NativeCall& c) { c.result(0); });
+    vm.setNative("Cr3System", "SetDifficulty", [this](NativeCall& c) { state_.difficulty = c.integer(0); }); // (Cr3UtilSetDifficulty)
+    vm.setNative("Cr3System", "GetDifficulty", [this](NativeCall& c) { c.result(state_.difficulty); });
+    vm.setNative("Cr3GimmickData", "GetItemID", [this](NativeCall& c) { c.result(boxItem); });
     auto gimmick = [this](NativeCall& c) -> GimmickState* {
         const auto it = gimmicks_.find(c.string(0));
         return it == gimmicks_.end() ? nullptr : &it->second;
@@ -145,6 +147,7 @@ bool FieldScript::runToEnd(int maxUpdates) {
 
 bool FieldScript::visible(const Gimmick& g) const {
     const auto it = gimmicks_.find(g.id);
+    if (g.kind == Gimmick::Box && !state_.boxes.isSet(g.boxKind, g.boxNumber)) return false; // (FldBox::Pose / Draw: one placed)
     return it == gimmicks_.end() ? g.kind != Gimmick::Npc : it->second.visible;
 }
 

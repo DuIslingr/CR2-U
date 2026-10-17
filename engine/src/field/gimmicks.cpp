@@ -17,6 +17,7 @@ float Gimmick::checkLength() const {
     if (!check) return 0;
     switch (kind) {
     case Npc:
+    case Box:
     case Object: return 0.2f;
     case Event:
     case Effect: return 0.15f;
@@ -122,6 +123,8 @@ std::vector<Gimmick> readGimmicks(const Skeleton& p, const std::vector<std::stri
             g.id = tag != std::string::npos && named ? n.substr(0, keep) + n.substr(tag + skip, 2) : n;
             g.function = g.kind == Gimmick::Event ? n.substr(0, 6) : g.id;
         }
+        if (g.kind == Gimmick::Box) // (FldBox::Init: tbox 0, obox 1, fbox 2; its number)
+            g.boxKind = has(n, "tbox") ? 0 : has(n, "obox") ? 1 : 2, g.boxNumber = g.id.size() > 5 ? std::atoi(g.id.c_str() + 5) : 0;
         g.shape = has(n, "_box") ? Gimmick::ShapeBox : has(n, "_cap") ? Gimmick::Capsule : Gimmick::Ball;
         out.push_back(std::move(g));
     }

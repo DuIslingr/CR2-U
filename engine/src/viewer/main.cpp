@@ -283,6 +283,13 @@ struct Viewer {
     // Gimmick::checkLength), the nearest the one a tap talks to (CalcNearestBalloonNum)
     std::vector<size_t> balloons; // (field.gimmicks() indices)
     int nearestBalloon = -1;
+    std::string boxesDungeon;               // (the dungeon the boxes were drawn for: "d01", "t01")
+    std::map<std::string, float> boxOpening; // (a box's gimmick name -> when it opened: its fa01)
+    static uint32_t boxRandom() { // (lrand48's part: a simple generator of the viewer's own)
+        static uint32_t x = 0x2545f491u;
+        x ^= x << 13, x ^= x >> 17, x ^= x << 5;
+        return x;
+    }
     void checkBalloons() {
         balloons.clear(), nearestBalloon = -1;
         if (!script || script->running()) return;
@@ -292,6 +299,7 @@ struct Viewer {
             const cr2::Gimmick& g = gs[i];
             const float reach = g.checkLength();
             if (reach <= 0 || !script->visible(g)) continue;
+            if (g.kind == cr2::Gimmick::Box && game.boxes.isOpen(g.boxKind, g.boxNumber)) continue; // (an opened box: none)
             const auto st = script->gimmicks().find(g.id);
             if (st != script->gimmicks().end() && !st->second.event) continue;
             const float d = std::hypot(g.position[0] - playerCur[0], g.position[1] - playerCur[1], g.position[2] - playerCur[2]); // (as of the update)
@@ -322,7 +330,20 @@ struct Viewer {
         const cr2::Gimmick& g = field.gimmicks()[size_t(nearestBalloon)];
         heading = std::atan2(g.position[0] - player[0], g.position[2] - player[2]);
         SDL_Log("%s: tapped %s - %s", field.info().name.c_str(), g.name.c_str(), g.function.c_str());
-        if (!script->call(g.function)) SDL_Log("%s", script->error().c_str());
+        std::string function = g.function;
+        if (g.kind == cr2::Gimmick::Box) { // (FldMain's balloon of a box: opened, then its function - box_msg)
+            if (g.boxKind == 1 && game.party[0] != 1) function = "Message_obox"; // (a key box: only Orlando opens it)
+            else {
+                const int item = game.boxes.item(g.boxKind, g.boxNumber, game.party);
+                game.boxes.markOpen(g.boxKind, g.boxNumber); // (FldBox::Open: Cr3UtilGetItem(item, 1), 0x153)
+                if (item > 0 && item < 300) game.itemCount[item] = static_cast<short>(std::min(game.itemCount[item] + 1, 99));
+                audio.playSe(g.boxKind == 1 ? 0x154 : 0x153, false);
+                boxOpening[g.name] = uiClock;
+                script->boxItem = item;
+                SDL_Log("%s: box %s - item %d (%d now)", field.info().name.c_str(), g.id.c_str(), item, item > 0 && item < 300 ? game.itemCount[item] : 0);
+            }
+        }
+        if (!script->call(function)) SDL_Log("%s", script->error().c_str());
         else if (!script->running() && playMode) pendingBranch = true;
         checkBalloons();
     }
@@ -639,7 +660,21 @@ struct Viewer {
             fig.place.m[0] = c, fig.place.m[2] = s, fig.place.m[8] = -s, fig.place.m[10] = c;
             fig.place.m[3] = player[0], fig.place.m[7] = player[1], fig.place.m[11] = player[2];
             pose(mapFigure, time);
-            for (ViewFigure& g : gimmicks) pose(g, time);
+            for (size_t k = 0; k < gimmicks.size(); ++k) { // (a box opening: fa01 once, then fn02 - FldBox::Open)
+                ViewFigure& g = gimmicks[k];
+                const auto op = k < shownGimmicks.size() ? boxOpening.find(shownGimmicks[k]) : boxOpening.end();
+                if (op != boxOpening.end()) {
+                    playMotion(g, "fa01");
+                    const float t = uiClock - op->second;
+                    if (g.animLoaded && t < g.anim.duration()) {
+                        pose(g, t, false);
+                        continue;
+                    }
+                    boxOpening.erase(op);
+                    playMotion(g, "fn02");
+                }
+                pose(g, time);
+            }
             if (script && script->events().scene().loaded()) poseEventModels(script->events());
         }
         pose(fig, time);
@@ -830,6 +865,7 @@ struct Viewer {
             g.place = t.matrix();
             if (!loadFigure(gm.figure + ".geom", g, &err)) continue;
             if (gm.kind == cr2::Gimmick::Npc) playMotion(g, "fn01");
+            if (gm.kind == cr2::Gimmick::Box) playMotion(g, game.boxes.isOpen(gm.boxKind, gm.boxNumber) ? "fn02" : "fn01"); // (FldBox: closed fn01, open fn02)
             gimmicks.push_back(std::move(g));
         }
     }
@@ -852,6 +888,16 @@ struct Viewer {
         if (!field.figureName().empty() && !loadFigure(field.figureName() + ".geom", mapFigure, &err))
             SDL_Log("%s: %s", field.figureName().c_str(), err.c_str());
         mapFigure.absolute = true; // (FldMap::ChangeArea: BindAnimator(figure, 0, ...))
+        // a dungeon entered anew: its treasure boxes drawn (FldMain::ChangeDungeonFunc; not with flag 0x7fb)
+        const std::string dungeon = map.substr(0, 3);
+        if (dungeon != boxesDungeon && !game.flag(0x7fb)) {
+            game.boxes.choose(game.difficulty, game.party, [] { return uint32_t(boxRandom()); });
+            int placed = 0;
+            for (int k = 0; k < 3; ++k)
+                for (int n = 0; n < cr2::TreasureBoxes::count(k); ++n) placed += game.boxes.isSet(k, n);
+            SDL_Log("%s: the treasure boxes drawn - table %d, %d placed", dungeon.c_str(), game.boxes.table, placed);
+        }
+        boxesDungeon = dungeon;
         // the dungeon's script sets the area up (evt000: which gimmicks show, which collide)
         if (!script) script = std::make_unique<cr2::FieldScript>(archive, game);
         script->events().autoPage = pageSeconds;
@@ -3070,6 +3116,8 @@ struct Viewer {
         std::string inAnim, outAnim;    // (opening / closing animators, posed at the window's age)
         bool lowerBelow3x2 = false;     // (narrower than 3:2: 0.0403125 lower)
         bool centredSlots = false;      // (no name tag: a centred page's lines in the slots after linesPerPage)
+        float frame = 0;                // (where its animation was posed: its joints' places)
+        bool outBackwards = false;      // (no out animator: the in one played back)
     };
     WindowLayout vistaWindow, narrationWindow, conversationWindow;
     // the tutorials' windows (HelpWindowMenu - SetHelpWindowParameter 0, interface 0x1a: annoWin,
@@ -3077,6 +3125,11 @@ struct Viewer {
     // white text, three lines a page at typeM_L01..L03, centred ones at typeM_C11..C13, their in /
     // out animators, wider across a screen wider than 3:2 (SetScale: aspect / 1.5)
     WindowLayout helpWindow, annoWindow;
+    // the system window (EvtSystemWindow, window 5 - SetSystemMessageWindowParameter, interface 0x20:
+    // SystemWindowMenu, sysWin_io): three lines at typeM_L01..L03 (its slot table, 0x5afff8), its io
+    // animator forward as it opens and back as it closes (InterfaceCloseAnimeSet: ChangeAnime 2)
+    WindowLayout systemWindow;
+    WindowLayout itemWindow; // (window 7, GetItemWindowMenu: getItem - its text at typeM_C01, the item's icon at call_mainIcon_id00)
     ViewFigure pageCursor;         // sendCsr_loop: once the page is typed
     ViewFigure conversationCursor; // msgCsr_loop: the conversation window's
     struct TextQuad {
@@ -3085,6 +3138,8 @@ struct Viewer {
         float rgb[3] = {1, 1, 1};
         std::vector<float> pen;           // each character's left edge and the end, in UI units
         int from = -1;                    // the page's characters before it (-1: shown whole - the name)
+        std::string joint;                // (its place: the joint's as the window's animation has it, + dx, dy)
+        float dx = 0, dy = 0;
     };
     std::vector<TextQuad> textQuads;
     std::string shownText; // (what textQuads were made for)
@@ -3121,6 +3176,13 @@ struct Viewer {
             wl->window = window;
             wl->inAnim = std::string(name) + "_in.anim", wl->outAnim = std::string(name) + "_out.anim";
         }
+        loadWindow(systemWindow, "syswin_io");
+        systemWindow.linesPerPage = 3, systemWindow.slots = {"01", "02", "03"}, systemWindow.window = cr2::EventRuntime::System;
+        systemWindow.inAnim = "syswin_io.anim", systemWindow.outBackwards = true;
+        systemWindow.fig.absolute = true; // (the figure's own animator: SetParameterDataBase's)
+        loadWindow(itemWindow, "getitem");
+        itemWindow.stretch = true, itemWindow.linesPerPage = 1, itemWindow.slots = {"01"}, itemWindow.window = 7;
+        itemWindow.inAnim = "getitem_in.anim", itemWindow.outAnim = "getitem_out.anim";
         loadWindow(narrationWindow, "narrationpos");
         for (int k = 1; k <= 30; ++k) {
             char n[4];
@@ -3162,7 +3224,8 @@ struct Viewer {
         const auto it = std::find(wl.joints.begin(), wl.joints.end(), name);
         if (it == wl.joints.end() || !wl.fig.skinned) return false;
         std::vector<cr2::JointTransform> p = wl.fig.skeleton.basePose;
-        if (wl.fig.animLoaded) p = wl.fig.anim.poseOver(wl.fig.skeleton.basePose, 0);
+        if (wl.fig.animLoaded)
+            p = wl.fig.absolute ? wl.fig.anim.poseAbsolute(wl.fig.skeleton.basePose, wl.frame) : wl.fig.anim.poseOver(wl.fig.skeleton.basePose, wl.frame);
         const std::vector<cr2::Mat34> w = wl.fig.skeleton.world(p, wl.fig.place);
         const size_t j = size_t(it - wl.joints.begin());
         if (j >= w.size()) return false;
@@ -3190,7 +3253,7 @@ struct Viewer {
         const std::string speaker = showsMessage && wl.nameTag ? ev->speakerName() : std::string();
         float at = 0; // (where in its animation)
         if (!wl.inAnim.empty()) { // (opening, then closing)
-            const std::string want = closing ? wl.outAnim : wl.inAnim;
+            const std::string want = closing && !wl.outBackwards ? wl.outAnim : wl.inAnim;
             const auto anim = std::find(wl.fig.anims.begin(), wl.fig.anims.end(), want);
             if (anim != wl.fig.anims.end() && (!wl.fig.animLoaded || wl.fig.anims[wl.fig.animIndex] != want)) {
                 const float keep = time;
@@ -3198,6 +3261,7 @@ struct Viewer {
                 time = keep;
             }
             at = std::max(ev->windowAge(wl.window), 0.0f) + eventLead();
+            if (closing && wl.outBackwards && wl.fig.animLoaded) at = std::max(wl.fig.anim.duration() - at, 0.0f);
         } else if (wl.nameTag) { // (the vista's: the name line in while someone speaks)
             const std::string want = speaker.empty() ? "vstwin_io.anim" : "vstwin_talk.anim";
             const auto anim = std::find(wl.fig.anims.begin(), wl.fig.anims.end(), want);
@@ -3208,6 +3272,7 @@ struct Viewer {
             }
         }
         pose(wl.fig, at, false);
+        wl.frame = wl.fig.animLoaded ? std::min(at * wl.fig.anim.sampleRate(), float(std::max(wl.fig.anim.frames() - 1, 1))) : 0;
         const Mat4 proj = uiProjection(w, h);
         Mat4 camera = cr2::mat4Identity();
         camera[14] = -0.881f; // (CAM_hud2D's z)
@@ -3252,6 +3317,7 @@ struct Viewer {
                 // ending there; the line's middle (size - height) / 2 from the joint
                 q.x = centred ? jx - q.w / 2 : right ? jx - q.w + float(drawn) / 2000.0f : jx - float(drawn) / 2000.0f;
                 q.y = jy + (float(drawn) / 1000.0f - q.h) / 2;
+                q.joint = joint, q.dx = q.x - jx, q.dy = q.y - jy;
                 cr2::textColour(colour, q.rgb);
                 textQuads.push_back(q);
             };
@@ -3269,7 +3335,9 @@ struct Viewer {
                 for (size_t i = 0; i < lines.size(); ++i) add(lines[i].text, i, lines[i].colour, false);
             }
         }
-        for (const TextQuad& q : textQuads) {
+        for (TextQuad& q : textQuads) {
+            float jx, jy; // (following its joint: a window sliding in)
+            if (!q.joint.empty() && windowJoint(wl, q.joint, jx, jy)) q.x = jx + q.dx, q.y = jy + q.dy;
             // as far as it has typed (MenuText: the characters shown so far, the rest cut off)
             float tw = q.w;
             if (q.from >= 0 && !q.pen.empty()) {
@@ -5511,7 +5579,8 @@ struct Viewer {
     // --input in the field: "tab", "camp" (the tab opened, then Camp), "back", "items", "sopia",
     // "equip", "options", "category"; the options' own (as in battle); false - not one of these
     bool fieldToken(const std::string& t) {
-        if (t == "tab" && fieldTabShown()) fieldTabTap(1);
+        if (t == "tap" && fieldTabShown()) tap(); // (the leader's tap: the nearest balloon's)
+        else if (t == "tab" && fieldTabShown()) fieldTabTap(1);
         else if (t == "camp" && fieldTabShown()) fieldTabOpen = true, fieldTabAt = -10, fieldTabTap(2);
         else if (t == "map" && fieldTabShown()) fieldTabOpen = true, fieldTabAt = -10, fieldTabTap(3);
         else if (t == "save" && fieldTabShown()) fieldTabOpen = true, fieldTabAt = -10, fieldTabTap(4);
@@ -5650,9 +5719,26 @@ struct Viewer {
             drawFigure(pic.fig, view.data());
             dev->clearDepth();
         }
-        for (WindowLayout* wl : {&annoWindow, &helpWindow})
+        for (WindowLayout* wl : {&annoWindow, &helpWindow, &systemWindow})
             if (ev->windowOpen(wl->window) || ev->windowClosing(wl->window))
                 drawWindow(*wl, message && ev->messageWindow() == wl->window, screenW, screenH);
+        if (ev->windowOpen(7) || ev->windowClosing(7)) {
+            drawWindow(itemWindow, message && ev->messageWindow() == 7, screenW, screenH);
+            const cr2::BattleData::Item* it = ev->windowOpen(7) && ev->itemShown() > 0 ? battleData.item(ev->itemShown()) : nullptr;
+            float x, y;
+            if (it && it->icon > 0 && windowJoint(itemWindow, "call_mainIcon_id00", x, y)) { // (GetItemWindowMenu::SetItemIcon)
+                Mat4 camera = cr2::mat4Identity();
+                camera[14] = -0.881f;
+                const Mat4 view = cr2::mat4Multiply(uiProjection(screenW, screenH), camera);
+                UiFig& ic = uiFig("mainicon_id");
+                ic.fig.place = cr2::Mat34();
+                // (left of the centred text: the joint less half its width, less 0.032)
+                const float textW = !textQuads.empty() && shownText.compare(0, 2, "7\n") == 0 ? textQuads[0].w : 0;
+                ic.fig.place.m[3] = x - (textW / 2 + 0.032f), ic.fig.place.m[7] = y;
+                poseUi(ic, "mainicon_id", it->icon == 0x1c ? 1.45f : it->icon == 0x1d ? 1.4f : float(it->icon) / 20.0f);
+                drawFigure(ic.fig, view.data());
+            }
+        }
     }
 };
 
@@ -5697,7 +5783,7 @@ int main(int argc, char** argv) {
     bool continueSave = false;
     std::vector<std::pair<int, int>> itemArg;
     std::vector<std::tuple<int, int, int>> equipArg;
-    int chargeArg = -1;
+    int chargeArg = -1, difficultyArg = -1, membersArg[2] = {-2, -2};
     std::vector<std::pair<int, int>> stateArg;
     std::vector<std::pair<int, int>> sopiaArg;
     bool skipBattlesOpt = false;
@@ -5746,6 +5832,8 @@ int main(int argc, char** argv) {
             ++i;
         }
         else if (a == "--charge" && next) chargeArg = std::atoi(next), ++i; // (the charge gauge to begin with: tests)
+        else if (a == "--difficulty" && next) difficultyArg = std::atoi(next), ++i; // (the world select's level - 1: tests)
+        else if (a == "--members" && next) std::sscanf(next, "%d,%d", &membersArg[0], &membersArg[1]), ++i; // (the field's two, from 0: tests)
         else if (a == "--item" && next) { // (an item's count to begin with: id:count, tests)
             int id = 0, n = 0;
             if (std::sscanf(next, "%d:%d", &id, &n) == 2) itemArg.push_back({id, n});
@@ -5891,6 +5979,8 @@ int main(int argc, char** argv) {
         if (id > 0 && id < 300) v.game.itemCount[id] = static_cast<short>(n);
     for (const auto& [c, slot, item] : equipArg)
         if (c >= 1 && c <= 9 && slot >= 0 && slot < 8) v.game.equip[c - 1][slot] = static_cast<short>(item);
+    if (difficultyArg >= 0) v.game.difficulty = difficultyArg;
+    if (membersArg[0] > -2) v.game.party[0] = membersArg[0], v.game.party[1] = membersArg[1];
     if (continueSave) {
         v.playMode = true;
         if (!v.continueSave(binary, data)) return 1;

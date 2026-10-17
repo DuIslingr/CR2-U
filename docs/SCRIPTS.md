@@ -94,9 +94,28 @@ and objects 0.2 (FldNPC / FldObject +0x14), event boxes and effects 0.15 - gets 
 `balloon` figure through the interface's camera, over the gimmick by a height from a table by
 name - c001 0.21, obj002 0.23, ... - else NPCs 0.2, objects and events 0.25, effects 0.1), and
 a tap anywhere calls the nearest one's function (EventExecute: `c003_01`, `obj002_00`, `evt023`)
-with the leader turned to it. From a new game's state, `cr2tool fieldscript`: 137 to tap across
-the maps, every one's function there and playing to its end, 55 of them saying something.
-(Treasure boxes - FldBox, opening by themselves - aren't yet.)
+with the leader turned to it. From a new game's state, `cr2tool fieldscript`: 136 to tap across
+the maps (the treasure boxes aside: none drawn), every one's function there and playing to its
+end, 100 of them saying something.
+
+Treasure boxes (Cr3TreasureBox, FldBox) are drawn as a dungeon is entered anew (FldMain::
+ChangeDungeonFunc; not while flag 0x7fb is set): a table, the difficulty (cr3_common_data[0] -
+`Cr3System.SetDifficulty`, the world select's level - 1) x 3 + a random 0..2, of the 33 in the
+game's code (`tools/gen_box_table.py` -> `engine/src/field/boxtable.inc`). Of the dungeon's ten
+`tbox` 7 are set at random (each holding the table's item by its place among those set); of the
+three `obox` (key boxes) 2, and of the three `fbox` (fixed) all - but a key box or a fixed box
+whose item is none (-1) is unset, and the third fixed box without a second party member. The
+first fixed box holds the table's own, the others one by the party member (`kBoxCharaItems`).
+An unset box isn't shown. A box (`obj011`, a key box `obj012`; `fn01` closed, `fa01` opening,
+`fn02` open) has a balloon at 0.2 until opened; its tap opens it (`FldBox::Open`: the item one
+more, SE 0x153) and calls its function (`tbox_03` -> `box_msg`: `Cr3GimmickData.GetItemID`, then
+window 7 - GetItemWindowMenu's `getItem`, sliding in from above - with `SetItemMessage(7, id)`:
+announce 0x75 with the item's name, the item's icon left of the text by half its width + 0.032).
+A key box opens only for Orlando leading (FldPlayer +0x1c 1: then FldUnlock's lock - not yet,
+it opens at once, SE 0x154); for anyone else FldMain runs `Message_obox` (the System window,
+5: SystemWindowMenu's `sysWin_io`, three lines at typeM_L01..03, its animator back to close).
+The boxes' table and which are set and open go in the save. `SkipMessage` shows the page whole
+(the typing skipped); the message stays until a tap or the window's Close.
 
 An area's script runs on the game's 20 updates a second like an event's, and uses the same
 natives (the scene, the windows, the fades: Events below); while it runs the player stands. The

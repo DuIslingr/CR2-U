@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "field/treasure.hpp"
+
 namespace cr2 {
 
 class ScriptVM;
@@ -50,6 +52,10 @@ struct GameState {
     short seed[9][5] = {};
     // cr3_global_work (Cr3UtilGlobalWorkGet / Set: 32 values - 7 the pub's request taken)
     int globalWork[32] = {};
+    // the difficulty (cr3_common_data[0]: Cr3UtilSetDifficulty, the world select's level - 1) and the
+    // dungeon's treasure boxes (cr3_treasureBox)
+    int difficulty = 0;
+    TreasureBoxes boxes;
     bool equipReady = false;
     template <class Data> void initEquip(const Data& data, const int* levelExp) {
         if (equipReady) return;

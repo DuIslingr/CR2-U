@@ -153,7 +153,10 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       effects' table), summoned figures, cameras, the fighters hidden and faded, the screen's
       fades, hits and sounds; the pair's Advent list (`--input "pair advent v136"`)
 - [ ] Battles on screen: the actions' effects past the hits' (an advent's launch effect too), a scene's skip
-- [ ] Treasure boxes, the other windows (announcements, items), the HUD
+- [x] Treasure boxes: drawn as a dungeon is entered (the difficulty's tables), opened with their
+      item and its window ("Obtained ...", the item's icon), the key boxes for Orlando alone (the
+      System window's message for the others; FldUnlock's lock not yet)
+- [ ] The other windows (announcements), the HUD, the key boxes' lock
 - [ ] Engine: events, battles, menus
 
 ## What you need
@@ -180,7 +183,7 @@ and the APK) or `ipad/` (the `.app` or the unpacked `.ipa`).
 | `cr2view --data <archive> --field <map> [--model c001] [--at point] [--binary file] [--walk sx,sy,s]` | a field: the arrow keys run the character (Shift walks) on the floors and against the walls; the maps' table comes from the executable beside the iPad's / Vita's archive or the APK beside Android's OBB, or `--binary` |
 | `cr2view --data <archive> --play [map] [--call function] [--tap] [--skip-battles] [--binary file]` | a new game (or from a map, `--call` one of its events in place of its entry - without what would call it, so no fade back in after): the field's scripts, events and vistas one after another as the game chains them; Return or a click turns a page or talks to what has a balloon (`--tap`: once, after `--walk`); the battles it reaches fought by the rules, the party attacking as a pair (`--skip-battles`: taken as won) |
 | `cr2view --data <archive> --continue` | as `--play`, from the save the field's Save wrote (CR2-U's own format: the story's state, the map and the place, the options - in the user's app folder, `DuIslingr/CR2-U/save1.txt`) |
-| `cr2view --data <archive> --battle <coupling> [--party a,b] [--fight solo\|pair] [--seed n] [--state f:s] [--charge n] [--equip c:slot:id] [--time s]` | a battle's stage: its map, the party (characters a and b: Darwin 1, Orlando 2, Marie 3, ...) and the monsters, through the commands' camera; `--fight`: played by its rules, the party attacking each turn; `--state`: fighter f (0, 1 the party, 2.. the monsters) holding state s to begin with, one use; `--charge`: the gauge to begin with; `--equip`: character c's equipment slot (3..7 its sopia); `--item id:count` (tests) |
+| `cr2view --data <archive> --battle <coupling> [--party a,b] [--fight solo\|pair] [--seed n] [--state f:s] [--charge n] [--equip c:slot:id] [--time s]` | a battle's stage: its map, the party (characters a and b: Darwin 1, Orlando 2, Marie 3, ...) and the monsters, through the commands' camera; `--fight`: played by its rules, the party attacking each turn; `--state`: fighter f (0, 1 the party, 2.. the monsters) holding state s to begin with, one use; `--charge`: the gauge to begin with; `--equip`: character c's equipment slot (3..7 its sopia); `--item id:count`, `--difficulty n` (the world select's level - 1), `--members a,b` (the field's two, from 0: Darwin 0, Orlando 1) (tests) |
 | `cr2tool check / scripts / run / images / models / compare-models / animations / pose / shaders / walk / exits / fieldscript / battle / fight` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared, the shader keys against their GLSL, the field player on every map, every map's exits, every map's entry script, every encounter's set-up, a battle played by its rules (an archive may be given as its folder; `walk` / `exits` / `fieldscript` take the executable, or `-` for the release's own beside the archive) |
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
 | `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |
@@ -195,6 +198,7 @@ and the APK) or `ipad/` (the `.app` or the unpacked `.ipa`).
 | `tools/gen_special_table.py` | the special scenes (BtlSpecialCommandList::BuildAwake / BuildAdvent: their steps, by an ARM interpreter over the library) and which command shows which (SetActionTable, compiled from the decompilation), as `engine/src/battle/specialtable.inc` |
 | `tools/gen_effect_table.py` | the battle effects' settings (BtlEffectTable's static initializer) from the decompilation, as `engine/src/battle/effecttable.inc` |
 | `tools/gen_motion_table.py` | the battle motions' timing table (BtlMotionTable, built in the game's code) from the decompilation, as `engine/src/battle/motiontable.inc` |
+| `tools/gen_box_table.py` | the treasure boxes' items by table (Cr3TreasureBox::GetItemID's: the normal, key and fixed boxes', the fixed ones' by character) from the decompilation and the library, as `engine/src/field/boxtable.inc` |
 | `tools/sq_bindings.py` | the scripts' native API, from the Android library's decompilation |
 | `tools/re_setup.sh` | Ghidra groundwork in `re/` (never committed): the Android library (x86 and armv7, named), the iPad and Vita builds named from it |
 | `tools/vita_self.py` | the Vita's eboot (a fake-signed SELF) to an ELF plus its imports |

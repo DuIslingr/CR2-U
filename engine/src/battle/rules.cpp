@@ -148,13 +148,15 @@ bool BattleRules::critical(int actor, int target, const BattleData::Command& c) 
     return rand_.below(100) < chance;
 }
 
-int BattleRules::damage(int actor, int target, const BattleData::Command& c, bool crit) {
+int BattleRules::damage(int actor, int target, const BattleData::Command& c, bool crit, bool* weak) {
+    if (weak) *weak = false;
     const Fighter& a = fighters_[size_t(actor)];
     const Fighter& t = fighters_[size_t(target)];
     const bool pair = isPairAction(actor);
     auto hasPair = [&](int group, int bit) { return a.has(group, bit) || (pair && fighters_[size_t(a.partner)].has(group, bit)); };
     // CommandY: the power's additions
     int y = 0;
+    if (breakBonus(actor)) y += 100;
     if (pair) y += 25;
     if (actor > 1) y += 50;
     if (crit) y += hasPair(2, 3) ? 100 : 50;
@@ -182,7 +184,10 @@ int BattleRules::damage(int actor, int target, const BattleData::Command& c, boo
     static const int kBeats[4] = {0, 3, 1, 2}, kLoses[4] = {0, 2, 3, 1}; // (the cycle: 1 on 3, 2 on 1, 3 on 2)
     if (elem >= 1 && elem <= 3) {
         if (t.element == kLoses[elem]) m *= 0.75f;
-        else if (t.element == kBeats[elem]) m *= 1.5f;
+        else if (t.element == kBeats[elem]) {
+            m *= 1.5f;
+            if (weak) *weak = true; // (+0xf7d)
+        }
     }
     if (elem >= 1 && elem <= 5) m *= resistFactor(t.resist[elem - 1]);
     if (c.magic == 0) m *= resistFactor(t.resist[5]);
@@ -194,6 +199,7 @@ int BattleRules::damage(int actor, int target, const BattleData::Command& c, boo
     if (d < 0) d = 0;
     if (c.spread) d = d * float((100 - c.spread) + rand_.below(c.spread * 2 + 1)) / 100.0f;
     if (t.guarding) d *= 0.5f;
+    if (breakBonus(target)) d *= 0.5f;
     if (!pair && t.has(5, 9) && !a.has(5, 0) && !(c.specials >> 2 & 1)) d *= 0.1f; // (armour)
     return int(std::ceil(d));
 }
@@ -291,12 +297,22 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
         e.hit = hit(o.actor, t, *c);
         if (e.hit) {
             e.critical = critical(o.actor, t, *c);
-            e.damage = damage(o.actor, t, *c, e.critical);
+            e.damage = damage(o.actor, t, *c, e.critical, &e.weak);
             tf.hp = std::max(tf.hp - e.damage, 0);
             if (tf.hp == 0) tf.alive = false, e.defeated = true;
         }
+        moveGauge(e, *c);
         out.push_back(e);
     }
+}
+
+void BattleRules::moveGauge(const Event& e, const BattleData::Command& c) {
+    if (break_ != 0) return; // (a break now, or one coming)
+    int points = (e.hit && c.kind == 27) + e.weak + e.critical + e.defeated;
+    if (fighters_[size_t(e.target)].guarding) points = 0;
+    if (e.target == e.actor) points = -points;
+    gauge_ = std::clamp(gauge_ + (e.actor < 2 ? points : -points), -4, 4);
+    if (gauge_ == 4 || gauge_ == -4) break_ = 3;
 }
 
 std::vector<BattleRules::Event> BattleRules::playTurn(bool pair, const std::vector<Order>& party) {
@@ -335,6 +351,9 @@ std::vector<BattleRules::Event> BattleRules::playTurn(bool pair, const std::vect
         if (outcome()) break;
         act(t.o, out);
     }
+    // BtlTurnEnd: a break ends, or one coming begins
+    if (break_ == 1 || break_ == 2) break_ = 0, gauge_ = 0;
+    else if (break_ == 3) break_ = gauge_ == 4 ? 1 : 2;
     ++turn_;
     return out;
 }

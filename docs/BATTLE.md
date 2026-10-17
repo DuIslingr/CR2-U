@@ -94,6 +94,17 @@ Steps: 1 the commands (BtlCommand: solo or pair, then each command), 2 their ord
 (BtlActionCtrl), then - the party all down: 5 game over; the monsters all down: 6 the result -
 else 4 the turn's end (BtlTurnEnd: the states run down) and the turn count (+0x10) on, back to 1.
 
+## The break gauge
+
+BtlWork +0x1e, -4 .. 4 ("Even" at 0): after each struck target (BtlActionCtrl::UpdateBreakGauge)
+a point each for a weakness hit (the element cycle's x 1.5: +0xf7d), a critical (+0xf79), the
+target downed (+0xf7c, CheckDead) and kind 27's hits - none when the target guards or blocked,
+negative on oneself - up for the party's actions, down for the monsters'. Reaching 4 or -4 makes
+a turn break come (+0x1f 3); at the turn's end (BtlTurnEnd) it begins (+0x1f 1 the party's, 2 the
+monsters'), and at the next turn's end it is over, the gauge back to 0. While it lasts the gauge
+doesn't move, the breaking side's commands get +100 power (CommandY) and take half damage
+(Damage3; also its blocks, counters and auto-guard, BadStatus).
+
 ## The monsters' choice (BtlEnemy)
 
 A monster record holds ten commands (+0x58 s16), each with a condition (+0x6c u8), a target rule

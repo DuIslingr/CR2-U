@@ -59,6 +59,13 @@ public:
 
     const Fighter& fighter(int i) const { return fighters_[size_t(i)]; }
     int turn() const { return turn_; }
+    // The break gauge (BtlWork +0x1e, -4 .. 4: the party's way up): a hit on a weakness, a
+    // critical, a fighter downed move it a point each (BtlActionCtrl::UpdateBreakGauge; none on a
+    // guarding target); at 4 or -4 the next turn is that side's turn break (+0x1f: 1 the party's,
+    // 2 the monsters', 3 one coming), +100 to its power and half the damage to it, then even again
+    int gauge() const { return gauge_; }
+    int breakState() const { return break_; }
+    bool breakBonus(int f) const { return (break_ == 1 && f < 2) || (break_ == 2 && f >= 2); }
     int outcome() const; // 0 on, 1 won, 2 lost
 
     // what a fighter does this turn
@@ -70,7 +77,7 @@ public:
     // what happened: a command's result on one fighter
     struct Event {
         int actor = -1, partner = -1, command = 0, target = -1;
-        bool hit = false, critical = false, defeated = false;
+        bool hit = false, critical = false, weak = false, defeated = false;
         int damage = 0;
     };
     // One turn: the party solo (each its order) or a pair (the first order the pair's), the
@@ -79,7 +86,7 @@ public:
 
     // the formulas, for checks
     int param(int f, int n) const;
-    int damage(int actor, int target, const BattleData::Command& c, bool critical);
+    int damage(int actor, int target, const BattleData::Command& c, bool critical, bool* weak = nullptr);
     bool hit(int actor, int target, const BattleData::Command& c);
     bool critical(int actor, int target, const BattleData::Command& c);
 
@@ -93,6 +100,8 @@ private:
     BattleRandom rand_;
     Fighter fighters_[5];
     int turn_ = 0;
+    int gauge_ = 0, break_ = 0;
+    void moveGauge(const Event& e, const BattleData::Command& c);
 };
 
 } // namespace cr2

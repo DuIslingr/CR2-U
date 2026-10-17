@@ -935,10 +935,10 @@ int fight(const char* path, int coupling, bool pair, uint32_t seed, const int pa
             const cr2::BattleData::Command* c = data.command(e.command);
             std::printf("turn %2d: %s%s%s %s -> %s: %s%s%s\n", turn, name(e.actor).c_str(), e.partner >= 0 ? " + " : "",
                         e.partner >= 0 ? name(e.partner).c_str() : "", c ? c->name[1].c_str() : "?", name(e.target).c_str(),
-                        e.hit ? (std::to_string(e.damage) + " damage").c_str() : "missed", e.critical ? " (critical)" : "",
+                        e.hit ? (std::to_string(e.damage) + " damage").c_str() : "missed", e.critical ? " (critical)" : e.weak ? " (weak)" : "",
                         e.defeated ? ", down" : "");
         }
-        std::printf("         HP:");
+        std::printf("         gauge %d%s; HP:", r.gauge(), r.breakState() == 1 ? " (the party's turn break)" : r.breakState() == 2 ? " (the monsters' turn break)" : r.breakState() == 3 ? " (a break coming)" : "");
         for (int i = 0; i < 5; ++i)
             if (r.fighter(i).present) std::printf(" %s %d", r.fighter(i).name.c_str(), r.fighter(i).hp);
         std::printf("\n");

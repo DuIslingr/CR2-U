@@ -930,6 +930,7 @@ struct Viewer {
         if (battleMode) {
             battleClock += dt;
             updateBattleScript(dt);
+            updateManual(dt);
             updateBattleShow();
             updateResult();
             // a fight of the flow over: its last action shown, a moment after (a win: its result)
@@ -953,6 +954,7 @@ struct Viewer {
 
     // The events' runtime the screen shows: the vista's, else the field's
     cr2::EventRuntime* activeEvents() {
+        if (battleMode && manualStage == 2 && manualEvents) return manualEvents.get(); // (the manual's tutorial)
         if (battleMode && battleScript) return &battleScript->events(); // (the battle's talks)
         return eventMode ? event.get() : script ? &script->events() : nullptr;
     }
@@ -1343,6 +1345,9 @@ struct Viewer {
         else if (commandInput.menu() == CI::Menu::Command || commandInput.menu() == CI::Menu::Awake || commandInput.menu() == CI::Menu::Sopia ||
                  commandInput.menu() == CI::Menu::Items)
             setBattleCamera(fighterUnit[1] < 0 ? 0x1c : commandInput.pairTurn() ? 0x1d : commandInput.actor() == 0 ? 0x1a : 0x1b);
+        // (the sopia's and the items' lists the first time - flags 61, 62: their tutorials first)
+        if (commandInput.menu() == CI::Menu::Sopia) battleTutorial("Tutorial_ComSopia", 61);
+        else if (commandInput.menu() == CI::Menu::Items) battleTutorial("Tutorial_ComItem", 62);
     }
     // the camera a target is chosen under (BtlCommand::SetCommandTargetCamera: the fighter's
     // camera, StepBattleIn_Setup's BtlWork +0x580 - a party member's GetTarget 0 / 1, 2 for the one
@@ -1423,7 +1428,8 @@ struct Viewer {
                 SDL_Log("input %s", t.c_str());
                 return;
             }
-        if (t == "back" && optionsOpen) optionsOpen = false, ok = true;
+        if (t == "back" && manualStage == 1) closeManual(), ok = true;
+        else if (t == "back" && optionsOpen) optionsOpen = false, ok = true;
         else if (t == "back") commandInput.back(), ok = true;
         else if (t.size() > 1 && t[0] == 'a' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickAwakening(std::atoi(t.c_str() + 1));
         else if (t.size() > 1 && t[0] == 's' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickSopia(std::atoi(t.c_str() + 1));
@@ -1432,7 +1438,10 @@ struct Viewer {
         else if (!t.empty() && std::isdigit(static_cast<unsigned char>(t[0]))) ok = commandInput.pick(std::atoi(t.c_str()));
         else
             for (const auto& [n, id] : kNames)
-                if (t == n) ok = commandInput.press(id);
+                if (t == n) {
+                    if (commandInput.menu() == CI::Menu::Command && id == CI::Defend) battleTutorial("Tutorial_ComDefende", 63);
+                    ok = commandInput.press(id);
+                }
         SDL_Log("input %s%s", t.c_str(), ok ? "" : " (not taken)");
         if (!ok && commandInput.menu() == cr2::CommandInput::Menu::Sopia) // (what it offers)
             for (const auto& sc : commandInput.sopiaCommands()) SDL_Log("  sopia %d: MP %d%s", sc.command, sc.mp, sc.selectable ? "" : " (not selectable)");
@@ -1468,9 +1477,24 @@ struct Viewer {
         else if (commandInput.menu() == cr2::CommandInput::Menu::Items) commandInput.pickItem(idOrFighter);
         else if (commandInput.menu() == cr2::CommandInput::Menu::First && idOrFighter == cr2::CommandInput::Options) {
             optionsOpen = true, optionsStart = battleClock; // (BtlCommand::StepOption: the window, the HUD gone)
+            // (OptionMenu::PartsUpdate: the first time, title.nut's Tutorial_Option - flag 84)
+            if (!game.flag(84)) optionsOpen = false, playTutorial("Tutorial_Option", 0, false);
             return;
-        } else commandInput.press(idOrFighter);
+        } else {
+            // (StepCommandLoop: Defend the first time - flag 63 - its tutorial first, StepTutoEventInit)
+            if (commandInput.menu() == cr2::CommandInput::Menu::Command && idOrFighter == cr2::CommandInput::Defend)
+                battleTutorial("Tutorial_ComDefende", 63);
+            commandInput.press(idOrFighter);
+        }
         menuChanged();
+    }
+    // a first-time tutorial of battle_tuto's (BattleScript::tutorial) - in an encounter without a
+    // script of its own, its story flag still off (BtlWork +0x18, which would turn them off, never
+    // set here); the battle's steps wait for it as for any of its script's calls
+    void battleTutorial(const char* function, int flag) {
+        if (!battleScript || !battleScriptOk || battleScript->own() || battleScriptRunning() || game.flag(flag)) return;
+        SDL_Log("tutorial: %s", function);
+        if (!(battleScriptOk = battleScript->tutorial(function))) SDL_Log("battle script: %s", battleScript->error().c_str());
     }
     bool keysUsed = false; // (a command button's focus shown once a key moves it: a touch shows none)
     void battleKey(SDL_Keycode k) {
@@ -1479,6 +1503,18 @@ struct Viewer {
         const std::vector<int> c = menuChoices();
         const bool target = commandInput.menu() == cr2::CommandInput::Menu::Target;
         // (the awakenings' list goes up and down)
+        if (manualStage == 2) { // (the tutorial: Return a page)
+            if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && manualEvents) manualEvents->advance();
+            return;
+        }
+        if (manualStage == 1) { // (the list: Up / Down, Return plays, Backspace back)
+            const int n = std::max(int(manualEntries.size()), 1);
+            if (k == SDLK_UP) manualCursor = (manualCursor + n - 1) % n;
+            else if (k == SDLK_DOWN) manualCursor = (manualCursor + 1) % n;
+            else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) playManual(manualCursor);
+            else if (k == SDLK_BACKSPACE) closeManual();
+            return;
+        }
         if (optionsAsk) { // (the question: Return yes, Backspace no)
             if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) optionTap(3201);
             else if (k == SDLK_BACKSPACE || k == SDLK_N) optionTap(3202);
@@ -1501,10 +1537,20 @@ struct Viewer {
     // a click at the screen's (fx, fy) - 0..1 across, down: a button's tap area (UI units)
     void battleClick(float fx, float fy) {
         if (!choosing) return;
+        if (manualStage == 2) { // (a tap: the tutorial's page)
+            if (manualEvents) manualEvents->advance();
+            return;
+        }
         const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
         const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
         for (const TapRect& r : tapRects)
             if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
+                if (manualStage == 1) {
+                    if (r.id == 100) closeManual();
+                    else if (r.id >= 5000) playManual(r.id - 5000);
+                    else if (r.id >= 1000) manualCursor = r.id - 1000; // (another row: the focus)
+                    return;
+                }
                 if (optionsAsk) {
                     if (r.id == 3201 || r.id == 3202) optionTap(r.id);
                     return;
@@ -1540,6 +1586,7 @@ struct Viewer {
         if (!battleRules) return;
         battleRules->runExitTimer(dt);
         if (!battleScript || !battleScriptOk) return;
+        battleScript->events().language = optionLanguage; // (the options' language)
         battleScriptClock = std::min(battleScriptClock + dt, 0.25f);
         for (; battleScriptClock >= cr2::EventRuntime::kTick; battleScriptClock -= cr2::EventRuntime::kTick)
             if (!(battleScriptOk = battleScript->tick())) SDL_Log("battle script: %s", battleScript->error().c_str());
@@ -1638,6 +1685,15 @@ struct Viewer {
         case BattleStep::TurnBegin:
             battleRules->beginTurn();
             battleStep = BattleStep::TurnChoose;
+            // (BtlCommand::StepInit: an armoured monster standing - its +0x48 bit 0 - the first time,
+            // flag 54)
+            for (int m = 2; m < 5; ++m) {
+                const cr2::Fighter& f = battleRules->fighter(m);
+                if (f.alive && f.monster && (f.monster->skills & 1u)) {
+                    battleTutorial("Tutorial_Armor", 54);
+                    break;
+                }
+            }
             break;
         case BattleStep::TurnChoose: { // the party attacking the first monster standing
             if (manualCommands && !battleRules->scriptTurnReserved()) {
@@ -1650,7 +1706,7 @@ struct Viewer {
                     menuChanged();
                     inputNext = battleClock + 0.4f;
                 }
-                if (!inputScript.empty() && battleClock >= inputNext) {
+                if (!inputScript.empty() && battleClock >= inputNext && manualStage != 2) { // (a tutorial over first)
                     inputToken(inputScript.front());
                     inputScript.pop_front();
                     inputNext = battleClock + 0.4f;
@@ -1733,6 +1789,22 @@ struct Viewer {
         }
         case BattleStep::ActionEnd:
             showIndex = showActions.size();
+            if (!regenPending.empty() || battleScriptRunning()) { // (a revival, a tutorial first)
+            } else if (!showActions.empty()) {
+                // (ActionCommonEventCommandEnd: a command lending an element - +0x70 / +0x71 1..3 -
+                // the first time, flag 53 (CheckTutoScript_Element); else one standing with a state
+                // shown, flag 55 (CheckTutoScript_Status))
+                const cr2::BattleData::Command* c = battleData.command(showActions.front().command);
+                const bool element = c && ((c->attach >= 1 && c->attach <= 3) || (c->attachSelf >= 1 && c->attachSelf <= 3));
+                bool status = false;
+                static const int kShown[] = {0, 1, 2, 12, 35, 30, 29, 33, 5, 6, 7, 8, 9, 13, 14, 15, 16, 17, 21, 11, 32};
+                for (int f = 0; f < 5 && !status; ++f)
+                    if (battleRules->fighter(f).alive)
+                        for (int st : kShown) status = status || battleRules->fighter(f).hasState(st);
+                if (element && !game.flag(53)) battleTutorial("Tutorial_Element", 53);
+                else if (status) battleTutorial("Tutorial_Status", 55);
+                if (battleScriptRunning()) break;
+            }
             if (!regenPending.empty()) { // (the downed with state 33 back first)
                 showRegen();
                 break;
@@ -2445,8 +2517,14 @@ struct Viewer {
         int window = -1;                // (EventRuntime's)
         std::string inAnim, outAnim;    // (opening / closing animators, posed at the window's age)
         bool lowerBelow3x2 = false;     // (narrower than 3:2: 0.0403125 lower)
+        bool centredSlots = false;      // (no name tag: a centred page's lines in the slots after linesPerPage)
     };
     WindowLayout vistaWindow, narrationWindow, conversationWindow;
+    // the tutorials' windows (HelpWindowMenu - SetHelpWindowParameter 0, interface 0x1a: annoWin,
+    // the tutorial's - EvtTutoWindow, window 4 -; 1, 0xe: helpWin - EvtAnnounceBWindow, window 3):
+    // white text, three lines a page at typeM_L01..L03, centred ones at typeM_C11..C13, their in /
+    // out animators, wider across a screen wider than 3:2 (SetScale: aspect / 1.5)
+    WindowLayout helpWindow, annoWindow;
     ViewFigure pageCursor;         // sendCsr_loop: once the page is typed
     ViewFigure conversationCursor; // msgCsr_loop: the conversation window's
     struct TextQuad {
@@ -2483,6 +2561,14 @@ struct Viewer {
         conversationWindow.window = cr2::EventRuntime::CutIn;
         conversationWindow.inAnim = "msgwin_in.anim", conversationWindow.outAnim = "msgwin_out.anim";
         loadCutIns();
+        for (auto [wl, name, window] : {std::tuple<WindowLayout*, const char*, int>{&helpWindow, "helpwin", cr2::EventRuntime::AnnounceB},
+                                         {&annoWindow, "annowin", cr2::EventRuntime::Tutorial}}) {
+            loadWindow(*wl, name);
+            wl->linesPerPage = 3, wl->centredSlots = wl->stretch = true;
+            wl->slots = {"01", "02", "03", "11", "12", "13"};
+            wl->window = window;
+            wl->inAnim = std::string(name) + "_in.anim", wl->outAnim = std::string(name) + "_out.anim";
+        }
         loadWindow(narrationWindow, "narrationpos");
         for (int k = 1; k <= 30; ++k) {
             char n[4];
@@ -2623,6 +2709,10 @@ struct Viewer {
                 const bool centred = !lines.empty() && lines[0].centred;
                 for (size_t i = 0; i < lines.size() && i < size_t(wl.linesPerPage); ++i)
                     add(lines[i].text, (centred ? 1 + wl.linesPerPage : 1) + i, lines[i].colour, false);
+            } else if (wl.centredSlots) {
+                const bool centred = !lines.empty() && lines[0].centred;
+                for (size_t i = 0; i < lines.size() && i < size_t(wl.linesPerPage); ++i)
+                    add(lines[i].text, (centred ? size_t(wl.linesPerPage) : 0) + i, lines[i].colour, false);
             } else {
                 for (size_t i = 0; i < lines.size(); ++i) add(lines[i].text, i, lines[i].colour, false);
             }
@@ -3061,7 +3151,7 @@ struct Viewer {
             drawFigure(b.fig, view.data());
             float x, y;
             if (uiJoint(b, "typeS_L00", x, y)) drawUiText(r.name, 24, x, y, w, h, true, r.selectable ? 1.0f : 0.5f);
-            if (uiJoint(b, "call_dotNum_id01", x, y)) drawDigits(r.number, 90, 4, x, y, uiProjection(w, h), r.selectable ? 1.0f : 0.5f);
+            if (r.number >= 0 && uiJoint(b, "call_dotNum_id01", x, y)) drawDigits(r.number, 90, 4, x, y, uiProjection(w, h), r.selectable ? 1.0f : 0.5f);
             if (r.icon > 0 && uiJoint(b, "call_mainIcon_id11", x, y)) {
                 UiFig& ic = uiFig("mainicon_id");
                 ic.fig.place = cr2::Mat34();
@@ -3104,9 +3194,9 @@ struct Viewer {
         UiFig& tag = uiFig("tabwin_io");
         tag.fig.place = cr2::Mat34();
         poseUi(tag, "tabwin_io", t);
-        drawFigure(tag.fig, view.data());
+        if (tagFrame >= 0) drawFigure(tag.fig, view.data()); // (none for the manual's)
         float x, y;
-        if (uiJoint(tag, "call_tabName_id01", x, y)) {
+        if (tagFrame >= 0 && uiJoint(tag, "call_tabName_id01", x, y)) {
             UiFig& tn = uiFig("tabname_id");
             tn.fig.place = cr2::Mat34();
             tn.fig.place.m[3] = x, tn.fig.place.m[7] = y;
@@ -3153,7 +3243,8 @@ struct Viewer {
             optionsOpen = false, optionsAsk = true, optionsAskStart = battleClock;
             break;
         case 3102: // (BattleOptionMenu 4 -> 9 -> 0x22: InstructionsWindowMenu, the tutorials' list)
-            SDL_Log("options: the manual (InstructionsWindowMenu) - not yet");
+            optionsOpen = false;
+            openManual();
             break;
         case 3103: optionQuality = (optionQuality + 2) % 3; break;
         case 3104: case 4098: optionQuality = (optionQuality + 1) % 3; break;
@@ -3169,6 +3260,90 @@ struct Viewer {
         default: break;
         }
         if (id >= 3103 && id <= 3106) SDL_Log("options: language %d, quality %d", optionLanguage, optionQuality);
+    }
+    // The manual (the options' Manual: BattleOptionMenu 4 -> 9, InterfaceMain's 0x22 -> 0x61,
+    // InstructionsWindowMenu): `message\instructions` (u32 the records' offset, the strings', the
+    // count; a record 0x28 - the eight languages' titles, +0x20 a story flag it waits for (0 none),
+    // +0x24 its tutorial) listed by those whose flag is on (SetTutorialList) in InstructionsListMenu
+    // (0x62, a ScrollListMenu: Back, no help). One picked (SetParamNumber 4) plays title.nut's
+    // manual_disp - flag 1122 on (the pictures through InterfaceWindow), GetTutorialID the pick:
+    // its Tutorial_NNN's pictures (tutorialPic) and AnnounceTutorialTxt's pages in the help window,
+    // a tap a page - then the list again (Update 3 -> 0); Back the options again.
+    int manualStage = 0; // 0 none, 1 the list, 2 a tutorial playing
+    struct ManualEntry {
+        std::string title;
+        int id = 0;
+    };
+    std::vector<ManualEntry> manualEntries;
+    int manualCursor = 0;
+    bool manualToList = true; // (the tutorial over: the list again, else the options - Tutorial_Option's)
+    float manualStart = 0, manualClock = 0;
+    std::unique_ptr<cr2::EventRuntime> manualEvents;
+    void openManual() {
+        manualEntries.clear();
+        std::vector<uint8_t> d;
+        if (archive.read("message\\instructions.dat", d)) {
+            auto u32 = [&](size_t o) { return o + 4 <= d.size() ? uint32_t(d[o] | d[o + 1] << 8 | d[o + 2] << 16 | uint32_t(d[o + 3]) << 24) : 0u; };
+            const size_t records = u32(0), strings = u32(4);
+            for (uint32_t k = 0, n = u32(8); k < n; ++k) {
+                const size_t r = records + size_t(k) * 0x28;
+                const int flag = int(u32(r + 0x20));
+                if (flag != 0 && !game.flag(flag)) continue; // (Cr3UtilFlagCheck)
+                ManualEntry e;
+                for (size_t c = strings + u32(r + 4u * size_t(std::clamp(optionLanguage, 0, 7))); c < d.size() && d[c]; ++c) e.title += char(d[c]);
+                e.id = int(u32(r + 0x24));
+                manualEntries.push_back(e);
+            }
+        }
+        manualStage = 1, manualStart = battleClock, manualCursor = 0;
+        SDL_Log("manual: %zu entries", manualEntries.size());
+    }
+    void closeManual() {
+        manualStage = 0, manualEvents.reset();
+        optionsOpen = true, optionsStart = battleClock;
+    }
+    void playManual(int k) {
+        if (k < 0 || k >= int(manualEntries.size())) return;
+        manualCursor = k;
+        if (playTutorial("manual_disp", manualEntries[size_t(k)].id, true))
+            SDL_Log("manual: tutorial %d (%s)", manualEntries[size_t(k)].id, manualEntries[size_t(k)].title.c_str());
+    }
+    // title.nut's `function` played over the battle (the manual's manual_disp, the options' own)
+    bool playTutorial(const char* function, int id, bool toList) {
+        manualEvents = std::make_unique<cr2::EventRuntime>(archive, game);
+        manualEvents->language = optionLanguage, manualEvents->autoPage = pageSeconds;
+        manualEvents->tutorialId = id;
+        if (!manualEvents->start("title", function)) {
+            SDL_Log("tutorial: %s", manualEvents->error().c_str());
+            manualEvents.reset();
+            if (!toList) optionsOpen = true;
+            return false;
+        }
+        manualStage = 2, manualClock = 0, manualToList = toList;
+        return true;
+    }
+    void updateManual(float dt) {
+        if (manualStage != 2 || !manualEvents) return;
+        manualClock = std::min(manualClock + dt, 0.25f);
+        for (; manualClock >= cr2::EventRuntime::kTick; manualClock -= cr2::EventRuntime::kTick)
+            if (!manualEvents->tick()) SDL_Log("manual: %s", manualEvents->error().c_str());
+        if (!manualEvents->running()) { // (InstructionsWindowMenu 3 -> 0: the list again)
+            manualEvents.reset();
+            if (manualToList) manualStage = 1, manualStart = battleClock;
+            else manualStage = 0, optionsOpen = true, optionsStart = battleClock;
+            SDL_Log("tutorial over");
+        }
+    }
+    void drawManualList(const Mat4& view, int w, int h) {
+        tapRects.clear();
+        std::vector<ListRow> rows;
+        for (size_t k = 0; k < manualEntries.size(); ++k) {
+            ListRow r;
+            r.id = 5000 + int(k), r.name = manualEntries[k].title, r.number = -1;
+            rows.push_back(r);
+        }
+        listRows = rows;
+        drawSkillList(rows, 5000 + manualCursor, battleClock - manualStart, view, w, h, -1, -1);
     }
     void drawOptionsAsk(const Mat4& view, int w, int h) {
         tapRects.clear();
@@ -3434,6 +3609,11 @@ struct Viewer {
             drawResult(view, proj, w, h);
             return;
         }
+        if (choosing && manualStage == 1) {
+            drawManualList(view, w, h);
+            return;
+        }
+        if (choosing && manualStage == 2) return; // (the tutorial's picture and window alone)
         if (choosing && optionsOpen) { // (StepOption: SetBattleStatusDisplay off)
             drawOptions(view, proj, w, h);
             return;
@@ -3625,6 +3805,23 @@ struct Viewer {
             drawWindow(conversationWindow, message && ev->messageWindow() == cr2::EventRuntime::CutIn, screenW, screenH);
         if (ev->windowOpen(cr2::EventRuntime::Narration))
             drawWindow(narrationWindow, message && ev->messageWindow() == cr2::EventRuntime::Narration, screenW, screenH);
+        // the tutorials': the picture (tutorialPic, its PRG_rep the image shown), the windows over it
+        const cr2::EventRuntime::TutorialPicture& tp = ev->tutorialPicture();
+        if (tp.visible && tp.shown >= 0 && tp.shown < int(tp.images.size())) {
+            UiFig& pic = uiFig("tutorialpic");
+            pic.fig.place = cr2::Mat34();
+            poseUi(pic, "tutorialpic", 0);
+            if (cr2::Texture* tex = texture(tp.images[size_t(tp.shown)]))
+                for (ViewMesh& vm : pic.fig.meshes) vm.texture = tex;
+            Mat4 camera = cr2::mat4Identity();
+            camera[14] = -0.881f;
+            const Mat4 view = cr2::mat4Multiply(uiProjection(screenW, screenH), camera);
+            drawFigure(pic.fig, view.data());
+            dev->clearDepth();
+        }
+        for (WindowLayout* wl : {&annoWindow, &helpWindow})
+            if (ev->windowOpen(wl->window) || ev->windowClosing(wl->window))
+                drawWindow(*wl, message && ev->messageWindow() == wl->window, screenW, screenH);
     }
 };
 

@@ -304,8 +304,28 @@ Back (100) out. Title Screen (BattleOptionMenu::Update 3, 5, 6): the window clos
 window (syswin_io, its typeM_L01) asking "Return to title screen?" (announcebattle 0x6d) over
 choice_io's circle buttons (call_cBtn_fr11 Yes, fr12 No) - yes to the title (8, the music
 stopped; the viewer: `--play` from a new game again, else its end), no back to the options (7).
-Manual (4, 9: InterfaceMain's 0x22, InstructionsWindowMenu - the tutorials' list from
-`message\Instructions`) not yet, nor the sound the volumes set.
+Manual (4, 9: InterfaceMain's 0x22 -> 0x61, InstructionsWindowMenu): `message\instructions` (u32
+the records' offset, the strings', the count; 0x28 a record - the eight languages' titles, +0x20 a
+story flag it waits for, 0 none, +0x24 its tutorial), those whose flag is on (SetTutorialList)
+listed in InstructionsListMenu (0x62, a ScrollListMenu - the skill lists' scrlBtn rows, Back, no
+help, no tab); one picked plays title.nut's manual_disp - flag 1122 on (the pictures through
+InterfaceWindow), InterfaceWindow.GetTutorialID the pick, its Tutorial_NNN - then the list again;
+Back the options again. Not yet: the sound the volumes set.
+
+The tutorials (`script\battle_tuto.nut`, title.nut: the same functions): Tutorial_NNN loads up to
+three pictures (LoadTexture: Cr3FieldTutorial, or InterfaceWindow.SetTutorialTexture in the manual
+- `images\tutoNNN_MM`) shown one at a time on tutorialPic (its PRG_rep; SetTexture / SetWindow),
+and AnnounceTutorialTxt's messages (EvtWindow.LoadMessageData(window, name)): Tutorial_Start /
+End open window 4 - EvtTutoWindow, HelpWindowMenu's interface 0x1a, annoWin across the top -,
+Tutorial_Msg window 3 - EvtAnnounceBWindow, 0xe, helpWin in the middle -, white text, three lines
+a page, a tap a page. In a battle without a script of its own each is shown once by its story
+flag (BtlEvent::LoadScript("battle_tuto"), CallScript): Tutorial_Armor at a turn's start with an
+armoured monster standing (StepInit, 54); Tutorial_ComSopia / ComItem the first time their lists
+open, Tutorial_ComDefende the first Defend (StepCommandLoop -> StepTutoEventInit: 61, 62, 63);
+after an action Tutorial_Element for a command lending an element (+0x70 / +0x71 1..3: 53), else
+Tutorial_Status with one standing showing a state (55) (ActionCommonEventCommandEnd); title.nut's
+Tutorial_Option the first time the options open (OptionMenu::PartsUpdate, 84). The encounters'
+own scripts show theirs themselves.
 
 Escape (StepEscape: a yes / no; StepEscapeLoop): BtlCalc::Escape - sure in the party's turn
 break, or with skill (4, 3) (HasEncountAbsoluteEscape: the one escaping's, or either of the party

@@ -74,6 +74,7 @@ public:
         // (26 + the bit); +0x6c how long (1 one use, 2 one turn, 3 +0x6d turns, else for good);
         // +0x70 an element it lends the one hit (1..3; 4 none)
         int bad[10] = {}, change[8] = {}, durationMode = 0, turns = 0, attach = 0;
+        int attachSelf = 0; // +0x71 an element it lends the one acting (CheckAttachSelf: 1..3; 4 none)
         uint32_t special = 0;
         int mp = 0;          // +0x42: its MP (BtlUtilStatus::CalcUseMp)
         int icon = 0;        // +0x72: its icon (mainIcon_id's frame)

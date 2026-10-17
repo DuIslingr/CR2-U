@@ -49,6 +49,8 @@ public:
     // the event `function` ("D01_01_0101_evt"): its script loaded and run up to its first wait.
     // False: no script, or it failed (error() says)
     bool start(const std::string& function);
+    // another script's function (`script\<script>.nut`: title's manual_disp) - the same
+    bool start(const std::string& script, const std::string& function);
     // one update; false: the script failed
     bool tick();
     bool running() const;     // the script hasn't ended
@@ -113,6 +115,18 @@ public:
     const Portrait& cutIn(int kind) const { return cutIns_[size_t(kind)]; }
     std::string cutInImage(int id) const; // a loaded face's image ("" none)
 
+    // The tutorials' pictures (Cr3FieldTutorial in the field and the battles; InterfaceWindow's
+    // SetTutorialTexture ... in the manual - InstructionsWindowMenu's tutorialPic): the images
+    // loaded (LoadTexture / SetTutorialTexture, five at most), the one shown (SetTexture /
+    // SetTutorialTextureNumber: its number), shown at all (Visible / VisibleTutorialTexture)
+    struct TutorialPicture {
+        std::vector<std::string> images;
+        int shown = -1;
+        bool visible = false;
+    };
+    const TutorialPicture& tutorialPicture() const { return tutorialPicture_; }
+    int tutorialId = 0; // (InterfaceWindow.GetTutorialID: the manual's choice - its +0x24)
+
     // where the event went at its end: BattleIN's battle (-1 none)
     int battle() const { return state_.next.battle; }
 
@@ -128,6 +142,8 @@ private:
     EventFade fade_;
     std::map<int, std::string> faces_;
     TextData text_, names_;
+    std::map<int, TextData> windowText_; // (LoadMessageData(window, name): that window's own)
+    TutorialPicture tutorialPicture_;
     std::set<int> openWindows_;
     std::map<int, float> opened_, closing_; // (window -> seconds since)
     std::array<Portrait, kCutIns> cutIns_;

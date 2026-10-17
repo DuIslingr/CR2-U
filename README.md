@@ -120,7 +120,7 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] Options in battle: the game's window - the volumes, language, orientation, quality,
       Title Screen and Manual shown, the volumes set by a tap or the keys, the language and the
       quality by their arrows (the messages then in that language, a system CJK font for what the
-      game's lacks), Title Screen's yes / no, Back (`--input "options language+ title no back"`)
+      game's lacks), Title Screen's yes / no, Manual, Back (`--input "options language+ title no back"`)
 - [x] States: poison, blind, seal, the action cancelled, raised and lowered parameters, time
       stopped, the seals, the special ones - taken by the game's chances and resistances, their
       effects (counters, the magic barrier turning a sopia back, revived once, strength doubled,
@@ -131,8 +131,12 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       EXP and SP gained, the levels, HP, MP and NEXT, the EXP going in, the levels kept), its
       messages - levels gained, the sopia's SP and what they learn, the Oz, the items and sopia
       left (rolled as each monster falls) - as the reference video's first battle
+- [x] Tutorials: the manual (the options' Manual - its list, each tutorial's pictures and
+      pages), the battles' first-time ones (armour, the sopia / items lists, defend, elements,
+      states, the options) and the encounters' own, the field's pictures - tutorialPic, the
+      tutorial and announcement windows
 - [ ] Battles on screen: the advents' list, the awakenings' own scenes, the actions' effects
-      past the hits', the battles' tutorials
+      past the hits'
 - [ ] Treasure boxes, the other windows (announcements, tutorials, items), the HUD, the sounds
       between areas
 - [ ] Engine: events, battles, menus

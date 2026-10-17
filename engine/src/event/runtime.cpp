@@ -103,7 +103,27 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     auto textData = [this](NativeCall& c) { loadText(c.string(0), text_); };
     auto nameData = [this](NativeCall& c) { loadText(c.string(0), names_); };
     vm.setNative("EvtWindow", "LoadSharedTextData", textData);
-    vm.setNative("EvtWindow", "LoadMessageData", textData);
+    // (LoadMessageData(name), or (window, name): the tutorials' AnnounceTutorialTxt for 3 / 4)
+    vm.setNative("EvtWindow", "LoadMessageData", [this](NativeCall& c) {
+        if (!c.string(0).empty() || c.count() < 2) loadText(c.string(0), text_);
+        else loadText(c.string(1), windowText_[c.integer(0)]);
+    });
+    vm.setNative("EvtWindow", "UnloadData", [this](NativeCall& c) { windowText_.erase(c.integer(0, -1)); });
+    // the tutorials' pictures (TutorialPicture)
+    auto pictureAdd = [this](NativeCall& c) {
+        if (tutorialPicture_.images.size() < 5) tutorialPicture_.images.push_back(c.string(0));
+    };
+    auto pictureShow = [this](NativeCall& c) { tutorialPicture_.shown = c.integer(0, -1); };
+    vm.setNative("Cr3FieldTutorial", "Create", [this](NativeCall&) { tutorialPicture_ = TutorialPicture(); });
+    vm.setNative("Cr3FieldTutorial", "Delete", [this](NativeCall&) { tutorialPicture_ = TutorialPicture(); });
+    vm.setNative("Cr3FieldTutorial", "LoadTexture", pictureAdd);
+    vm.setNative("Cr3FieldTutorial", "SetTexture", pictureShow);
+    vm.setNative("Cr3FieldTutorial", "Visible", [this](NativeCall& c) { tutorialPicture_.visible = c.boolean(0); });
+    vm.setNative("InterfaceWindow", "GetTutorialID", [this](NativeCall& c) { c.result(tutorialId); });
+    vm.setNative("InterfaceWindow", "SetTutorialTexture", pictureAdd);
+    vm.setNative("InterfaceWindow", "SetTutorialTextureNumber", pictureShow);
+    vm.setNative("InterfaceWindow", "VisibleTutorialTexture", [this](NativeCall&) { tutorialPicture_.visible = true; });
+    vm.setNative("InterfaceWindow", "UnVisibleTutorialTexture", [this](NativeCall&) { tutorialPicture_.visible = false; });
     vm.setNative("EvtWindow", "LoadSharedNameData", nameData);
     vm.setNative("EvtWindow", "LoadNameData", nameData);
     // (a window argument of null: the vista's, Cr3Work 2's usual value)
@@ -143,7 +163,8 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     vm.setNative("EvtWindow", "SetMessage", [this](NativeCall& c) {
         messageWindow_ = c.integer(0, Vista);
         message_ = c.integer(1);
-        parsed_ = parseMessage(text_.message(message_, language));
+        const auto own = windowText_.find(messageWindow_);
+        parsed_ = parseMessage((own != windowText_.end() ? own->second : text_).message(message_, language));
         page_ = 0, pageTime_ = 0, revealed_ = 0;
         if (parsed_.pages.empty()) message_ = 0;
         else ++messagesSet_;
@@ -167,6 +188,7 @@ void EventRuntime::reset() {
     fade_ = EventFade();
     faces_.clear();
     text_ = TextData(), names_ = TextData();
+    windowText_.clear(), tutorialPicture_ = TutorialPicture();
     openWindows_.clear(), opened_.clear(), closing_.clear();
     cutIns_ = {}, cutInImages_.clear();
     messageWindow_ = Vista, message_ = page_ = revealed_ = 0, pageTime_ = 0;
@@ -175,7 +197,9 @@ void EventRuntime::reset() {
     wait_ = frame_ = 0;
 }
 
-bool EventRuntime::start(const std::string& function) {
+bool EventRuntime::start(const std::string& function) { return start(function, function); }
+
+bool EventRuntime::start(const std::string& name, const std::string& function) {
     error_.clear();
     reset();
     state_.next.battle = -1;
@@ -183,7 +207,7 @@ bool EventRuntime::start(const std::string& function) {
     bindGameState(*vm_, state_);
     bindNatives(*vm_);
     std::vector<uint8_t> bytecode;
-    const std::string script = "script\\" + lower(function) + ".nut";
+    const std::string script = "script\\" + lower(name) + ".nut";
     if (!archive_.read(script, bytecode, &error_) || !vm_->load(bytecode, script) || !vm_->runMain()) {
         if (error_.empty()) error_ = script + ": " + vm_->error();
         return false;

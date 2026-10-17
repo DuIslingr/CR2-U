@@ -26,6 +26,10 @@ public:
     bool begin();
     // the script's function, started if it has it (up to its first wait)
     bool call(const std::string& function);
+    // a tutorial (BtlEvent::LoadScript("battle_tuto"), CallScript: in an encounter without a script
+    // of its own - battle.nut its script, the steps call nothing of it): battle_tuto loaded, its
+    // function called (each its own story flag: shown once)
+    bool tutorial(const std::string& function) { return (name_ == "battle_tuto" || load("battle_tuto")) && call(function); }
     // one of the game's updates (BtlEvent::Update): the call's wait and its windows, the exit's
     // timer; once a call ends, the script SetScript / JumpScript named loaded (and called)
     bool tick();

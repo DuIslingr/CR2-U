@@ -876,6 +876,7 @@ struct Viewer {
     }
 
     void drawKeyMark(int w, int h) {
+        if (script && !script->boxVisible()) return; // (SetBoxVisible: GimmickAllViewOff)
         if (fieldMode && !eventMode && actionMark.gimmick >= 0) {
             const Mat4 proj = uiProjection(w, h);
             Mat4 camera = cr2::mat4Identity();
@@ -1563,6 +1564,11 @@ struct Viewer {
         if (!playMode && script->running() && !script->runToEnd()) // (--field: the area as its set-up leaves it; --play: as it runs)
             SDL_Log("%s's %s: %s", map.c_str(), entry.c_str(), script->error().empty() ? "still running" : script->error().c_str());
         SDL_Log("%s: %s %s", map.c_str(), entry.c_str(), script->running() ? "running" : "done");
+        if (!script->flagMarks().empty()) {
+            std::string marks;
+            for (const std::string& f : script->flagMarks()) marks += " " + f;
+            SDL_Log("%s: flag marks%s", map.c_str(), marks.c_str());
+        }
         fieldClock = 0;
         field.setSolidGimmicks([this](const cr2::Gimmick& g) {
             const auto it = script->gimmicks().find(g.id);
@@ -6474,7 +6480,9 @@ struct Viewer {
     }
 
     void drawBalloons(int w, int h) {
-        if (!fieldMode || eventMode || balloons.empty()) return;
+        if (!fieldMode || eventMode || !script || !script->boxVisible()) return;
+        drawFlagMarks(w, h);
+        if (balloons.empty()) return;
         if (!balloonLoaded) {
             balloonLoaded = true;
             std::string err;
@@ -6502,6 +6510,33 @@ struct Viewer {
             balloonFigure.place.m[3] = nx * float(w) * 0.5f / k, balloonFigure.place.m[7] = ny * float(h) * 0.5f / k;
             pose(balloonFigure, time);
             drawFigure(balloonFigure, view.data());
+        }
+    }
+
+    // the flag marks (FldFlagMark::Update: the `flag` figure at a flagged gimmick's balloon place,
+    // FldUtilGetBalloonPosOffset - hidden while it has a balloon: CheckEntryFlagName)
+    void drawFlagMarks(int w, int h) {
+        if (script->flagMarks().empty() || script->running()) return;
+        const float k = std::min(float(w) / 0.96f, float(h) / 0.64f);
+        Mat4 camera = cr2::mat4Identity();
+        camera[14] = -0.881f;
+        const Mat4 view = cr2::mat4Multiply(uiProjection(w, h), camera);
+        cr2::SceneLighting l;
+        dev->setLighting(l);
+        const std::vector<cr2::Gimmick>& gs = field.gimmicks();
+        for (size_t i = 0; i < gs.size(); ++i) {
+            const cr2::Gimmick& g = gs[i];
+            if (!script->flagMarks().count(g.id) || !script->visible(g) || std::find(balloons.begin(), balloons.end(), i) != balloons.end()) continue;
+            const float p[3] = {g.position[0], g.position[1] + g.balloonHeight(), g.position[2]};
+            const float* m = fieldScene.data();
+            const float cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
+            if (cw <= 0) continue;
+            UiFig& f = uiFig("flag");
+            f.fig.place = cr2::Mat34();
+            f.fig.place.m[3] = (m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / cw * float(w) * 0.5f / k;
+            f.fig.place.m[7] = (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / cw * float(h) * 0.5f / k;
+            poseUi(f, "flag", time, true);
+            drawFigure(f.fig, view.data());
         }
     }
 

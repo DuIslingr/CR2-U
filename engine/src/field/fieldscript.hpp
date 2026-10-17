@@ -13,6 +13,7 @@
 
 #include <array>
 #include <map>
+#include <set>
 #include <memory>
 #include <string>
 #include <utility>
@@ -121,6 +122,12 @@ public:
             return 0;
         }
     };
+    // The flag marks (FldFlagMark: Cr3GimmickData.SetFlagMark / ClearFlagMark / AllClearFlagMark -
+    // the gimmicks with the `flag` figure over them, where their balloon would be, while they have
+    // none; emptied as an area is made) and the balloons and marks shown at all (SetBoxVisible:
+    // FldMain +0xa4, InterfaceMain::GimmickAllViewOn / Off)
+    const std::set<std::string>& flagMarks() const { return flagMarks_; }
+    bool boxVisible() const { return boxVisible_; }
     // the spot a mystic's tap chose (FldMystic::SetTapSpotName: its game's last)
     std::string mysticTapSpot;
     const TouchAction* touchAction(const std::string& gimmick) const {
@@ -157,6 +164,8 @@ private:
     int fieldCharacters_[2] = {0, -1};
     std::vector<Gimmick> fieldGimmicks_;
     std::map<std::string, TouchAction> actions_;
+    std::set<std::string> flagMarks_;
+    bool boxVisible_ = true;
     TouchAction* findAction(int kind, const std::string& name);
     Placement placement_;
     Camera camera_;

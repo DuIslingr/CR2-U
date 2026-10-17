@@ -184,7 +184,11 @@ adds n of an item (Cr3UtilGetItem: 0..99), `ItemCheck(item)` says how many. `Cha
 `Cr3FieldMapCharacter.ChangeDirection(target, updates)` the leader to a gimmick (FldDirectionManager:
 a 1 / updates step an update - a talk's `ModelDir_Field('player', 'c007_01', 5)`).
 `Cr3TabMenu.SetEnable` shows or hides the tab (cr3_field_data +0x33, saved; a new game's on, as
-the character change's +0x32).
+the character change's +0x32). Flag marks (FldFlagMark: `SetFlagMark(gimmick)`, `ClearFlagMark`,
+`AllClearFlagMark` - the town's requests, by flags 1113..1119) put the `flag` figure where a
+gimmick's balloon would be, but for those with a balloon now (FldMain::CheckEntryFlagName);
+`SetBoxVisible(false)` hides the balloons, the flags and the touch actions' marks while an event
+plays (FldMain +0xa4, GimmickAllViewOff).
 
 Questions (EvtWindow.ShowYesNoButton: BattleYNChoice's `choice_io` with the circle buttons 11
 yes and 12 no; SE 0xb4) wait for an answer: `CheckYesNoButton` 0 until then, 1 yes, 2 no, and

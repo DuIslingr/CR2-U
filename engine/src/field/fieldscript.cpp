@@ -33,6 +33,10 @@ void FieldScript::bind() {
                 return;
             }
     });
+    vm.setNative("Cr3GimmickData", "SetFlagMark", [this](NativeCall& c) { flagMarks_.insert(c.string(0)); });
+    vm.setNative("Cr3GimmickData", "ClearFlagMark", [this](NativeCall& c) { flagMarks_.erase(c.string(0)); });
+    vm.setNative("Cr3GimmickData", "AllClearFlagMark", [this](NativeCall&) { flagMarks_.clear(); });
+    vm.setNative("Cr3GimmickData", "SetBoxVisible", [this](NativeCall& c) { boxVisible_ = c.boolean(0, true); });
     vm.setNative("Cr3GimmickData", "SetHakkeiTouchCnt", [this](NativeCall& c) {
         if (TouchAction* a = findAction(6, c.string(0))) a->touches = std::max(c.integer(1), 1);
     });
@@ -162,7 +166,7 @@ bool FieldScript::enter(const std::string& map, const std::vector<Gimmick>& gimm
         script_ = script;
     }
     gimmicks_.clear();
-    actions_.clear();
+    actions_.clear(), flagMarks_.clear(), boxVisible_ = true;
     fieldGimmicks_ = gimmicks;
     camera_ = Camera();
     for (int k = 0; k < 4; ++k) layers_[k] = true;

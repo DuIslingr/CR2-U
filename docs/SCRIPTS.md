@@ -245,6 +245,21 @@ smaller), line i i x 0.0322 below the joint, shown once the joint has risen so f
 ended: 120 updates, black over 60 with the music stopped, 62 more, then the field (FldMain::Init
 mode 4: the area's `credit`).
 
+The pub (the town's board, `obj003_00` on t0103 with flags 1200 / 1120 / 1197 and a request
+posted: `ReservePUB` - FldMain step 0xd, FldPUB; InterfaceMain::SetPubParameter: PubTitleMenu's
+`menu` on menuPub_io, PubTopMenu, PubMainMenu's pubGirls_io): the board (posterBtn) - a
+pubPoster_io at each call_pubPoster_ioNN for the requests posted (flags 1201 .. 1250, nine at
+most), the one taken (`Cr3UtilGlobalWorkGet(7)`) with checkMark_io, a new one (flag 1250 + id)
+with seal_id; a tap focuses one (SE 0xb3: MTR_posterL at 1.5, faceSlct, its title - PUBTxt id -
+in campHelp_io), another picks it (SE 0xb4, the "new" flag cleared). Its details (PubDetailMenu:
+pubWin_io, PUBTxt id + 60 a line each `\n`; accept_io, or giveUp_io for the one taken, as a circle
+button): accepted, it is taken and FldMain calls the town's `pub_checkA`; given up, the System
+window's question (announce 0x83) - yes: none taken, `pub_checkG`; Back on the board: the field.
+Check (checkBtn_io) shows PubListMenu: posterIcon with each request's sign at call_posterS_idNN
+(PosterSId: a 0.064 square of hud_posterS - its quarters posted, taken, done (flag 1300 + id), not
+yet - 28 requests, 42 with flag 201, 50 with 202), a tap its title, the share done in percent_io
+(completed / 50).
+
 The library (a shelf - the town's evt023 .. 026, d11's evt032 ..: the dungeon's `ReserveLibrary(n)`,
 its message 90 + n, then `Cr3System.ReserveLibrary` - FldMain step 0xf, FldLibrary - and
 `InterfaceWindow.SetArchiveID(n)`; InterfaceMain::SetLibraryParameter - ArchiveWindowMenu and its

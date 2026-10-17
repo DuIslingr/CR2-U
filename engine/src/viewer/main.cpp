@@ -1737,6 +1737,17 @@ struct Viewer {
             inputNext = uiClock + 0.3f;
             return;
         }
+        if (!inputScript.empty() && uiClock >= inputNext && pub.stage && uiClock - pub.at > 0.5f) { // (the pub: next, pick, accept, back, yes, no)
+            const std::string t = inputScript.front();
+            if (t == "next") pubKey(SDLK_RIGHT);
+            else if (t == "list") pubTap(35);
+            else if (t == "pick" || t == "accept") pubKey(SDLK_RETURN);
+            else if (t == "back") pubKey(SDLK_BACKSPACE);
+            else if (t == "yes" || t == "no") pubKey(t == "yes" ? SDLK_Y : SDLK_N);
+            inputScript.pop_front();
+            inputNext = uiClock + 0.4f;
+            return;
+        }
         if (!inputScript.empty() && uiClock >= inputNext && library.stage == 1 && uiClock - library.at > 0.5f) { // (the library: up, down, pick, back)
             const std::string t = inputScript.front();
             libraryKey(t == "up" ? SDLK_UP : t == "down" ? SDLK_DOWN : t == "pick" ? SDLK_RETURN : t == "back" ? SDLK_BACKSPACE : SDLK_UNKNOWN);
@@ -1837,7 +1848,7 @@ struct Viewer {
             }
         } else if (eventMode) {
             updateEvent(event && event->skipHeld() ? dt * 5 : dt); // (the skip button held: five updates a frame)
-        } else if (fieldMode && (campOpen || mapOpen || saveStage || world.stage || shop.stage || party.stage || library.stage == 1)) { // (FldMain steps 5 .. 7, 10: the camp, the map, saving, the world select - the field held)
+        } else if (fieldMode && (campOpen || mapOpen || saveStage || world.stage || shop.stage || party.stage || library.stage == 1 || pub.stage)) { // (FldMain steps 5 .. 7, 10: the camp, the map, saving, the world select - the field held)
             updateManual(dt);
             if (saveStage == 2 && uiClock - saveStart > 1.0f) saveStage = 0; // (a second, then closed)
             if (script && !script->running()) { // (the fade, the windows go on under a menu: GameMain's update - the library's fade back in)
@@ -1924,9 +1935,9 @@ struct Viewer {
             SDL_Log("party: open");
             return;
         }
-        if (n.pub) { // (FldMain step 0xd, FldPUB: not in yet - the field again)
+        if (n.pub) { // (FldMain step 0xd: the pub)
             n.pub = false;
-            SDL_Log("play: the pub (not in yet)");
+            return openPub();
         }
         if (n.chapter) { // (FldMain step 0xe: the chapter select)
             n.chapter = false;
@@ -6665,12 +6676,12 @@ struct Viewer {
                 }
             return true;
         }
-        if (world.stage || library.stage == 1) { // (the world select's rows, its question; the library's rows)
+        if (world.stage || library.stage == 1 || pub.stage) { // (the world select's rows, its question; the library's rows; the pub's)
             const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
             const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
             for (const TapRect& r : tapRects)
                 if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
-                    world.stage ? worldTap(r.id) : libraryTap(r.id);
+                    world.stage ? worldTap(r.id) : pub.stage ? pubTap(r.id) : libraryTap(r.id);
                     break;
                 }
             return true;
@@ -7040,6 +7051,192 @@ struct Viewer {
         int focus = 0, item = 0, count = 1, who = 0;
         float at = 0;
     } shop;
+    // The pub (ReservePUB - FldMain step 0xd, FldPUB; InterfaceMain::SetPubParameter: PubTitleMenu's
+    // `menu` on menuPub_io, PubTopMenu, PubMainMenu's pubGirls_io): the board (posterBtn) - a
+    // pubPoster_io at each call_pubPoster_ioNN for the requests posted (flags 1201 .., nine at
+    // most), the one taken (Cr3UtilGlobalWorkGet(7)) its checkMark_io, a new one (flag 1250 + id)
+    // its seal_id; a tap focuses one (SE 0xb3: MTR_posterL at 1.5, faceSlct on it, its title -
+    // PUBTxt id - in campHelp_io), another on it picks it (SE 0xb4, its "new" flag cleared); Back
+    // (btlBack) ends it (3: the field again). Picked, PubDetailMenu: pubWin_io with its text (PUBTxt
+    // id + 60, a line each "\n"), its title, accept_io (or giveUp_io for the one taken: its circle
+    // button), Back to the board. Accepted: the request taken (work 7), 1 - the town's pub_checkA;
+    // given up: the System window's question (announce 0x83), yes - none taken, 2 - pub_checkG.
+    struct Pub {
+        int stage = 0; // 0 shut, 1 the board, 2 a request, 3 giving it up?, 4 the list
+        int focus = 0, request = 0, listFocus = 0; // (listFocus: the list's request, 0 none)
+        float at = 0;
+    } pub;
+    std::vector<int> pubPosters() const {
+        std::vector<int> v;
+        for (int i = 1; i <= 50 && v.size() < 9; ++i)
+            if (game.flag(1200 + i)) v.push_back(i);
+        return v;
+    }
+    int pubListCount() const { return !game.flag(201) ? 28 : !game.flag(202) ? 42 : 50; } // (PubListMenu::Initialize)
+    // the list's sign of a request (PosterSId::SetSign - hud_posterS's quarters): 1 posted, 2 taken,
+    // 3 done (flag 1300 + id), 4 not yet
+    int pubSign(int id) const {
+        int sign = game.flag(1200 + id) ? 1 : 4;
+        if (game.globalWork[7] == id) sign = 2;
+        if (game.flag(1300 + id)) sign = 3;
+        return sign;
+    }
+    void openPub() {
+        pub = Pub();
+        pub.stage = 1, pub.at = uiClock;
+        SDL_Log("pub: %zu requests posted", pubPosters().size());
+    }
+    void pubEnd(int result) { // (PubMainMenu: ResultPubParameter - FldMain's CallEvent / CallAtMenuFinished)
+        pub.stage = 0;
+        SDL_Log("pub: %d", result);
+        if (result == 1) callGimmick("pub_checkA");
+        else if (result == 2) callGimmick("pub_checkG");
+        else pendingBranch = true;
+    }
+    void pubTap(int id) {
+        const std::vector<int> posters = pubPosters();
+        if (pub.stage == 1) {
+            if (id == 100) return audio.playSe(0xb5, false), pubEnd(3);
+            if (id == 35) return audio.playSe(0xb4, false), void((pub.stage = 4, pub.at = uiClock, pub.listFocus = 0)); // (Check: PubTopMenu 200)
+            if (id >= 1000 && id < 1000 + int(posters.size())) {
+                const int k = id - 1000;
+                if (k != pub.focus) return audio.playSe(0xb3, false), void(pub.focus = k);
+                audio.playSe(0xb4, false);
+                pub.request = posters[size_t(k)];
+                game.setFlag(1250 + pub.request, false);
+                pub.stage = 2, pub.at = uiClock;
+                SDL_Log("pub: request %d", pub.request);
+            }
+        } else if (pub.stage == 2) {
+            if (id == 100) return audio.playSe(0xb5, false), void((pub.stage = 1, pub.at = uiClock));
+            if (id == 38 || id == 39) {
+                audio.playSe(0xb4, false);
+                if (game.globalWork[7] == pub.request) pub.stage = 3, pub.at = uiClock; // (taken already: give it up?)
+                else game.globalWork[7] = pub.request, pubEnd(1);
+            }
+        } else if (pub.stage == 4) { // (PubListMenu: a tap shows a request's title; Back the board)
+            if (id == 100) audio.playSe(0xb5, false), pub.stage = 1, pub.at = uiClock;
+            else if (id >= 2000 && id <= 2050) audio.playSe(0xb4, false), pub.listFocus = id - 2000;
+        } else if (pub.stage == 3) {
+            if (id == 7601) audio.playSe(0xb4, false), game.globalWork[7] = 0, pubEnd(2);
+            else if (id == 7602) audio.playSe(0xb5, false), pub.stage = 2, pub.at = uiClock;
+        }
+    }
+    void pubKey(SDL_Keycode k) {
+        const int n = std::max(int(pubPosters().size()), 1);
+        if (pub.stage == 4 && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
+            const int count = pubListCount();
+            pubTap(2000 + (pub.listFocus + (k == SDLK_LEFT ? count - 2 : 0)) % count + 1);
+        } else if (pub.stage == 1 && (k == SDLK_LEFT || k == SDLK_RIGHT)) pubTap(1000 + (pub.focus + (k == SDLK_LEFT ? n - 1 : 1)) % n);
+        else if (pub.stage == 1 && (k == SDLK_RETURN || k == SDLK_KP_ENTER)) pubTap(1000 + pub.focus);
+        else if (pub.stage == 2 && (k == SDLK_RETURN || k == SDLK_KP_ENTER)) pubTap(game.globalWork[7] == pub.request ? 39 : 38);
+        else if (pub.stage == 3 && (k == SDLK_Y || k == SDLK_RETURN)) pubTap(7601);
+        else if (pub.stage == 3 && k == SDLK_N) pubTap(7602);
+        else if (k == SDLK_BACKSPACE) pub.stage == 3 ? pubTap(7602) : pubTap(100);
+    }
+    void drawPub(const Mat4& view, int w, int h) {
+        const float t = uiClock - pub.at;
+        auto part = [&](const char* fig, const char* anim, float x = 0, float y = 0, float tt = -1) -> UiFig& {
+            UiFig& u = uiFig(fig);
+            u.fig.place = cr2::Mat34();
+            u.fig.place.m[3] = x, u.fig.place.m[7] = y;
+            poseUi(u, anim, tt >= 0 ? tt : t);
+            drawFigure(u.fig, view.data());
+            return u;
+        };
+        part("pubgirls_io", "pubgirls_io");
+        part("menu", "menupub_io");
+        float x, y, sx, sy, ex, ey;
+        auto back = [&]() {
+            UiFig& bk = part("btlback", "btlback_in");
+            if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
+        };
+        auto help = [&](int id) {
+            UiFig& hp = part("camphelp_io", "camphelp_io");
+            if (uiJoint(hp, "typeM_L01", x, y)) drawUiText(messageText("pubtxt", id), 24, x, y, w, h, true);
+        };
+        const std::vector<int> posters = pubPosters();
+        if (pub.stage == 1) {
+            UiFig& board = part("posterbtn", "posterbtn");
+            pub.focus = std::clamp(pub.focus, 0, std::max(int(posters.size()) - 1, 0));
+            for (size_t k = 0; k < posters.size(); ++k) {
+                char jn[32];
+                std::snprintf(jn, sizeof jn, "call_pubPoster_io%02zu", k + 1);
+                if (!uiJoint(board, jn, x, y)) continue;
+                UiFig& p = uiFig("pubposter_io");
+                p.fig.place = cr2::Mat34();
+                p.fig.place.m[3] = x, p.fig.place.m[7] = y;
+                poseUi(p, "pubposter_io", t);
+                for (size_t mi = 0; mi < p.fig.meshes.size(); ++mi) { // (SetCursorPosition: the focused one's MTR_posterL at 1.5)
+                    ViewMesh& vm = p.fig.meshes[mi];
+                    const uint32_t m = vm.source.material;
+                    const bool lit = int(k) == pub.focus && m < p.materials.size() && p.materials[m] == "MTR_posterL";
+                    vm.material.params[0x33] = lit ? std::vector<float>{1.5f, 1.5f, 1.5f, 1.0f} : vm.baseMaterial.params[0x33];
+                    if (vm.material.params[0x33].empty()) vm.material.params.erase(0x33);
+                }
+                drawFigure(p.fig, view.data());
+                if (uiJoint(p, "tapAreaS01", sx, sy) && uiJoint(p, "tapAreaE01", ex, ey)) tapRects.push_back({1000 + int(k), sx, sy, ex, ey});
+                const int id = posters[k];
+                float mx, my;
+                if (id == game.globalWork[7] && uiJoint(p, "call_checkMark", mx, my)) part("checkmark_io", "checkmark_io", mx, my);
+                if (game.flag(1250 + id) && uiJoint(p, "call_seal_id", mx, my)) part("seal_id", "seal_id", mx, my, 0);
+                if (int(k) == pub.focus && uiJoint(p, "call_faceSlct", mx, my)) part("faceslct", "faceslct", mx, my);
+            }
+            if (!posters.empty()) help(posters[size_t(pub.focus)]);
+            drawCommandMenu("checkbtn_io", t, view, {}, {}, 0, 0, 0, "checkbtn_io"); // (the list: circle 35 - PubTopMenu's 200)
+            back();
+        } else if (pub.stage == 4) { // (PubListMenu: posterIcon, each request's sign at call_posterS_idNN, the share done)
+            UiFig& icons = part("postericon", "postericon");
+            cr2::Texture* tex = texture("hud_posters");
+            const Mat4 proj = uiProjection(w, h);
+            static const float kUv[5][4] = {{0, 0, 0, 0}, {0, 0, 0.5f, 0.5f}, {0.5f, 0, 1, 0.5f}, {0, 0.5f, 0.5f, 1}, {0.5f, 0.5f, 1, 1}};
+            for (int id = 1; id <= pubListCount(); ++id) {
+                char jn[32];
+                std::snprintf(jn, sizeof jn, "call_posterS_id%02d", id);
+                if (!uiJoint(icons, jn, x, y) || !tex) continue;
+                const float* uv = kUv[pubSign(id)];
+                const float h2 = 0.032f; // (a 0.064 square)
+                const float v[24] = {x - h2, y - h2, uv[0], uv[3], x + h2, y - h2, uv[2], uv[3], x + h2, y + h2, uv[2], uv[1],
+                                     x - h2, y - h2, uv[0], uv[3], x + h2, y + h2, uv[2], uv[1], x - h2, y + h2, uv[0], uv[1]};
+                const float k = id == pub.listFocus ? 2.0f : 1.0f; // (the focused one's diffuse 2)
+                const float rgba[4] = {k, k, k, 1};
+                dev->drawQuad(*tex, v, proj.data(), rgba);
+                tapRects.push_back({2000 + id, x - h2, y - h2, x + h2, y + h2});
+                if (id == pub.listFocus) {
+                    UiFig& fs = uiFig("faceslct");
+                    fs.fig.place = cr2::Mat34();
+                    fs.fig.place.m[0] = fs.fig.place.m[5] = fs.fig.place.m[10] = 0.5f; // (scaled half)
+                    fs.fig.place.m[3] = x, fs.fig.place.m[7] = y;
+                    poseUi(fs, "faceslct", t);
+                    drawFigure(fs.fig, view.data());
+                }
+            }
+            int done = 0;
+            for (int f = 1301; f <= 1350; ++f) done += game.flag(f);
+            UiFig& pc = part("percent_io", "percent_io");
+            if (uiJoint(pc, "call_dotNum_id1", x, y)) drawDigits(done * 100 / 50, 80, 3, x, y, proj); // (GetPercentInteger(done, 50))
+            if (pub.listFocus > 0) help(pub.listFocus);
+            back();
+        } else if (pub.stage == 3) {
+            drawAsk(announce(0x83), t, view, w, h, 7601, 7602); // (PubMainMenu 9 / 10: the request shut, then give it up?)
+        } else {
+            UiFig& win = part("pubwin_io", "pubwin_io");
+            const std::string text = messageText("pubtxt", pub.request + 60);
+            size_t from = 0;
+            for (int line = 1; line <= 8 && from <= text.size(); ++line) {
+                const size_t at = text.find("\\n", from);
+                if (uiJoint(win, "typeS_L0" + std::to_string(line), x, y))
+                    drawUiText(text.substr(from, at == std::string::npos ? std::string::npos : at - from), 22, x, y, w, h, true);
+                if (at == std::string::npos) break;
+                from = at + 2;
+            }
+            help(pub.request);
+            const bool taken = game.globalWork[7] == pub.request;
+            drawCommandMenu(taken ? "giveup_io" : "accept_io", t, view, {}, {}, 0, 0, 0, taken ? "giveup_io" : "accept_io");
+            back();
+        }
+    }
+
     void openShop() {
         shop = Shop();
         shop.stage = 1, shop.at = uiClock;
@@ -7453,6 +7650,7 @@ struct Viewer {
         else if (world.stage) tapRects.clear(), drawWorldSelect(view, w, h);
         else if (library.stage == 1) tapRects.clear(), drawLibrary(view, w, h);
         else if (shop.stage) tapRects.clear(), drawShop(view, proj, w, h);
+        else if (pub.stage) tapRects.clear(), drawPub(view, w, h);
         else if (party.stage) tapRects.clear(), drawParty(view, proj, w, h);
         else {
             tapRects.clear();
@@ -7689,6 +7887,7 @@ int main(int argc, char** argv) {
     std::vector<std::pair<int, int>> itemArg;
     std::vector<std::tuple<int, int, int>> equipArg;
     int chargeArg = -1, difficultyArg = -1, membersArg[2] = {-2, -2}, ozArg = -1;
+    std::vector<std::string> workArgs;
     std::vector<std::pair<int, int>> stateArg;
     std::vector<std::pair<int, int>> sopiaArg;
     bool skipBattlesOpt = false;
@@ -7739,6 +7938,7 @@ int main(int argc, char** argv) {
         else if (a == "--charge" && next) chargeArg = std::atoi(next), ++i; // (the charge gauge to begin with: tests)
         else if (a == "--difficulty" && next) difficultyArg = std::atoi(next), ++i; // (the world select's level - 1: tests)
         else if (a == "--oz" && next) ozArg = std::atoi(next), ++i; // (the Oz to begin with: tests)
+        else if (a == "--work" && next) workArgs.push_back(next), ++i; // (n:v - Cr3UtilGlobalWork n to begin with: tests)
         else if (a == "--members" && next) std::sscanf(next, "%d,%d", &membersArg[0], &membersArg[1]), ++i; // (the field's two, from 0: tests)
         else if (a == "--item" && next) { // (an item's count to begin with: id:count, tests)
             int id = 0, n = 0;
@@ -7890,6 +8090,11 @@ int main(int argc, char** argv) {
         if (c >= 1 && c <= 9 && slot >= 0 && slot < 8) v.game.equip[c - 1][slot] = static_cast<short>(item);
     if (difficultyArg >= 0) v.game.difficulty = difficultyArg;
     if (ozArg >= 0) v.game.oz = ozArg;
+    for (const std::string& w : workArgs) {
+        const size_t c = w.find(':');
+        const int n = std::atoi(w.c_str()), val = c == std::string::npos ? 0 : std::atoi(w.c_str() + c + 1);
+        if (n >= 0 && n < int(std::size(v.game.globalWork))) v.game.globalWork[size_t(n)] = val;
+    }
     if (membersArg[0] > -2) v.game.party[0] = membersArg[0], v.game.party[1] = membersArg[1];
     if (continueSave) {
         v.playMode = true;
@@ -8064,6 +8269,10 @@ int main(int argc, char** argv) {
                     }
                     if (v.world.stage) { // (the world select: Up / Down, Return, Backspace; Y / N its question)
                         v.worldKey(k);
+                        continue;
+                    }
+                    if (v.pub.stage) { // (the pub: Left / Right, Return, Backspace; Y / N)
+                        v.pubKey(k);
                         continue;
                     }
                     if (v.library.stage == 1) { // (the library: Up / Down, Return, Backspace)

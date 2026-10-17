@@ -168,6 +168,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       then the jump to the chapter (the same `--input` as the world select)
 - [x] The library: a shelf's entries open to you, their "new" marks, each read in its window
       (`--input up` / `down` / `pick` / `back`)
+- [x] The pub: the request board (the posters posted, the one taken, the new ones), a request's
+      details, accepting it or giving it up, the list of every request and the share done
+      (`--input next` / `pick` / `accept` / `list` / `yes` / `no` / `back`; `--work 7:n` takes one, for tests)
 - [x] The staff roll: an ending's credits over its picture, its music, held fast-forward, then the
       field again (`cr2view --play t0101 --credits 1` starts one at once, for tests; its lines are
       read from your release's executable)

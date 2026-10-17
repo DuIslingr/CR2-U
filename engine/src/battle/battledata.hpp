@@ -59,6 +59,10 @@ public:
         std::string text[2]; // +0x08, +0x0c: what it does (the lists' help; "\\n" a line break)
         std::string motion;  // +0x38 ("bo01")
         std::string hitEffect; // +0x18 the effect on the one hit ("eff101": BtlActionCtrl::HitEffect)
+        std::string launchEffect; // +0x20 on the one acting as it begins (ShowCommandLaunchEffect)
+        std::string shotEffect;   // +0x28 a shot's, flying to the one hit (CreateShotEffect)
+        std::string shotMark;     // +0x30 on the one a shot is for, as it flies
+        int shot = 0;             // +0x40: 3 the command shoots (CreateShotEffect)
         int power = 0;       // +0x44
         int magic = 0;       // +0x49: 0 physical, 1 magic
         int spread = 0;      // +0x4a: +- percent

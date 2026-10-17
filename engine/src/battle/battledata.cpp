@@ -126,7 +126,9 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         c.name[0] = text(o), c.name[1] = text(o + 4); // (+0 Japanese, +4 English)
         c.text[0] = text(o + 8), c.text[1] = text(o + 0xc);
         c.motion = cstr(d, o + 0x38, 6);
-        c.hitEffect = cstr(d, o + 0x18, 16);
+        c.hitEffect = cstr(d, o + 0x18, 8);
+        c.launchEffect = cstr(d, o + 0x20, 8), c.shotEffect = cstr(d, o + 0x28, 8), c.shotMark = cstr(d, o + 0x30, 8);
+        c.shot = int16_t(d[o + 0x40] | d[o + 0x41] << 8);
         c.power = int(u32(d, o + 0x44));
         c.magic = d[o + 0x49], c.spread = d[o + 0x4a], c.target = d[o + 0x4b], c.element = d[o + 0x4c];
         c.specials = uint16_t(s16(d, o + 0x4e));

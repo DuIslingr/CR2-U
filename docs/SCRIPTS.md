@@ -265,7 +265,12 @@ attack (+0x49 0) whose element beat the target's (BtlCalc::DamageAttribute's +0x
 eff220 and the sounds 0x8f .. 0x91, for a critical with the plain attack eff106 - made with its
 settings (BtlEffectTable: its delay; SetCommandEffectPosition with 9: on the one hit, following
 its model at the setting's locator - +0x32 for a pair's action - or put there once); a setting
-whose locator is 7 is a group's (HitGroupEffect): once, at that side's middle.
+whose locator is 7 is a group's (HitGroupEffect): once, at that side's middle. As an action
+begins (ActionAttackWaitAttackMotion, ActionSopia / ItemStandby): a shot - the command's +0x40 3,
+its plain attack's when it has no motion of its own (CreateShotEffect) - +0x28 from the motion's
+effect place to the one hit, arriving at the hit, straight or falling (its setting's +0x3c;
+BtlEffectCtrl::ControlShot), with +0x30 on that one; then its launch effect, +0x20, on the one
+acting (every sopia's eff103).
 
 A battle's special scene may be skipped (BtlActionCtrl::ActionAwakeMain / AdventMain): from its
 start (ActionAwake / AdventStandby) until a SetSkipEnable step turns it off, a tap - but for

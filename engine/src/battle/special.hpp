@@ -70,6 +70,7 @@ struct EffectSetting {
     short pairLocator = 0; // (a pair's action's: 7 the side's middle)
     short placement = 0;   // (0 placed by its target - SetCommandEffectPosition -, else not)
     bool scaled = false;   // (scaled to its target)
+    unsigned char shotPath = 0; // (a shot's: 0 straight, 1 falling - BtlEffectCtrl::ControlShot)
 };
 const EffectSetting& effectSetting(const std::string& name);
 

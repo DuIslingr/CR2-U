@@ -3351,6 +3351,49 @@ struct Viewer {
             if (f == a.actor) showHitAt = t.hit[0] >= 0 ? t.hit[0] : length * 0.5f;
         }
         showEnd = battleClock + std::max(length, 0.5f) + 0.3f;
+        // its effects as it begins (ActionAttackWaitAttackMotion / ActionSopia / ItemStandby): a
+        // shot (CreateShotEffect: the command's +0x40 3 - its plain attack's when it has no motion
+        // of its own - +0x28 from the motion's effect place to the one hit, there at the hit, and
+        // +0x30 on that one), then its launch effect (+0x20) on the one acting
+        if (c && target >= 0) {
+            const cr2::BattleData::Command* shooter = c;
+            if (c->motion.empty() && a.actor >= 0 && a.actor < 2) shooter = battleData.command(battleRules->fighter(a.actor).attack);
+            if (shooter && shooter->shot == 3 && !c->shotEffect.empty()) {
+                SceneEffect fx;
+                fx.fig = std::make_unique<ViewFigure>();
+                std::string err;
+                const float keep = time;
+                if (loadFigure(c->shotEffect + ".geom", *fx.fig, &err)) {
+                    const auto it = std::find(fx.fig->anims.begin(), fx.fig->anims.end(), c->shotEffect + ".anim");
+                    if (it != fx.fig->anims.end()) loadAnim(*fx.fig, size_t(it - fx.fig->anims.begin()));
+                    time = keep;
+                    fx.set = &cr2::effectSetting(c->shotEffect);
+                    fx.fig->absolute = true;
+                    fx.shot = true, fx.path = fx.set->shotPath, fx.start = battleClock, fx.flight = std::max(showHitAt, 0.1f);
+                    cr2::MotionTimes mt;
+                    const BattleUnit* au = unitOf(a.actor);
+                    const BattleUnit* tu = unitOf(target);
+                    if (au && tu) {
+                        cr2::motionTimes(au->figure, cr2::motionIndex(motion), mt);
+                        cr2::Mat34 j = au->fig.place;
+                        if (mt.effectLocation != 9) jointPlace(au->fig, cr2::tposJoint(mt.effectLocation), j);
+                        cr2::Mat34 k = tu->fig.place;
+                        const short tl = fx.set->locator == 7 || fx.set->locator == 9 ? 6 : fx.set->locator;
+                        jointPlace(tu->fig, cr2::tposJoint(tl), k);
+                        for (int c3 = 0; c3 < 3; ++c3) fx.from[c3] = j.m[c3 * 4 + 3], fx.to[c3] = k.m[c3 * 4 + 3];
+                        commandEffects.push_back(std::move(fx));
+                    }
+                } else {
+                    time = keep;
+                    SDL_Log("shot %s: %s", c->shotEffect.c_str(), err.c_str());
+                }
+                if (!c->shotMark.empty()) commandEffect(c->shotMark, target, a.partner >= 0);
+            }
+            if (!c->launchEffect.empty()) {
+                const cr2::EffectSetting& ls = cr2::effectSetting(c->launchEffect);
+                if (!(a.partner >= 0 && ls.pairLocator == 7)) commandEffect(c->launchEffect, a.actor, a.partner >= 0);
+            }
+        }
         // its cameras (BtlActionCtrl::SetAttackCamera1 / 2): by the party - its kind (0 / 1 the
         // one, 2 alone, 3 a pair), the pattern's base and the target, one of two at random, the
         // next at the hit; by a monster - the base, which it is and its target (3 a pair)
@@ -3530,6 +3573,11 @@ struct Viewer {
         bool shown = true;
         int follows = -1; // (the fighter whose model it has: connect, SetEffectTarget)
         short locator = -1; // (else its setting's: a pair's action's command effect - +0x32)
+        // a shot (BtlEffectCtrl::SetShot / ControlShot): from `from` to `to` over `flight` s,
+        // straight or falling (thrown up at 2 a second, down to arrive), gone once there
+        bool shot = false;
+        int path = 0;
+        float from[3] = {0, 0, 0}, to[3] = {0, 0, 0}, flight = 0;
         cr2::Mat34 place;
         Ramp alpha;
     };
@@ -3913,6 +3961,15 @@ struct Viewer {
             if (fx.set->constrain & 1)
                 for (int c = 0; c < 3; ++c) place.m[c * 4 + 3] = j.m[c * 4 + 3] + fx.set->shift[c];
             if (fx.set->constrain & 2) setRotation(place, j);
+        }
+        if (fx.shot) {
+            if (t > fx.flight) {
+                unload(*fx.fig);
+                return false;
+            }
+            const float k = fx.flight > 0 ? t / fx.flight : 1;
+            for (int c = 0; c < 3; ++c) place.m[c * 4 + 3] = fx.from[c] + (fx.to[c] - fx.from[c]) * k;
+            if (fx.path == 1 && fx.flight > 0) place.m[7] += 2.0f * t - 2.0f / fx.flight * t * t; // (CalcFallMotion: back down at its end)
         }
         if (fx.set->billboard) setRotation(place, camera);
         fx.fig->place = place;

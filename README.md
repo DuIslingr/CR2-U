@@ -158,7 +158,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       fades, hits and sounds; the pair's Advent list (`--input "pair advent v136"`)
 - [x] A special scene's skip: a tap (`--input skip`) while it may be skipped - its sounds stopped,
       everyone back in place, its hits landed at once
-- [ ] Battles on screen: the actions' effects past the hits' (an advent's launch effect too)
+- [x] The actions' effects by their settings: the hits' (element bursts, criticals, a group's
+      once), the launch effects (the sopia's casting), shots flying to the one hit and their marks
+- [ ] Battles on screen: an advent's launch effect, the mirror's, the warp's
 - [x] Treasure boxes: drawn as a dungeon is entered (the difficulty's tables), opened with their
       item and its window ("Obtained ...", the item's icon), the key boxes for Orlando alone - their
       mark and lock (two fingers spread on it: the mouse dragged from it) - the System window's

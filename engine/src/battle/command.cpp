@@ -26,7 +26,7 @@ std::vector<CommandInput::Shown> CommandInput::buttons() const {
         out.push_back({Solo, true});
         out.push_back({Pair, both && r.scriptSwitch(47)});
         out.push_back({Escape, !eventBattle_});
-        out.push_back({Options, false});                 // (not yet)
+        out.push_back({Options, true}); // (as the game shows it - its window not yet: a press does nothing)
     } else if (menu_ == Menu::Command) {
         // CheckCommandEnable: Attack switch 43, Sopia 44, Items 45, Defend 46 (and the states
         // that forbid them - none kept yet); Awake / Advent shown when one can be (+0x3e / +0x3f)
@@ -186,6 +186,7 @@ bool CommandInput::press(int id) {
     if (it == b.end() || !it->selectable) return false;
     const BattleRules& r = *rules_;
     if (menu_ == Menu::First) { // (StepGetsetLoop: 0 solo - the first standing chooses first; 1 pair; 2 escape)
+        if (id == Options) return false;
         if (id == Escape) {
             escape_ = true, orders_.clear(), menu_ = Menu::Done;
             return true;

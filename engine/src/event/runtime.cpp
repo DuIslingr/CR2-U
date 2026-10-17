@@ -257,6 +257,8 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     auto fade2 = [this](NativeCall& c) {
         fade_.start(fadeColour(c.integer(0)), c.integer(1), c.number(2) / 100.0f, c.number(3) / 100.0f);
     };
+    vm.setNative("Cr3Fade", "SetEffectLine", [this](NativeCall&) { effectLine = true; });
+    vm.setNative("Cr3Fade", "DeleteEffectLine", [this](NativeCall&) { effectLine = false; });
     vm.setNative("Cr3Fade", "FadeIn2", fade2);
     vm.setNative("Cr3Fade", "FadeOut2", fade2);
     // the vista's skip button (EvtSkip): held - the viewer's fastForward while it shows

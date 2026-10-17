@@ -7418,6 +7418,18 @@ struct Viewer {
             Viewer* v; cr2::EventRuntime* ev;
             ~YesNoLast() { v->dev->clearDepth(), v->drawYesNo(*ev, v->screenW, v->screenH); }
         } yesNoLast{this, ev};
+        if (ev->effectLine) { // (BattleEffectTypeBMenu: radiate_loop, scaled aspect / 1.5 - or 1.5 / aspect - across)
+            Mat4 camera = cr2::mat4Identity();
+            camera[14] = -0.881f;
+            const Mat4 view = cr2::mat4Multiply(uiProjection(screenW, screenH), camera);
+            UiFig& rl = uiFig("radiate_loop");
+            const float aspect = float(screenW) / float(std::max(screenH, 1));
+            const float k = aspect > 1.5f ? aspect / 1.5f : 1.5f / aspect;
+            rl.fig.place = cr2::Mat34();
+            rl.fig.place.m[0] = rl.fig.place.m[5] = k;
+            poseUi(rl, "radiate_loop", uiClock, true);
+            drawFigure(rl.fig, view.data());
+        }
         const cr2::EventFade& fd = ev->fade();
         const float alpha = fd.at(eventLead() / cr2::EventRuntime::kTick);
         if (alpha > 0 && white.id) {

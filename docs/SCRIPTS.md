@@ -431,7 +431,10 @@ camera, the moves, the animations and the fades where they are by then. The scri
   `...DirectStart(sky, ground)`, `...DirectStop`; Cr3Struct.Vector3 / Vector4 arguments): VistaMain::
   Update steps them a frame each update, VistaMain::Draw puts them over the light figure's colours
   (the directional light intensity x colour, the hemisphere's sky and ground) while one is animating
-  or held. `SetMapAnimPause(on)` holds the vista map's own animation. The vista camera's near plane is at least 0.05, its far 5 x the camera's (at most 5000;
+  or held. `SetMapAnimPause(on)` holds the vista map's own animation.
+  `Cr3Fade.SetEffectLine` / `DeleteEffectLine` (`PlayEff_Line` / `StopEff_Line`: InterfaceMain::
+  SetEffectLine, BattleEffectTypeBMenu) lay `radiate_loop` over the screen on its loop, scaled
+  across by aspect / 1.5 (or 1.5 / aspect), until deleted. The vista camera's near plane is at least 0.05, its far 5 x the camera's (at most 5000;
   VistaCamera::Init, but for D11_06_0102 and D12_03_0106a). `ExecutionStart` /
   `ExecutionEndStart` wait for the player's slash (`WaitPlayerSlash`: `CheckExecution` each
   frame);

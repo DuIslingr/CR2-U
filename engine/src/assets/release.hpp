@@ -13,8 +13,15 @@
 
 namespace cr2 {
 
-// the archive `path` names: itself, or the one in that folder (the OBB first)
+// the archive `path` names: itself, or the one in that folder (the OBB first) - or in the
+// release's own place under it: a Vita copy's PCSG00498 folder (CR2/resources/CRDB.psp2.mvgl, or
+// its CR2 folder), an unpacked .ipa (Payload/ChaosRings2enHD.app/CRDB.ios.mvgl)
 std::string resolveArchive(const std::string& path);
+
+// With no --data: CR2_DATA, else a copy the build carries beside its executable (`baseDir`):
+// vita/, android/ or ipad/ (each as resolveArchive takes a folder), else the folder itself.
+// Empty: none found
+std::string defaultArchive(const std::string& baseDir);
 
 // a zip's entry (stored, or deflated: with zlib)
 bool readZipEntry(const std::string& zip, const std::string& name, std::vector<uint8_t>& out, std::string* error = nullptr);

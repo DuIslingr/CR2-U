@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <system_error>
@@ -63,14 +64,33 @@ std::vector<std::string> filesIn(const std::string& dir) {
 std::string resolveArchive(const std::string& path) {
     std::error_code ec;
     if (!fs::is_directory(path, ec)) return path;
-    std::string dir = path;
-    while (dir.size() > 1 && (dir.back() == '/' || dir.back() == '\\')) dir.pop_back();
-    const std::vector<std::string> files = filesIn(dir);
-    for (const std::string& n : files)
-        if (n.compare(0, 5, "main.") == 0 && endsWith(n, kObbPackage)) return dir + "/" + n;
-    for (const std::string& n : files)
-        if (n.compare(0, 5, "CRDB.") == 0 && endsWith(n, ".mvgl")) return dir + "/" + n;
+    std::string top = path;
+    while (top.size() > 1 && (top.back() == '/' || top.back() == '\\')) top.pop_back();
+    // the folder itself, then where each release keeps its archive under its own folder: the
+    // Vita's PCSG00498 (CR2/resources/), the iPad's unpacked .ipa (Payload/ChaosRings2enHD.app/)
+    for (const char* sub : {"", "/resources", "/CR2/resources", "/ChaosRings2enHD.app", "/Payload/ChaosRings2enHD.app"}) {
+        const std::string dir = top + sub;
+        if (*sub && !fs::is_directory(dir, ec)) continue;
+        const std::vector<std::string> files = filesIn(dir);
+        for (const std::string& n : files)
+            if (n.compare(0, 5, "main.") == 0 && endsWith(n, kObbPackage)) return dir + "/" + n;
+        for (const std::string& n : files)
+            if (n.compare(0, 5, "CRDB.") == 0 && endsWith(n, ".mvgl")) return dir + "/" + n;
+    }
     return path;
+}
+
+std::string defaultArchive(const std::string& baseDir) {
+    std::error_code ec;
+    if (const char* env = std::getenv("CR2_DATA"); env && *env) return resolveArchive(env);
+    if (baseDir.empty()) return {};
+    std::string base = baseDir;
+    if (base.back() != '/' && base.back() != '\\') base += '/';
+    for (const char* sub : {"vita", "android", "ipad", ""}) {
+        const std::string a = resolveArchive(*sub ? base + sub : base);
+        if (fs::is_regular_file(a, ec)) return a;
+    }
+    return {};
 }
 
 bool readZipEntry(const std::string& zip, const std::string& name, std::vector<uint8_t>& out, std::string* error) {

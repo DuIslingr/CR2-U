@@ -36,6 +36,21 @@ float halfToFloat(uint16_t h) {
 
 } // namespace
 
+void GeomMesh::resolveJoints(float scale) {
+    if (!joints.empty()) {
+        if (scale != 1.0f)
+            for (uint8_t& j : joints) j = uint8_t(std::clamp(long(std::lround(j * scale)), 0L, 255L));
+        return;
+    }
+    if (positionW.empty()) return;
+    joints.assign(positionW.size() * 4, 0);
+    weights.assign(positionW.size() * 4, 0.0f);
+    for (size_t v = 0; v < positionW.size(); ++v) {
+        joints[v * 4] = uint8_t(std::clamp(long(std::lround(positionW[v] * scale)), 0L, 255L));
+        weights[v * 4] = 1.0f;
+    }
+}
+
 std::vector<uint32_t> GeomMesh::triangles() const {
     std::vector<uint32_t> out;
     out.reserve(strip.size() * 3);
@@ -136,7 +151,7 @@ bool parseGeom(const std::vector<uint8_t>& f, Geom& out, std::string* error) {
             if (!dst && sem != kJoints) continue;
             for (uint32_t v = 0; v < m.vertexCount; ++v) {
                 const uint8_t* p = &f[vAt + size_t(v) * vstride + offset];
-                for (int c = 0; c < count && c < want; ++c) {
+                for (int c = 0; c < count && (c < want || (sem == kPosition && c == 3)); ++c) {
                     float x;
                     switch (type) {
                     case 0x1406: std::memcpy(&x, p + 4 * c, 4); break;
@@ -147,6 +162,10 @@ bool parseGeom(const std::vector<uint8_t>& f, Geom& out, std::string* error) {
                     default: x = norm ? p[c] / 255.0f : float(p[c]); break;
                     }
                     if (sem == kJoints) m.joints[size_t(v) * 4 + c] = p[c];
+                    else if (sem == kPosition && c == 3) { // (a four-component position: GeomMesh::positionW)
+                        if (m.positionW.empty()) m.positionW.assign(m.vertexCount, 0.0f);
+                        m.positionW[v] = x;
+                    }
                     // texture coordinates as shorts are 1024ths (the vertex shader divides); as halves, final
                     else (*dst)[size_t(v) * want + c] = (sem == kUv0 || sem == kUv1) && type != 0x140b ? x / 1024.0f : x;
                 }

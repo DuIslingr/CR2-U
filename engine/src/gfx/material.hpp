@@ -49,10 +49,15 @@ class ShaderLibrary {
 public:
     explicit ShaderLibrary(const MvglArchive& archive) : archive_(archive) {}
     ShaderFeatures features(const std::array<uint32_t, 4>& key);
+    // how its vertex shader takes a vertex's joint (its Indices, or the position's w) to
+    // MatrixPalette's row: 3 (the iPad's: idx = Indices * 3.0 / Position.w * 3.0), 1 (as stored:
+    // Android's, and the Vita's compiled programs)
+    float jointScale(const std::array<uint32_t, 4>& key);
 
 private:
     const MvglArchive& archive_;
     std::map<std::array<uint32_t, 4>, ShaderFeatures> cache_;
+    std::map<std::array<uint32_t, 4>, float> jointScales_;
 };
 
 // A texture entry's sampler flags (GeomMaterial::samplers) as the device's Sampling

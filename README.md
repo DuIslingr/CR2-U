@@ -118,7 +118,11 @@ One or more of:
 |---|---|
 | iPad 2.1.0 (`ChaosRings2enHD.app`) | `CRDB.ios.mvgl`, `Sound.ios/sound/` |
 | Android 2.1.2 (`com.square_enix.chaosrings2gp`) | `main.212.com.square_enix.chaosrings2gp.obb` and its APK beside it (or the APK unpacked there): `--data <that folder>` - the maps' table from the APK's `lib/armeabi-v7a/libChaosRings2.so`, the text in its own font (`assets/00001`), read from inside the APK |
-| PS Vita (PCSG00498) | `CR2/resources/CRDB.psp2.mvgl`, `Sound.psp2/` |
+| PS Vita (PCSG00498) | `--data <its PCSG00498 folder>` (or `CR2/`, or the archive itself): `CR2/resources/CRDB.psp2.mvgl`, the maps' table from `eboot.bin`, the text in its font (`CR2/resources/font/TBGoPro-Bold.otf`); `Sound.psp2/` |
+
+Any one of them is the whole game by itself. Without `--data` the viewer takes `CR2_DATA`, else a
+copy the build carries beside its executable: `vita/` (the PCSG00498 folder), `android/` (the OBB
+and the APK) or `ipad/` (the `.app` or the unpacked `.ipa`).
 
 ## Tools
 

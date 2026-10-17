@@ -100,6 +100,19 @@ ShaderFeatures ShaderLibrary::features(const std::array<uint32_t, 4>& key) {
     return f;
 }
 
+float ShaderLibrary::jointScale(const std::array<uint32_t, 4>& key) {
+    if (auto it = jointScales_.find(key); it != jointScales_.end()) return it->second;
+    char name[64];
+    std::snprintf(name, sizeof name, "shaders\\%08x_%08x_%08x_%08x_vp.shad", key[0], key[1], key[2], key[3]);
+    std::vector<uint8_t> vp;
+    float scale = 1; // (no GLSL - the Vita's: already the row)
+    if (archive_.read(name, vp)) {
+        const std::string s(vp.begin(), vp.end());
+        if (s.find("Indices * 3.0") != std::string::npos || s.find("Position.w * 3.0") != std::string::npos) scale = 3;
+    }
+    return jointScales_[key] = scale;
+}
+
 Sampling sampling(uint32_t flags) {
     Sampling s;
     s.clampS = wrapS(flags) == Wrap::Clamp;

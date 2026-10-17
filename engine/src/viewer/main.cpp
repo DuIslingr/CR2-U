@@ -31,7 +31,8 @@
 //
 // Vulkan by default, OpenGL where Vulkan can't start (or with --renderer opengl).
 //
-//   cr2view --data <CRDB.ios.mvgl | main.212...obb | CRDB.psp2.mvgl> [--model <name>]
+//   cr2view --data <CRDB.ios.mvgl | main.212...obb | CRDB.psp2.mvgl, or a folder holding one:
+//           the Vita's PCSG00498, Android's OBB + APK, an unpacked .ipa> [--model <name>]
 //           [--anim <name>] [--time s] [--size WxH] [--yaw deg] [--pitch deg]
 //           [--lights <figure> | none] [--field <map> [--at <point>] [--binary <file>]
 //           [--walk sx,sy,seconds]] [--event <function> [--vista <map>] [--page s]]
@@ -369,14 +370,20 @@ struct Viewer {
             vm.gpu = dev->upload(vm.vertices, idx, -1);
             vm.lit = !m.normal.empty();
             vm.source = m;
+            if (m.material < g.materials.size()) { // (the joints as rows: the iPad's slots, a joint in the position's w)
+                const std::array<uint32_t, 4>& key = g.materials[m.material].shaderKey;
+                const bool builtIn = !key[0] && !key[1] && !key[2] && !key[3]; // (no shader of its own: its file's form says)
+                vm.source.resolveJoints(builtIn ? (g.version == 0x3c ? 3.0f : 1.0f) : shaders->jointScale(key));
+            }
             if (m.material < g.materials.size()) {
                 vm.material = vm.baseMaterial = g.materials[m.material];
                 if (SDL_getenv("CR2_MATERIALS")) { // (debugging: the materials' keys and states)
                     const cr2::GeomMaterial& gm = g.materials[m.material];
                     std::string st;
                     for (const auto& [id, v] : gm.states) st += " " + std::to_string(id) + "=" + std::to_string(v[0]) + "/" + std::to_string(v[1]);
-                    SDL_Log("%s mesh %zu: material %u key %08x %08x %08x %08x states%s", name.c_str(), f.meshes.size(), m.material,
-                            gm.shaderKey[0], gm.shaderKey[1], gm.shaderKey[2], gm.shaderKey[3], st.c_str());
+                    SDL_Log("%s mesh %zu: material %u key %08x %08x %08x %08x states%s textures %s / %s / %s", name.c_str(), f.meshes.size(),
+                            m.material, gm.shaderKey[0], gm.shaderKey[1], gm.shaderKey[2], gm.shaderKey[3], st.c_str(),
+                            vm.material.diffuse().c_str(), vm.material.texture(0x43).c_str(), vm.material.texture(0x48).c_str());
                 }
                 vm.texture = texture(vm.material.diffuse());
                 vm.normalMap = texture(vm.material.texture(0x35));
@@ -2293,7 +2300,11 @@ int main(int argc, char** argv) {
         if (q == std::end(kQualities)) return std::fprintf(stderr, "--quality: native, quality, balanced, performance or ultra\n"), 2;
         upscale.ratio = q->ratio;
     }
-    data = cr2::resolveArchive(data); // (a folder: the OBB or the CRDB.*.mvgl in it)
+    if (data.empty()) { // (CR2_DATA, else a copy beside the executable: vita/, android/, ipad/)
+        const char* base = SDL_GetBasePath();
+        data = cr2::defaultArchive(base ? base : "");
+    }
+    data = cr2::resolveArchive(data); // (a folder: the OBB or the CRDB.*.mvgl in it, a Vita copy's PCSG00498 ...)
     if (data.empty()) {
         std::fprintf(stderr, "cr2view --data <archive> [--model name] [--anim name] [--time s] [--size WxH] [--yaw deg] "
                              "[--pitch deg] [--lights figure|none] [--field map [--at point] [--binary file]] "

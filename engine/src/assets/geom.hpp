@@ -23,9 +23,16 @@ struct GeomMesh {
     std::vector<float> uv;       // 2 a vertex, already / 1024 (empty: none)
     std::vector<float> uv1;
     std::vector<float> colour;   // 4 a vertex, 0..1 (empty: none)
-    // blend indices, 4 a vertex (empty: none - the mesh is rigid, on palette[0]): palette slot * 3
-    // (MatrixPalette's rows), as the vertex shaders index
+    // blend indices, 4 a vertex (empty: none - the mesh is rigid, on palette[0]), as stored: after
+    // resolveJoints palette slot * 3 (MatrixPalette's rows), as the vertex shaders index
     std::vector<uint8_t> joints;
+    // a four-component position's w (empty: none). Meshes on one joint a vertex keep the joint
+    // there in the iPad's and the Vita's files (no joints attribute)
+    std::vector<float> positionW;
+    // The joints as MatrixPalette's rows: the stored ones, or positionW's (weight 1), times `scale` -
+    // the vertex shader's (ShaderLibrary::jointScale): the iPad's slots (Indices * 3.0,
+    // Position.w * 3.0), Android's and the Vita's already rows (1)
+    void resolveJoints(float scale);
     std::vector<float> weights;  // blend weights, 4 a vertex, used as stored (no remainder implied)
     std::vector<uint16_t> strip; // the indices as stored (a triangle strip)
     // the strip as a triangle list, degenerate triangles dropped, every other one turned so all

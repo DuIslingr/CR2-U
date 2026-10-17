@@ -144,7 +144,19 @@ range (±32) where the Vita's don't (a whole number of repeats: the same samplin
 Semantics (the shaders' attributes): 1 Position (3 floats), 2 Normal, 3 Tangent, 4 Binormal (3
 normalised shorts each), 5 / 6 Texcoord0 / 1 (2 shorts, divided by 1024 in the vertex shader),
 9 Color (4 normalised bytes), 10 / 11 blend indices / weights (bytes). Skinning: a palette of 56
-joints (`MatrixPalette[56*3]`).
+joints (`MatrixPalette[56*3]`). The releases store a vertex's joint differently, and the vertex
+shader says how it reads it:
+
+- Android: blend indices as MatrixPalette's rows (slot x 3; `idx = Indices`), on every skinned mesh.
+- The iPad: blend indices as palette slots (`idx = Indices * 3.0`); a mesh on one joint a vertex
+  has no blend indices but a four-component Position whose w is the slot (`idx = Position.w * 3.0`;
+  3 shaders take `Position.w` as the row). Meshes on the built-in figure shader (key 0) store slots.
+- The Vita: as the iPad's meshes, but the stored values are rows (slot x 3) - its programs are
+  compiled.
+
+Read so, the three releases' 714 skinned meshes all index inside their palettes (107 on the
+iPad and the Vita through the position's w: the interface's masks, as the HP / MP bars' that
+uncover the gauge, and figures' rigid parts).
 
 A material: u32 hash, +0x04..+0x13 its **shader key** (4 u32: below), +0x14 u8 parameters, +0x15
 u8 render states, then 0x14-byte entries: u8 parameter, u8 kind (0 texture, 1..4 that many

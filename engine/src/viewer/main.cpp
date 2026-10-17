@@ -1267,6 +1267,18 @@ struct Viewer {
                 const auto st = k < gimmickIds.size() ? script->gimmicks().find(gimmickIds[k]) : script->gimmicks().end();
                 if (st != script->gimmicks().end()) {
                     g.tint[3] = st->second.alpha();
+                    if (st->second.color != gimmickColor[k]) { // (ChangeModelColor: its variant's textures)
+                        gimmickColor[k] = st->second.color;
+                        const std::string id = gimmickIds[k];
+                        const std::string tex = st->second.color < 0 ? std::string() : "m" + id.substr(1, 3) + "abcd"[st->second.color] + "01";
+                        cr2::Texture* t = tex.empty() ? nullptr : texture(tex);
+                        cr2::Texture* n = tex.empty() ? nullptr : texture(tex + "n");
+                        if (!tex.empty() && !t) SDL_Log("%s: no %s", id.c_str(), tex.c_str());
+                        for (ViewMesh& vm : g.meshes) {
+                            if (t) vm.texture = t;
+                            if (n) vm.normalMap = n;
+                        }
+                    }
                     if (st->second.faceUpdates > 0) { // (ChangeDirection: turned about y toward its target, in place)
                         if (gimmickFace[k].serial != st->second.faceSerial) {
                             float tx, tz;
@@ -1440,6 +1452,7 @@ struct Viewer {
             drawLayer(field.midgroundImage(), fr.midground);
             drawFigure(mapFigure, fr.scene.data());
             for (const ViewFigure& g : gimmicks) drawFigure(g, fr.scene.data());
+            drawResidents(fr.scene.data());
             // an event's scene in the field (EvtScene in FldMain: its models among the field's
             // figures, through the field's camera), the leader unless the script hid it
             if (script && script->events().sceneShown()) {
@@ -1478,6 +1491,41 @@ struct Viewer {
 
     // the gimmicks shown with a figure: placed by their joints, NPCs idling (FldNPC: <figure>fn01) -
     // as the script has them now
+    // the resident effects the script played (FldEffectResident: its figure on the leader - its
+    // place and facing - or a gimmick's, scaled, its animator once from its start)
+    std::map<int, ViewFigure> residentFigs;
+    std::map<int, int> residentSerial;
+    void drawResidents(const float* mvp) {
+        if (!script) return;
+        for (const auto& [n, r] : script->residents()) {
+            if (r.tick < 0) continue;
+            const char* name = cr2::FieldScript::residentFigure(n);
+            ViewFigure& f = residentFigs[n];
+            std::string err;
+            if (f.meshes.empty() && f.name.empty() && !loadFigure(std::string(name) + ".geom", f, &err)) {
+                SDL_Log("resident %s: %s", name, err.c_str());
+                f.name = "-";
+                continue;
+            }
+            if (f.meshes.empty()) continue;
+            const float t = float(script->ticks() - r.tick) * cr2::EventRuntime::kTick + fieldClock;
+            if (f.animLoaded && t > f.anim.duration()) continue; // (played out)
+            float p[3] = {player[0], player[1], player[2]}, yaw = heading;
+            for (const cr2::Gimmick& g : field.gimmicks())
+                if (r.target != "player" && (g.id == r.target || g.name == r.target)) {
+                    std::memcpy(p, g.position, sizeof p);
+                    yaw = 2 * std::atan2(g.rotation[1], g.rotation[3]); // (its turn about y)
+                    break;
+                }
+            const float c = std::cos(yaw), sn = std::sin(yaw);
+            f.place = cr2::Mat34();
+            f.place.m[0] = c * r.scale[0], f.place.m[2] = sn * r.scale[2], f.place.m[5] = r.scale[1];
+            f.place.m[8] = -sn * r.scale[0], f.place.m[10] = c * r.scale[2];
+            f.place.m[3] = p[0], f.place.m[7] = p[1], f.place.m[11] = p[2];
+            pose(f, t, false);
+            drawFigure(f, mvp);
+        }
+    }
     std::vector<std::string> shownGimmicks;
     std::vector<std::string> gimmickIds; // (the figures' gimmicks: the script's names for them)
     std::vector<int> gimmickSerial;      // (the event motion each has loaded: its SetMotion's count)
@@ -1487,6 +1535,7 @@ struct Viewer {
         bool done = true; // (the leader's: its turn's end applied - the player's to steer then)
     };
     std::vector<Facing> gimmickFace; // (each one's turn: ChangeDirection)
+    std::vector<int> gimmickColor;   // (the colours each wears: ChangeModelColor's, -1 its own)
     Facing leaderFace;
     // where a turn's target is ("player", else a gimmick's id or name)
     bool gimmickTarget(const std::string& target, float& x, float& z) const {
@@ -1507,7 +1556,7 @@ struct Viewer {
         shownGimmicks = want;
         std::string err;
         for (ViewFigure& g : gimmicks) unload(g);
-        gimmicks.clear(), gimmickIds.clear(), gimmickSerial.clear(), gimmickFace.clear();
+        gimmicks.clear(), gimmickIds.clear(), gimmickSerial.clear(), gimmickFace.clear(), gimmickColor.clear();
         for (const cr2::Gimmick& gm : field.gimmicks()) {
             if (gm.figure.empty() || !archive.contains(gm.figure + ".geom") || !script->visible(gm)) continue;
             ViewFigure g;
@@ -1520,7 +1569,7 @@ struct Viewer {
             if (gm.kind == cr2::Gimmick::Npc) playMotion(g, "fn01");
             if (gm.kind == cr2::Gimmick::Box) playMotion(g, game.boxes.isOpen(gm.boxKind, gm.boxNumber) ? "fn02" : "fn01"); // (FldBox: closed fn01, open fn02)
             gimmicks.push_back(std::move(g));
-            gimmickIds.push_back(gm.id), gimmickSerial.push_back(0);
+            gimmickIds.push_back(gm.id), gimmickSerial.push_back(0), gimmickColor.push_back(-1);
             Facing fc; // (its joint's yaw)
             fc.yaw = std::atan2(g.place.m[2], g.place.m[0]);
             gimmickFace.push_back(fc);

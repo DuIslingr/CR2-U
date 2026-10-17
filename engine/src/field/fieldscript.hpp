@@ -44,6 +44,9 @@ struct GimmickState {
     // turned to something (ChangeDirection(gimmick, target, updates): FldDirectionManager - from
     // where it faces to `faceTarget`, "player" or a gimmick, a 1 / updates step an update)
     std::string faceTarget;
+    // an NPC's colours (ChangeModelColor(gimmick, n): FldNPC::ChangeTexture_Color - every material's
+    // colour and normal textures m<its number><a01 b01 c01 d01> / ..n; -1 its own)
+    int color = -1;
     int faceUpdates = 0, faceSerial = 0, faceTick = 0;
     float alpha() const { return alphaUpdates <= 0 || alphaTick >= alphaUpdates ? alphaTo : alphaFrom + (alphaTo - alphaFrom) * float(alphaTick) / float(alphaUpdates); }
 };
@@ -132,6 +135,17 @@ public:
     // SetMapNameMenuParameter - MapTitleMenu, `mapName` (mapNameFre, ...: the language's) on its
     // mapNameD01.. animator, n 0 and 1 the first; GetVisible: till that animation ends): the
     // dungeon (1.., 0 none) and since when (ticks()); -1 none
+    // The resident effects (FldEffectResident, made with the field: eff030, eff031, eff041 .. -
+    // FldMain::Init's table): Cr3FieldMapEffectResident.SetPosRot(n, target) - on the leader
+    // ("player") or a gimmick -, SetScale(n, x, y, z), Play(n) - its animator from its start, once
+    struct Resident {
+        std::string target = "player";
+        float scale[3] = {1, 1, 1};
+        int tick = -1; // (when played: ticks(); -1 not)
+        int serial = 0;
+    };
+    static const char* residentFigure(int n);
+    const std::map<int, Resident>& residents() const { return residents_; }
     int introDungeon() const { return introDungeon_; }
     int introTick() const { return introTick_; }
     float introSeconds = 0; // (the animator's length: the viewer's, as it loads it)
@@ -173,6 +187,7 @@ private:
     std::map<std::string, TouchAction> actions_;
     std::set<std::string> flagMarks_;
     int introDungeon_ = -1, introTick_ = 0;
+    std::map<int, Resident> residents_;
     bool boxVisible_ = true;
     TouchAction* findAction(int kind, const std::string& name);
     Placement placement_;

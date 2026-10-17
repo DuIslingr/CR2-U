@@ -190,7 +190,13 @@ gimmick's balloon would be, but for those with a balloon now (FldMain::CheckEntr
 `SetBoxVisible(false)` hides the balloons, the flags and the touch actions' marks while an event
 plays (FldMain +0xa4, GimmickAllViewOff). A dungeon entered the first time shows its name
 (`MapNameDisp`: `EvtIntroduction.SetDungeonNum(n)` - MapTitleMenu, the language's `mapName`
-figure on its `mapNameDNN` animator, played once -, then waits while `GetVisible`).
+figure on its `mapNameDNN` animator, played once -, then waits while `GetVisible`). An NPC's
+colours change with `ChangeModelColor(gimmick, n)` (FldNPC::ChangeTexture_Color: every
+material's textures `m<its number>a01` / `b01` / `c01` / `d01`, and their normal maps `..n`). The
+resident effects (FldEffectResident: fifteen made with the field - eff030, eff031, eff041, eff042,
+eff046, eff047, eff048, eff051, eff052, eff056, eff057, eff061, eff062, eff066, eff032) play on the
+leader or a gimmick (`Cr3FieldMapEffectResident.SetPosRot(n, target)`, `SetScale`, `Play(n)`: the
+warp's `WarpEffect` - effect 1 on the player).
 
 Questions (EvtWindow.ShowYesNoButton: BattleYNChoice's `choice_io` with the circle buttons 11
 yes and 12 no; SE 0xb4) wait for an answer: `CheckYesNoButton` 0 until then, 1 yes, 2 no, and

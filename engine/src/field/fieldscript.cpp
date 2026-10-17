@@ -34,6 +34,19 @@ void FieldScript::bind() {
                 return;
             }
     });
+    vm.setNative("Cr3FieldMapEffectResident", "SetPosRot", [this](NativeCall& c) {
+        if (residentFigure(c.integer(0))) residents_[c.integer(0)].target = c.string(1);
+    });
+    vm.setNative("Cr3FieldMapEffectResident", "SetScale", [this](NativeCall& c) {
+        if (residentFigure(c.integer(0)))
+            for (int k = 0; k < 3; ++k) residents_[c.integer(0)].scale[k] = c.number(1 + k, 1);
+    });
+    vm.setNative("Cr3FieldMapEffectResident", "Play", [this](NativeCall& c) {
+        if (residentFigure(c.integer(0))) {
+            Resident& r = residents_[c.integer(0)];
+            r.tick = ticks_, ++r.serial;
+        }
+    });
     vm.setNative("EvtIntroduction", "SetDungeonNum", [this](NativeCall& c) {
         const int n = c.integer(0);
         if (n >= 0 && n < 14) introDungeon_ = std::max(n, 1), introTick_ = ticks_, introSeconds = 2;
@@ -114,6 +127,11 @@ void FieldScript::bind() {
         if (auto it = gimmicks_.find(c.string(0)); it != gimmicks_.end()) face(it->second, c.string(1), c.integer(2));
     });
     vm.setNative("Cr3FieldMapCharacter", "ChangeDirection", [this, face](NativeCall& c) { face(playerAlpha_, c.string(0), c.integer(1)); });
+    vm.setNative("Cr3GimmickData", "ChangeModelColor", [this](NativeCall& c) { // (FldUtilChangeGimmickNPCColor)
+        const std::string id = c.string(0);
+        if (auto it = gimmicks_.find(id); it != gimmicks_.end() && !id.empty() && (id[0] == 'c' || id[0] == 'j') && c.integer(1) >= 0 && c.integer(1) < 4)
+            it->second.color = c.integer(1);
+    });
     vm.setNative("Cr3GimmickData", "SetMotion", [this](NativeCall& c) {
         if (auto it = gimmicks_.find(c.string(0)); it != gimmicks_.end())
             it->second.motion = c.string(1), it->second.motionLoop = true, ++it->second.motionSerial, it->second.motionTick = ticks_;
@@ -176,7 +194,7 @@ bool FieldScript::enter(const std::string& map, const std::vector<Gimmick>& gimm
         script_ = script;
     }
     gimmicks_.clear();
-    actions_.clear(), flagMarks_.clear(), boxVisible_ = true;
+    actions_.clear(), flagMarks_.clear(), boxVisible_ = true, residents_.clear();
     fieldGimmicks_ = gimmicks;
     camera_ = Camera();
     for (int k = 0; k < 4; ++k) layers_[k] = true;
@@ -197,6 +215,12 @@ FieldScript::TouchAction* FieldScript::findAction(int kind, const std::string& n
         if (g.kind == Gimmick::Ability && g.name.find(kKinds[kind]) != std::string::npos && g.name.find(name) != std::string::npos)
             return &actions_[g.name];
     return nullptr;
+}
+
+const char* FieldScript::residentFigure(int n) {
+    static const char* const kResidents[15] = {"eff030", "eff031", "eff041", "eff042", "eff046", "eff047", "eff048", "eff051",
+                                               "eff052", "eff056", "eff057", "eff061", "eff062", "eff066", "eff032"};
+    return n >= 0 && n < 15 ? kResidents[n] : nullptr;
 }
 
 bool FieldScript::call(const std::string& function) {

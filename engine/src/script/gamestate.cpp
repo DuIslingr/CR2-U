@@ -101,6 +101,7 @@ void bindGameState(ScriptVM& vm, GameState& state) {
         for (int k = 0; k < 3; ++k) state.bgColor[k] = c.number(k);
     });
     vm.setNative("Cr3System", "ReserveLibrary", [&next](NativeCall&) { next.library = true; });
+    vm.setNative("Cr3System", "ReserveCredit", [&next](NativeCall& c) { next.credit = c.integer(0); }); // (FldUtilReserveCredit)
     vm.setNative("InterfaceWindow", "SetArchiveID", [&state](NativeCall& c) { state.libraryArchive = c.integer(0); });
     vm.setNative("InterfaceWindow", "GetLibraryID", [&state](NativeCall& c) { c.result(state.libraryId); });
     vm.setNative("Cr3System", "SetComeFromVistaToField", [&next](NativeCall&) { next.fieldMode = 2; });

@@ -1425,6 +1425,7 @@ struct Viewer {
     }
 
     void drawScene(int w, int h) {
+        if (credits.stage) return; // (the staff roll: its figure over black, in the interface's pass)
         if (battleMode) {
             drawBattle(w, h);
             return;
@@ -1491,7 +1492,9 @@ struct Viewer {
     std::string tableFrom;
     bool exitsArmed = false; // (an exit counts once the character has left them all since arriving)
 
+    std::string dataArg, binaryArg; // (the release's: the staff roll's table from its executable too)
     bool loadTable(const std::string& binary, const std::string& dataPath) {
+        dataArg = dataPath, binaryArg = binary;
         if (cr2::releaseMapTable(dataPath, binary, table, &tableFrom)) return true;
         SDL_Log("the maps' table: not found beside %s (the iPad's executable, the Vita's eboot.bin, the Android "
                 "release's APK) - give the game's executable with --binary", dataPath.c_str());
@@ -1816,6 +1819,7 @@ struct Viewer {
         }
         audio.setVolumes(float(optionVolume[0]) / 100.0f, float(optionVolume[1]) / 100.0f, float(optionVolume[2]) / 100.0f);
         audio.update(dt);
+        if (credits.stage) return updateCredits(dt);
         if (battleMode) {
             battleClock += dt;
             updateBattleScript(dt);
@@ -1965,7 +1969,123 @@ struct Viewer {
             n.vista = false;
             SDL_Log("play: vista %s in %s", n.vistaFunction.c_str(), n.vistaMap.c_str());
             if (!startVista(n.vistaFunction, n.vistaMap)) returnToField(n.fieldMode);
+        } else if (n.credit >= 0) { // (VistaMain::BranchAfterVista: 3, the credits)
+            eventMode = false;
+            startCredits(n.credit);
+            n.credit = -1;
         } else returnToField(n.fieldMode);
+    }
+
+    // The staff roll (ReserveCredit(n) - CreditMain; InterfaceMain::SetStaffrollParameter n + 1:
+    // StaffrollMenu, interface 0x76 + n): from black (Cr3FadeIn 60 frames), the ending's music
+    // (0x51e0e8: none, 17, 28, 29 - its fade 20), the ending's figure (end2_BG, end1_BG, end3_BG,
+    // end4_BG: the table's four after its lines) on its own animation - scaled aspect / 1.5 across
+    // a screen wider than 3:2 -, its typeS_L01 rising: line i (the executable's 544 - 44 .. 49 only
+    // with flag 201, 438 .. 533 smaller) i x 0.0322 (scaled) below it, shown once it has risen so
+    // far and gone above 0.4; the speedUp button, held, the figure five times as fast. All shown
+    // and the animation ended: 120 updates, then black (60) with the music stopped, 62 more, and the
+    // field (mode 4: the area's `credit`).
+    struct Credits {
+        int stage = 0; // 0 none, 1 rolling, 2 the wait after it, 3 fading out
+        int number = 0;
+        float animTime = 0, stageTime = 0, startY = 0;
+        bool started = false;
+    } credits;
+    std::vector<std::string> staffLines;
+    std::string staffFigures[4];
+    bool staffTried = false;
+    void startCredits(int n) {
+        if (!staffTried) {
+            staffTried = true;
+            if (!cr2::releaseStaffRoll(dataArg, binaryArg, staffLines, staffFigures)) SDL_Log("credits: the staff roll's table not found in the executable");
+        }
+        credits = Credits();
+        credits.stage = 1, credits.number = std::clamp(n, 0, 3);
+        static const int kMusic[4] = {-1, 17, 28, 29};
+        if (kMusic[credits.number] >= 0) audio.playBgm(kMusic[credits.number], 20);
+        SDL_Log("play: credits %d (%zu lines)", n, staffLines.size());
+    }
+    std::string creditFigure() const {
+        static const char* const kDefault[4] = {"end2_BG", "end1_BG", "end3_BG", "end4_BG"};
+        std::string f = staffFigures[credits.number].empty() ? kDefault[credits.number] : staffFigures[credits.number];
+        std::transform(f.begin(), f.end(), f.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+        return f;
+    }
+    float creditScale() const {
+        const float aspect = float(screenW) / float(std::max(screenH, 1));
+        return aspect < 1.5f ? 1.0f : aspect / 1.5f;
+    }
+    bool creditsLineShown(size_t i) const {
+        return i < staffLines.size() && !staffLines[i].empty() && (i < 44 || i > 49 || game.flag(201));
+    }
+    void updateCredits(float dt) {
+        if (!inputScript.empty() && inputScript.front() == "fast" && uiClock >= fastUntil) inputScript.pop_front(), fastUntil = uiClock + 2.0f;
+        credits.stageTime += dt;
+        if (credits.stage == 1) {
+            credits.animTime += dt * (fastHeld || uiClock < fastUntil ? 5.0f : 1.0f); // (TouchSimpleMove: the figure's speed 5)
+            UiFig& f = uiFig(creditFigure());
+            const float dur = f.fig.animLoaded ? f.fig.anim.duration() : 0;
+            float x, y;
+            const float lineH = creditScale() * 0.032205883f;
+            poseUi(f, creditFigure(), credits.animTime);
+            if (uiJoint(f, "typeS_L01", x, y)) {
+                if (!credits.started) credits.startY = y, credits.started = true;
+                const bool allIn = (y - credits.startY) / lineH >= float(staffLines.empty() ? 0 : 543);
+                if (allIn && credits.animTime >= dur) credits.stage = 2, credits.stageTime = 0;
+            } else if (credits.animTime >= dur) credits.stage = 2, credits.stageTime = 0;
+        } else if (credits.stage == 2 && credits.stageTime >= 120 * cr2::EventRuntime::kTick) {
+            credits.stage = 3, credits.stageTime = 0;
+            audio.stopBgm(60);
+        } else if (credits.stage == 3 && credits.stageTime >= 62 * cr2::EventRuntime::kTick) {
+            credits.stage = 0;
+            SDL_Log("play: credits over");
+            cr2::GameState::Next& n = game.next;
+            const std::string pp = n.popPoint;
+            n.popPoint.clear(), n.fieldMode = -1;
+            if (!pp.empty()) enterMap(pp.substr(0, 5), pp, "credit"); // (FldMain::Init mode 4: CallEvent("credit"))
+            else enterMap(returnMap, "", "credit");
+        }
+    }
+    void drawCredits() {
+        Mat4 camera = cr2::mat4Identity();
+        camera[14] = -0.881f;
+        const Mat4 view = cr2::mat4Multiply(uiProjection(screenW, screenH), camera);
+        const float k = creditScale();
+        UiFig& f = uiFig(creditFigure());
+        f.fig.place = cr2::Mat34();
+        f.fig.place.m[0] = f.fig.place.m[5] = k;
+        poseUi(f, creditFigure(), credits.animTime);
+        drawFigure(f.fig, view.data());
+        float jx, jy;
+        if (uiJoint(f, "typeS_L01", jx, jy)) {
+            const float lineH = k * 0.032205883f;
+            const float risen = credits.started ? (jy - credits.startY) / lineH : 0;
+            for (size_t i = 0; i < staffLines.size(); ++i) {
+                if (float(i) > risen) break;
+                const float y = jy - float(i) * lineH;
+                if (y >= 0.4f || !creditsLineShown(i)) continue;
+                drawUiText(staffLines[i], i >= 438 && i < 534 ? 18.0f : 28.0f, jx, y, screenW, screenH, true); // (SetTextRender: the size + 4, or - 6, drawn 4 less; typeS_L: from the joint)
+            }
+        }
+        fastRect.id = 0;
+        if (credits.stage == 1) {
+            UiFig& ff = uiFig("speedup");
+            ff.fig.place = cr2::Mat34();
+            poseUi(ff, "speedup", uiClock, true);
+            drawFigure(ff.fig, view.data());
+            float sx, sy, ex, ey;
+            if (uiJoint(ff, "tapAreaS01", sx, sy) && uiJoint(ff, "tapAreaE01", ex, ey))
+                fastRect.id = 1, fastRect.x0 = sx, fastRect.y0 = sy, fastRect.x1 = ex, fastRect.y1 = ey;
+        }
+        // the fades: in over 60 frames, out over 60 after the wait
+        const float a = credits.stage == 1 ? std::max(0.0f, 1.0f - credits.stageTime / (60 * cr2::EventRuntime::kTick))
+                        : credits.stage == 3 ? std::min(1.0f, credits.stageTime / (60 * cr2::EventRuntime::kTick)) : 0.0f;
+        if (a > 0 && white.id) {
+            static const float kScreen[24] = {-1, -1, 0, 0, 1, -1, 1, 0, 1, 1, 1, 1, -1, -1, 0, 0, 1, 1, 1, 1, -1, 1, 0, 1};
+            const Mat4 id = cr2::mat4Identity();
+            const float rgba[4] = {0, 0, 0, a};
+            dev->drawQuad(white, kScreen, id.data(), rgba);
+        }
     }
     void returnToField(int mode) {
         cr2::GameState::Next& n = game.next;
@@ -7397,6 +7517,7 @@ struct Viewer {
     }
     void drawEventUi() {
         dev->clearDepth(); // (the scene's depths behind all of it: a near camera's ground too)
+        if (credits.stage) return drawCredits();
         drawIntro(screenW, screenH);
         drawBalloons(screenW, screenH);
         drawKeyMark(screenW, screenH);
@@ -7533,6 +7654,7 @@ int main(int argc, char** argv) {
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
     bool tapAfter = false, mute = false, forceAudio = false;
     std::string eventName, vista = "null", fontPath, playFrom, callEntry = "evt000";
+    int creditsArg = -1;
     int fightMode = 0;
     std::string inputArg; // (--input: the commands chosen, as tokens)
     std::vector<int> flagsArg;
@@ -7609,6 +7731,7 @@ int main(int argc, char** argv) {
         else if (a == "--mute") mute = true;
         else if (a == "--audio") forceAudio = true; // (the device even under --capture: tests, SDL_AUDIO_DRIVER=dummy)
         else if (a == "--call" && next) callEntry = argv[++i]; // (--play: the map's event function, not its evt000)
+        else if (a == "--credits" && next) creditsArg = std::atoi(argv[++i]); // (the staff roll n at once: --play's, for tests)
         else if (a == "--play") playFrom = next && next[0] != '-' ? (++i, next) : "d1020";
         else if (a == "--continue") continueSave = true; // (--play from the save the field's Save wrote)
         else if (a == "--resolution" && next) std::sscanf(next, "%dx%d", &resW, &resH), ++i;
@@ -7746,6 +7869,7 @@ int main(int argc, char** argv) {
         if (!v.continueSave(binary, data)) return 1;
     } else if (!fieldName.empty()) {
         if (!v.loadField(fieldName, at, binary, data, callEntry)) return 1;
+        if (creditsArg >= 0) v.returnMap = fieldName, v.startCredits(creditsArg);
     } else if (lights != "none") {
         if (v.loadLights(lights)) SDL_Log("lights: %s", lights.c_str());
         else SDL_Log("lights: %s has none (the engine's defaults)", lights.c_str());
@@ -8019,7 +8143,7 @@ int main(int argc, char** argv) {
             if (!v.paused) v.time += dt;
             last = now;
             if (!v.paused && v.battleMode && !v.fieldMode && !v.eventMode) v.advance(dt, 0, 0, false);
-            if (!v.paused && (v.eventMode || v.fieldMode)) { // the arrows / WASD run, with Shift walk
+            if (!v.paused && (v.eventMode || v.fieldMode || v.credits.stage)) { // the arrows / WASD run, with Shift walk
                 const bool* keys = SDL_GetKeyboardState(nullptr);
                 if (keys[SDL_SCANCODE_F]) v.fastHeld = true; // (F held: the fast-forward button's)
                 else if (!(SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK)) v.fastHeld = false;

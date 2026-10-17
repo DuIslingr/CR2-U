@@ -234,6 +234,17 @@ chapter, announce 0x8b). Yes: the chapter (`InterfaceWindow.GetChapterID`), the 
 field. An event ended at once (a map's `--call` run on entry) is followed by what it reserved, as
 any other.
 
+The staff roll (`Cr3System.ReserveCredit(n)`: VistaMain::BranchAfterVista - after a battle and
+another vista - goes to CreditMain; InterfaceMain::SetStaffrollParameter(n + 1): StaffrollMenu,
+interface 0x76 + n): from black (60 frames), the ending's music (0x51e0e8: none, 17, 28, 29), the
+figure end2_BG / end1_BG / end3_BG / end4_BG on its own animation (scaled aspect / 1.5 on a screen
+wider than 3:2), its `typeS_L01` rising. The lines are the executable's (AllTextTextureGeneration:
+544 strings - the four figure names right after them -, 44 .. 49 only with flag 201, 438 .. 533
+smaller), line i i x 0.0322 below the joint, shown once the joint has risen so far, gone above
+0.4. The speedUp button held runs the figure five times as fast. All shown and the animation
+ended: 120 updates, black over 60 with the music stopped, 62 more, then the field (FldMain::Init
+mode 4: the area's `credit`).
+
 The library (a shelf - the town's evt023 .. 026, d11's evt032 ..: the dungeon's `ReserveLibrary(n)`,
 its message 90 + n, then `Cr3System.ReserveLibrary` - FldMain step 0xf, FldLibrary - and
 `InterfaceWindow.SetArchiveID(n)`; InterfaceMain::SetLibraryParameter - ArchiveWindowMenu and its

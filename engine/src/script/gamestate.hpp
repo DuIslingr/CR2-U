@@ -128,6 +128,7 @@ struct GameState {
         bool party = false;       // (ReserveParty - FldMain step 0xc)
         bool chapter = false;     // (ReserveChapter - FldMain step 0xe)
         bool library = false;     // (ReserveLibrary - FldMain step 0xf)
+        int credit = -1;          // (ReserveCredit(n): cr3_script_work[0xc] / [0x14] - VistaMain::BranchAfterVista 3, the staff roll)
     } next;
 };
 

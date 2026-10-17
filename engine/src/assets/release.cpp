@@ -165,6 +165,58 @@ bool androidFile(const std::string& archivePath, const std::string& name, std::v
     return false;
 }
 
+namespace {
+// the table in a 32-bit executable: its four figure names' strings, then four words pointing at
+// them (the same distances apart: the pointers' base less the file's, the delta), the 544
+// pointers before them the lines
+bool findStaffRoll(const std::vector<uint8_t>& b, std::vector<std::string>& lines, std::string* figures) {
+    static const char* const kNames[4] = {"end2_BG", "end1_BG", "end3_BG", "end4_BG"};
+    auto find = [&](const char* s) -> int64_t {
+        const size_t n = std::strlen(s) + 1;
+        for (size_t o = 0; o + n <= b.size(); ++o)
+            if (std::memcmp(&b[o], s, n) == 0 && (o == 0 || b[o - 1] == 0)) return int64_t(o);
+        return -1;
+    };
+    int64_t at[4];
+    for (int k = 0; k < 4; ++k)
+        if ((at[k] = find(kNames[k])) < 0) return false;
+    auto word = [&](size_t o) { return uint32_t(b[o] | b[o + 1] << 8 | b[o + 2] << 16 | uint32_t(b[o + 3]) << 24); };
+    for (size_t o = 544 * 4; o + 16 <= b.size(); o += 4) {
+        const int64_t delta = int64_t(word(o)) - at[0];
+        bool ok = true;
+        for (int k = 1; k < 4 && ok; ++k) ok = int64_t(word(o + 4 * size_t(k))) - at[k] == delta;
+        if (!ok) continue;
+        lines.clear();
+        for (size_t i = 0; i < 544 && ok; ++i) { // (a run of words that only looks so: not every one a string)
+            const int64_t s = int64_t(word(o - 544 * 4 + 4 * i)) - delta;
+            if (s < 0 || size_t(s) >= b.size()) {
+                ok = false;
+                break;
+            }
+            std::string t;
+            for (size_t c = size_t(s); c < b.size() && b[c]; ++c) t += char(b[c]);
+            lines.push_back(t);
+        }
+        if (!ok) continue;
+        if (figures)
+            for (int k = 0; k < 4; ++k) figures[k] = kNames[k];
+        return true;
+    }
+    return false;
+}
+} // namespace
+
+bool releaseStaffRoll(const std::string& archivePath, const std::string& binary, std::vector<std::string>& lines, std::string figures[4]) {
+    const std::string archive = resolveArchive(archivePath);
+    std::vector<std::string> candidates;
+    if (!binary.empty()) candidates.push_back(binary);
+    for (const std::string& c : mapTableCandidates(archive)) candidates.push_back(c);
+    std::vector<uint8_t> bytes;
+    for (const std::string& c : candidates)
+        if (readWhole(c, bytes) && findStaffRoll(bytes, lines, figures)) return true;
+    return androidFile(archive, kAndroidLibrary, bytes) && findStaffRoll(bytes, lines, figures);
+}
+
 bool releaseMapTable(const std::string& archivePath, const std::string& binary, std::vector<MapInfo>& table, std::string* from) {
     const std::string archive = resolveArchive(archivePath);
     std::vector<std::string> candidates;

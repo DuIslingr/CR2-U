@@ -36,4 +36,10 @@ bool androidFile(const std::string& archivePath, const std::string& name, std::v
 bool releaseMapTable(const std::string& archivePath, const std::string& binary, std::vector<MapInfo>& table,
                      std::string* from = nullptr);
 
+// The staff roll's lines (StaffrollMenu::AllTextTextureGeneration's table: 544 strings, then the
+// four endings' figure names end2_BG, end1_BG, end3_BG, end4_BG) from the release's executable -
+// found by those four names' pointers, whatever the executable's layout; false: not found
+bool releaseStaffRoll(const std::string& archivePath, const std::string& binary, std::vector<std::string>& lines,
+                      std::string figures[4] = nullptr);
+
 } // namespace cr2

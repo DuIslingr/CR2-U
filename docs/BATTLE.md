@@ -212,7 +212,12 @@ pPairB>`, by the party a monster's `aPos_<pSoloA | pSoloB | pPair><s, ssL, m, ms
 fighters' indices +0xb48 / +0xb4c, +0xb50 / +0xb54 into BtlAposTable's names). Darwin's Slash
 (`j001bo01`): there over frames 4 - 10, the hit at 11, back over 25 - 32. The windows change with
 the hit: the HP, the break gauge and the charge stay as they were until it lands (the reference
-video: "Even" through Slash on a mantis that stands).
+video: "Even" through Slash on a mantis that stands). The number at the target's DummyDP01
+(BtlActionCtrl::ShowDamage -> BtlEtcCtrl::CreateDispNumber, its kind's set by damageinfodata01:
+20, 30, 40 a weakness's, 50 / 60 the restores'), and a mark there (CreateDispState ->
+DamageInfo01: `bonus` with damageinfodata02's animator - 0 `bonus_miss` for a miss, 2
+`bonus_crtcl` for a critical, 1 `bonus_block`, 3 `bonus_blow`; its fade an offset from the whole,
+-1 .. 0, over 1.45 s): the reference video's "1342 Critical!".
 
 The cameras: BtlCameraTable, also built in code (tools/gen_camera_table.py ->
 engine/src/battle/cameratable.inc), numbers into btl_camera_name_table (462 names: the joints of

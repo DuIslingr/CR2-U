@@ -1786,7 +1786,8 @@ struct Viewer {
                 const bool restore = e.heal > 0 || e.healMp > 0 || e.revived;
                 if (e.hit && !restore) playMotion(bu, "bd01", battleClock);
                 if (e.revived) bu.hidden = false;
-                if (e.hit) { // (the number at its DummyDP01 - else its middle - on the screen, in UI units)
+                const cr2::BattleData::Command* hc = battleData.command(e.command);
+                if (e.hit || restore || !(hc && hc->kind == 2)) { // (the number at its DummyDP01 - else its middle - on the screen, in UI units; none for a guard)
                     float p[3] = {bu.fig.place.m[3], bu.fig.place.m[7] + 0.15f, bu.fig.place.m[11]};
                     const int dj = bu.fig.skeleton.joint(cr2::nameHash("DummyDP01"));
                     if (dj >= 0) {
@@ -1799,8 +1800,10 @@ struct Viewer {
                     if (cw > 0) {
                         const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
                         DamageShown ds;
-                        ds.value = e.damage, ds.set = 20, ds.start = battleClock; // (the restores: HP green 50, MP 60)
+                        ds.value = e.damage, ds.set = e.weak ? 40 : 20, ds.start = battleClock; // (the restores: HP green 50, MP 60)
                         if (restore) ds.value = e.heal > 0 || e.healMp == 0 ? e.heal : e.healMp, ds.set = e.heal > 0 || e.healMp == 0 ? 50 : 60;
+                        else if (!e.hit) ds.value = -1, ds.mark = 0;
+                        else if (e.critical) ds.mark = 2;
                         ds.x = (mm[0] * p[0] + mm[4] * p[1] + mm[8] * p[2] + mm[12]) / cw * float(screenW) * 0.5f / k;
                         ds.y = (mm[1] * p[0] + mm[5] * p[1] + mm[9] * p[2] + mm[13]) / cw * float(screenH) * 0.5f / k;
                         damageShown.push_back(ds);
@@ -1811,7 +1814,7 @@ struct Viewer {
                     const std::string what = ec && ec->kind == 2 ? std::string("defends")
                                              : restore ? (e.revived ? "revived, " : "") + std::string("+") + std::to_string(e.heal) + " HP" + (e.healMp ? " +" + std::to_string(e.healMp) + " MP" : "")
                                              : e.hit ? std::to_string(e.damage) + (e.critical ? " critical" : "") + (e.defeated ? ", down" : "") : "missed";
-                    SDL_Log("    %s -> %s: %s", battleRules->fighter(e.actor).name.c_str(), battleRules->fighter(e.target).name.c_str(), what.c_str());
+                    SDL_Log("    %s -> %s: %s (%.1f s)", battleRules->fighter(e.actor).name.c_str(), battleRules->fighter(e.target).name.c_str(), what.c_str(), battleClock);
                 }
             }
         }
@@ -2482,8 +2485,11 @@ struct Viewer {
     // command's name (btlMsg, typeM_C01) and the damage (DamageInfo00: btlNum, btlNum_fgrN for N
     // digits, a digit of set 20 at each call_dotNum_idNN, at the target's DummyDP01)
     Mat4 battleVP = cr2::mat4Identity();
+    // (BtlActionCtrl::ShowDamage: the number - damageinfodata01's set by its kind: 20, 40 a
+    // weakness's, 50 / 60 the restores' -, and its mark, DamageInfo01: `bonus` with
+    // damageinfodata02's animator - 0 bonus_miss, 2 bonus_crtcl; 1 block, 3 blow - at the same place)
     struct DamageShown {
-        int value = 0, set = 20;
+        int value = 0, set = 20, mark = -1; // (the value -1: the mark alone)
         float x = 0, y = 0, start = 0;
     };
     std::vector<DamageShown> damageShown;
@@ -2926,7 +2932,18 @@ struct Viewer {
         // the damage
         for (const DamageShown& d : damageShown) {
             const float age = battleClock - d.start;
-            if (age < 0 || age > 1.2f) continue;
+            if (age < 0 || age > (d.mark >= 0 ? 1.45f : 1.2f)) continue;
+            if (d.mark >= 0) {
+                static const char* const kMarks[5] = {"bonus_miss", "bonus_block", "bonus_crtcl", "bonus_blow", "bonus_crtcl"};
+                UiFig& bm = uiFig("bonus");
+                bm.fig.place = cr2::Mat34();
+                bm.fig.place.m[3] = d.x, bm.fig.place.m[7] = d.y;
+                poseUi(bm, kMarks[d.mark], age);
+                for (ViewMesh& vm : bm.fig.meshes) // (its fade an offset from the whole: -1 .. 0)
+                    if (auto a = vm.material.params.find(0x33); a != vm.material.params.end() && a->second.size() > 3) a->second[3] = std::clamp(1.0f + a->second[3], 0.0f, 1.0f);
+                drawFigure(bm.fig, view.data());
+            }
+            if (d.value < 0) continue;
             int digits = 1;
             for (int v = d.value; v >= 10; v /= 10) ++digits;
             UiFig& bn = uiFig("btlnum");

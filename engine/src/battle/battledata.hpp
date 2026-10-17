@@ -6,6 +6,7 @@
 // option's: 0 Japanese, 1 English, ...).
 
 #include <cstdint>
+#include <array>
 #include <string>
 #include <vector>
 
@@ -75,6 +76,10 @@ public:
         // +0x70 an element it lends the one hit (1..3; 4 none)
         int bad[10] = {}, change[8] = {}, durationMode = 0, turns = 0, attach = 0;
         int attachSelf = 0; // +0x71 an element it lends the one acting (CheckAttachSelf: 1..3; 4 none)
+        // its sounds (BtlSound): +0x68 the voice's kind (Cr3VoiceTable; PlayVoiceCommand) after +0x6a
+        // updates (x 0.05 s); BtlSound::PlaySE numbers - +0x74 at the hit (-1 one of 12..14, 15 on a
+        // critical: PlayHitSE), +0x78 the shot's, +0x7a after it
+        int voice = 0, voiceDelay = 0, hitSe = 0, shotSe = 0, postSe = 0;
         uint32_t special = 0;
         int mp = 0;          // +0x42: its MP (BtlUtilStatus::CalcUseMp)
         int icon = 0;        // +0x72: its icon (mainIcon_id's frame)
@@ -121,7 +126,8 @@ public:
         int id = 0;
         int music = 0;       // +0x00 (cr3_battle_post +2)
         int map = 0;         // +0x02 the battle map, from 1 (BtlMapTable)
-        bool flag = false;   // +0x04 (BtlWork +0x18)
+        bool flag = false;   // +0x04 (BtlWork +0x18: no first-time tutorials)
+        int resultKind = 0;  // +0x15 (3: no victory fanfare - BtlResult)
         int monsters[3] = {0, 0, 0}; // +0x08 (0: none)
     };
 
@@ -130,6 +136,11 @@ public:
     const Coupling* coupling(int id) const;
     const Command* command(int id) const;
     const Item* item(int id) const;
+    // a battle voice's choices (GetVoiceDataPointer: +0x2c, +0x46 of them, 8 bytes each - three
+    // Cr3VoiceTable kinds, one picked at random: BtlSound::PlayVoiceFromData); null: none
+    const std::array<int, 3>* voice(int kind) const {
+        return kind >= 1 && kind <= int(voices_.size()) ? &voices_[size_t(kind - 1)] : nullptr;
+    }
     const AutoSkill* autoSkill(int id) const;
     const Sopia* sopia(int id) const;
     int sopias() const { return int(sopias_.size()); }
@@ -141,6 +152,7 @@ private:
     std::vector<Coupling> couplings_;
     std::vector<Command> commands_;
     std::vector<Item> items_;
+    std::vector<std::array<int, 3>> voices_;
     std::vector<AutoSkill> autoSkills_;
     std::vector<Sopia> sopias_;
     Party party_;

@@ -62,8 +62,45 @@
 #include "field/fieldscript.hpp"
 #include "gfx/material.hpp"
 #include "script/vm.hpp"
+#include "audio/sounddata.hpp"
 
 namespace {
+
+// the release's sound (audio/sounddata.hpp): every track decoded whole, every clip read
+int sound(const char* path) {
+    cr2::SoundData sd;
+    std::string err;
+    if (!sd.open(path, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
+    std::printf("sound: %s\n", sd.describe().c_str());
+    int tracks = 0, bad = 0;
+    for (int t = 1; t <= cr2::SoundData::kTracks; ++t) {
+        std::vector<uint8_t> ogg;
+        cr2::OggStream o;
+        if (!sd.trackOgg(t, ogg) || !o.open(std::move(ogg))) {
+            std::printf("bgm%02d: not Vorbis\n", t);
+            ++bad;
+            continue;
+        }
+        std::vector<int16_t> buf(4096 * size_t(o.channels()));
+        uint64_t n = 0;
+        for (int got; (got = o.read(buf.data(), 4096)) > 0;) n += uint64_t(got);
+        const int loop = sd.trackLoop(t);
+        std::printf("bgm%02d: %d Hz x%d, %.1f s (%llu frames), loops from %d%s\n", t, o.rate(), o.channels(), double(n) / o.rate(),
+                    static_cast<unsigned long long>(n), loop, loop >= 0 && uint64_t(loop) >= n ? " (past its end!)" : "");
+        ++tracks;
+    }
+    for (int b = 0; b < 2; ++b) {
+        const auto bank = cr2::SoundData::Bank(b);
+        int ok = 0;
+        double seconds = 0;
+        std::vector<int16_t> pcm;
+        for (int k = 0; k < sd.clips(bank); ++k)
+            if (sd.clip(bank, k, pcm)) ++ok, seconds += double(pcm.size()) / cr2::SoundData::kRate;
+        std::printf("%s: %d / %d clips read, %.0f s\n", b == 0 ? "effects" : "voices", ok, sd.clips(bank), seconds);
+    }
+    std::printf("%d tracks decode, %d don't\n", tracks, bad);
+    return bad ? 1 : 0;
+}
 
 int usage() {
     std::fprintf(stderr,
@@ -81,7 +118,8 @@ int usage() {
                  "cr2tool event <archive> <script> [function]\n"
                  "cr2tool play <archive> <event | all>\n"
                  "cr2tool battle <archive> <coupling | all>\n"
-                 "cr2tool fight <archive> <coupling> [solo | pair] [seed] [a,b]\n");
+                 "cr2tool fight <archive> <coupling> [solo | pair] [seed] [a,b]\n"
+                 "cr2tool sound <archive>\n");
     return 2;
 }
 
@@ -982,5 +1020,6 @@ int main(int argc, char** argv) {
         return fight(argv[2], std::atoi(argv[3]), argc > 4 && !std::strcmp(argv[4], "pair"), argc > 5 ? uint32_t(std::atoi(argv[5])) : 1, party);
     }
     if (!std::strcmp(argv[1], "run") && argc > 3) return run(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
+    if (!std::strcmp(argv[1], "sound")) return sound(argv[2]);
     return usage();
 }

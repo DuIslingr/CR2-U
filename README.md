@@ -135,10 +135,14 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       pages), the battles' first-time ones (armour, the sopia / items lists, defend, elements,
       states, the options) and the encounters' own, the field's pictures - tutorialPic, the
       tutorial and announcement windows
+- [x] Sound: the music (the Android release's Ogg Vorbis, looping at the game's repeat frames,
+      faded), the effects and voices (both releases' banks) - the scripts' Cr3Sound, the
+      messages' voices, the battles' music, fanfare and game over, their hits' effects and the
+      fighters' voices, the menus' decide / back; the options' volumes (`--mute`; silent under
+      `--capture`; `cr2tool sound` decodes all of it). Not yet: the iPad's AAC music, the Vita's
 - [ ] Battles on screen: the advents' list, the awakenings' own scenes, the actions' effects
       past the hits'
-- [ ] Treasure boxes, the other windows (announcements, tutorials, items), the HUD, the sounds
-      between areas
+- [ ] Treasure boxes, the other windows (announcements, items), the HUD
 - [ ] Engine: events, battles, menus
 
 ## What you need

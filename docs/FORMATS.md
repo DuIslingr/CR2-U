@@ -540,3 +540,32 @@ command's name in `btlMsg` (`typeM_C01`, `btlMsg_in`); the damage (DamageInfo00)
 `btlNum_fgrN` for N digits, a digit of set 20 (30, 40, 50, 60 for the other kinds:
 damageinfodata01) at each `call_dotNum_idNN`, id01 the ones. An interface figure's own animation
 (SetParameterDataBase's, alone in slot 0) is absolute; the animators added beside it relative.
+
+## Sound
+
+MVGL::Sound (over OpenSL ES on Android). 37 music tracks (`Sound/bgm01` .. `bgm37`) and two banks,
+the effects (`Sound/sndeff`) and the voices (`Sound/voice`).
+
+- **Where.** The Android OBB holds them after its MDB1 archive (which ends at 391 MB): the
+  library's `obbtable_pos` / `obbtable_size` (40 u32 each: MVGL::Utilities::Fios::GetObbPos /
+  GetObbSize) - 0 the archive, 1..37 the tracks, 0x26 sndeff, 0x27 voice; each piece at a 4 KiB
+  boundary. The iPad keeps the same banks as files (`Sound.ios/sound/sndeff.bin`, `voice.bin` -
+  byte for byte the OBB's) and its music as AAC in CAF (`bgmNN.caf`).
+- **A track** (Android): an `MCA_` header of 0x400 bytes, then Ogg Vorbis - 44.1 kHz stereo,
+  46 s .. 5 min. It loops back to its repeat frame at its end (Cr3UtilSoundPlayBGM:
+  Cr3SoundSetRepeatFrame from the library's table, a sample; bgm27..29's lie past their ends:
+  once). `cr2tool sound` decodes them all.
+- **A bank** (CPackage): a table of {u32 offset, u32 size} - its length the first offset (394
+  effects, 3250 voices) - over headerless signed 16-bit mono PCM at 22050 Hz
+  (COpenSLESAudioPlayer::initialize(2, 1, 22050000 mHz)). Cr3UtilSoundPlaySE(n) /
+  Cr3UtilSoundPlayVoice(n) play entry n (none at a volume of 0).
+- **The game's numbers.** The scripts' Cr3Sound (PlayBGM(track, frames), StopBGM(frames),
+  ReleaseBGM, GetState(0: the music's - 2 playing, -2 none), PlaySE(clip), PlaySE_Repeat(clip:
+  looping, its slot), StopSE(slot, frames), StopSEAll, PlayVoice(clip), StopVoiceAll) take clips
+  and tracks directly; a fade's frames are the game's updates (CSndNode::_FadeVolumeProc, 20 a
+  second). A message's voice is its text's trailer id (EvtWindow::PlayVoice as its page starts).
+  The battles' (BtlSound) go through tables (tools/gen_sound_table.py -> audio/soundtable.inc):
+  PlaySE(n) a clip from a 300-entry s16 table; a voice by Cr3VoiceTable(figure, kind) - 22 figures'
+  first four characters ("j001", "m309") x 1000 kinds -, the kind one of three at random from
+  battledata's voice records (+0x2c, +0x46 of them: BtlSound::PlayVoiceFromData). The menus' own:
+  0xb4 decide, 0xb5 back.

@@ -72,6 +72,7 @@
 #include "battle/rules.hpp"
 #include "battle/script.hpp"
 #include "event/runtime.hpp"
+#include "viewer/audio.hpp"
 #include "field/character.hpp"
 #include "field/fieldmap.hpp"
 #include "field/fieldscript.hpp"
@@ -207,6 +208,7 @@ void packVertex(uint8_t* o, const float* p, const float* n, const float* uv, con
 struct Viewer {
     cr2::RenderDevice* dev = nullptr;
     cr2::MvglArchive archive;
+    cr2::AudioPlayer audio; // (the music, effects and voices: viewer/audio.hpp)
     std::vector<std::string> models; // the archive's .geom names, sorted
     size_t current = 0;
     ViewFigure fig;                  // the model (fields: the character)
@@ -927,10 +929,13 @@ struct Viewer {
     // A frame's time: the vista's event, else the field (its script, then the leader - held while
     // the script runs)
     void advance(float dt, float sx, float sy, bool run) {
+        audio.setVolumes(float(optionVolume[0]) / 100.0f, float(optionVolume[1]) / 100.0f, float(optionVolume[2]) / 100.0f);
+        audio.update(dt);
         if (battleMode) {
             battleClock += dt;
             updateBattleScript(dt);
             updateManual(dt);
+            updateBattleSounds();
             updateBattleShow();
             updateResult();
             // a fight of the flow over: its last action shown, a moment after (a win: its result)
@@ -1430,7 +1435,7 @@ struct Viewer {
             }
         if (t == "back" && manualStage == 1) closeManual(), ok = true;
         else if (t == "back" && optionsOpen) optionsOpen = false, ok = true;
-        else if (t == "back") commandInput.back(), ok = true;
+        else if (t == "back") commandInput.back(), audio.playSe(0xb5, false), ok = true;
         else if (t.size() > 1 && t[0] == 'a' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickAwakening(std::atoi(t.c_str() + 1));
         else if (t.size() > 1 && t[0] == 's' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickSopia(std::atoi(t.c_str() + 1));
         else if (t.size() > 1 && t[0] == 'i' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickItem(std::atoi(t.c_str() + 1));
@@ -1471,6 +1476,7 @@ struct Viewer {
         return out;
     }
     void choose(int idOrFighter) {
+        audio.playSe(0xb4, false); // (the buttons' decide: Cr3UtilSoundPlaySE 0xb4)
         if (commandInput.menu() == cr2::CommandInput::Menu::Target) commandInput.pick(idOrFighter);
         else if (commandInput.menu() == cr2::CommandInput::Menu::Awake) commandInput.pickAwakening(idOrFighter);
         else if (commandInput.menu() == cr2::CommandInput::Menu::Sopia) commandInput.pickSopia(idOrFighter);
@@ -1491,7 +1497,48 @@ struct Viewer {
     // a first-time tutorial of battle_tuto's (BattleScript::tutorial) - in an encounter without a
     // script of its own, its story flag still off (BtlWork +0x18, which would turn them off, never
     // set here); the battle's steps wait for it as for any of its script's calls
+    // The battles' sounds (BtlSound): an effect by its number (PlaySE: soundtable's clip), a
+    // fighter's voice by its kind (PlayVoiceFromData -> Cr3VoiceTable: its figure's four
+    // characters) - one voice at a time, queued for when it's due (CreatePlayVoiceJob)
+    void battleSe(int n) {
+        const int clip = cr2::SoundData::battleSe(n);
+        if (clip >= 0) audio.playSe(clip, false);
+    }
+    struct VoiceJob {
+        float at = 0;
+        int clip = -1;
+    };
+    std::vector<VoiceJob> voiceJobs;
+    // (`kind`: the data's - one of its three table kinds at random; `tableKind`: Cr3VoiceTable's
+    // own, as a command's +0x68)
+    void battleVoice(int f, int kind, float delay = 0, bool tableKind = false) {
+        const int u = f >= 0 && f < 5 ? fighterUnit[f] : -1;
+        if (u < 0) return;
+        if (!tableKind) {
+            const std::array<int, 3>* choices = battleData.voice(kind);
+            if (!choices) return;
+            kind = (*choices)[size_t(int(battleClock * 997.0f) % 3)];
+        }
+        const int clip = cr2::SoundData::voiceClip(battleUnits[size_t(u)].figure, kind);
+        if (clip >= 0) voiceJobs.push_back({battleClock + delay, clip});
+    }
+    void updateBattleSounds() {
+        for (size_t k = 0; k < voiceJobs.size();)
+            if (battleClock >= voiceJobs[k].at) {
+                audio.stopAllVoices(0);
+                audio.playVoice(voiceJobs[k].clip);
+                voiceJobs.erase(voiceJobs.begin() + std::ptrdiff_t(k));
+            } else ++k;
+        if (pendingBgm > 0 && battleClock >= pendingBgmAt) { // (BtlResult / BtlGameover: 1.1 s on)
+            audio.releaseBgm();
+            audio.playBgm(pendingBgm, 0);
+            pendingBgm = 0;
+        }
+    }
+    int pendingBgm = 0;
+    float pendingBgmAt = 0;
     void battleTutorial(const char* function, int flag) {
+        if (const cr2::BattleData::Coupling* cp = battleData.coupling(battle.coupling); cp && cp->flag) return; // (+0x18)
         if (!battleScript || !battleScriptOk || battleScript->own() || battleScriptRunning() || game.flag(flag)) return;
         SDL_Log("tutorial: %s", function);
         if (!(battleScriptOk = battleScript->tutorial(function))) SDL_Log("battle script: %s", battleScript->error().c_str());
@@ -1528,7 +1575,7 @@ struct Viewer {
             else if (k == SDLK_RIGHT) optionVolume[optionFocus] = std::min(optionVolume[optionFocus] + 5, 100);
             return;
         }
-        if (k == SDLK_BACKSPACE) commandInput.back(), menuChanged();
+        if (k == SDLK_BACKSPACE) commandInput.back(), audio.playSe(0xb5, false), menuChanged(); // (InterfaceMain: 0xb5 back)
         else if (c.empty()) return;
         else if (k == (target ? SDLK_RIGHT : SDLK_DOWN)) menuCursor = (menuCursor + 1) % int(c.size());
         else if (k == (target ? SDLK_LEFT : SDLK_UP)) menuCursor = (menuCursor + int(c.size()) - 1) % int(c.size());
@@ -1565,7 +1612,7 @@ struct Viewer {
                     }
                     return;
                 }
-                if (r.id == 100) commandInput.back(), menuChanged();
+                if (r.id == 100) commandInput.back(), audio.playSe(0xb5, false), menuChanged();
                 else if (r.id >= 1000) { // (another row: the focus to it - ScrollListMenu)
                     const std::vector<int> c = menuChoices();
                     const size_t row = size_t(r.id - 1000);
@@ -1614,6 +1661,10 @@ struct Viewer {
         if (!battleScriptOk) SDL_Log("battle script: %s", battleScript->error().c_str());
         else SDL_Log("battle script: %s%s", battleScript->name().c_str(), battleScript->own() ? " (its own)" : "");
         for (int id = 1; id < 300; ++id) battleRules->setItemCount(id, game.itemCount[id]); // (BtlWork +0x52)
+        // the music (BtlMainCtrl::StepBattleIn: the encounter's +0 - but with story flag 0x7f7, the
+        // script's own)
+        voiceJobs.clear(), pendingBgm = 0;
+        if (const cr2::BattleData::Coupling* cp = battleData.coupling(battle.coupling); cp && !game.flag(0x7f7)) audio.playBgm(cp->music, 0);
         for (const auto& [f, id] : stateArg) // (--state: one use of it, tests)
             if (f >= 0 && f < 5) battleRules->fighter(f).states.push_back({id, 0, 1});
         battleRules->setSopiaOwned(game.sopiaOwned); // (the drops: a sopia not had yet)
@@ -1666,6 +1717,17 @@ struct Viewer {
             if (!battleRules->exited() && battleRules->outcome() == 1) {
                 battleRules->script("Battle_End"); // (BtlResult)
                 beginResult();
+                // (its music faded over 20 updates, then the fanfare - 15 - 1.1 s on, unless the
+                // encounter's +0x15 is 3; the victory voice, kind 22)
+                const cr2::BattleData::Coupling* cp = battleData.coupling(battle.coupling);
+                if (!cp || cp->resultKind != 3) audio.stopBgm(20), pendingBgm = 15, pendingBgmAt = battleClock + 1.1f;
+                for (int k = 0; k < 2; ++k)
+                    if (battleRules->fighter(k).alive) {
+                        battleVoice(k, 22, 1.2f);
+                        break;
+                    }
+            } else if (!battleRules->exited() && battleRules->outcome() == 2) { // (BtlGameover: 18)
+                audio.stopBgm(20), pendingBgm = 18, pendingBgmAt = battleClock + 1.1f;
             }
             for (int id = 1; id < 300; ++id) game.itemCount[id] = static_cast<short>(battleRules->itemCount(id)); // (the items used)
             for (int k = 0; k < 2; ++k) { // (the MP kept - the most with RestoreMp, skill 3, 5, standing; the HP back: Cr3RestorePlayerHP)
@@ -2084,6 +2146,7 @@ struct Viewer {
     void beginShowAction(const ShowAction& a) {
         showStart = battleClock, showHitDone = false;
         const cr2::BattleData::Command* c = battleData.command(a.command);
+        if (c && c->voice > 0) battleVoice(a.actor, c->voice, float(c->voiceDelay) * 0.05f, true); // (PlayVoiceCommand: +0x68 after +0x6a)
         if (!a.hits.empty() && a.hits.front().failed) { // (ActionDontAction*: its announcement alone, a moment)
             for (Move& m : showMoves) m = Move();
             showHitAt = 0, showCamera2 = -1;
@@ -2192,6 +2255,27 @@ struct Viewer {
                 for (const auto& [id, who] : e.notes) // (the announcements: on the banner, in turn - BtlAnnounce)
                     announceQueue.push_back(formatAnnounce(announce(id), {battleRules->fighter(who).name}));
                 if (e.hit && !restore && !statusOnly) playMotion(bu, "bd01", battleClock);
+                // its sounds (BtlSound::PlayHitSE: the command's +0x74 - -1 one of 12..14 -, 15 on a
+                // critical, none on a miss or a block; PlayVoiceAttack - the actor's 11 a blow, 12 a
+                // critical, 13 a kill, 15 the battle's last, 14 nothing done -; the one struck's
+                // PlayVoiceDamage 3 / CriticalDamage 4 (a quarter of its HP left or less), NoDamage 7,
+                // Dead 5; the healed's HealHp 8, revived's Revive 10)
+                if (!statusOnly && !restore && e.actor >= 0) {
+                    const cr2::BattleData::Command* hc0 = battleData.command(a.command);
+                    if (e.hit && !e.blocked) {
+                        int se = hc0 ? hc0->hitSe : -1;
+                        if (se == -1) se = e.critical ? 15 : 12 + int(battleClock * 1000.0f) % 3;
+                        else if (e.critical && se != 0) se = 15;
+                        if (se > 0) battleSe(se);
+                    }
+                    if (&e == &a.hits.front())
+                        battleVoice(e.actor, !e.hit || e.blocked ? 14 : e.defeated ? (battleRules->outcome() == 1 ? 15 : 13) : e.critical ? 12 : e.damage > 0 ? 11 : 14);
+                    const cr2::Fighter& tf = battleRules->fighter(e.target);
+                    if (e.hit && !e.blocked)
+                        battleVoice(e.target, e.defeated ? 5 : e.damage <= 0 ? 7 : tf.hp * 100 / std::max(tf.maxHp, 1) < 26 ? 4 : 3, 0.5f);
+                } else if (restore) {
+                    battleVoice(e.target, e.revived ? 10 : 8, 0.3f);
+                }
                 if (e.revived) bu.hidden = false;
                 const cr2::BattleData::Command* hc = battleData.command(e.command);
                 if (!statusOnly && (e.hit || restore || !(hc && hc->kind == 2))) { // (the number at its DummyDP01 - else its middle - on the screen, in UI units; none for a guard)
@@ -3858,7 +3942,7 @@ std::string upscaleName(const cr2::UpscaleSettings& u) {
 int main(int argc, char** argv) {
     std::string data, model, capture, animName, renderer = "vulkan", lights = "d0101c", fieldName, at = "defaultPos", binary;
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
-    bool tapAfter = false;
+    bool tapAfter = false, mute = false, forceAudio = false;
     std::string eventName, vista = "null", fontPath, playFrom, callEntry = "evt000";
     int fightMode = 0;
     std::string inputArg; // (--input: the commands chosen, as tokens)
@@ -3915,6 +3999,8 @@ int main(int argc, char** argv) {
         else if (a == "--page" && next) page = float(std::atof(next)), ++i;
         else if (a == "--font" && next) fontPath = next, ++i;
         else if (a == "--tap") tapAfter = true;
+        else if (a == "--mute") mute = true;
+        else if (a == "--audio") forceAudio = true; // (the device even under --capture: tests, SDL_AUDIO_DRIVER=dummy)
         else if (a == "--call" && next) callEntry = argv[++i]; // (--play: the map's event function, not its evt000)
         else if (a == "--play") playFrom = next && next[0] != '-' ? (++i, next) : "d1020";
         else if (a == "--resolution" && next) std::sscanf(next, "%dx%d", &resW, &resH), ++i;
@@ -3957,6 +4043,10 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "%s\n", err.c_str());
         return 1;
     }
+    // the sound: played unless captured (or --mute) - then silent, its state kept all the same
+    const bool device = (capture.empty() || forceAudio) && !mute;
+    if (!v.audio.open(data, device, &err)) SDL_Log("sound: %s", err.c_str());
+    else SDL_Log("sound: on%s%s", device ? "" : " (silent)", err.empty() ? "" : (" - " + err).c_str());
     for (const auto& e : v.archive.entries())
         if (e.name.size() > 5 && e.name.compare(e.name.size() - 5, 5, ".geom") == 0) v.models.push_back(e.name);
     std::sort(v.models.begin(), v.models.end());

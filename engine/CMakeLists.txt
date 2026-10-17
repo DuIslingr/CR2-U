@@ -42,7 +42,11 @@ add_library(cr2core STATIC
     src/battle/camera.cpp
     src/battle/script.cpp
     src/battle/command.cpp
+    src/audio/sounddata.cpp
+    third_party/stb/stb_vorbis.c
 )
+# stb_vorbis (public domain, vendored - CR1:U's copy): the Android release's music (Ogg Vorbis)
+set_source_files_properties(third_party/stb/stb_vorbis.c PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
 target_include_directories(cr2core PUBLIC src)
 target_link_libraries(cr2core PUBLIC squirrel2)
 # The Android release's APK (its library: the maps' table; its fonts): zlib (the system's) inflates
@@ -170,7 +174,7 @@ foreach(f shade_flags.h shading.glsl)
 endforeach()
 add_custom_target(cr_glsl DEPENDS ${GLSL_INCS})
 
-set(VIEWER_SOURCES src/viewer/main.cpp src/gfx/gl.cpp src/gfx/gl_device.cpp src/gfx/vk_device.cpp)
+set(VIEWER_SOURCES src/viewer/main.cpp src/viewer/audio.cpp src/gfx/gl.cpp src/gfx/gl_device.cpp src/gfx/vk_device.cpp)
 if(CR_VULKAN)
     list(APPEND VIEWER_SOURCES src/gfx/vk_fsr3.cpp src/gfx/vk_dlss.cpp)
 endif()

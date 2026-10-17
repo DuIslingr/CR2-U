@@ -113,6 +113,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         c.id = i + 1;
         c.music = s16(d, o), c.map = s16(d, o + 2);
         c.flag = d[o + 4] != 0;
+        c.resultKind = d[o + 0x15];
         for (int k = 0; k < 3; ++k) c.monsters[k] = s16(d, o + 8 + size_t(k) * 2);
         couplings_.push_back(c);
     }
@@ -133,6 +134,8 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         for (int k = 0; k < 10; ++k) c.bad[k] = d[o + 0x50 + size_t(k)];
         for (int k = 0; k < 8; ++k) c.change[k] = d[o + 0x5c + size_t(k)];
         c.special = u32(d, o + 0x64), c.durationMode = d[o + 0x6c], c.turns = int8_t(d[o + 0x6d]), c.attach = d[o + 0x70], c.attachSelf = d[o + 0x71];
+        c.voice = s16(d, o + 0x68), c.voiceDelay = s16(d, o + 0x6a);
+        c.hitSe = s16(d, o + 0x74), c.shotSe = s16(d, o + 0x78), c.postSe = s16(d, o + 0x7a);
         c.awaken = d[o + 0x48];
         c.mp = s16(d, o + 0x42), c.icon = d[o + 0x72];
         commands_.push_back(c);
@@ -173,6 +176,9 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         it.battle = d[o + 0x11] == 1, it.usedUp = d[o + 0x2d] == 1, it.command = s16(d, o + 0x2e), it.icon = int8_t(d[o + 0x34]);
         items_.push_back(it);
     }
+    voices_.clear();
+    for (int k = 0, n = s16(d, 0x46); k < n; ++k)
+        if (const size_t vo = u32(d, 0x2c) + size_t(k) * 8; vo + 6 <= d.size()) voices_.push_back({s16(d, vo), s16(d, vo + 2), s16(d, vo + 4)});
     party_ = Party();
     if (const size_t po = u32(d, 0x04); po + 0x18 <= d.size()) {
         for (int k = 0; k < 5; ++k) party_.items[k] = s16(d, po + size_t(k) * 2), party_.counts[k] = s16(d, po + 0x0a + size_t(k) * 2);

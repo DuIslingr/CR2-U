@@ -206,6 +206,19 @@ struct Viewer {
         }
         insideEvents.swap(now);
     }
+    // an event's scene putting the leader at its p000 (FldUtilSetFieldMapPlayerPos / Rot)
+    void placePlayer(const cr2::FieldScript::Placement& pl) {
+        if (pl.heading) heading = pl.yaw;
+        if (!pl.position || !controller) return;
+        controller->setPosition({pl.at[0], pl.at[1] + 0.17f, pl.at[2]}); // (dropped onto the floor, as on arriving)
+        for (int k = 0; k < 10; ++k) controller->update({0, 0, 0});
+        const cr2::Vec3& p = controller->position();
+        player[0] = p[0], player[1] = p[1] - 0.02f, player[2] = p[2];
+        std::memcpy(playerPrev, player, sizeof player);
+        std::memcpy(playerCur, player, sizeof player);
+        stepClock = 0, substep = 0;
+    }
+
     void walk(float dt, float sx, float sy, bool run) {
         if (!controller) return;
         cr2::Vec3 right, forward;
@@ -496,6 +509,7 @@ struct Viewer {
             fig.place.m[3] = player[0], fig.place.m[7] = player[1], fig.place.m[11] = player[2];
             pose(mapFigure, time);
             for (ViewFigure& g : gimmicks) pose(g, time);
+            if (script && script->events().scene().loaded()) poseEventModels(script->events());
         }
         pose(fig, time);
     }
@@ -618,7 +632,14 @@ struct Viewer {
             drawLayer(field.midgroundImage(), fr.midground);
             drawFigure(mapFigure, fr.scene.data());
             for (const ViewFigure& g : gimmicks) drawFigure(g, fr.scene.data());
-            drawFigure(fig, fr.scene.data());
+            // an event's scene in the field (EvtScene in FldMain: its models among the field's
+            // figures, through the field's camera), the leader unless the script hid it
+            if (script && script->events().sceneShown()) {
+                const std::vector<cr2::EventModel>& models = script->events().scene().models();
+                for (size_t i = 0; i < models.size() && i < eventFigures.size(); ++i)
+                    if (models[i].visible) drawFigure(eventFigures[i], fr.scene.data());
+            }
+            if (!script || script->playerVisible()) drawFigure(fig, fr.scene.data());
             drawLayer(field.foregroundImage(), fr.foreground, field.info().foregroundShift == 1 ? -1152.0f : 0.0f);
             return;
         }
@@ -772,6 +793,8 @@ struct Viewer {
             if (!script->running()) continue;
             if (!script->tick()) SDL_Log("%s's script: %s", field.info().name.c_str(), script->error().c_str());
             refreshGimmicks();
+            if (script->events().scene().loaded()) syncEventFigures(script->events());
+            placePlayer(script->takePlacement());
             if (!script->running()) {
                 SDL_Log("%s: the script ended", field.info().name.c_str());
                 if (playMode) branchAfterField();
@@ -942,8 +965,13 @@ struct Viewer {
             messageLogged = event->messageShown();
             if (messageLogged) SDL_Log("frame %d: a message, %zu pages", event->frame(), event->message().pages.size());
         }
+        syncEventFigures(*event);
+    }
+
+    // a figure for each of the scene's models, made again when they change (an EvtScene.Init)
+    void syncEventFigures(cr2::EventRuntime& ev) {
         std::vector<std::string> names;
-        for (const cr2::EventModel& m : event->scene().models()) names.push_back(m.figure);
+        for (const cr2::EventModel& m : ev.scene().models()) names.push_back(m.figure);
         if (names != eventFigureNames) {
             for (ViewFigure& f : eventFigures) unload(f);
             eventFigures.clear();
@@ -969,7 +997,11 @@ struct Viewer {
     // <figure><suffix>; else the figure's own), their faces as ChangeModelFace left them
     void poseEvent() {
         pose(vistaMap, time);
-        std::vector<cr2::EventModel>& models = event->scene().models();
+        poseEventModels(*event);
+    }
+
+    void poseEventModels(cr2::EventRuntime& ev) {
+        std::vector<cr2::EventModel>& models = ev.scene().models();
         for (size_t i = 0; i < models.size() && i < eventFigures.size(); ++i) {
             ViewFigure& f = eventFigures[i];
             const cr2::EventModel& m = models[i];
@@ -998,11 +1030,11 @@ struct Viewer {
                 f.blendWeight = (m.animTime + eventLead()) / m.blendSeconds;
             }
             // EvtModel::ChangeTexture_Face: the j<NNN>face material's colour texture
-            const auto face = event->faces().find(m.face);
+            const auto face = ev.faces().find(m.face);
             const uint32_t faceMaterial = cr2::nameHash(("j" + m.figure.substr(1, 3) + "face").c_str());
             for (ViewMesh& vm : f.meshes)
-                vm.texture = texture(face != event->faces().end() && vm.baseMaterial.hash == faceMaterial ? face->second : vm.baseMaterial.diffuse());
-            f.place = event->scene().placeAt(m, eventLead());
+                vm.texture = texture(face != ev.faces().end() && vm.baseMaterial.hash == faceMaterial ? face->second : vm.baseMaterial.diffuse());
+            f.place = ev.scene().placeAt(m, eventLead());
             pose(f, m.animTime + eventLead(), m.loop);
         }
     }

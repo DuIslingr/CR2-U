@@ -14,6 +14,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "assets/mvgl.hpp"
@@ -71,6 +72,15 @@ public:
     int dungeon() const { return dungeon_; }
     int area() const { return area_; }
     bool layerVisible(int layer) const { return layers_[layer]; } // 0 bg, 1 fg, 2 mg, 3 the 3D figure
+    // the leader as the script has it (Cr3FieldMapCharacter): shown (SetVisible), and where an
+    // event's scene put it (SetPos_p000 / SetRot_p000: its p000 joint) - taken once
+    bool playerVisible() const { return playerVisible_; }
+    struct Placement {
+        bool position = false, heading = false;
+        float at[3] = {0, 0, 0};
+        float yaw = 0; // (radians about y, 0 = +z)
+    };
+    Placement takePlacement() { return std::exchange(placement_, Placement()); }
     const std::string& error() const { return error_; }
     // the natives the scripts called that are still stubs ("Table.Function" -> calls)
     std::map<std::string, int> stubCalls() const;
@@ -85,6 +95,8 @@ private:
     int dungeon_ = 0, area_ = 0;
     std::map<std::string, GimmickState> gimmicks_;
     bool layers_[4] = {true, true, true, true};
+    bool playerVisible_ = true;
+    Placement placement_;
     Camera camera_;
     float shownX_ = 0, shownY_ = 0;
     std::string error_;

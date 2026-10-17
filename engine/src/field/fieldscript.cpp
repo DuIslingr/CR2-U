@@ -1,6 +1,7 @@
 #include "field/fieldscript.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 
 namespace cr2 {
@@ -54,6 +55,19 @@ void FieldScript::bind() {
     });
     vm.setNative("Cr3FieldMapCamera", "GetPos_X", [this](NativeCall& c) { c.result(camera_.scripted() ? camera_.x : shownX_); });
     vm.setNative("Cr3FieldMapCamera", "GetPos_Y", [this](NativeCall& c) { c.result(camera_.scripted() ? camera_.y : shownY_); });
+    vm.setNative("Cr3FieldMapCharacter", "SetVisible", [this](NativeCall& c) { playerVisible_ = c.boolean(0, true); });
+    vm.setNative("Cr3FieldMapCharacter", "SetPos_p000", [this](NativeCall&) {
+        Mat34 w;
+        if (!events_->scene().p000(w)) return;
+        placement_.position = true;
+        placement_.at[0] = w.m[3], placement_.at[1] = w.m[7], placement_.at[2] = w.m[11];
+    });
+    vm.setNative("Cr3FieldMapCharacter", "SetRot_p000", [this](NativeCall&) {
+        Mat34 w;
+        if (!events_->scene().p000(w)) return;
+        placement_.heading = true;
+        placement_.yaw = std::atan2(w.m[2], w.m[10]); // (where its +z faces)
+    });
     vm.setNative("Cr3FieldMap", "SetVisibleBG", [this](NativeCall& c) { layers_[0] = c.boolean(0); });
     vm.setNative("Cr3FieldMap", "SetVisibleFG", [this](NativeCall& c) { layers_[1] = c.boolean(0); });
     vm.setNative("Cr3FieldMap", "SetVisibleMG", [this](NativeCall& c) { layers_[2] = c.boolean(0); });
@@ -62,6 +76,7 @@ void FieldScript::bind() {
 
 bool FieldScript::enter(const std::string& map, const std::vector<Gimmick>& gimmicks, const std::string& entry) {
     error_.clear();
+    playerVisible_ = true, placement_ = Placement(); // (FldMain makes the leader again)
     if (map.size() < 5) return error_ = map + ": not a map's name", false;
     // the dungeon table (FldMap::GetCr3FieldDataDungeonNumFromFieldMapNum): the town 0, dNN NN; the
     // area the map's last two digits - 1

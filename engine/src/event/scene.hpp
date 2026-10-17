@@ -64,6 +64,9 @@ public:
     bool camera(Mat34& world, float& fovY, float& zn, float& zf, float lead = 0) const;
     // the lights now (the light figure's, posed); false: none
     bool lights(SceneLighting& out, float lead = 0) const;
+    // where the leader goes when the scene ends (its ev_p000 joint: EvtScene's +0x610, read by
+    // Cr3FieldMapCharacter.SetPos_p000 / SetRot_p000); false: no such joint
+    bool p000(Mat34& world) const;
 
 private:
     struct Figure {
@@ -80,6 +83,7 @@ private:
     Figure scene_, camera_, light_;
     bool hasCamera_ = false, hasLight_ = false;
     std::map<std::string, int> locators_; // ev_<name> -> joint
+    int p000_ = -1;
     std::vector<EventModel> models_;
     float cameraTime_ = 0, cameraEnd_ = 0, lightTime_ = 0, lightEnd_ = 0;
 };

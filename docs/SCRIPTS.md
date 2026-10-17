@@ -89,7 +89,12 @@ fires on touch: the player's body entering its shape (a box, ball or capsule in 
 sized by the joint's scale / 100) calls the function once, until the player has left it again.
 
 An area's script runs on the game's 20 updates a second like an event's, and uses the same
-natives (the scene, the windows, the fades: Events below); while it runs the player stands. The
+natives (the scene, the windows, the fades: Events below); while it runs the player stands. A
+field event's scene (`EvtSceneLoad('D01_01_0502')`: EvtScene.Init on the figure named after it -
+no camera or lights of its own) puts its models among the field's figures, seen through the
+field's camera; the scripts hide the leader meanwhile (`Cr3FieldMapCharacter.SetVisible`) and at
+the end put it where the scene's `ev_p000` joint is (`SetPos_p000` / `SetRot_p000`). The event
+ends on a fade to black; what called it (the area's set-up, `D01_01_05_set`) fades back in. The
 field's camera is the script's when it says (`Cr3FieldMapCamera`, in pixels of a 960-wide screen,
 the scroll negated): `SetPos(x, y)` puts it there, `CalcParameter(frames, fromX, fromY, toX,
 toY)` slides it a frame an update, `GetPos_X` / `GetPos_Y` read it, `SetMode(0)` gives it back to

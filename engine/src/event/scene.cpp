@@ -48,6 +48,7 @@ bool EventScene::load(const MvglArchive& a, const std::string& event, std::strin
         const std::vector<std::string> names = parseJointNames(d);
         for (size_t j = 0; j < names.size(); ++j) {
             const std::string& n = names[j];
+            if (n == "ev_p000") p000_ = int(j);
             if (n.compare(0, 3, "ev_") != 0 || n.find("Cam") != std::string::npos || n.find("p000") != std::string::npos) continue;
             EventModel m;
             m.name = n.substr(3);
@@ -77,6 +78,14 @@ Mat34 EventScene::locator(const std::string& name, float sceneTime) const {
     if (it == locators_.end()) return Mat34();
     const std::vector<Mat34> w = scene_.world(sceneTime);
     return size_t(it->second) < w.size() ? w[size_t(it->second)] : Mat34();
+}
+
+bool EventScene::p000(Mat34& world) const {
+    if (!loaded_ || p000_ < 0) return false;
+    const std::vector<Mat34> w = scene_.world(0);
+    if (size_t(p000_) >= w.size()) return false;
+    world = w[size_t(p000_)];
+    return true;
 }
 
 void EventScene::place(EventModel& m) {

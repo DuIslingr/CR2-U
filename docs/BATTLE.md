@@ -51,7 +51,7 @@ level; parameter n = +0x20 + 2n + level x a table's (0x535d90; 0x535d84 for the 
 - Damage1: (the attacker's Attack - Magic for magic - plus its partner's in a pair action) x
   (power + CommandY) / 100 - the target's Defense (magic: two thirds of its Magic; none with flag
   2). CommandY: +100 in a turn-break bonus, +25 a pair action, +50 a monster attacking, +50 (+100
-  with a pair skill) at a target whose guard is broken. (Kind 7: (max HP - HP) x (power +
+  with pair skill 3) when it is a critical (the target's +0xf79). (Kind 7: (max HP - HP) x (power +
   CommandY) / 100 - 1.5 x the target's Magic.)
 - Damage2: x the elements (DamageAttribute): the attack's element against the target's, a
   cycle - 1 on 3, 2 on 1, 3 on 2 x 1.5 (the target "weak"); 1 on 2, 2 on 3, 3 on 1 x 0.75 - x 1.25

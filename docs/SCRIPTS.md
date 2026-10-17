@@ -147,7 +147,58 @@ Manual as the battle's), 5 / 6 the camp closed. The items' list (CampItemListMen
 (the item's +0x10, a byte: 0 / 1 the first tab, 4 the second), item 36 first, each with its count,
 lit when the camp can use it (Cr3UtilUseItemByCamp: 4 .. 7, 36 .. 41 - the MP ones and the field's;
 the HP is whole again after each battle). The sopia's (CampSopiaListMenu::SetSopiaList): each had
-(cr3_common_data +0x268's bits), by number.
+(cr3_common_data +0x268's bits), by number, the focused one's windows beside it.
+
+Using an item (CampItemListMenu 9 / 10): CharaSelectButtonMenu - a face button (faceWin_io, faceBtn
+with faceBtn_00<n>) per character who has joined (Cr3UtilValidCharacter: flags 0x3fd .. 0x403),
+faceSlct on the focused, campHelp_io's "on whom" (announce 0x84), CharaStatusWindowBMenu (campWin
+with campWin3_io: the one's level, HP, MP, an arrow where the item changes them) and
+CharaStatusCapacityMenu (statusWin_io: the five parameters, the change at id<n>11 of set 140 with
+sign 5 or 6, the sopia's combination's name). A tap on another face focuses it (0xb3), on the
+focused uses it (0xb4): one used up (+0x2d) asks how many (shopNum_io: tap 01 one fewer, 02 one
+more) and yes / no (announce 0x74: the item, the count had), then Cr3UtilParameterUpByItem - +0x14
+HP, +0x18 MP (at most 9999), +0x1a .. +0x22 to the parameters for good (cr3_player_data +0x1e ..)
+- and Cr3UpdatePlayerData; 0xc6 when it raises MP or a parameter. Emergency Exit (36; not with
+flag 0x3e9) asks (0x73), then FldMain's camp result 2: SE 0x14f, flag 0x3ed, the music out, on to
+t0101_p1.
+
+Cr3UpdatePlayerData (a character's most HP / MP and parameters; engine/src/battle/rules.cpp
+playerStats): the level's (BtlData::GetCharaHP / MP / Param) plus the seeds', +10 HP, +1 MP and
++1 each parameter a level past 20 (Cr3UpdatePlayerBonusData), the weapon's, armour's and
+accessory's, then each of the five sopia's auto skills up to its level - their percents added up
+(+0x10 HP, +0x11 MP, +0x12 .. the parameters; BtlCalcValue: v + v x p / 100) - and the
+combination's (Cr3UtilGetSopiaComboSkillID: the kinds, +0x11, of the sopia in places 3 .. 5 against
+eight combinations at 0x534bb8 - {the item needed, the auto skill, three kinds, the third 0 any});
+then within 1 .. 99999, 0 .. 9999.
+
+The equipment (CampEquipmentListMenu): CampEyeButtonMenu's buttons (eyeBtnPos: eyeBtn_id at the
+character's number / 20 s at call_eyeBtn_id<n>, eyeSlct and eyeCsr_loop on the one shown; 0xb7);
+the view - the weapon (cr3_player_data +0x3c), armour (+0x3e), accessory (+0x40; menu name 0x4b
+"none", half with none to wear), the own sopia (+0x42, fixed), Darwin's human sopia (+0x44; 0x4d),
+the three monster sopia (+0x46 .. +0x4a; 0x4e .. 0x50), the skills (0x54) - no tab; a row its list
+(tabs 1 weapons, 3 armour, 5 accessories, 9 the sopia and skills): the items of its kind (+0x10: 1
+2 3) had that the character may wear (+0x12's bit), the worn one fixed, those all worn half
+(Cr3UtilGetNotEquippedItemNumber: the count less the joined characters' worn); the human sopia (the
+character sopia had, the n-th past the first behind flag 0xbe1 + n); the monster sopia (+0x10 1 -
+one another wears taken from them after asking, announce 0x8a with their name, menu name 0x29 +
+n); Remove (0x53) where one is. The windows by it: the character's with the change the focused item
+makes (SetEquipStatusParamerter), or the sopia's (CampSopiaStatusMenu: sopiaWin_io - sopiaPic with
+sopiaPic_NNN, its name, its rank cost_id at the level + 6 / 20 s, its kind's sign, the next level's
+EXP and bar; CampSopiaSkillMenu: skillWin_io, a level's command or auto skill each, "???" past it).
+A choice: Cr3UtilChangeEquipItem / Sopia, 199.
+
+The camp's links (CampPubLink): Scenarios (ScenarioFlowMenu: scenariosBG's panels shown by their
+flags, the chapters' covers until theirs and then their names, dragged up and down 0 .. 0.704 -
+1.472 with flag 1 -, the part opened: flags 1 .. 4 and 151 .. 192 of 46); the pub's request
+(CampPubDetailMenu: cr3_global_work 7, the request the pub took - PUBTxt's text; none, the link at
+half and inert).
+
+The tab's others: the map (FldDungeonMap -> DungeonMapMenu: mapGuide_io with guide_<t01 | dNN>,
+mapInfo_<..> at the area + 1 / 20 s for mapSymbol, the goals - the dungeon's entries at 0x535794 with
+their flags set - as mapGoal; a tap closes it; not in dungeon 12), saving (SaveConfirmationMenu:
+"menu" with menuSave_io, the status windows, yes / no - announce 0x69 -, 0xbd, "saved" 0x6a; not with
+flag 0x3ea) and the encounters' switch (cr3_field_data +0x31; shown with 0x40e, usable with 0x40f).
+The dungeon and area (cr3_field_data +0 / +4) are the map's name's: t01MM 0, dNNMM NN; MM - 1.
 
 A new game starts on map d1020 (area 19), its set-up `D10_01_01_set`: `NewGameFlgSet`,
 `PartySet`, the field event `D10_01_0104`, then `D10_01_0101` - the prologue's vista

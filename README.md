@@ -122,9 +122,13 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       quality by their arrows (the messages then in that language, a system CJK font for what the
       game's lacks), Title Screen's yes / no, Manual, Back (`--input "options language+ title no back"`)
 - [x] The field's tab (Camp, Map, Save) and the camp: the party's status windows, the title,
-      its buttons and links, the Oz and the clock; its items' and sopia's lists, its options and
-      the manual, Back (a tap, Tab / C and the keys, or `--input "camp items back options manual"`
-      in the field). Not yet: using an item there, the equipment, the map, saving
+      its buttons and links, the Oz and the clock; its items' list and their use (whom, how many,
+      their effect; Emergency Exit), the equipment (each place's list, the stats' change, the
+      sopia's windows), the sopia's list, Scenarios, the pub's request, its options and the manual;
+      the dungeon's map; saving (CR2-U's own save file - `cr2view --continue` resumes it) and the
+      encounters' switch (a tap, Tab / C and the keys, or `--input "camp items u37 enter yes back"`,
+      `map`, `save yes` in the field). The party's stats now as Cr3UpdatePlayerData makes them (the
+      sopia's percents, the seeds, past level 20). Not yet: the game's own save format, the pub
 - [x] States: poison, blind, seal, the action cancelled, raised and lowered parameters, time
       stopped, the seals, the special ones - taken by the game's chances and resistances, their
       effects (counters, the magic barrier turning a sopia back, revived once, strength doubled,
@@ -175,7 +179,8 @@ and the APK) or `ipad/` (the `.app` or the unpacked `.ipa`).
 | `cr2view ... [--resolution WxH] [--upscaler off\|fsr3] [--quality native\|quality\|balanced\|performance\|ultra] [--sharpness 0..1] [--size WxH] [--fps n] [--run s]` | the output in any mode: 60 frames a second (`--fps`), frames of a resolution up to 3840 x 2160 (F1 steps through the window's size and 720p .. 2160p), FSR 3.1 (F2 steps through its modes), the window's size; a capture `--run`s that long first |
 | `cr2view --data <archive> --field <map> [--model c001] [--at point] [--binary file] [--walk sx,sy,s]` | a field: the arrow keys run the character (Shift walks) on the floors and against the walls; the maps' table comes from the executable beside the iPad's / Vita's archive or the APK beside Android's OBB, or `--binary` |
 | `cr2view --data <archive> --play [map] [--call function] [--tap] [--skip-battles] [--binary file]` | a new game (or from a map, `--call` one of its events in place of its entry - without what would call it, so no fade back in after): the field's scripts, events and vistas one after another as the game chains them; Return or a click turns a page or talks to what has a balloon (`--tap`: once, after `--walk`); the battles it reaches fought by the rules, the party attacking as a pair (`--skip-battles`: taken as won) |
-| `cr2view --data <archive> --battle <coupling> [--party a,b] [--fight solo\|pair] [--seed n] [--state f:s] [--charge n] [--equip c:slot:id] [--time s]` | a battle's stage: its map, the party (characters a and b: Darwin 1, Orlando 2, Marie 3, ...) and the monsters, through the commands' camera; `--fight`: played by its rules, the party attacking each turn; `--state`: fighter f (0, 1 the party, 2.. the monsters) holding state s to begin with, one use; `--charge`: the gauge to begin with; `--equip`: character c's equipment slot (3..7 its sopia) (tests) |
+| `cr2view --data <archive> --continue` | as `--play`, from the save the field's Save wrote (CR2-U's own format: the story's state, the map and the place, the options - in the user's app folder, `DuIslingr/CR2-U/save1.txt`) |
+| `cr2view --data <archive> --battle <coupling> [--party a,b] [--fight solo\|pair] [--seed n] [--state f:s] [--charge n] [--equip c:slot:id] [--time s]` | a battle's stage: its map, the party (characters a and b: Darwin 1, Orlando 2, Marie 3, ...) and the monsters, through the commands' camera; `--fight`: played by its rules, the party attacking each turn; `--state`: fighter f (0, 1 the party, 2.. the monsters) holding state s to begin with, one use; `--charge`: the gauge to begin with; `--equip`: character c's equipment slot (3..7 its sopia); `--item id:count` (tests) |
 | `cr2tool check / scripts / run / images / models / compare-models / animations / pose / shaders / walk / exits / fieldscript / battle / fight` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared, the shader keys against their GLSL, the field player on every map, every map's exits, every map's entry script, every encounter's set-up, a battle played by its rules (an archive may be given as its folder; `walk` / `exits` / `fieldscript` take the executable, or `-` for the release's own beside the archive) |
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
 | `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |

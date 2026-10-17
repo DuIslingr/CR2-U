@@ -48,6 +48,8 @@ struct GameState {
     // what items have added to their parameters for good (cr3_player_data +0x1e..: the seeds,
     // Cr3UtilParameterUpByItem)
     short seed[9][5] = {};
+    // cr3_global_work (Cr3UtilGlobalWorkGet / Set: 32 values - 7 the pub's request taken)
+    int globalWork[32] = {};
     bool equipReady = false;
     template <class Data> void initEquip(const Data& data, const int* levelExp) {
         if (equipReady) return;
@@ -75,6 +77,11 @@ struct GameState {
         }
         sopiaOwned = 1u << 1;
     }
+    // CR2-U's own save (not the game's format - cr3_savedata_game): "CR2-U save 1", then a line a
+    // value ("flags 3 17 ...", "item 1 5", "equip 0 81 201 ..."); `extra` the caller's own lines
+    // (the map, the place) - load gives back the lines it doesn't know there
+    std::string save(const std::map<std::string, std::string>& extra = {}) const;
+    bool load(const std::string& text, std::map<std::string, std::string>* extra = nullptr, std::string* error = nullptr);
     bool flag(int n) const { return n >= 0 && size_t(n) < flags.size() && flags[size_t(n)]; }
     void setFlag(int n, bool on) {
         if (n < 0) return;

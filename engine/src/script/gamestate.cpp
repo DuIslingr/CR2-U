@@ -1,5 +1,7 @@
 #include "script/gamestate.hpp"
 
+#include <sstream>
+
 #include "script/vm.hpp"
 
 namespace cr2 {
@@ -69,6 +71,89 @@ void bindGameState(ScriptVM& vm, GameState& state) {
     vm.setNative("Cr3System", "SetPopPoint", [&next](NativeCall& c) { next.popPoint = c.string(0); }); // (FldUtilSetPopPoint)
     vm.setNative("Cr3System", "SetComeFromBattleToField", [&next](NativeCall&) { next.fieldMode = 1; });
     vm.setNative("Cr3System", "SetComeFromVistaToField", [&next](NativeCall&) { next.fieldMode = 2; });
+}
+
+} // namespace cr2
+
+namespace cr2 {
+
+std::string GameState::save(const std::map<std::string, std::string>& extra) const {
+    std::ostringstream o;
+    o << "CR2-U save 1\n";
+    o << "flags";
+    for (size_t k = 0; k < flags.size(); ++k)
+        if (flags[k]) o << ' ' << k;
+    o << '\n';
+    for (const auto& [k, v] : work) o << "work " << k << ' ' << v << '\n';
+    o << "party " << party[0] << ' ' << party[1] << '\n';
+    for (int s = 0; s < 3; ++s) o << "pairs " << s << ' ' << partySets[s][0] << ' ' << partySets[s][1] << '\n';
+    for (int id = 1; id < 300; ++id)
+        if (itemCount[id]) o << "item " << id << ' ' << itemCount[id] << '\n';
+    o << "oz " << oz << '\n';
+    for (int c = 0; c < 9; ++c) {
+        o << "chara " << c << ' ' << level[c] << ' ' << exp[c] << ' ' << mp[c];
+        for (int e = 0; e < 8; ++e) o << ' ' << equip[c][e];
+        for (int k = 0; k < 5; ++k) o << ' ' << seed[c][k];
+        o << '\n';
+    }
+    for (int s = 0; s < 32; ++s) o << "sopia " << s << ' ' << int(sopiaLevel[s]) << ' ' << sopiaExp[s] << '\n';
+    o << "owned " << sopiaOwned << '\n';
+    o << "global";
+    for (int v : globalWork) o << ' ' << v;
+    o << '\n';
+    for (const auto& [k, v] : extra) o << k << ' ' << v << '\n';
+    return o.str();
+}
+
+bool GameState::load(const std::string& text, std::map<std::string, std::string>* extra, std::string* error) {
+    std::istringstream in(text);
+    std::string line;
+    if (!std::getline(in, line) || line != "CR2-U save 1") {
+        if (error) *error = "not a CR2-U save";
+        return false;
+    }
+    flags.clear(), work.clear();
+    for (short& n : itemCount) n = 0;
+    while (std::getline(in, line)) {
+        std::istringstream l(line);
+        std::string key;
+        if (!(l >> key)) continue;
+        if (key == "flags") {
+            for (int n; l >> n;) setFlag(n, true);
+        } else if (key == "work") {
+            int k = 0, v = 0;
+            if (l >> k >> v) work[k] = v;
+        } else if (key == "party") {
+            l >> party[0] >> party[1];
+        } else if (key == "pairs") {
+            int s = -1;
+            if (l >> s && s >= 0 && s < 3) l >> partySets[s][0] >> partySets[s][1];
+        } else if (key == "item") {
+            int id = 0, n = 0;
+            if (l >> id >> n && id > 0 && id < 300) itemCount[id] = static_cast<short>(n);
+        } else if (key == "oz") {
+            l >> oz;
+        } else if (key == "chara") {
+            int c = -1;
+            if (!(l >> c) || c < 0 || c >= 9) continue;
+            l >> level[c] >> exp[c] >> mp[c];
+            for (short& e : equip[c]) l >> e;
+            for (short& k : seed[c]) l >> k;
+        } else if (key == "sopia") {
+            int s = -1, lv = 0, e = 0;
+            if (l >> s >> lv >> e && s >= 0 && s < 32) sopiaLevel[s] = static_cast<signed char>(lv), sopiaExp[s] = e;
+        } else if (key == "owned") {
+            l >> sopiaOwned;
+        } else if (key == "global") {
+            for (int& v : globalWork) l >> v;
+        } else if (extra) {
+            std::string rest;
+            std::getline(l >> std::ws, rest);
+            (*extra)[key] = rest;
+        }
+    }
+    itemsReady = equipReady = sopiaReady = true; // (a new game's set-up not over it)
+    return true;
 }
 
 } // namespace cr2

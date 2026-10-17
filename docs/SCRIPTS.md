@@ -144,7 +144,11 @@ A sprint (its marker `obj151` on its place) starts when the leader is within 0.1
 player taps within 128 of the marker (the interface's units x 2048): crouched (`fj01`), then a
 hop to each spot in turn (`fj02`, SE 0x155) on a parabola under 0.98 - rising 0.04 over the higher
 end (Cr3CalculateVelocityArrivesAtHeight: v = sqrt(1.96 h); ...TimeArrivesAtHeight: the later
-root) -, `fj03` ending as it lands and `fj01` 0.2 s before, SE 0x156 at each landing, then idle. `SkipMessage` shows the page whole
+root) -, `fj03` ending as it lands and `fj01` 0.2 s before, SE 0x156 at each landing, then idle. A
+high jump hops the same way (the voice 0x8fa with each launch), Darwin's alone: while the
+leader's body touches its place its mark stands on its first spot (Darwin: FieldGimickEffect01Menu's
+`gmk1rng`, its `_io`, `_out` as the jump starts; anyone else: `gmk0rng_io`), and a tap within 128
+of it jumps - for anyone else SE 0xb6. `SkipMessage` shows the page whole
 (the typing skipped); the message stays until a tap or the window's Close.
 
 An area's script runs on the game's 20 updates a second like an event's, and uses the same

@@ -160,9 +160,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] The field's HUD: the tab, the character change (its button, the leader darkened and the other
       lit in its place; the leader's figure the field's character - `ChangeModel`); the
       announcements' window (annoWin, as the tutorials')
-- [x] Sprints: the scripts' touch actions (on / off, their spots) and the sprint's hops between its
-      spots (a tap on its marker, Return, `--input sprint`)
-- [ ] The other touch actions: high jump, mystic, iai, aim, hakkei
+- [x] Sprints and high jumps: the scripts' touch actions (on / off, their spots), the hops between
+      the spots (a tap on the marker / Darwin's mark, Return, `--input sprint` / `jump`)
+- [ ] The other touch actions: mystic, iai, aim, hakkei
 - [ ] Engine: events, battles, menus
 
 ## What you need

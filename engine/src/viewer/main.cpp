@@ -327,6 +327,7 @@ struct Viewer {
             return;
         }
         if (const int s = sprintAt(); s >= 0) return startSprint(s); // (FldMain: a sprint's before the balloons)
+        if (jumpMark.gimmick >= 0 && jumpMark.startedAt < 0) return jumpTapped(); // (then a high jump's)
         if (nearestBalloon < 0 || keyLock.stage != 0) return;
         const cr2::Gimmick& g = field.gimmicks()[size_t(nearestBalloon)];
         heading = std::atan2(g.position[0] - player[0], g.position[2] - player[2]);
@@ -462,7 +463,75 @@ struct Viewer {
         float t = 0, T = 0, v = 0, vx = 0, vz = 0;
         float from[3] = {0, 0, 0};
         int air = 0; // (the hop's motions: 0 fj02, 1 fj03, 2 fj01)
+        bool jump = false; // (a high jump's: the voice 0x8fa at each launch)
     } sprint;
+    // A high jump (FldHighJump: hops as a sprint's, the voice 0x8fa with each launch). Its mark
+    // (FldMain::CollisionAdded: the leader's body touching its place) on its first spot - Darwin
+    // leading, FieldGimickEffect01Menu's gmk1rng (its io, then gmk1rng_out as it starts); anyone
+    // else 00's gmk0rng_io -, gone as the leader leaves; a tap within 128 of it starts the jump
+    // for Darwin, else SE 0xb6
+    struct JumpMark {
+        int gimmick = -1;
+        bool darwin = false;
+        float at = 0;        // (shown: uiClock)
+        float startedAt = -1; // (the jump begun: its mark out)
+    } jumpMark;
+    void updateJumpMark() {
+        if (sprint.stage) return;
+        if (jumpMark.startedAt >= 0) jumpMark = JumpMark(); // (the jump over)
+        int at = -1;
+        if (controller && fieldTabShown()) {
+            const std::vector<cr2::Gimmick>& gs = field.gimmicks();
+            for (size_t i = 0; i < gs.size() && at < 0; ++i) {
+                const cr2::Gimmick& g = gs[i];
+                if (g.kind != cr2::Gimmick::Ability || g.name.find("hjump") == std::string::npos || !script->visible(g)) continue;
+                const cr2::FieldScript::TouchAction* a = script->touchAction(g.name);
+                if (a && a->enabled && !a->spots.empty() && g.touches(controller->position().data(), controller->radius)) at = int(i);
+            }
+        }
+        if (at != jumpMark.gimmick) jumpMark = JumpMark(), jumpMark.gimmick = at, jumpMark.at = uiClock;
+        jumpMark.darwin = script->leader() == 0;
+    }
+    bool jumpMarkPlace(float& x, float& y) {
+        if (jumpMark.gimmick < 0) return false;
+        const cr2::FieldScript::TouchAction* a = script->touchAction(field.gimmicks()[size_t(jumpMark.gimmick)].name);
+        if (!a || a->spots.empty()) return false;
+        return uiPlace(a->spots[0].data(), x, y);
+    }
+    void jumpTapped() {
+        if (!jumpMark.darwin) {
+            audio.playSe(0xb6, false);
+            return;
+        }
+        const cr2::Gimmick& g = field.gimmicks()[size_t(jumpMark.gimmick)];
+        sprint = Sprint();
+        sprint.to = script->touchAction(g.name)->spots;
+        sprint.stage = 1, sprint.jump = true;
+        heading = std::atan2(sprint.to[0][0] - player[0], sprint.to[0][2] - player[2]);
+        playMotion(fig, "fj01"), time = 0;
+        jumpMark.startedAt = uiClock;
+        SDL_Log("%s: high jump %s - %zu spots", field.info().name.c_str(), g.name.c_str(), sprint.to.size());
+    }
+    bool jumpTap(float fx, float fy) { // (a click: on the mark)
+        float mx, my;
+        if (jumpMark.gimmick < 0 || jumpMark.startedAt >= 0 || !fieldTabShown() || !jumpMarkPlace(mx, my)) return false;
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+        if (std::hypot(x - mx, y - my) * 2048.0f > 128.0f) return false;
+        jumpTapped();
+        return true;
+    }
+    void drawJumpMark(const Mat4& view) {
+        float x, y;
+        if (jumpMark.gimmick < 0 || !jumpMarkPlace(x, y)) return;
+        UiFig& m = uiFig(jumpMark.darwin ? "gmk1rng" : "gmk0rng_io");
+        if (!jumpMark.darwin) poseUi(m, "gmk0rng_io", uiClock - jumpMark.at);
+        else if (jumpMark.startedAt >= 0) poseUi(m, "gmk1rng_out", uiClock - jumpMark.startedAt);
+        else poseUi(m, "gmk1rng_io", uiClock - jumpMark.at);
+        m.fig.place = cr2::Mat34();
+        m.fig.place.m[3] = x, m.fig.place.m[7] = y, m.fig.place.m[11] = -0.2f;
+        drawFigure(m.fig, view.data());
+    }
     int sprintAt() const {
         if (!fieldTabShown() || sprint.stage || !script) return -1;
         const std::vector<cr2::Gimmick>& gs = field.gimmicks();
@@ -509,6 +578,7 @@ struct Viewer {
         s.t = 0, s.air = 0, s.stage = 2;
         playMotion(fig, "fj02"), time = 0;
         audio.playSe(0x155, false);
+        if (s.jump) audio.stopAllVoices(0), audio.playVoice(0x8fa);
     }
     void updateSprint(float dt) {
         Sprint& s = sprint;
@@ -552,6 +622,14 @@ struct Viewer {
     }
 
     void drawKeyMark(int w, int h) {
+        if (fieldMode && !eventMode && jumpMark.gimmick >= 0) {
+            const Mat4 proj = uiProjection(w, h);
+            Mat4 camera = cr2::mat4Identity();
+            camera[14] = -0.881f;
+            cr2::SceneLighting l;
+            dev->setLighting(l);
+            drawJumpMark(cr2::mat4Multiply(proj, camera));
+        }
         if (!fieldMode || eventMode || keyLock.gimmick < 0) return;
         const cr2::Gimmick& g = field.gimmicks()[size_t(keyLock.gimmick)];
         if (keyLock.stage == 0 && game.boxes.isOpen(g.boxKind, g.boxNumber)) return;
@@ -1155,6 +1233,7 @@ struct Viewer {
         }
         boxesDungeon = dungeon;
         keyLock = KeyLock();
+        jumpMark = JumpMark(), sprint = Sprint();
         // the dungeon's script sets the area up (evt000: which gimmicks show, which collide)
         if (!script) script = std::make_unique<cr2::FieldScript>(archive, game);
         script->events().autoPage = pageSeconds;
@@ -1241,6 +1320,7 @@ struct Viewer {
             const bool wasRunning = script->running();
             if (!script->tick()) SDL_Log("%s's script: %s", field.info().name.c_str(), script->error().c_str());
             updateKeyLock();
+            updateJumpMark();
             refreshLeader(); // (ChangeModel, ExeQuick)
             if (!wasRunning) continue;
             refreshGimmicks();
@@ -5856,6 +5936,7 @@ struct Viewer {
         if (t == "tap" && fieldTabShown()) tap(); // (the leader's tap: the nearest balloon's)
         else if (t == "change" && fieldTabShown()) startChange(); // (the character change's button)
         else if (t == "sprint" && sprintAt() >= 0) startSprint(sprintAt());
+        else if (t == "jump" && fieldTabShown() && jumpMark.gimmick >= 0) jumpTapped();
         else if (t == "tab" && fieldTabShown()) fieldTabTap(1);
         else if (t == "camp" && fieldTabShown()) fieldTabOpen = true, fieldTabAt = -10, fieldTabTap(2);
         else if (t == "map" && fieldTabShown()) fieldTabOpen = true, fieldTabAt = -10, fieldTabTap(3);
@@ -6517,7 +6598,7 @@ int main(int argc, char** argv) {
                     screenFraction(e.button.x, e.button.y, fx, fy);
                     if (v.battleMode && v.choosing) v.battleClick(fx, fy);
                     else if (v.fieldMode && !v.eventMode && v.keyLock.stage != 0) v.unlockPointer(fx, fy, 0);
-                    else if (v.fieldMode && !v.eventMode && v.sprintTap(fx, fy)) {}
+                    else if (v.fieldMode && !v.eventMode && (v.sprintTap(fx, fy) || v.jumpTap(fx, fy))) {}
                     else if (v.fieldMode && !v.eventMode && v.fieldClick(fx, fy)) {
                     } else if (v.eventMode || v.fieldMode || v.battleMode) v.tap();
                 }

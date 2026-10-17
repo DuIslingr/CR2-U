@@ -29,6 +29,7 @@ void FieldScript::bind() {
         for (const Gimmick& g : fieldGimmicks_)
             if (g.kind == Gimmick::Spot && g.name.find(spot) != std::string::npos) {
                 a->spots.push_back({g.position[0], g.position[1], g.position[2]});
+                a->spotNames.push_back(spot.substr(0, 6));
                 return;
             }
     });
@@ -36,8 +37,16 @@ void FieldScript::bind() {
         if (TouchAction* a = findAction(6, c.string(0))) a->touches = std::max(c.integer(1), 1);
     });
     vm.setNative("Cr3GimmickData", "ResetSpot", [this](NativeCall& c) {
-        if (TouchAction* a = findAction(c.integer(0), c.string(1))) a->spots.clear();
+        if (TouchAction* a = findAction(c.integer(0), c.string(1))) a->spots.clear(), a->spotNames.clear();
     });
+    vm.setNative("Cr3GimmickData", "SetMysticActiveSpotName", [this](NativeCall& c) {
+        if (TouchAction* a = findAction(3, c.string(0))) a->activeSpot = c.string(1).substr(0, 6);
+    });
+    vm.setNative("Cr3GimmickData", "GetMysticActiveSpotName", [this](NativeCall& c) {
+        const TouchAction* a = findAction(3, c.string(0));
+        c.result(a ? a->activeSpot : std::string());
+    });
+    vm.setNative("Cr3GimmickData", "GetMysticTapSpotName", [this](NativeCall& c) { c.result(mysticTapSpot); });
     auto gimmick = [this](NativeCall& c) -> GimmickState* {
         const auto it = gimmicks_.find(c.string(0));
         return it == gimmicks_.end() ? nullptr : &it->second;

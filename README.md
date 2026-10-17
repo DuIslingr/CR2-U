@@ -162,9 +162,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       announcements' window (annoWin, as the tutorials')
 - [x] Touch actions: their set-up by the scripts (on / off, their spots), their marks for their
       characters; the sprint's and the high jump's hops, the iai's slash, the aim's drag, the
-      hakkei's taps (a tap on the marker / the mark, Return, `--input sprint` / `action`, then
-      `slash` / `slashfail`, `drag` / `aim` / `aimfail`, `punch` / `punchfail`)
-- [ ] The mystic's game
+      hakkei's taps, the mystic's choice of spot (a tap on the marker / the mark, Return, `--input
+      sprint` / `action`, then `slash` / `slashfail`, `drag` / `aim` / `aimfail`, `punch` /
+      `punchfail`, `tapspot` / `tapspotfail`)
 - [ ] Engine: events, battles, menus
 
 ## What you need

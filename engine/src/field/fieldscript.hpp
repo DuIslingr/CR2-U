@@ -92,8 +92,23 @@ public:
         bool enabled = false;
         std::vector<std::array<float, 3>> spots;
         int touches = 5; // (a hakkei's taps: FldHakkei +0x44, SetHakkeiTouchCnt)
+        std::vector<std::string> spotNames; // (AddSpot's: a mystic's names them)
+        std::string activeSpot;             // (a mystic's: SetMysticActiveSpotName - where its mark is)
+        // the spot the mark is on: a mystic's active one (FldMystic::SetActiveSpotNumber: the first
+        // named so, else 0), else the first
+        size_t markSpot() const {
+            for (size_t i = 0; i < spotNames.size(); ++i)
+                if (spotNames[i] == activeSpot) return i;
+            return 0;
+        }
     };
+    // the spot a mystic's tap chose (FldMystic::SetTapSpotName: its game's last)
+    std::string mysticTapSpot;
     const TouchAction* touchAction(const std::string& gimmick) const {
+        const auto it = actions_.find(gimmick);
+        return it == actions_.end() ? nullptr : &it->second;
+    }
+    TouchAction* touchAction(const std::string& gimmick) {
         const auto it = actions_.find(gimmick);
         return it == actions_.end() ? nullptr : &it->second;
     }

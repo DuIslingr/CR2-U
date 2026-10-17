@@ -166,7 +166,12 @@ A hakkei (FldHakkei) takes the button out, then shows a ball for each tap it wan
 the ring's `call_gmk5ball` joints, the triangle's for up to three, the pentagon's from four):
 each tap within 128 of the mark is a punch (`fp02` .. `fp06`, SE 0x160 or 0x161) and takes a ball;
 all of them within 60 frames of the first succeed (SE 0x164, the function called), a tap away
-from the mark or the time running out fails. (The mystic's game: not yet.) `SkipMessage` shows the page whole
+from the mark or the time running out fails. A mystic's mark stands on its active spot
+(`SetMysticActiveSpotName`: FldMystic::SetActiveSpotNumber, the spot so named); started, the
+button goes out and a ring (FieldGimickEffect03bMenu's `gmk3rng`) stands on each of its other
+spots: a tap within 128 of one names it (`GetMysticTapSpotName`), SE 0x164 and the function
+called - the script moves its object there (`Mystic_Warp`) and makes that spot the active one -;
+a tap elsewhere fails. `SkipMessage` shows the page whole
 (the typing skipped); the message stays until a tap or the window's Close.
 
 An area's script runs on the game's 20 updates a second like an event's, and uses the same

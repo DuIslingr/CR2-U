@@ -485,7 +485,11 @@ struct Viewer {
     // triangle's three, the pentagon's five from four on), one for each tap it wants (SetHakkei
     // TouchCnt; 5): each tap within 128 of the mark a punch (fp02 .. fp06), SE 0x160 or 0x161, a
     // ball gone; all of them, from the first, within 60 frames - SE 0x164, the function called -;
-    // a tap away from the mark, or the time out, SE 0x165 and the mark anew
+    // a tap away from the mark, or the time out, SE 0x165 and the mark anew. A mystic's mark is on
+    // its active spot (SetMysticActiveSpotName); started (FldMystic), the button out and a ring
+    // on each of its other spots (FieldGimickEffect03bMenu: gmk3rng); a tap within 128 of one
+    // names it (SetTapSpotName - GetMysticTapSpotName: the script moves its object there), SE
+    // 0x164, its ring out, the function called; a tap elsewhere SE 0x165 and the mark anew
     struct ActionMark {
         int gimmick = -1, kind = 0;
         bool able = false;
@@ -511,7 +515,12 @@ struct Viewer {
         int wanted = 5;
         std::vector<float> tappedAt;
     } hakkei;
-    bool actionRunning() const { return sprint.stage != 0 || iai.stage != 0 || aim.stage != 0 || hakkei.stage != 0; }
+    struct Mystic {
+        int stage = 0;  // 0 none, 1 a spot's tap awaited
+        int chose = -1; // (the spot tapped: its ring out)
+        float choseAt = 0;
+    } mystic;
+    bool actionRunning() const { return sprint.stage != 0 || iai.stage != 0 || aim.stage != 0 || hakkei.stage != 0 || mystic.stage != 0; }
     void updateActionMark() {
         if (actionRunning()) return;
         if (actionMark.startedAt >= 0 && (actionMark.endedAt < 0 || uiClock - actionMark.endedAt > 0.5f)) actionMark = ActionMark();
@@ -536,7 +545,7 @@ struct Viewer {
         if (actionMark.gimmick < 0) return false;
         const cr2::FieldScript::TouchAction* a = script->touchAction(field.gimmicks()[size_t(actionMark.gimmick)].name);
         if (!a || a->spots.empty()) return false;
-        return uiPlace(a->spots[0].data(), x, y);
+        return uiPlace(a->spots[a->markSpot()].data(), x, y);
     }
     void actionTapped() {
         if (actionMark.gimmick < 0 || actionMark.startedAt >= 0) return;
@@ -546,7 +555,8 @@ struct Viewer {
         }
         const cr2::Gimmick& g = field.gimmicks()[size_t(actionMark.gimmick)];
         const std::vector<std::array<float, 3>>& spots = script->touchAction(g.name)->spots;
-        heading = std::atan2(spots[0][0] - player[0], spots[0][2] - player[2]); // (FldPlayer::SetDirection to its mark)
+        const size_t ms = script->touchAction(g.name)->markSpot();
+        heading = std::atan2(spots[ms][0] - player[0], spots[ms][2] - player[2]); // (FldPlayer::SetDirection to its mark)
         if (actionMark.kind == 1) {
             sprint = Sprint();
             sprint.to = spots;
@@ -558,6 +568,9 @@ struct Viewer {
         } else if (actionMark.kind == 5) {
             aim = Aim();
             aim.stage = 1;
+        } else if (actionMark.kind == 3) {
+            mystic = Mystic();
+            mystic.stage = 1;
         } else if (actionMark.kind == 6) {
             hakkei = Hakkei();
             hakkei.stage = 1, hakkei.wanted = std::min(script->touchAction(g.name)->touches, 8);
@@ -578,9 +591,9 @@ struct Viewer {
         return true;
     }
     void iaiEnd(bool success) {
-        if (!iai.stage && !aim.stage && !hakkei.stage) return;
-        const char* what = iai.stage ? "iai" : aim.stage ? "aim" : "hakkei";
-        iai = Iai(), aim = Aim(), hakkei = Hakkei();
+        if (!iai.stage && !aim.stage && !hakkei.stage && !mystic.stage) return;
+        const char* what = iai.stage ? "iai" : aim.stage ? "aim" : hakkei.stage ? "hakkei" : "mystic";
+        iai = Iai(), aim = Aim(), hakkei = Hakkei(), mystic.stage = 0;
         const std::string function = field.gimmicks()[size_t(actionMark.gimmick)].name;
         SDL_Log("%s: %s %s", field.info().name.c_str(), what, success ? "succeeded" : "failed");
         if (!success) {
@@ -641,6 +654,27 @@ struct Viewer {
         float mx, my;
         if (actionMarkPlace(mx, my)) hakkeiTap(std::hypot(x - mx, y - my) * 2048.0f <= 128.0f);
     }
+    // a mystic's tap: on one of its other spots (its number), or not (-1)
+    void mysticTap(int spot) {
+        if (!mystic.stage) return;
+        const cr2::FieldScript::TouchAction* a = script->touchAction(field.gimmicks()[size_t(actionMark.gimmick)].name);
+        if (spot < 0 || !a || size_t(spot) >= a->spotNames.size()) return iaiEnd(false);
+        script->mysticTapSpot = a->spotNames[size_t(spot)];
+        mystic.chose = spot, mystic.choseAt = uiClock;
+        SDL_Log("%s: the mystic's tap - %s", field.info().name.c_str(), script->mysticTapSpot.c_str());
+        iaiEnd(true);
+    }
+    void mysticPointer(float fx, float fy) {
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+        const cr2::FieldScript::TouchAction* a = script->touchAction(field.gimmicks()[size_t(actionMark.gimmick)].name);
+        if (!a) return;
+        for (size_t i = 0; i < a->spots.size(); ++i) {
+            float sx, sy;
+            if (i != a->markSpot() && uiPlace(a->spots[i].data(), sx, sy) && std::hypot(x - sx, y - sy) * 2048.0f <= 128.0f) return mysticTap(int(i));
+        }
+        mysticTap(-1);
+    }
     void updateIai() {
         if (hakkei.stage && !hakkei.tappedAt.empty() && uiClock - hakkei.tappedAt[0] > 60.0f / 60.0f) iaiEnd(false); // (60 frames)
         if (iai.stage == 2 && uiClock - iai.pressedAt > 10.0f / 60.0f) iaiEnd(false); // (10 frames)
@@ -682,7 +716,7 @@ struct Viewer {
         else if (t < io) poseUi(r, ring + "_io", t);
         else poseUi(r, ring + "_wait", t - io, true);
         if (!(actionMark.kind == 5 && aim.stage == 2)) at(r);
-        if (actionMark.endedAt >= 0) return;
+        if (actionMark.endedAt >= 0 && actionMark.kind != 3) return;
         UiFig& b = uiFig("gmkbtn");
         if (actionMark.startedAt < 0) {
             poseUi(b, "gmkbtn_io", t);
@@ -696,6 +730,21 @@ struct Viewer {
             UiFig& c = uiFig("gmk4csr_loop");
             poseUi(c, "gmk4csr_loop", ts - out, true);
             at(c);
+        } else if (actionMark.kind == 3 && (mystic.stage || mystic.chose >= 0)) { // (the mystic's other spots' rings)
+            const cr2::FieldScript::TouchAction* a = script->touchAction(field.gimmicks()[size_t(actionMark.gimmick)].name);
+            UiFig& o = uiFig("gmk3rng");
+            for (size_t i = 0; a && i < a->spots.size(); ++i) {
+                float sx, sy;
+                if (i == a->markSpot() || !uiPlace(a->spots[i].data(), sx, sy)) continue;
+                const float to = ts - out, ioO = duration(o, "gmk3rng_io");
+                if (!mystic.stage && int(i) != mystic.chose) continue;
+                if (!mystic.stage) poseUi(o, "gmk3rng_out", uiClock - mystic.choseAt);
+                else if (to < ioO) poseUi(o, "gmk3rng_io", to);
+                else poseUi(o, "gmk3rng_wait", to - ioO, true);
+                o.fig.place = cr2::Mat34();
+                o.fig.place.m[3] = sx, o.fig.place.m[7] = sy, o.fig.place.m[11] = -0.2f;
+                drawFigure(o.fig, view.data());
+            }
         } else if (actionMark.kind == 6 && hakkei.stage) { // (the hakkei's balls)
             static const char* const kTriangle[3] = {"call_gmk5ball01", "call_gmk5ball02", "call_gmk5ball03"};
             static const char* const kPentagon[5] = {"call_gmk5ball01_cpy", "call_gmk5ball02_cpy", "call_gmk5ball03_cpy", "call_gmk5ball04", "call_gmk5ball05"};
@@ -1438,7 +1487,7 @@ struct Viewer {
         }
         boxesDungeon = dungeon;
         keyLock = KeyLock();
-        actionMark = ActionMark(), sprint = Sprint(), iai = Iai(), aim = Aim(), hakkei = Hakkei();
+        actionMark = ActionMark(), sprint = Sprint(), iai = Iai(), aim = Aim(), hakkei = Hakkei(), mystic = Mystic();
         // the dungeon's script sets the area up (evt000: which gimmicks show, which collide)
         if (!script) script = std::make_unique<cr2::FieldScript>(archive, game);
         script->events().autoPage = pageSeconds;
@@ -1498,6 +1547,15 @@ struct Viewer {
     bool fieldScriptRunning() const { return script && script->running(); }
     // --input's tokens the field takes (fieldToken: the tab, the camp), one a 0.4 s while it is idle
     void fieldInput() {
+        if (!inputScript.empty() && mystic.stage && uiClock - actionMark.startedAt > 1.0f && uiClock >= inputNext &&
+            (inputScript.front() == "tapspot" || inputScript.front() == "tapspotfail")) { // (a mystic's: the first other spot, or none)
+            const cr2::FieldScript::TouchAction* a = script->touchAction(field.gimmicks()[size_t(actionMark.gimmick)].name);
+            const int other = a && a->spots.size() > 1 ? (a->markSpot() == 0 ? 1 : 0) : -1;
+            mysticTap(inputScript.front() == "tapspot" ? other : -1);
+            inputScript.pop_front();
+            inputNext = uiClock + 0.4f;
+            return;
+        }
         if (!inputScript.empty() && hakkei.stage && uiClock - actionMark.startedAt > 1.0f && uiClock >= inputNext &&
             (inputScript.front() == "punch" || inputScript.front() == "punchfail")) { // (a hakkei's tap: on the mark, or away)
             hakkeiTap(inputScript.front() == "punch");
@@ -6829,6 +6887,7 @@ int main(int argc, char** argv) {
                     else if (v.fieldMode && !v.eventMode && v.iai.stage) v.iaiPointer(fx, fy, 0);
                     else if (v.fieldMode && !v.eventMode && v.aim.stage) v.aimPointer(fx, fy, 0);
                     else if (v.fieldMode && !v.eventMode && v.hakkei.stage) v.hakkeiPointer(fx, fy);
+                    else if (v.fieldMode && !v.eventMode && v.mystic.stage) v.mysticPointer(fx, fy);
                     else if (v.fieldMode && !v.eventMode && (v.sprintTap(fx, fy) || v.actionTap(fx, fy))) {}
                     else if (v.fieldMode && !v.eventMode && v.fieldClick(fx, fy)) {
                     } else if (v.eventMode || v.fieldMode || v.battleMode) v.tap();

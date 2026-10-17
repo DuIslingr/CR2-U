@@ -1,6 +1,8 @@
 // cr2tool: CR2-U's command-line checks on your own copy of the game's data.
 //
 //   cr2tool check <archive.mvgl | .obb>              every file decodes to its size
+//   (an <archive> may be its folder; an <executable> "-": the maps' table found beside the archive -
+//   the iPad's executable, the Vita's eboot.bin, the Android release's APK beside its OBB)
 //   cr2tool scripts <archive> [name]                 every script (script\*.nut) loads in the
 //                                                    Squirrel 2.2.4 VM and its main runs; the
 //                                                    native stubs it calls
@@ -52,6 +54,7 @@
 #include "assets/image.hpp"
 #include "assets/skeleton.hpp"
 #include "assets/mvgl.hpp"
+#include "assets/release.hpp"
 #include "field/character.hpp"
 #include "field/fieldmap.hpp"
 #include "event/runtime.hpp"
@@ -83,7 +86,7 @@ int usage() {
 
 bool openArchive(cr2::MvglArchive& a, const char* path) {
     std::string err;
-    if (!a.open(path, &err)) {
+    if (!a.open(cr2::resolveArchive(path), &err)) { // (a folder: the OBB or the CRDB.*.mvgl in it)
         std::fprintf(stderr, "%s\n", err.c_str());
         return false;
     }
@@ -436,16 +439,10 @@ int shaders(const char* path) {
     return extraClash ? 1 : 0;
 }
 
-bool readTable(const char* binary, std::vector<cr2::MapInfo>& table) {
-    std::vector<uint8_t> bin;
-    if (std::FILE* f = std::fopen(binary, "rb")) {
-        std::fseek(f, 0, SEEK_END);
-        bin.resize(size_t(std::ftell(f)));
-        std::fseek(f, 0, SEEK_SET);
-        bin.resize(std::fread(bin.data(), 1, bin.size(), f));
-        std::fclose(f);
-    }
-    if (cr2::findMapTable(bin, table)) return true;
+// the maps' table: from `binary` ("-": the release's own, found beside the archive - the iPad's
+// executable, the Vita's eboot.bin, the Android release's APK)
+bool readTable(const char* path, const char* binary, std::vector<cr2::MapInfo>& table) {
+    if (cr2::releaseMapTable(path, std::strcmp(binary, "-") ? binary : "", table)) return true;
     std::fprintf(stderr, "%s: no maps' table\n", binary);
     return false;
 }
@@ -453,7 +450,7 @@ bool readTable(const char* binary, std::vector<cr2::MapInfo>& table) {
 int fieldScripts(const char* path, const char* binary, const char* only) {
     cr2::MvglArchive a;
     std::vector<cr2::MapInfo> table;
-    if (!openArchive(a, path) || !readTable(binary, table)) return 1;
+    if (!openArchive(a, path) || !readTable(path, binary, table)) return 1;
     size_t maps = 0, ran = 0, npcs = 0, npcsShown = 0;
     size_t events = 0, reserved = 0, eventBoxes = 0, eventFunctions = 0, faded = 0;
     size_t taps = 0, tapFunctions = 0, tapsEnded = 0, tapsTalking = 0;
@@ -541,7 +538,7 @@ int fieldScripts(const char* path, const char* binary, const char* only) {
 int exits(const char* path, const char* binary) {
     cr2::MvglArchive a;
     std::vector<cr2::MapInfo> table;
-    if (!openArchive(a, path) || !readTable(binary, table)) return 1;
+    if (!openArchive(a, path) || !readTable(path, binary, table)) return 1;
     std::map<std::string, cr2::FieldMap> loaded;
     auto load = [&](const std::string& name) -> cr2::FieldMap* {
         if (auto it = loaded.find(name); it != loaded.end()) return &it->second;
@@ -579,16 +576,8 @@ int exits(const char* path, const char* binary) {
 int walk(const char* path, const char* binary, const char* only) {
     cr2::MvglArchive a;
     if (!openArchive(a, path)) return 1;
-    std::vector<uint8_t> bin;
-    if (std::FILE* f = std::fopen(binary, "rb")) {
-        std::fseek(f, 0, SEEK_END);
-        bin.resize(size_t(std::ftell(f)));
-        std::fseek(f, 0, SEEK_SET);
-        bin.resize(std::fread(bin.data(), 1, bin.size(), f));
-        std::fclose(f);
-    }
     std::vector<cr2::MapInfo> table;
-    if (!cr2::findMapTable(bin, table)) return std::fprintf(stderr, "%s: no maps' table\n", binary), 1;
+    if (!readTable(path, binary, table)) return 1;
     size_t maps = 0, settled = 0, points = 0, runs = 0, offFloor = 0, tunnels = 0, stuck = 0, skipped = 0;
     for (const cr2::MapInfo& info : table) {
         if (only && info.name != only) continue;

@@ -23,6 +23,7 @@ add_library(cr2core STATIC
     src/assets/geom.cpp
     src/assets/skeleton.cpp
     src/assets/maptable.cpp
+    src/assets/release.cpp
     src/assets/text.cpp
     src/field/fieldmap.cpp
     src/field/collision.cpp
@@ -42,6 +43,16 @@ add_library(cr2core STATIC
 )
 target_include_directories(cr2core PUBLIC src)
 target_link_libraries(cr2core PUBLIC squirrel2)
+# The Android release's APK (its library: the maps' table; its fonts): zlib (the system's) inflates
+# them; without it, only an unpacked APK's
+find_package(ZLIB QUIET)
+if(ZLIB_FOUND)
+    target_link_libraries(cr2core PUBLIC ZLIB::ZLIB)
+    target_compile_definitions(cr2core PRIVATE CR2_HAVE_ZLIB=1)
+    message(STATUS "APK: zlib ${ZLIB_VERSION_STRING}")
+else()
+    message(STATUS "APK: zlib not found - an unpacked APK only")
+endif()
 # The game's text: FreeType (the system's) draws the release's fonts (gfx/text.cpp); without it,
 # no text
 find_package(Freetype QUIET)

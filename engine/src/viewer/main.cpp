@@ -8,8 +8,8 @@
 // Fields (--field <map>): the map's painted layers and 3D figure with a character (--model, c001
 // unless given) at one of its points (--at; defaultPos), through the map's camera, scrolling to
 // keep the character centred (field/fieldmap.hpp). The maps' table is in the game's executable:
-// found beside the iPad's or the Vita's archive, or given with --binary (Android's
-// libChaosRings2.so).
+// found beside the iPad's or the Vita's archive, in the APK beside Android's OBB (its
+// libChaosRings2.so; assets/release.hpp), or given with --binary.
 //
 // Events (--event <function> --vista <map>): an event's script played by the runtime (event/
 // runtime.hpp) in its vista - the map's figure (d0151b for the opening's), the scene's models on
@@ -60,6 +60,7 @@
 #include "assets/geom.hpp"
 #include "assets/image.hpp"
 #include "assets/maptable.hpp"
+#include "assets/release.hpp"
 #include "assets/mvgl.hpp"
 #include "assets/skeleton.hpp"
 #include "battle/battledata.hpp"
@@ -727,21 +728,9 @@ struct Viewer {
     bool exitsArmed = false; // (an exit counts once the character has left them all since arriving)
 
     bool loadTable(const std::string& binary, const std::string& dataPath) {
-        std::vector<std::string> candidates;
-        if (!binary.empty()) candidates.push_back(binary);
-        for (const std::string& c : cr2::mapTableCandidates(dataPath)) candidates.push_back(c);
-        for (const std::string& c : candidates) {
-            SDL_IOStream* io = SDL_IOFromFile(c.c_str(), "rb");
-            if (!io) continue;
-            std::vector<uint8_t> bytes(size_t(std::max<Sint64>(SDL_GetIOSize(io), 0)));
-            const bool read = !bytes.empty() && SDL_ReadIO(io, bytes.data(), bytes.size()) == bytes.size();
-            SDL_CloseIO(io);
-            if (read && cr2::findMapTable(bytes, table)) {
-                tableFrom = c;
-                return true;
-            }
-        }
-        SDL_Log("the maps' table: not found beside %s - give the game's executable with --binary", dataPath.c_str());
+        if (cr2::releaseMapTable(dataPath, binary, table, &tableFrom)) return true;
+        SDL_Log("the maps' table: not found beside %s (the iPad's executable, the Vita's eboot.bin, the Android "
+                "release's APK) - give the game's executable with --binary", dataPath.c_str());
         return false;
     }
 
@@ -1675,7 +1664,7 @@ struct Viewer {
             if (j.compare(0, 17, "call_sendCsr_loop") == 0 || j.compare(0, 16, "call_msgCsr_loop") == 0) w.cursorJoint = j;
     }
 
-    void loadMessageWindow(const std::string& fontPath) {
+    void loadMessageWindow(const std::string& fontPath, std::vector<uint8_t> fontBytes = {}, const std::string& fontName = {}) {
         loadWindow(vistaWindow, "vstwin");
         vistaWindow.stretch = vistaWindow.nameTag = true;
         vistaWindow.slots = {"01", "11", "12", "21", "22"};
@@ -1699,6 +1688,7 @@ struct Viewer {
         if (!loadFigure("sendcsr_loop.geom", pageCursor, &err)) SDL_Log("page cursor: %s", err.c_str());
         if (!loadFigure("msgcsr_loop.geom", conversationCursor, &err)) SDL_Log("page cursor: %s", err.c_str());
         if (!fontPath.empty() && !font.load(fontPath, &err)) SDL_Log("font: %s", err.c_str());
+        else if (fontPath.empty() && !fontBytes.empty() && !font.loadMemory(std::move(fontBytes), fontName, &err)) SDL_Log("font: %s", err.c_str());
         SDL_Log("message windows: vista %zu meshes, narration %zu joints; font %s", vistaWindow.fig.meshes.size(),
                 narrationWindow.joints.size(), font.loaded() ? font.path().c_str() : "none (no text)");
     }
@@ -2303,6 +2293,7 @@ int main(int argc, char** argv) {
         if (q == std::end(kQualities)) return std::fprintf(stderr, "--quality: native, quality, balanced, performance or ultra\n"), 2;
         upscale.ratio = q->ratio;
     }
+    data = cr2::resolveArchive(data); // (a folder: the OBB or the CRDB.*.mvgl in it)
     if (data.empty()) {
         std::fprintf(stderr, "cr2view --data <archive> [--model name] [--anim name] [--time s] [--size WxH] [--yaw deg] "
                              "[--pitch deg] [--lights figure|none] [--field map [--at point] [--binary file]] "
@@ -2374,13 +2365,17 @@ int main(int argc, char** argv) {
     if (!playFrom.empty()) fieldName = playFrom, v.playMode = true;
     v.skipBattles = skipBattlesOpt; // (a new game: every flag clear)
     if (!fieldName.empty() || !eventName.empty() || battleId > 0) {
-        // the font: --font, CR2_FONT, the Vita's beside its archive, else the system's
+        // the font: --font, CR2_FONT, the Vita's beside its archive, the Android release's APK beside
+        // its OBB (assets/00001: the Regular face it draws English in), else the system's
         std::string dataDir = data.substr(0, data.find_last_of("/\\") == std::string::npos ? 0 : data.find_last_of("/\\") + 1);
         const char* envFont = SDL_getenv("CR2_FONT");
-        const std::string fp = cr2::TextRasterizer::firstFont({fontPath, envFont ? envFont : "", dataDir + "font/TBGoPro-Bold.otf",
-                                                               "/usr/share/fonts/noto/NotoSans-Regular.ttf",
-                                                               "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/liberation/LiberationSans-Regular.ttf"});
-        v.loadMessageWindow(fp);
+        std::string fp = cr2::TextRasterizer::firstFont({fontPath, envFont ? envFont : "", dataDir + "font/TBGoPro-Bold.otf"});
+        std::vector<uint8_t> apkFont;
+        std::string apkFontFrom;
+        if (fp.empty() && !cr2::androidFile(data, "assets/00001", apkFont, &apkFontFrom))
+            fp = cr2::TextRasterizer::firstFont({"/usr/share/fonts/noto/NotoSans-Regular.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
+                                                 "/usr/share/fonts/liberation/LiberationSans-Regular.ttf"});
+        v.loadMessageWindow(fp, std::move(apkFont), apkFontFrom);
         v.initEventDrawing();
         v.pageSeconds = page;
     }

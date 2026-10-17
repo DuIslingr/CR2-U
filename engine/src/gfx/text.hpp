@@ -24,6 +24,8 @@ public:
 
     // a font file (OpenType / TrueType, face 0); false: none could be read
     bool load(const std::string& path, std::string* error = nullptr);
+    // the same from memory (the APK's fonts): `name` stands for its path
+    bool loadMemory(std::vector<uint8_t> bytes, const std::string& name, std::string* error = nullptr);
     bool loaded() const;
     const std::string& path() const { return path_; }
 

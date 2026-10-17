@@ -35,6 +35,7 @@ std::vector<uint32_t> codePoints(const std::string& s) {
 struct TextRasterizer::Impl {
     FT_Library lib = nullptr;
     FT_Face face = nullptr;
+    std::vector<uint8_t> bytes; // (a face from memory reads them while it lives)
     ~Impl() {
         if (face) FT_Done_Face(face);
         if (lib) FT_Done_FreeType(lib);
@@ -59,7 +60,25 @@ bool TextRasterizer::load(const std::string& path, std::string* error) {
     }
     if (impl_->face) FT_Done_Face(impl_->face);
     impl_->face = f;
+    impl_->bytes.clear();
     path_ = path;
+    return true;
+}
+
+bool TextRasterizer::loadMemory(std::vector<uint8_t> bytes, const std::string& name, std::string* error) {
+    if (!impl_->lib) {
+        if (error) *error = "FreeType could not start";
+        return false;
+    }
+    FT_Face f = nullptr;
+    if (bytes.empty() || FT_New_Memory_Face(impl_->lib, bytes.data(), FT_Long(bytes.size()), 0, &f)) {
+        if (error) *error = name + ": not a font FreeType reads";
+        return false;
+    }
+    if (impl_->face) FT_Done_Face(impl_->face);
+    impl_->face = f;
+    impl_->bytes = std::move(bytes);
+    path_ = name;
     return true;
 }
 
@@ -122,6 +141,10 @@ TextRasterizer::TextRasterizer() : impl_(std::make_unique<Impl>()) {}
 TextRasterizer::~TextRasterizer() = default;
 bool TextRasterizer::load(const std::string& path, std::string* error) {
     if (error) *error = path + ": built without FreeType";
+    return false;
+}
+bool TextRasterizer::loadMemory(std::vector<uint8_t>, const std::string& name, std::string* error) {
+    if (error) *error = name + ": built without FreeType";
     return false;
 }
 bool TextRasterizer::loaded() const { return false; }

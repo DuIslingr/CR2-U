@@ -111,9 +111,18 @@ An unset box isn't shown. A box (`obj011`, a key box `obj012`; `fn01` closed, `f
 more, SE 0x153) and calls its function (`tbox_03` -> `box_msg`: `Cr3GimmickData.GetItemID`, then
 window 7 - GetItemWindowMenu's `getItem`, sliding in from above - with `SetItemMessage(7, id)`:
 announce 0x75 with the item's name, the item's icon left of the text by half its width + 0.032).
-A key box opens only for Orlando leading (FldPlayer +0x1c 1: then FldUnlock's lock - not yet,
-it opens at once, SE 0x154); for anyone else FldMain runs `Message_obox` (the System window,
-5: SystemWindowMenu's `sysWin_io`, three lines at typeM_L01..03, its animator back to close).
+A key box opens only for Orlando leading (FldPlayer +0x1c 1); for anyone else FldMain runs
+`Message_obox` (the System window, 5: SystemWindowMenu's `sysWin_io`, three lines at
+typeM_L01..03, its animator back to close). The leader at an unopened key box gets a mark over it,
+0.125 above (FldBox's new mark, an interface "field gimmick effect" - FieldGimmickEffectToInterface:
+kinds 0..8 interfaces 62..69, 124): for Orlando kind 2 (FieldGimickEffect02Menu: `gmk2ring`, its
+`_io` then `_wait`, and the button `gmkBtn_io`), else kind 0 (`gmk0rng_io`). Orlando's tap starts
+FldUnlock (FldMain step 0x16): the button goes out (`gmkBtn_out`, then the guide `gmk2csr_loop`
+looping); two fingers put down within 450 of the mark and spread 1000 apart (platform 1's: the
+interface's units x 2048 - Cr3UtilSetBalloonPos; the ring scaled 1 + spread / 1000 meanwhile)
+open it - SE 0x164, the ring out, 20 updates on its function called and FldBox::Open (SE 0x153),
+SE 0x154. One finger, or letting go early, fails it (SE 0x165, the mark anew). The viewer takes
+the mouse as one finger, the other mirrored about the mark (`--input unlock` / `unlockfail`).
 The boxes' table and which are set and open go in the save. `SkipMessage` shows the page whole
 (the typing skipped); the message stays until a tap or the window's Close.
 

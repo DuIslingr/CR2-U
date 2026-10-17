@@ -326,26 +326,176 @@ struct Viewer {
             script->events().advance();
             return;
         }
-        if (nearestBalloon < 0) return;
+        if (nearestBalloon < 0 || keyLock.stage != 0) return;
         const cr2::Gimmick& g = field.gimmicks()[size_t(nearestBalloon)];
         heading = std::atan2(g.position[0] - player[0], g.position[2] - player[2]);
         SDL_Log("%s: tapped %s - %s", field.info().name.c_str(), g.name.c_str(), g.function.c_str());
         std::string function = g.function;
         if (g.kind == cr2::Gimmick::Box) { // (FldMain's balloon of a box: opened, then its function - box_msg)
             if (g.boxKind == 1 && game.party[0] != 1) function = "Message_obox"; // (a key box: only Orlando opens it)
-            else {
-                const int item = game.boxes.item(g.boxKind, g.boxNumber, game.party);
-                game.boxes.markOpen(g.boxKind, g.boxNumber); // (FldBox::Open: Cr3UtilGetItem(item, 1), 0x153)
-                if (item > 0 && item < 300) game.itemCount[item] = static_cast<short>(std::min(game.itemCount[item] + 1, 99));
-                audio.playSe(g.boxKind == 1 ? 0x154 : 0x153, false);
-                boxOpening[g.name] = uiClock;
-                script->boxItem = item;
-                SDL_Log("%s: box %s - item %d (%d now)", field.info().name.c_str(), g.id.c_str(), item, item > 0 && item < 300 ? game.itemCount[item] : 0);
-            }
+            else if (g.boxKind == 1) return startUnlock(nearestBalloon); // (FldUnlock first)
+            else openBox(g);
         }
+        callGimmick(function);
+    }
+    void callGimmick(const std::string& function) {
         if (!script->call(function)) SDL_Log("%s", script->error().c_str());
         else if (!script->running() && playMode) pendingBranch = true;
         checkBalloons();
+    }
+    // FldBox::Open: the item one more (Cr3UtilGetItem), the box opening (fa01, then fn02), SE 0x153
+    void openBox(const cr2::Gimmick& g) {
+        const int item = game.boxes.item(g.boxKind, g.boxNumber, game.party);
+        game.boxes.markOpen(g.boxKind, g.boxNumber);
+        if (item > 0 && item < 300) game.itemCount[item] = static_cast<short>(std::min(game.itemCount[item] + 1, 99));
+        audio.playSe(0x153, false);
+        boxOpening[g.name] = uiClock;
+        script->boxItem = item;
+        SDL_Log("%s: box %s - item %d (%d now)", field.info().name.c_str(), g.id.c_str(), item, item > 0 && item < 300 ? game.itemCount[item] : 0);
+    }
+
+    // A key box's lock (FldBox's new mark, FldUnlock). The leader at an unopened key box gets its
+    // mark over it (0.125 above it; FieldGimickEffect02Menu for Orlando - gmk2ring, its io then its
+    // wait, and gmkBtn's io - else 00's gmk0rng_io). Tapped with Orlando leading, the lock: gmkBtn
+    // out, then gmk2csr_loop; two fingers put down within 450 of the mark (the interface's units x
+    // 2048: Cr3UtilSetBalloonPos) and spread 1000 apart (platform 1's; the ring scaled 1 + spread /
+    // 1000) open it - SE 0x164, the ring out, 20 updates on the box opened (FldMain step 0x16:
+    // its function called, FldBox::Open, SE 0x154); anything else fails it (SE 0x165, the mark
+    // anew). The mouse is one finger, the other mirrored about the mark.
+    struct KeyLock {
+        int gimmick = -1;       // (the key box marked: field.gimmicks()'s; -1 none)
+        bool orlando = false;   // (the mark's kind: 2, else 0)
+        int stage = 0;          // 0 the mark, 1 the lock (fingers awaited), 2 opened (counting down)
+        float markAt = 0, stageAt = 0;
+        float spread = 0;       // (the fingers' distance, x 2048)
+        bool pressing = false;
+        int countdown = 0;
+    } keyLock;
+    static constexpr float kUnlockReach = 450, kUnlockSpread = 1000;
+    void startUnlock(int gimmick) {
+        keyLock.gimmick = gimmick, keyLock.orlando = true;
+        keyLock.stage = 1, keyLock.stageAt = uiClock, keyLock.spread = 0, keyLock.pressing = false;
+        SDL_Log("%s: the lock of %s", field.info().name.c_str(), field.gimmicks()[size_t(gimmick)].id.c_str());
+    }
+    void unlockEnd(bool success) {
+        if (keyLock.stage != 1) return;
+        keyLock.pressing = false;
+        if (success) {
+            audio.playSe(0x164, false);
+            keyLock.stage = 2, keyLock.stageAt = uiClock, keyLock.countdown = 20;
+        } else {
+            audio.playSe(0x165, false);
+            keyLock.stage = 0, keyLock.markAt = uiClock, keyLock.spread = 0;
+        }
+        SDL_Log("%s: unlock %s", field.info().name.c_str(), success ? "succeeded" : "failed");
+    }
+    void updateKeyLock() {
+        KeyLock& k = keyLock;
+        if (k.stage == 2) {
+            if (--k.countdown > 0) return;
+            k.stage = 0;
+            if (k.gimmick < 0 || size_t(k.gimmick) >= field.gimmicks().size()) return;
+            const cr2::Gimmick& g = field.gimmicks()[size_t(k.gimmick)];
+            k.gimmick = -1;
+            openBox(g);
+            audio.playSe(0x154, false);
+            callGimmick(g.function);
+            return;
+        }
+        if (k.stage == 1) return;
+        int at = -1; // (the key box the leader is at)
+        if (!script->running())
+            for (size_t i : balloons) {
+                const cr2::Gimmick& g = field.gimmicks()[i];
+                if (g.kind == cr2::Gimmick::Box && g.boxKind == 1) at = int(i);
+            }
+        if (at != k.gimmick) k.gimmick = at, k.markAt = uiClock;
+        k.orlando = game.party[0] == 1;
+    }
+    // the mark's place in the interface's units (the box's, 0.125 above, through the field's camera)
+    bool keyMarkPlace(float& x, float& y) {
+        if (keyLock.gimmick < 0 || size_t(keyLock.gimmick) >= field.gimmicks().size()) return false;
+        const cr2::Gimmick& g = field.gimmicks()[size_t(keyLock.gimmick)];
+        const float p[3] = {g.position[0], g.position[1] + 0.125f, g.position[2]};
+        const float* m = fieldScene.data();
+        const float cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
+        if (cw <= 0) return false;
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        x = (m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / cw * float(screenW) * 0.5f / k;
+        y = (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / cw * float(screenH) * 0.5f / k;
+        return true;
+    }
+    // the mouse on the lock (fx, fy: the screen's fractions): pressed, dragged, let go
+    void unlockPointer(float fx, float fy, int phase) {
+        if (keyLock.stage != 1) return;
+        if (phase == 2) {
+            if (keyLock.pressing) unlockEnd(false);
+            return;
+        }
+        float mx, my;
+        if (!keyMarkPlace(mx, my)) return;
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+        const float d = std::hypot(x - mx, y - my) * 2048.0f;
+        if (phase == 0) {
+            if (d <= kUnlockReach) keyLock.pressing = true, keyLock.spread = 2 * d;
+            else unlockEnd(false);
+        } else if (keyLock.pressing) {
+            keyLock.spread = 2 * d;
+            if (keyLock.spread >= kUnlockSpread) unlockEnd(true);
+        }
+    }
+    void drawKeyMark(int w, int h) {
+        if (!fieldMode || eventMode || keyLock.gimmick < 0) return;
+        const cr2::Gimmick& g = field.gimmicks()[size_t(keyLock.gimmick)];
+        if (keyLock.stage == 0 && game.boxes.isOpen(g.boxKind, g.boxNumber)) return;
+        float x, y;
+        if (!keyMarkPlace(x, y)) return;
+        const Mat4 proj = uiProjection(w, h);
+        Mat4 camera = cr2::mat4Identity();
+        camera[14] = -0.881f;
+        const Mat4 view = cr2::mat4Multiply(proj, camera);
+        cr2::SceneLighting l;
+        dev->setLighting(l);
+        auto at = [&](UiFig& u, float scale) {
+            u.fig.place = cr2::Mat34();
+            u.fig.place.m[0] = u.fig.place.m[5] = u.fig.place.m[10] = scale;
+            u.fig.place.m[3] = x, u.fig.place.m[7] = y, u.fig.place.m[11] = -0.2f; // (SetParamNumber 4: z -0.2)
+            drawFigure(u.fig, view.data());
+        };
+        auto duration = [&](UiFig& u, const char* anim) {
+            poseUi(u, anim, 0);
+            return u.fig.animLoaded ? u.fig.anim.duration() : 0.0f;
+        };
+        const float t = uiClock - keyLock.markAt, ts = uiClock - keyLock.stageAt;
+        if (!keyLock.orlando) {
+            UiFig& m = uiFig("gmk0rng_io");
+            poseUi(m, "gmk0rng_io", t);
+            at(m, 1);
+            return;
+        }
+        UiFig& ring = uiFig("gmk2ring");
+        const float io = duration(ring, "gmk2ring_io");
+        if (keyLock.stage == 2) poseUi(ring, "gmk2ring_out", ts);
+        else if (t < io) poseUi(ring, "gmk2ring_io", t);
+        else poseUi(ring, "gmk2ring_wait", t - io, true);
+        at(ring, keyLock.stage == 1 ? 1 + keyLock.spread / kUnlockSpread : 1);
+        if (keyLock.stage == 0) {
+            UiFig& b = uiFig("gmkbtn");
+            poseUi(b, "gmkbtn_io", t);
+            at(b, 1);
+        } else if (keyLock.stage == 1) {
+            UiFig& b = uiFig("gmkbtn");
+            const float out = duration(b, "gmkbtn_out");
+            if (ts < out) {
+                poseUi(b, "gmkbtn_out", ts);
+                at(b, 1);
+            } else { // (then the guide, looping: gmk2csr_loop)
+                UiFig& c = uiFig("gmk2csr_loop");
+                poseUi(c, "gmk2csr_loop", ts - out, true);
+                at(c, 1 + keyLock.spread / kUnlockSpread);
+            }
+        }
     }
 
     void walk(float dt, float sx, float sy, bool run) {
@@ -898,6 +1048,7 @@ struct Viewer {
             SDL_Log("%s: the treasure boxes drawn - table %d, %d placed", dungeon.c_str(), game.boxes.table, placed);
         }
         boxesDungeon = dungeon;
+        keyLock = KeyLock();
         // the dungeon's script sets the area up (evt000: which gimmicks show, which collide)
         if (!script) script = std::make_unique<cr2::FieldScript>(archive, game);
         script->events().autoPage = pageSeconds;
@@ -957,6 +1108,13 @@ struct Viewer {
     bool fieldScriptRunning() const { return script && script->running(); }
     // --input's tokens the field takes (fieldToken: the tab, the camp), one a 0.4 s while it is idle
     void fieldInput() {
+        if (!inputScript.empty() && uiClock >= inputNext && keyLock.stage == 1 && uiClock - keyLock.stageAt > 1.0f &&
+            (inputScript.front() == "unlock" || inputScript.front() == "unlockfail")) { // (the lock: spread, or let go)
+            unlockEnd(inputScript.front() == "unlock");
+            inputScript.pop_front();
+            inputNext = uiClock + 0.4f;
+            return;
+        }
         if (inputScript.empty() || uiClock < inputNext || (!campOpen && !fieldTabShown() && !mapOpen && !saveStage) || manualStage == 2) return;
         if (!fieldToken(inputScript.front())) return; // (not the field's: left for a battle)
         inputScript.pop_front();
@@ -976,6 +1134,7 @@ struct Viewer {
             // update runs them whether or not a script waits)
             const bool wasRunning = script->running();
             if (!script->tick()) SDL_Log("%s's script: %s", field.info().name.c_str(), script->error().c_str());
+            updateKeyLock();
             if (!wasRunning) continue;
             refreshGimmicks();
             if (script->events().scene().loaded()) syncEventFigures(script->events());
@@ -1021,7 +1180,7 @@ struct Viewer {
             fieldUpdate(dt);
             fieldInput();
             if (fieldMode && !eventMode) {
-                const bool held = fieldScriptRunning();
+                const bool held = fieldScriptRunning() || keyLock.stage != 0;
                 walk(dt, held ? 0 : sx, held ? 0 : sy, run);
             }
         }
@@ -4589,7 +4748,7 @@ struct Viewer {
     // opens the camp (FldMain step 5, FldCamp); the others are not here yet.
     bool fieldTabOpen = false;
     float fieldTabAt = -10; // (uiClock: when it last began to open or close)
-    bool fieldTabShown() const { return fieldMode && !eventMode && !battleMode && script && !script->running() && !campOpen && !mapOpen && !saveStage; }
+    bool fieldTabShown() const { return fieldMode && !eventMode && !battleMode && script && !script->running() && !campOpen && !mapOpen && !saveStage && keyLock.stage == 0; }
     float fieldTabPose(UiFig& tab) {
         const float d = tab.fig.animLoaded ? tab.fig.anim.duration() : 0.0f;
         const float e = std::clamp(uiClock - fieldTabAt, 0.0f, d);
@@ -5674,6 +5833,7 @@ struct Viewer {
     void drawEventUi() {
         dev->clearDepth(); // (the scene's depths behind all of it: a near camera's ground too)
         drawBalloons(screenW, screenH);
+        drawKeyMark(screenW, screenH);
         drawFieldUi(screenW, screenH);
         drawBattleHud(screenW, screenH);
         if (battleMode && white.id) { // (a special scene's: Cr3Fade over the battle)
@@ -6078,6 +6238,17 @@ int main(int argc, char** argv) {
         code = ok ? 0 : 1;
     } else {
         bool running = true, dragging = false;
+        // (the window's point on the game's screen, letterboxed in the window at its own shape: its fractions)
+        auto screenFraction = [&](float wx, float wy, float& fx, float& fy) {
+            int ww = 1, wh = 1, pw = 1, ph = 1;
+            SDL_GetWindowSize(win, &ww, &wh);
+            SDL_GetWindowSizeInPixels(win, &pw, &ph);
+            const float px = wx * float(pw) / float(std::max(ww, 1)), py = wy * float(ph) / float(std::max(wh, 1));
+            const float sw = float(v.screenW), sh = float(v.screenH);
+            const float k = std::min(float(pw) / sw, float(ph) / sh);
+            const float ox = (float(pw) - sw * k) * 0.5f, oy = (float(ph) - sh * k) * 0.5f;
+            fx = (px - ox) / (sw * k), fy = (py - oy) / (sh * k);
+        };
         Uint64 last = SDL_GetTicksNS();
         // --fps: each frame starts no sooner than its slot (the display's vsync may hold it longer)
         const Uint64 period = fps > 0 ? Uint64(1000000000) / Uint64(fps) : 0;
@@ -6160,20 +6331,21 @@ int main(int argc, char** argv) {
                         v.loadAnim(f, (f.animIndex + (k == SDLK_DOWN ? 1 : f.anims.size() - 1)) % f.anims.size());
                 } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
                     dragging = true;
-                    // (the window's point on the game's screen, letterboxed in the window at its own shape)
-                    int ww = 1, wh = 1, pw = 1, ph = 1;
-                    SDL_GetWindowSize(win, &ww, &wh);
-                    SDL_GetWindowSizeInPixels(win, &pw, &ph);
-                    const float px = e.button.x * float(pw) / float(std::max(ww, 1)), py = e.button.y * float(ph) / float(std::max(wh, 1));
-                    const float sw = float(v.screenW), sh = float(v.screenH);
-                    const float k = std::min(float(pw) / sw, float(ph) / sh);
-                    const float ox = (float(pw) - sw * k) * 0.5f, oy = (float(ph) - sh * k) * 0.5f;
-                    const float fx = (px - ox) / (sw * k), fy = (py - oy) / (sh * k);
+                    float fx, fy;
+                    screenFraction(e.button.x, e.button.y, fx, fy);
                     if (v.battleMode && v.choosing) v.battleClick(fx, fy);
+                    else if (v.fieldMode && !v.eventMode && v.keyLock.stage != 0) v.unlockPointer(fx, fy, 0);
                     else if (v.fieldMode && !v.eventMode && v.fieldClick(fx, fy)) {
                     } else if (v.eventMode || v.fieldMode || v.battleMode) v.tap();
                 }
-                else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) dragging = false;
+                else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                    dragging = false;
+                    if (v.fieldMode && v.keyLock.stage == 1) v.unlockPointer(0, 0, 2);
+                } else if (e.type == SDL_EVENT_MOUSE_MOTION && dragging && v.fieldMode && v.keyLock.stage == 1) {
+                    float fx, fy;
+                    screenFraction(e.motion.x, e.motion.y, fx, fy);
+                    v.unlockPointer(fx, fy, 1);
+                }
                 else if (e.type == SDL_EVENT_MOUSE_MOTION && dragging && v.campOpen && v.campLink == 201) { // (the scenarios dragged up and down)
                     int ww = 1, wh = 1;
                     SDL_GetWindowSize(win, &ww, &wh);

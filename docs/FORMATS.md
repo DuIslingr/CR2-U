@@ -486,3 +486,31 @@ line i takes slot i (EvtWindow::ShowMessage; with a name tag, i + 1), always in 
 column (SetStringData's alignment 1); the messages put blank lines first to set where it sits
 (the prologue's: four, then the line at C05, the screen's middle). The windows' depths put them
 in front of the fade windows' (GetWindowDepth: their z).
+
+## Battles (`data\battledata.dat`)
+
+BtlData's tables. The header: u32 offsets - +0x00 the characters, +0x04 the party, +0x08 the
+monsters, +0x0c the couplings (encounters), +0x10 the areas, +0x14 the commands, ..., +0x30 the
+strings - then s16 counts from +0x34 (characters 9, monsters 274, couplings 355 - one past the
+records before the areas -, areas 63, commands 462, ...). A record's names are u32 offsets into
+the strings, one per language (Android / iPad / Vita alike: +0 Japanese, +4 English).
+
+| Record | Size | Fields |
+|---|---|---|
+| character | 0x98 | +0x08 its battle figure (`j001` Darwin .. `j007`; 9 `c102` Piupiu) |
+| monster | 0x110 | +0x10 its figure - four characters - and colour (`m206a`: `m206`, images `m206a01`); +0x1c HP (GetMonsterHP: + 25 a level); +0x53 size (0 small, 1 medium, 2 large, 3 extra large, 4 human-sized) |
+| coupling | 0x1c | +0x00 music; +0x02 the map (BtlMapTable, from 1: `d0151b` .. `d1154v`); +0x04 a flag; +0x08 three monsters (0 none) |
+
+`BattleIN(id)` fights coupling `id` (FldEncount::SetBattle). The stage (BtlMainCtrl::StepInit):
+the map's figure, its own lights (BtlMap: RenderContaindLights) with the directional one turned
+to come from the camera (BtlMain::SetLights); the monsters' sizes pick a pattern
+(BtlWork::SetSizePattern over BtlCouplingTable: S, SS, SSS, M, MS, MSS, MM, L, XL, XLXL, Hsolo,
+Hpair; m310 its own, `neron`), the pattern where each stands - a joint of `battledpos`
+(BtlDposTable: `dPos_sssL`, `dPos_mC`, ...; its names only hashed, no `.name`) whose place and
+turn the figure takes (BtlModel::SetPosRot) - the party a pair on `dPos_pPairA` / `B`. They start
+on their first motions (BtlMotionTable's 25: 0 `bb01` the stance, 1 `bb02`, `bg01`, `bd01`, ...,
+`bz03`; the party bb02 then bb01). The cameras are `BattleCamera_move`'s and `_nomove`'s by name
+(`Cam_Start_<pattern>_00` as it opens, `Cam_Getset_<pattern>_00` while commands are chosen,
+`Cam_Win_*`, ...: BtlCameraCtrl::Start; near halved - at least 0.1 - far five times, at most
+5000). `cr2tool battle <archive> all`: the 340 couplings with monsters set up, everything they use
+in the archive, in all three releases.

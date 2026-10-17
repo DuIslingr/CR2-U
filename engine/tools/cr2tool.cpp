@@ -47,6 +47,7 @@
 #include <vector>
 
 #include "assets/geom.hpp"
+#include "battle/battledata.hpp"
 #include "assets/image.hpp"
 #include "assets/skeleton.hpp"
 #include "assets/mvgl.hpp"
@@ -73,7 +74,8 @@ int usage() {
                  "cr2tool exits <archive> <executable>\n"
                  "cr2tool fieldscript <archive> <executable> [map]\n"
                  "cr2tool event <archive> <script> [function]\n"
-                 "cr2tool play <archive> <event | all>\n");
+                 "cr2tool play <archive> <event | all>\n"
+                 "cr2tool battle <archive> <coupling | all>\n");
     return 2;
 }
 
@@ -832,6 +834,67 @@ int pose(const char* path, const std::string& figure, const std::string& animNam
     return 0;
 }
 
+// The battles: each coupling's set-up (battle/battledata.cpp) against the archive - its map, its
+// figures and their first motions, the battledpos joints they stand on, the commands' camera
+int battles(const char* path, const char* which) {
+    cr2::MvglArchive a;
+    if (!openArchive(a, path)) return 1;
+    std::vector<uint8_t> d;
+    std::string err;
+    cr2::BattleData data;
+    if (!a.read("data\\battledata.dat", d, &err) || !data.parse(d, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
+    cr2::Skeleton dpos;
+    if (!a.read("battledpos.skel", d, &err) || !cr2::parseSkeleton(d, dpos, &err)) return std::fprintf(stderr, "battledpos: %s\n", err.c_str()), 1;
+    std::vector<uint32_t> cameras;
+    for (const char* f : {"battlecamera_move.geom", "battlecamera_nomove.geom"}) {
+        cr2::Geom g;
+        if (a.read(f, d) && cr2::parseGeom(d, g))
+            for (const cr2::GeomCamera& c : g.cameras) cameras.push_back(c.hash);
+    }
+    const bool all = !std::strcmp(which, "all");
+    const int party[2] = {1, 2}; // (Darwin and Orlando)
+    int set = 0, used = 0, complete = 0;
+    std::map<std::string, int> missing;
+    for (int id = all ? 1 : std::atoi(which); id <= (all ? data.couplings() : std::atoi(which)); ++id) {
+        const cr2::BattleData::Coupling* c = data.coupling(id);
+        if (!c || c->monsters[0] <= 0) continue; // (an empty record)
+        ++used;
+        cr2::BattleSetup b;
+        if (!cr2::setupBattle(data, id, party, b, &err)) {
+            std::printf("  %d: %s\n", id, err.c_str());
+            continue;
+        }
+        ++set;
+        std::vector<std::string> lacks;
+        if (!a.contains(b.map + ".geom")) lacks.push_back("map " + b.map);
+        for (const std::string& cam : {b.camera, b.startCamera})
+            if (std::find(cameras.begin(), cameras.end(), cr2::nameHash(cam.c_str())) == cameras.end()) lacks.push_back("camera " + cam);
+        auto unit = [&](const cr2::BattleSetup::Unit& u) {
+            if (!a.contains(u.figure + ".geom")) lacks.push_back("figure " + u.figure);
+            else if (!a.contains(u.figure + u.idle + ".anim") && !a.contains(u.figure + "bb01.anim")) lacks.push_back("motion " + u.figure + u.idle);
+            if (dpos.joint(cr2::nameHash(u.position.c_str())) < 0) lacks.push_back("position " + u.position);
+        };
+        for (const auto& u : b.party) unit(u);
+        for (const auto& u : b.monsters) unit(u);
+        complete += lacks.empty();
+        for (const std::string& l : lacks) ++missing[l];
+        if (!all || !lacks.empty()) {
+            std::printf("  %d: map %s, music %d, pattern %s:", id, b.map.c_str(), c->music, b.patternName.c_str());
+            for (const auto& u : b.monsters) {
+                const cr2::BattleData::Monster* m = data.monster(u.id);
+                std::printf(" %s (%s%s, %d HP) at %s;", m->name[1].c_str(), u.figure.c_str(), u.colour.c_str(), m->hp, u.position.c_str());
+            }
+            for (const auto& u : b.party) std::printf(" %s at %s;", data.character(u.id)->name[1].c_str(), u.position.c_str());
+            std::printf(" camera %s", b.camera.c_str());
+            for (const std::string& l : lacks) std::printf("; no %s", l.c_str());
+            std::printf("\n");
+        }
+    }
+    std::printf("%d couplings with monsters: %d set up, %d with everything they use in the archive\n", used, set, complete);
+    for (const auto& [k, n] : missing) std::printf("  missing %s (%d)\n", k.c_str(), n);
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -849,6 +912,7 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[1], "fieldscript") && argc > 3) return fieldScripts(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "walk") && argc > 3) return walk(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "images")) return images(argv[2], argc > 3 ? argv[3] : nullptr, argc > 4 ? argv[4] : nullptr);
+    if (!std::strcmp(argv[1], "battle") && argc > 3) return battles(argv[2], argv[3]);
     if (!std::strcmp(argv[1], "run") && argc > 3) return run(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     return usage();
 }

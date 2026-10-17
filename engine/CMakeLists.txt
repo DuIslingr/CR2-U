@@ -35,6 +35,7 @@ add_library(cr2core STATIC
     src/gfx/text.cpp
     src/script/vm.cpp
     src/script/gamestate.cpp
+    src/battle/battledata.cpp
 )
 target_include_directories(cr2core PUBLIC src)
 target_link_libraries(cr2core PUBLIC squirrel2)

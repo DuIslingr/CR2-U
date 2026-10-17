@@ -47,6 +47,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -61,6 +62,7 @@
 #include "assets/maptable.hpp"
 #include "assets/mvgl.hpp"
 #include "assets/skeleton.hpp"
+#include "battle/battledata.hpp"
 #include "event/runtime.hpp"
 #include "field/character.hpp"
 #include "field/fieldmap.hpp"
@@ -541,6 +543,10 @@ struct Viewer {
     }
 
     void pose() {
+        if (battleMode) {
+            poseBattle();
+            return;
+        }
         if (eventMode) {
             poseEvent();
             return;
@@ -647,6 +653,10 @@ struct Viewer {
     }
 
     void drawScene(int w, int h) {
+        if (battleMode) {
+            drawBattle(w, h);
+            return;
+        }
         if (eventMode) {
             drawEvent(w, h);
             return;
@@ -856,7 +866,9 @@ struct Viewer {
     // A frame's time: the vista's event, else the field (its script, then the leader - held while
     // the script runs)
     void advance(float dt, float sx, float sy, bool run) {
-        if (eventMode) {
+        if (battleMode) {
+            battleClock += dt;
+        } else if (eventMode) {
             updateEvent(dt);
         } else if (fieldMode) {
             fieldUpdate(dt);
@@ -932,6 +944,175 @@ struct Viewer {
             std::memcpy(player, returnPlayer, sizeof player), heading = returnHeading;
             enterMap(returnMap, "", entry);
         }
+    }
+
+    // A battle's stage (--battle: BtlMainCtrl::StepInit): the coupling's map (its own lights - the
+    // directional one turned to come from the camera, BtlMain::SetLights' default), the party and
+    // the monsters each on its battledpos joint (BtlModel::SetPosRot: the joint's place and turn)
+    // playing its first motion (BtlMotionTable: the party bb02 then bb01, the monsters bb01), seen
+    // through the commands' camera (Cam_Getset_<pattern>_00, a camera of BattleCamera_nomove /
+    // _move; BtlCamera::Start: near halved - at least 0.1 - far five times, at most 5000)
+    bool battleMode = false;
+    cr2::BattleData battleData;
+    cr2::BattleSetup battle;
+    ViewFigure battleMap;
+    struct BattleUnit {
+        ViewFigure fig;
+        std::string first, loop; // (its motions: the first once, then the loop)
+    };
+    std::vector<BattleUnit> battleUnits; // (the party, then the monsters)
+    struct CameraFigure {
+        cr2::Geom geom;
+        cr2::Skeleton skel;
+        cr2::Animation anim;
+        bool animated = false;
+    } battleCameras[2];
+    std::string battleCamera;
+    float battleClock = 0;
+
+    bool startBattle(int id, const int party[2]) {
+        std::vector<uint8_t> d;
+        std::string err;
+        if (!archive.read("data\\battledata.dat", d, &err) || !battleData.parse(d, &err) || !cr2::setupBattle(battleData, id, party, battle, &err)) {
+            SDL_Log("battle %d: %s", id, err.c_str());
+            return false;
+        }
+        cr2::Skeleton dpos;
+        if (!archive.read("battledpos.skel", d, &err) || !cr2::parseSkeleton(d, dpos, &err)) {
+            SDL_Log("battledpos: %s", err.c_str());
+            return false;
+        }
+        const std::vector<cr2::Mat34> places = dpos.world(dpos.basePose);
+        unload(battleMap);
+        battleMap = ViewFigure();
+        if (!loadFigure(battle.map + ".geom", battleMap, &err)) SDL_Log("battle map %s: %s", battle.map.c_str(), err.c_str());
+        battleMap.absolute = true;
+        cr2::Geom mg;
+        cr2::Skeleton ms;
+        lighting = cr2::SceneLighting();
+        if (archive.read(battle.map + ".geom", d) && cr2::parseGeom(d, mg) && archive.read(battle.map + ".skel", d) && cr2::parseSkeleton(d, ms))
+            cr2::lightsFromFigure(mg, ms, lighting);
+        for (BattleUnit& u : battleUnits) unload(u.fig);
+        battleUnits.clear();
+        std::string log;
+        auto add = [&](const cr2::BattleSetup::Unit& su) {
+            BattleUnit u;
+            if (!loadFigure(su.figure + ".geom", u.fig, &err)) SDL_Log("battle %s: %s", su.figure.c_str(), err.c_str());
+            // a monster's colour: its images' letter (m206 + a: m206a01)
+            if (!su.colour.empty())
+                for (ViewMesh& vm : u.fig.meshes) {
+                    std::string t = vm.baseMaterial.diffuse();
+                    if (t.size() > su.figure.size() && t.compare(0, su.figure.size(), su.figure) == 0 && std::isalpha(static_cast<unsigned char>(t[su.figure.size()]))) {
+                        t[su.figure.size()] = su.colour[0];
+                        if (cr2::Texture* tex = texture(t)) vm.texture = tex;
+                    }
+                }
+            const int j = dpos.joint(cr2::nameHash(su.position.c_str()));
+            if (j >= 0 && size_t(j) < places.size()) {
+                cr2::Mat34 m = places[size_t(j)];
+                for (int c = 0; c < 3; ++c) { // (its turn without the joint's scale)
+                    const float l = std::sqrt(m.m[c] * m.m[c] + m.m[4 + c] * m.m[4 + c] + m.m[8 + c] * m.m[8 + c]);
+                    if (l > 0) m.m[c] /= l, m.m[4 + c] /= l, m.m[8 + c] /= l;
+                }
+                u.fig.place = m;
+            } else {
+                SDL_Log("battle: no battledpos joint %s", su.position.c_str());
+            }
+            u.first = su.figure + su.idle + ".anim", u.loop = su.figure + "bb01.anim";
+            log += " " + su.figure + su.colour + "@" + su.position;
+            battleUnits.push_back(std::move(u));
+        };
+        for (const auto& su : battle.party) add(su);
+        for (const auto& su : battle.monsters) add(su);
+        const char* camFigures[2] = {"battlecamera_nomove", "battlecamera_move"};
+        battleCamera.clear();
+        for (int k = 0; k < 2; ++k) {
+            CameraFigure& c = battleCameras[k];
+            c = CameraFigure();
+            if (archive.read(std::string(camFigures[k]) + ".geom", d)) cr2::parseGeom(d, c.geom);
+            if (archive.read(std::string(camFigures[k]) + ".skel", d)) cr2::parseSkeleton(d, c.skel);
+            c.animated = archive.read(std::string(camFigures[k]) + ".anim", d) && c.anim.parse(d) && c.anim.joints() == int(c.skel.basePose.size());
+        }
+        battleCamera = battle.camera;
+        battleClock = 0;
+        battleMode = true;
+        fieldMode = eventMode = false;
+        dev->resetHistory();
+        status = "battle " + std::to_string(id) + " in " + battle.map;
+        SDL_Log("battle %d: map %s, pattern %s,%s; camera %s", id, battle.map.c_str(), battle.patternName.c_str(), log.c_str(), battleCamera.c_str());
+        return true;
+    }
+
+    // the battle's camera now: the named camera's joint in whichever figure has it
+    bool battleView(cr2::Mat34& world, float& fovY, float& zn, float& zf) {
+        const uint32_t h = cr2::nameHash(battleCamera.c_str());
+        for (const CameraFigure& c : battleCameras)
+            for (const cr2::GeomCamera& gc : c.geom.cameras) {
+                if (gc.hash != h) continue;
+                const int j = c.skel.joint(h);
+                if (j < 0) continue;
+                std::vector<cr2::JointTransform> p = c.skel.basePose;
+                if (c.animated) {
+                    const float frames = float(std::max(c.anim.frames() - 1, 1));
+                    p = c.anim.poseAbsolute(c.skel.basePose, std::clamp(battleClock * c.anim.sampleRate(), 0.0f, frames));
+                }
+                const std::vector<cr2::Mat34> w = c.skel.world(p);
+                if (size_t(j) >= w.size()) continue;
+                world = w[size_t(j)];
+                fovY = gc.fovY;
+                zn = std::max(gc.near * 0.5f, 0.1f), zf = std::min(gc.far * 5.0f, 5000.0f);
+                zf = std::max(zf, zn * 2);
+                return true;
+            }
+        return false;
+    }
+
+    void poseBattle() {
+        pose(battleMap, battleClock);
+        for (BattleUnit& u : battleUnits) {
+            if (!u.fig.skinned) continue;
+            // the first motion once, then the loop
+            float t = battleClock;
+            std::string want = u.loop;
+            const auto first = std::find(u.fig.anims.begin(), u.fig.anims.end(), u.first);
+            if (first != u.fig.anims.end() && u.first != u.loop) {
+                if (!u.fig.animLoaded || u.fig.anims[u.fig.animIndex] != u.first) {
+                    const float keep = time;
+                    loadAnim(u.fig, size_t(first - u.fig.anims.begin()));
+                    time = keep;
+                }
+                const float d = u.fig.anim.duration();
+                if (t < d) want = u.first;
+                else t -= d;
+            }
+            const auto it = std::find(u.fig.anims.begin(), u.fig.anims.end(), want);
+            if (it != u.fig.anims.end() && (!u.fig.animLoaded || u.fig.anims[u.fig.animIndex] != want)) {
+                const float keep = time;
+                loadAnim(u.fig, size_t(it - u.fig.anims.begin()));
+                time = keep;
+            }
+            pose(u.fig, t, want == u.loop);
+        }
+    }
+
+    void drawBattle(int w, int h) {
+        cr2::Mat34 cw;
+        float fov = 45, zn = 0.1f, zf = 100;
+        if (!battleView(cw, fov, zn, zf)) return;
+        dev->setCamera(zn, zf, fov * 3.14159265f / 180);
+        const Mat4 world = cr2::mat4FromMat34(cw);
+        const Mat4 vp = cr2::mat4Multiply(perspective(fov * 3.14159265f / 180, float(w) / float(std::max(h, 1)), zn, zf),
+                                          cr2::mat4RigidInverse(world));
+        cr2::SceneLighting l = lighting;
+        const float axis[3] = {cw.m[2], cw.m[6], cw.m[10]}; // (the light from the camera)
+        const float n = std::sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+        if (n > 0)
+            for (int c = 0; c < 3; ++c) l.lightDir[c] = axis[c] / n;
+        l.camera[0] = world[12], l.camera[1] = world[13], l.camera[2] = world[14];
+        l.time = time;
+        dev->setLighting(l);
+        drawFigure(battleMap, vp.data());
+        for (const BattleUnit& u : battleUnits) drawFigure(u.fig, vp.data());
     }
 
     // The event (--event): its runtime, the vista's map figure, a figure for each of the scene's
@@ -1504,6 +1685,7 @@ int main(int argc, char** argv) {
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
     bool tapAfter = false;
     std::string eventName, vista = "null", fontPath, playFrom, callEntry = "evt000";
+    int battleId = 0, battleParty[2] = {1, 2}; // (--battle: Darwin and Orlando unless --party)
     float page = 3.0f;
     int width = 0, height = 0;    // the window (--size; else the resolution's, fitted to the display)
     int resW = 0, resH = 0;       // --resolution: the output frames (else the window's)
@@ -1530,6 +1712,8 @@ int main(int argc, char** argv) {
         else if (a == "--binary" && next) binary = next, ++i;
         else if (a == "--walk" && next) std::sscanf(next, "%f,%f,%f", &walkX, &walkY, &walkSeconds), ++i;
         else if (a == "--event" && next) eventName = next, ++i;
+        else if (a == "--battle" && next) battleId = std::atoi(next), ++i;
+        else if (a == "--party" && next) std::sscanf(next, "%d,%d", &battleParty[0], &battleParty[1]), ++i;
         else if (a == "--vista" && next) vista = next, ++i;
         else if (a == "--page" && next) page = float(std::atof(next)), ++i;
         else if (a == "--font" && next) fontPath = next, ++i;
@@ -1644,6 +1828,7 @@ int main(int argc, char** argv) {
         else SDL_Log("lights: %s has none (the engine's defaults)", lights.c_str());
     }
     v.load(start);
+    if (battleId > 0 && !v.startBattle(battleId, battleParty)) return 1;
     if (!eventName.empty()) {
         if (!v.startEvent(eventName, vista, page)) return 1;
         for (float t = 0; t + cr2::EventRuntime::kTick * 0.5f < startTime; t += cr2::EventRuntime::kTick) v.stepEvent();
@@ -1701,6 +1886,7 @@ int main(int argc, char** argv) {
             dev->endFrame(false);
         }
         // --run: frames as the window would show them, the event and animations going on
+        if (v.battleMode) v.battleClock = startTime; // (--time: that far into the battle)
         for (int k = 0; k < int(runSeconds * 60.0f + 0.5f); ++k) {
             v.time += 1.0f / 60.0f;
             v.advance(1.0f / 60.0f, walkX, walkY, true); // (the field on in --walk's direction)
@@ -1797,6 +1983,7 @@ int main(int argc, char** argv) {
             }
             if (!v.paused) v.time += dt;
             last = now;
+            if (!v.paused && v.battleMode) v.advance(dt, 0, 0, false);
             if (!v.paused && (v.eventMode || v.fieldMode)) { // the arrows / WASD run, with Shift walk
                 const bool* keys = SDL_GetKeyboardState(nullptr);
                 const float sx = float((keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) - (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]));
@@ -1819,6 +2006,8 @@ int main(int argc, char** argv) {
     v.unload(v.fig);
     v.unload(v.mapFigure);
     v.unload(v.vistaMap);
+    v.unload(v.battleMap);
+    for (auto& u : v.battleUnits) v.unload(u.fig);
     v.unload(v.vistaWindow.fig);
     v.unload(v.narrationWindow.fig);
     v.unload(v.conversationWindow.fig);

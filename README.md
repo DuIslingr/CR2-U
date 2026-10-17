@@ -92,6 +92,10 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       put back where the scene ends
 - [x] Talking: the balloons over what the leader can tap, a tap (Return, a click) calling the
       nearest one's script (`cr2tool fieldscript`: all 137 a new game can tap play to their end)
+- [x] Battles' stage: the encounters' tables (`data\battledata.dat`), the map, the party and the
+      monsters on their places for the monsters' size pattern, the commands' camera (`cr2view
+      --battle 222`; `cr2tool battle all`: all 340 encounters' figures, places and cameras there)
+- [ ] Battles' turns, commands and windows
 - [ ] Treasure boxes, the other windows (announcements, tutorials, items), the HUD, the sounds
       between areas
 - [ ] Engine: events, battles, menus
@@ -115,7 +119,8 @@ One or more of:
 | `cr2view ... [--resolution WxH] [--upscaler off\|fsr3] [--quality native\|quality\|balanced\|performance\|ultra] [--sharpness 0..1] [--size WxH] [--fps n] [--run s]` | the output in any mode: 60 frames a second (`--fps`), frames of a resolution up to 3840 x 2160 (F1 steps through the window's size and 720p .. 2160p), FSR 3.1 (F2 steps through its modes), the window's size; a capture `--run`s that long first |
 | `cr2view --data <archive> --field <map> [--model c001] [--at point] [--binary file] [--walk sx,sy,s]` | a field: the arrow keys run the character (Shift walks) on the floors and against the walls; the maps' table comes from the executable beside the iPad's / Vita's archive, or `--binary` (Android: `lib/armeabi-v7a/libChaosRings2.so`) |
 | `cr2view --data <archive> --play [map] [--call function] [--tap] [--binary file]` | a new game (or from a map, `--call` one of its events in place of its entry - without what would call it, so no fade back in after): the field's scripts, events and vistas one after another as the game chains them; Return or a click turns a page or talks to what has a balloon (`--tap`: once, after `--walk`) |
-| `cr2tool check / scripts / run / images / models / compare-models / animations / pose / shaders / walk / exits / fieldscript` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared, the shader keys against their GLSL, the field player on every map, every map's exits, every map's entry script |
+| `cr2view --data <archive> --battle <coupling> [--party a,b] [--time s]` | a battle's stage: its map, the party (characters a and b: Darwin 1, Orlando 2, Marie 3, ...) and the monsters, through the commands' camera |
+| `cr2tool check / scripts / run / images / models / compare-models / animations / pose / shaders / walk / exits / fieldscript / battle` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared, the shader keys against their GLSL, the field player on every map, every map's exits, every map's entry script, every encounter's set-up |
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
 | `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |
 | `tools/geom.py` | a mesh file's meshes and materials, a check of them all, a flat-shaded preview |

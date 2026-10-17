@@ -440,3 +440,27 @@ ends, `\m` a page flag, `\\` a backslash.
 The fonts: Android's APK carries TypeBank Gothic Pro Bold and Regular (`assets/00000`, `00001`:
 CFF OpenType), the Vita's `CR2/resources/font` the same Bold plus DynaFont faces for Chinese and
 Korean (`DFGB_H9.ttc`, `DFT_C5.ttc`, `DFMINBD.TTF`); the iPad's release has none (iOS's own).
+Android draws text in Java (`local.mediav.Text2Bitmap`): white, antialiased, the typeface by
+index - 0 `00000` (Bold: Japanese), 1 `00001` (Regular: English), 2 the system's (the other
+languages; MenuText::SetTextRender: the option's language 0 / 1, else 2) - into a bitmap the
+advance's width (plus twice a stroke) by the font's top-to-bottom extent, the baseline (size - 1)
+from its top.
+
+## The interface
+
+The menus and windows are figures too (MVGL::Interface::PartsBase), drawn through the camera of
+`hud_camera2D` (InterfaceMain::Initialize: interface 11's contained camera): orthographic, aspect
+1.5, size 0.48 - a 0.96 x 0.64 space, 3:2, the camera at z 0.881, depth +-2.56 - fitted to the
+screen and centred (on Android's 1.87:1 game area: by its height; measured against the reference
+video within a pixel). A figure's animators besides its own are relative to its base pose
+(`vstWin_talk` moves the name line +0.512). Joints place things: `call_<figure>` another figure,
+`type<size>_<align><slot>` text (Cr3UtilSearchTextPosition: size S 28, M 32, else 64 pixels of a
+1000-a-unit layout, drawn 4 smaller - SetTextRender; align L, C, R; the line's left edge half the
+size left of the joint, its middle on it - SetTextOffsetData).
+
+The vista's message window (VistaConversationWindowMenu): `vstWin` - `GEO_vstWin`, a black band
+from y -0.4 to -0.192 (past the foot of any screen), `GEO_nameLine` (`hud_vstMsgTC` / `A8`, the
+name's bar) - stretched across screens wider than 3:2 (SetScale aspect / 1.5); its slots `01` the
+speaker's name (`typeS_L01`), `11` / `12` a page's lines (`typeM_L11`, `L12`), `21` / `22`
+centred ones; `sendCsr_loop` the page cursor at `call_sendCsr_loop`. A line types a character an
+update (MenuText::Step: + speed, EvtWindow::UpdatePage's 1 - 0 while skipping); the name at once.

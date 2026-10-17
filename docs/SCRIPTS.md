@@ -119,7 +119,8 @@ camera, the moves, the animations and the fades where they are by then. The scri
   frame);
 - **the window** (`EvtWindow`): `LoadSharedTextData(name)` (`message\<name>.dat`),
   `LoadSharedNameData('name_tag')`, `Open`, `SetMessage(window, n)`, then `CheckMessage` each
-  frame until the player has read it (`WaitMessage`), `Close`;
+  frame until the player has read it (`WaitMessage`), `Close` - the window drawn as the game's
+  (FORMATS.md, the interface), its lines typing a character an update;
 - **the fades** (`Cr3Fade.FadeIn / FadeOut(type, frames)`, the `2`s with from / to %): the colour
   0 black (the interface's `fadeB`), 1 white (`fadeW`), 2 `fadeF`, 3 the encounter's wipe
   (Cr3FadeIn's table; the colours the fade figures' DiffuseColor), linear over the frames;

@@ -32,10 +32,21 @@ add_library(cr2core STATIC
     src/event/scene.cpp
     src/event/runtime.cpp
     src/gfx/material.cpp
+    src/gfx/text.cpp
     src/script/vm.cpp
 )
 target_include_directories(cr2core PUBLIC src)
 target_link_libraries(cr2core PUBLIC squirrel2)
+# The game's text: FreeType (the system's) draws the release's fonts (gfx/text.cpp); without it,
+# no text
+find_package(Freetype QUIET)
+if(FREETYPE_FOUND)
+    target_link_libraries(cr2core PUBLIC Freetype::Freetype)
+    target_compile_definitions(cr2core PRIVATE CR2_HAVE_FREETYPE=1)
+    message(STATUS "Text: FreeType ${FREETYPE_VERSION_STRING}")
+else()
+    message(STATUS "Text: FreeType not found - no text")
+endif()
 
 add_executable(cr2tool tools/cr2tool.cpp)
 target_link_libraries(cr2tool PRIVATE cr2core)

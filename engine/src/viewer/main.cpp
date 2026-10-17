@@ -66,6 +66,7 @@
 #include "field/fieldscript.hpp"
 #include "gfx/material.hpp"
 #include "gfx/render_device.hpp"
+#include "gfx/text.hpp"
 
 namespace {
 
@@ -795,8 +796,157 @@ struct Viewer {
 
     cr2::Mat34 lastCamera;
 
-    // the event's UI, over the resolved scene: the fade over it all
+    // The message window (VistaConversationWindowMenu): the vstWin figure - a black band across
+    // the screen's foot, the name line (vstWin_talk slides it in) - in the interface's space (the
+    // hud_camera2D camera: orthographic, 0.96 x 0.64 units, 3:2), fitted to the screen and
+    // centred; on screens wider than 3:2 the figure stretches across (SetScale aspect / 1.5). Its
+    // joints type<size>_<align><slot> place the text (Cr3UtilSearchTextPosition: size S 28, M 32
+    // pixels of a 1000-a-unit layout, drawn 4 smaller; L left, C centred, R right): 01 the name,
+    // 11 / 12 a page's two lines, 21 / 22 centred ones.
+    cr2::TextRasterizer font;
+    ViewFigure vstWin;
+    std::vector<std::string> vstWinJoints;
+    struct TextQuad {
+        cr2::Texture tex;
+        float x = 0, y = 0, w = 0, h = 0; // UI units: the quad's left, centre, size
+        float rgb[3] = {1, 1, 1};
+        std::vector<float> pen;           // each character's left edge and the end, in UI units
+        int from = -1;                    // the page's characters before it (-1: shown whole - the name)
+    };
+    ViewFigure pageCursor;                // sendCsr_loop: once the page is typed
+    std::vector<TextQuad> textQuads;
+    std::string shownText; // (what textQuads were made for)
+    int shownPx = 0;
+
+    void loadMessageWindow(const std::string& fontPath) {
+        std::string err;
+        if (!loadFigure("vstwin.geom", vstWin, &err)) SDL_Log("message window: %s", err.c_str());
+        if (!loadFigure("sendcsr_loop.geom", pageCursor, &err)) SDL_Log("page cursor: %s", err.c_str());
+        std::vector<uint8_t> d;
+        if (archive.read("vstwin.name", d)) vstWinJoints = cr2::parseJointNames(d);
+        if (!fontPath.empty() && !font.load(fontPath, &err)) SDL_Log("font: %s", err.c_str());
+        SDL_Log("message window: %zu meshes; font %s", vstWin.meshes.size(), font.loaded() ? font.path().c_str() : "none (no text)");
+    }
+
+    // the interface's projection over a w x h screen: UI units to clip space (z: the camera's
+    // near / far, 2.56 either way)
+    static Mat4 uiProjection(int w, int h) {
+        const float k = std::min(float(w) / 0.96f, float(h) / 0.64f); // pixels a unit
+        Mat4 m = cr2::mat4Identity();
+        m[0] = k / (float(w) * 0.5f);
+        m[5] = k / (float(h) * 0.5f);
+        m[10] = -1.0f / 2.56f;
+        return m;
+    }
+
+    // a joint of the window's figure, posed, in UI units
+    bool vstWinJoint(const char* name, float& x, float& y) {
+        const auto it = std::find(vstWinJoints.begin(), vstWinJoints.end(), name);
+        if (it == vstWinJoints.end() || !vstWin.skinned) return false;
+        std::vector<cr2::JointTransform> p = vstWin.skeleton.basePose;
+        if (vstWin.animLoaded) p = vstWin.anim.poseOver(vstWin.skeleton.basePose, 0);
+        const std::vector<cr2::Mat34> w = vstWin.skeleton.world(p, vstWin.place);
+        const size_t j = size_t(it - vstWinJoints.begin());
+        if (j >= w.size()) return false;
+        x = w[j].m[3], y = w[j].m[7];
+        return true;
+    }
+
+    void drawMessageWindow(int w, int h) {
+        if (!event->windowOpen() || vstWin.meshes.empty()) return;
+        // the figure: stretched across a wide screen; the name line in while someone speaks
+        const float aspect = float(w) / float(std::max(h, 1));
+        vstWin.place = cr2::Mat34();
+        if (aspect >= 1.5f) vstWin.place.m[0] = aspect / 1.5f;
+        const std::string speaker = event->messageShown() ? event->speakerName() : std::string();
+        const std::string want = speaker.empty() ? "vstwin_io.anim" : "vstwin_talk.anim";
+        const auto anim = std::find(vstWin.anims.begin(), vstWin.anims.end(), want);
+        if (anim != vstWin.anims.end() && (!vstWin.animLoaded || vstWin.anims[vstWin.animIndex] != want)) {
+            const float keep = time;
+            loadAnim(vstWin, size_t(anim - vstWin.anims.begin()));
+            time = keep;
+        }
+        pose(vstWin, 0);
+        const Mat4 proj = uiProjection(w, h);
+        const Mat4 view = cr2::mat4Multiply(proj, [] { Mat4 v = cr2::mat4Identity(); v[14] = -0.881f; return v; }()); // (CAM_hud2D's z)
+        cr2::SceneLighting l;
+        dev->setLighting(l);
+        drawFigure(vstWin, view.data());
+        // the page's text: made again when it changes (or the screen's scale does)
+        const float k = std::min(float(w) / 0.96f, float(h) / 0.64f);
+        const int px = int(k + 0.5f);
+        std::string key;
+        if (event->messageShown() && event->page() < int(event->message().pages.size())) {
+            key = speaker + "\n" + std::to_string(event->page()) + "\n";
+            for (const cr2::TextLine& ln : event->message().pages[size_t(event->page())].lines) key += ln.text + "\n";
+        }
+        if (key != shownText || px != shownPx) {
+            for (TextQuad& q : textQuads) dev->destroy(q.tex);
+            textQuads.clear();
+            shownText = key, shownPx = px;
+            if (!key.empty() && font.loaded()) {
+                int typedBefore = 0; // (the page's characters before the line: it types after them)
+                auto add = [&](const std::string& text, const char* joint, int size, bool centred, int colour, bool whole) {
+                    int chars = 0;
+                    for (unsigned char c : text) chars += (c & 0xc0) != 0x80;
+                    const int from = whole ? -1 : typedBefore;
+                    if (!whole) typedBefore += chars;
+                    float jx, jy;
+                    if (text.empty() || !vstWinJoint(joint, jx, jy)) return;
+                    const int drawn = size - 4; // (SetTextRender: the size less 4)
+                    const int rasterPx = std::max(1, int(float(drawn) / 1000.0f * k + 0.5f));
+                    int tw = 0, th = 0;
+                    std::vector<float> pen;
+                    cr2::Image img = font.render(text, rasterPx, tw, th, &pen);
+                    if (img.rgba.empty()) return;
+                    TextQuad q;
+                    q.tex = dev->upload(img);
+                    q.from = from;
+                    const float unitsPerPx = float(drawn) / 1000.0f / float(rasterPx);
+                    for (float p : pen) q.pen.push_back(p * unitsPerPx);
+                    q.w = float(tw) * unitsPerPx, q.h = float(th) * unitsPerPx;
+                    // SetTextOffsetData: left - the joint less half the size; centred - on it; the
+                    // line's middle (size - height) / 2 from the joint
+                    q.x = centred ? jx - q.w / 2 : jx - float(drawn) / 2000.0f;
+                    q.y = jy + (float(drawn) / 1000.0f - q.h) / 2;
+                    cr2::textColour(colour, q.rgb);
+                    textQuads.push_back(q);
+                };
+                const std::vector<cr2::TextLine>& lines = event->message().pages[size_t(event->page())].lines;
+                add(speaker, "typeS_L01", 28, false, 0, true);
+                const bool centred = !lines.empty() && lines[0].centred;
+                static const char* const kLeft[] = {"typeM_L11", "typeM_L12"}, *const kCentre[] = {"typeM_C21", "typeM_C22"};
+                for (size_t i = 0; i < lines.size() && i < 2; ++i)
+                    add(lines[i].text, centred ? kCentre[i] : kLeft[i], 32, centred, lines[i].colour, false);
+            }
+        }
+        for (const TextQuad& q : textQuads) {
+            // as far as it has typed (MenuText: the characters shown so far, the rest cut off)
+            float w = q.w;
+            if (q.from >= 0 && !q.pen.empty()) {
+                const int n = std::clamp(event->revealed() - q.from, 0, int(q.pen.size()) - 1);
+                if (n == 0) continue;
+                w = std::min(q.w, q.pen[size_t(n)]);
+            }
+            const float u1 = q.w > 0 ? w / q.w : 1;
+            const float x0 = q.x, x1 = q.x + w, y0 = q.y - q.h / 2, y1 = q.y + q.h / 2; // (rows top first: v 0 at the top)
+            const float v[24] = {x0, y0, 0, 1, x1, y0, u1, 1, x1, y1, u1, 0, x0, y0, 0, 1, x1, y1, u1, 0, x0, y1, 0, 0};
+            const float rgba[4] = {q.rgb[0], q.rgb[1], q.rgb[2], 1};
+            dev->drawQuad(q.tex, v, proj.data(), rgba);
+        }
+        // the page cursor at call_sendCsr_loop, looping, once the page is typed
+        float cx, cy;
+        if (event->messageShown() && event->typed() && !pageCursor.meshes.empty() && vstWinJoint("call_sendCsr_loop", cx, cy)) {
+            pageCursor.place = cr2::Mat34();
+            pageCursor.place.m[3] = cx, pageCursor.place.m[7] = cy;
+            pose(pageCursor, time);
+            drawFigure(pageCursor, view.data());
+        }
+    }
+
+    // the event's UI, over the resolved scene: the message window, the fade over it all
     void drawEventUi() {
+        drawMessageWindow(screenW, screenH);
         const cr2::EventFade& fd = event->fade();
         const float alpha = fd.at(eventLead() / cr2::EventRuntime::kTick);
         if (alpha > 0 && white.id) {
@@ -842,7 +992,7 @@ std::string upscaleName(const cr2::UpscaleSettings& u) {
 int main(int argc, char** argv) {
     std::string data, model, capture, animName, renderer = "vulkan", lights = "d0101c", fieldName, at = "defaultPos", binary;
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
-    std::string eventName, vista = "null";
+    std::string eventName, vista = "null", fontPath;
     float page = 3.0f;
     int width = 0, height = 0;    // the window (--size; else the resolution's, fitted to the display)
     int resW = 0, resH = 0;       // --resolution: the output frames (else the window's)
@@ -871,6 +1021,7 @@ int main(int argc, char** argv) {
         else if (a == "--event" && next) eventName = next, ++i;
         else if (a == "--vista" && next) vista = next, ++i;
         else if (a == "--page" && next) page = float(std::atof(next)), ++i;
+        else if (a == "--font" && next) fontPath = next, ++i;
         else if (a == "--resolution" && next) std::sscanf(next, "%dx%d", &resW, &resH), ++i;
         else if (a == "--upscaler" && next) upscaler = next, ++i;
         else if (a == "--quality" && next) quality = next, ++i;
@@ -968,6 +1119,13 @@ int main(int argc, char** argv) {
     }
     v.load(start);
     if (!eventName.empty()) {
+        // the font: --font, CR2_FONT, the Vita's beside its archive, else the system's
+        std::string dataDir = data.substr(0, data.find_last_of("/\\") == std::string::npos ? 0 : data.find_last_of("/\\") + 1);
+        const char* envFont = SDL_getenv("CR2_FONT");
+        const std::string fp = cr2::TextRasterizer::firstFont({fontPath, envFont ? envFont : "", dataDir + "font/TBGoPro-Bold.otf",
+                                                               "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+                                                               "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/liberation/LiberationSans-Regular.ttf"});
+        v.loadMessageWindow(fp);
         if (!v.startEvent(eventName, vista, page)) return 1;
         for (float t = 0; t + cr2::EventRuntime::kTick * 0.5f < startTime; t += cr2::EventRuntime::kTick) v.stepEvent();
         startTime = 0;
@@ -1135,6 +1293,9 @@ int main(int argc, char** argv) {
     v.unload(v.fig);
     v.unload(v.mapFigure);
     v.unload(v.vistaMap);
+    v.unload(v.vstWin);
+    v.unload(v.pageCursor);
+    for (auto& q : v.textQuads) dev->destroy(q.tex);
     for (ViewFigure& g : v.eventFigures) v.unload(g);
     if (v.white.id) dev->destroy(v.white);
     for (ViewFigure& g : v.gimmicks) v.unload(g);

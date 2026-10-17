@@ -63,11 +63,15 @@ public:
     bool messageShown() const { return message_ > 0; }
     const ParsedMessage& message() const { return parsed_; }
     int page() const { return page_; }
+    // the page's characters shown so far (its lines' code points in turn): MenuText types a line
+    // a character an update (EvtWindow::UpdatePage: speed 1, unless skipping); typed() - all of it
+    int revealed() const { return revealed_; }
+    bool typed() const;
     std::string speakerName() const; // the speaker's name tag (name data), "" none
     // the scene waits for the player's slash (VistaEvent.ExecutionStart)
     bool awaitingSlash() const { return execution_; }
-    // a tap (a swipe): the slash awaited, else the message's next page, or its end (CheckMessage
-    // then says it's done)
+    // a tap (a swipe): the slash awaited, else the page typed at once, else the message's next
+    // page, or its end (CheckMessage then says it's done)
     void advance();
     // pages turn (and slashes happen) by themselves after this many seconds (0: only advance())
     float autoPage = 3.0f;
@@ -90,7 +94,7 @@ private:
     std::map<int, std::string> faces_;
     TextData text_, names_;
     bool windowOpen_ = false;
-    int message_ = 0, page_ = 0;
+    int message_ = 0, page_ = 0, revealed_ = 0;
     float pageTime_ = 0;
     ParsedMessage parsed_;
     bool execution_ = false;

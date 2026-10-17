@@ -94,7 +94,7 @@ void EventRuntime::bind() {
     vm.setNative("EvtWindow", "SetMessage", [this](NativeCall& c) {
         message_ = c.integer(1);
         parsed_ = parseMessage(text_.message(message_, language));
-        page_ = 0, pageTime_ = 0;
+        page_ = 0, pageTime_ = 0, revealed_ = 0;
         if (parsed_.pages.empty()) message_ = 0;
     });
     vm.setNative("EvtWindow", "CheckMessage", [this](NativeCall& c) { c.result(message_ == 0); });
@@ -119,7 +119,7 @@ bool EventRuntime::start(const std::string& function) {
     fade_ = EventFade();
     faces_.clear();
     text_ = TextData(), names_ = TextData();
-    windowOpen_ = false, message_ = page_ = 0, pageTime_ = 0;
+    windowOpen_ = false, message_ = page_ = revealed_ = 0, pageTime_ = 0;
     execution_ = false;
     terminated_ = drawSkip_ = false;
     wait_ = frame_ = 0, battle_ = -1;
@@ -146,7 +146,8 @@ bool EventRuntime::tick() {
         wait_ = 0;
         if (!vm_->resume()) return error_ = vm_->error(), false;
     }
-    if ((message_ > 0 || execution_) && autoPage > 0 && (pageTime_ += kTick) >= autoPage) advance();
+    if (message_ > 0 && !typed()) ++revealed_; // (a character an update; the page's time counts once it's typed)
+    else if ((message_ > 0 || execution_) && autoPage > 0 && (pageTime_ += kTick) >= autoPage) advance();
     fade_.update();
     return true;
 }
@@ -158,7 +159,20 @@ void EventRuntime::advance() {
         return;
     }
     if (message_ <= 0) return;
+    if (!typed()) {
+        revealed_ = 1 << 20;
+        return;
+    }
+    revealed_ = 0;
     if (++page_ >= int(parsed_.pages.size())) message_ = 0, page_ = 0;
+}
+
+bool EventRuntime::typed() const {
+    if (message_ <= 0 || page_ >= int(parsed_.pages.size())) return true;
+    int n = 0;
+    for (const TextLine& l : parsed_.pages[size_t(page_)].lines)
+        for (unsigned char c : l.text) n += (c & 0xc0) != 0x80; // (code points)
+    return revealed_ >= n;
 }
 
 std::string EventRuntime::speakerName() const {

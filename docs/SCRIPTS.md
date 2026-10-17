@@ -224,7 +224,10 @@ the other of the two), at their price (+0x24), greyed past the Oz or held 99; to
 at +0x28 (an equipment's greyed with none spare of those worn); then how many (CampChooseQuantityMenu:
 `shopNum_io`, 1 .. the Oz's worth or 99 less those held - the spare ones to sell; `pliceNum_io`
 the whole price) and the question (announce 0x70 / 0x71: the count held): yes - the items and
-the Oz (SE 200). (The equipment's stat comparison and the buy / sell sign: not yet.)
+the Oz (SE 200). An equipment list shows its character's windows (SetCharaStatusParamerter /
+SetItemStatusParamerter: CharaStatusWindowB and the capacity window, with the change the focused
+one makes worn), Left / Right going through every joined character (CharaChange); every list
+shows the focused item's help. (The buy / sell sign: not yet.)
 
 The party (the town's c007, with flags 1010 and 1917: `ReserveParty` - FldMain step 0xc,
 FldPartyOrganize; PartyOrganizationMenu): its console (`console_io`, to half its length: 13 Talk

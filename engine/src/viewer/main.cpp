@@ -6737,10 +6737,8 @@ struct Viewer {
         for (int f = 1081; f <= 1085; ++f) r += game.flag(f);
         return r;
     }
-    std::vector<int> shopChars() const { // (the characters an equipment list is for: the two)
-        std::vector<int> c;
-        for (int k = 0; k < 2; ++k)
-            if (game.party[k] >= 0 && game.party[k] < 9) c.push_back(game.party[k]);
+    std::vector<int> shopChars() const { // (the characters an equipment list is for: ShopWepon..ListMenu::CharaChange - every one joined, Cr3UtilValidCharacter)
+        std::vector<int> c = validChars();
         if (c.empty()) c.push_back(0);
         return c;
     }
@@ -6760,7 +6758,7 @@ struct Viewer {
             if (!it || it->type != shop.kind) continue;
             if (shop.kind > 0 && !(it->wearers >> ch & 1)) continue;
             ListRow r;
-            r.id = id, r.name = it->name[1], r.icon = it->icon;
+            r.id = id, r.name = it->name[1], r.icon = it->icon, r.help = it->text[1]; // (ChangeHelpText: Cr3UtilGetItemHelpText)
             if (shop.buy) {
                 if (it->shopRank > rank) continue;
                 r.number = it->price, r.selectable = game.oz >= it->price && game.itemCount[id] < 99;
@@ -6920,6 +6918,19 @@ struct Viewer {
             if (rows.empty()) back();
             else { // (its own back: scrlBack, 100)
                 shop.focus = std::clamp(shop.focus, 0, int(rows.size()) - 1);
+                if (shop.kind > 0) { // (SetCharaStatusParamerter / SetItemStatusParamerter: the character's windows, the change the focused one makes worn)
+                    const std::vector<int> chars = shopChars();
+                    const int ch = chars[size_t(std::clamp(shop.who, 0, int(chars.size()) - 1))];
+                    int eq[8], eq2[8], change[5] = {0, 0, 0, 0, 0};
+                    for (int e = 0; e < 8; ++e) eq[e] = eq2[e] = game.equip[ch][e];
+                    eq2[shop.kind - 1] = rows[size_t(shop.focus)].id;
+                    const int lv = std::max(game.level[ch], 1);
+                    const auto a = cr2::BattleRules::playerStats(battleData, ch + 1, lv, eq, game.sopiaLevel, game.seed[ch], game.itemCount);
+                    const auto b = cr2::BattleRules::playerStats(battleData, ch + 1, lv, eq2, game.sopiaLevel, game.seed[ch], game.itemCount);
+                    for (int k = 0; k < 5; ++k) change[k] = b.param[k] - a.param[k];
+                    drawStatusB(ch, b.maxHp - a.maxHp, b.maxMp - a.maxMp, t, view, proj);
+                    drawCapacity(ch, change, t, view, proj, w, h);
+                }
                 drawSkillList(rows, rows[size_t(shop.focus)].id, t, view, w, h, -1, -1);
             }
         } else if (shop.stage == 4) {

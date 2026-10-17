@@ -153,6 +153,11 @@ camera, the moves, the animations and the fades where they are by then. The scri
   `LoadSharedNameData('name_tag')`, `Open`, `SetMessage(window, n)`, then `CheckMessage` each
   frame until the player has read it (`WaitMessage`), `Close` - the window drawn as the game's
   (FORMATS.md, the interface), its lines typing a character an update;
+- **the portraits** (`EvtFace`, through the dungeon scripts' `Cutin_*` helpers): `SetTexture(file,
+  id)` loads a face, `Create(layout)` opens a layout (0 right, 1 both, 2 left, 3 the party's, 4 a
+  single one), `ChangeTexture(layout, id)` shows a face in it, `SetColor(layout, 0.5)` dims who
+  isn't speaking, `Delete(n)` closes (InterfaceMain::EndCutInWindow's table: 0, 1, 2, every one,
+  3, 4), `DispOff` closes them all, `DeleteTexture` drops the faces;
 - **the fades** (`Cr3Fade.FadeIn / FadeOut(type, frames)`, the `2`s with from / to %): the colour
   0 black (the interface's `fadeB`), 1 white (`fadeW`), 2 `fadeF`, 3 the encounter's wipe
   (Cr3FadeIn's table; the colours the fade figures' DiffuseColor), linear over the frames;

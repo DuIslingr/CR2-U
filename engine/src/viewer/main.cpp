@@ -117,6 +117,7 @@ struct ViewMesh {
     cr2::GeomMaterial material;        // (its render states; its parameters as the animation leaves them)
     cr2::GeomMaterial baseMaterial;    // (as the file has it)
     std::vector<uint8_t> vertices;     // kVertexStride bytes each
+    bool hidden = false;               // (PartsBase::SetVisible(joint, false): its joint's meshes)
 };
 
 // A figure on screen: its meshes, skeleton, animations and where it stands
@@ -512,6 +513,7 @@ struct Viewer {
         const char* only = SDL_getenv("CR2_MESHES"); // (debugging: "1,3" draws meshes 1 and 3 only)
         for (const ViewMesh* mp : order) {
             const ViewMesh& m = *mp;
+            if (m.hidden) continue;
             if (only && !std::strstr((std::string(",") + only + ",").c_str(),
                                      (',' + std::to_string(mp - f.meshes.data()) + ',').c_str()))
                 continue;
@@ -748,8 +750,9 @@ struct Viewer {
         return true;
     }
 
-    bool loadField(const std::string& map, const std::string& at, const std::string& binary, const std::string& dataPath) {
-        return loadTable(binary, dataPath) && enterMap(map, at);
+    bool loadField(const std::string& map, const std::string& at, const std::string& binary, const std::string& dataPath,
+                   const std::string& entry = "evt000") {
+        return loadTable(binary, dataPath) && enterMap(map, at, entry);
     }
 
     // The field's script, a coroutine stepped at the game's 20 updates a second (its events'
@@ -1051,11 +1054,16 @@ struct Viewer {
         std::vector<std::string> joints;
         bool stretch = false; // (across a wide screen)
         bool nameTag = false; // (the name in slot 0, a page's lines from slot 1)
+        int linesPerPage = 2; // (with a name tag: slots 1.. the lines, the centred ones after them)
         std::vector<std::string> slots; // slot -> the joint's number
         std::string cursorJoint;
+        int window = -1;                // (EventRuntime's)
+        std::string inAnim, outAnim;    // (opening / closing animators, posed at the window's age)
+        bool lowerBelow3x2 = false;     // (narrower than 3:2: 0.0403125 lower)
     };
-    WindowLayout vistaWindow, narrationWindow;
-    ViewFigure pageCursor; // sendCsr_loop: once the page is typed
+    WindowLayout vistaWindow, narrationWindow, conversationWindow;
+    ViewFigure pageCursor;         // sendCsr_loop: once the page is typed
+    ViewFigure conversationCursor; // msgCsr_loop: the conversation window's
     struct TextQuad {
         cr2::Texture tex;
         float x = 0, y = 0, w = 0, h = 0; // UI units: the quad's left, centre, size
@@ -1073,13 +1081,23 @@ struct Viewer {
         std::vector<uint8_t> d;
         if (archive.read(std::string(figure) + ".name", d)) w.joints = cr2::parseJointNames(d);
         for (const std::string& j : w.joints)
-            if (j.compare(0, 17, "call_sendCsr_loop") == 0) w.cursorJoint = j;
+            if (j.compare(0, 17, "call_sendCsr_loop") == 0 || j.compare(0, 16, "call_msgCsr_loop") == 0) w.cursorJoint = j;
     }
 
     void loadMessageWindow(const std::string& fontPath) {
         loadWindow(vistaWindow, "vstwin");
         vistaWindow.stretch = vistaWindow.nameTag = true;
         vistaWindow.slots = {"01", "11", "12", "21", "22"};
+        // the cut-ins' message window (ConversationWindowMenu: msgWin, msgWin_in / msgWin_out; its
+        // slots 01 the name, 02..04 a page's three lines - EvtCutinWindow::GetLinePerPage - and
+        // 05..07 centred ones)
+        loadWindow(conversationWindow, "msgwin");
+        conversationWindow.stretch = conversationWindow.nameTag = conversationWindow.lowerBelow3x2 = true;
+        conversationWindow.linesPerPage = 3;
+        conversationWindow.slots = {"01", "02", "03", "04", "05", "06", "07"};
+        conversationWindow.window = cr2::EventRuntime::CutIn;
+        conversationWindow.inAnim = "msgwin_in.anim", conversationWindow.outAnim = "msgwin_out.anim";
+        loadCutIns();
         loadWindow(narrationWindow, "narrationpos");
         for (int k = 1; k <= 30; ++k) {
             char n[4];
@@ -1088,6 +1106,7 @@ struct Viewer {
         }
         std::string err;
         if (!loadFigure("sendcsr_loop.geom", pageCursor, &err)) SDL_Log("page cursor: %s", err.c_str());
+        if (!loadFigure("msgcsr_loop.geom", conversationCursor, &err)) SDL_Log("page cursor: %s", err.c_str());
         if (!fontPath.empty() && !font.load(fontPath, &err)) SDL_Log("font: %s", err.c_str());
         SDL_Log("message windows: vista %zu meshes, narration %zu joints; font %s", vistaWindow.fig.meshes.size(),
                 narrationWindow.joints.size(), font.loaded() ? font.path().c_str() : "none (no text)");
@@ -1131,8 +1150,21 @@ struct Viewer {
         const float aspect = float(w) / float(std::max(h, 1));
         wl.fig.place = cr2::Mat34();
         if (wl.stretch && aspect >= 1.5f) wl.fig.place.m[0] = aspect / 1.5f;
+        else if (wl.lowerBelow3x2) wl.fig.place.m[7] = -0.0403125f;
+        const bool closing = wl.window >= 0 && ev->windowClosing(wl.window);
+        if (closing) showsMessage = false;
         const std::string speaker = showsMessage && wl.nameTag ? ev->speakerName() : std::string();
-        if (wl.nameTag) { // (the vista's: the name line in while someone speaks)
+        float at = 0; // (where in its animation)
+        if (!wl.inAnim.empty()) { // (opening, then closing)
+            const std::string want = closing ? wl.outAnim : wl.inAnim;
+            const auto anim = std::find(wl.fig.anims.begin(), wl.fig.anims.end(), want);
+            if (anim != wl.fig.anims.end() && (!wl.fig.animLoaded || wl.fig.anims[wl.fig.animIndex] != want)) {
+                const float keep = time;
+                loadAnim(wl.fig, size_t(anim - wl.fig.anims.begin()));
+                time = keep;
+            }
+            at = std::max(ev->windowAge(wl.window), 0.0f) + eventLead();
+        } else if (wl.nameTag) { // (the vista's: the name line in while someone speaks)
             const std::string want = speaker.empty() ? "vstwin_io.anim" : "vstwin_talk.anim";
             const auto anim = std::find(wl.fig.anims.begin(), wl.fig.anims.end(), want);
             if (anim != wl.fig.anims.end() && (!wl.fig.animLoaded || wl.fig.anims[wl.fig.animIndex] != want)) {
@@ -1141,7 +1173,7 @@ struct Viewer {
                 time = keep;
             }
         }
-        pose(wl.fig, 0);
+        pose(wl.fig, at, false);
         const Mat4 proj = uiProjection(w, h);
         Mat4 camera = cr2::mat4Identity();
         camera[14] = -0.881f; // (CAM_hud2D's z)
@@ -1193,7 +1225,8 @@ struct Viewer {
             if (wl.nameTag) {
                 add(speaker, 0, 0, true);
                 const bool centred = !lines.empty() && lines[0].centred;
-                for (size_t i = 0; i < lines.size() && i < 2; ++i) add(lines[i].text, (centred ? 3 : 1) + i, lines[i].colour, false);
+                for (size_t i = 0; i < lines.size() && i < size_t(wl.linesPerPage); ++i)
+                    add(lines[i].text, (centred ? 1 + wl.linesPerPage : 1) + i, lines[i].colour, false);
             } else {
                 for (size_t i = 0; i < lines.size(); ++i) add(lines[i].text, i, lines[i].colour, false);
             }
@@ -1214,11 +1247,79 @@ struct Viewer {
         }
         // the page cursor, looping, once the page is typed
         float cx, cy;
-        if (ev->typed() && !pageCursor.meshes.empty() && !wl.cursorJoint.empty() && windowJoint(wl, wl.cursorJoint, cx, cy)) {
-            pageCursor.place = cr2::Mat34();
-            pageCursor.place.m[3] = cx, pageCursor.place.m[7] = cy;
-            pose(pageCursor, time);
-            drawFigure(pageCursor, view.data());
+        ViewFigure& cursor = wl.cursorJoint.compare(0, 16, "call_msgCsr_loop") == 0 ? conversationCursor : pageCursor;
+        if (ev->typed() && !cursor.meshes.empty() && !wl.cursorJoint.empty() && windowJoint(wl, wl.cursorJoint, cx, cy)) {
+            cursor.place = cr2::Mat34();
+            cursor.place.m[3] = cx, cursor.place.m[7] = cy;
+            pose(cursor, time);
+            drawFigure(cursor, view.data());
+        }
+    }
+
+    // The cut-ins' portraits (CutInWindowMenu): `cutIn`, its first material's colour map the face
+    // (SetTexture), its DiffuseColor the brightness (ChangeDiffuseColor), posed by the layout's io
+    // animation; the other side's joints hidden (GEO_face*_L or _R); on screens wider than 3:2
+    // moved toward its side by the margin's width over the 3:2 area's (PositionCorrection: the fit
+    // parameter's side - 3 / 6 right, 1 / 4 left - the two-sided layout not moved), narrower ones
+    // 0.0403125 lower. Behind the conversation window (their depths: -0.064 against -0.048).
+    std::array<ViewFigure, cr2::EventRuntime::kCutIns> cutInFigures;
+
+    void loadCutIns() {
+        static const char* kAnim[cr2::EventRuntime::kCutIns] = {"cutinr_io.anim", "cutinlr_io.anim", "cutinl_io.anim",
+                                                                "cutinpty_io.anim", "cutinsgl_io.anim"};
+        static const char* kHidden[cr2::EventRuntime::kCutIns] = {"_L", "", "_R", "_L", "_R"};
+        std::vector<uint8_t> d;
+        const std::vector<std::string> joints = archive.read("cutin.name", d) ? cr2::parseJointNames(d) : std::vector<std::string>();
+        const float keep = time;
+        for (int k = 0; k < cr2::EventRuntime::kCutIns; ++k) {
+            ViewFigure& f = cutInFigures[size_t(k)];
+            std::string err;
+            if (!loadFigure("cutin.geom", f, &err)) {
+                SDL_Log("cut-in: %s", err.c_str());
+                continue;
+            }
+            const auto anim = std::find(f.anims.begin(), f.anims.end(), kAnim[k]);
+            if (anim != f.anims.end()) loadAnim(f, size_t(anim - f.anims.begin()));
+            for (ViewMesh& vm : f.meshes) {
+                const uint32_t j = vm.source.palette.empty() ? ~0u : vm.source.palette[0];
+                const std::string& name = j < joints.size() ? joints[j] : std::string();
+                vm.hidden = *kHidden[k] && name.size() > 2 && name.compare(name.size() - 2, 2, kHidden[k]) == 0;
+            }
+        }
+        time = keep;
+    }
+
+    void drawCutIns(int w, int h) {
+        cr2::EventRuntime* ev = activeEvents();
+        if (!ev) return;
+        static const float kSide[cr2::EventRuntime::kCutIns] = {1, 0, -1, 1, -1};
+        const float aspect = float(w) / float(std::max(h, 1));
+        const Mat4 proj = uiProjection(w, h);
+        Mat4 camera = cr2::mat4Identity();
+        camera[14] = -0.881f;
+        const Mat4 view = cr2::mat4Multiply(proj, camera);
+        for (int k = 0; k < cr2::EventRuntime::kCutIns; ++k) {
+            const cr2::EventRuntime::Portrait& c = ev->cutIn(k);
+            ViewFigure& f = cutInFigures[size_t(k)];
+            if (!c.open || f.meshes.empty()) continue;
+            const float t = c.closing ? std::max(c.time - eventLead(), 0.0f) : std::min(c.time + eventLead(), cr2::EventRuntime::kCutInSeconds);
+            f.place = cr2::Mat34();
+            if (aspect < 1.5f) f.place.m[7] = -0.0403125f;
+            else {
+                const float s = std::min(float(w) / 960.0f, float(h) / 640.0f);
+                f.place.m[3] = kSide[k] * float(int((float(w) - s * 960.0f) * 0.5f)) / (s * 960.0f);
+            }
+            pose(f, t, false);
+            cr2::Texture* face = texture(ev->cutInImage(c.texture));
+            for (ViewMesh& vm : f.meshes) {
+                vm.texture = face ? face : texture(vm.baseMaterial.diffuse());
+                std::vector<float>& dc = vm.material.params[0x33];
+                if (dc.size() < 4) dc.resize(4, 1.0f);
+                dc[0] = dc[1] = dc[2] = c.bright;
+            }
+            cr2::SceneLighting l;
+            dev->setLighting(l);
+            drawFigure(f, view.data());
         }
     }
 
@@ -1239,6 +1340,9 @@ struct Viewer {
         const bool message = ev->messageShown() && ev->page() < int(ev->message().pages.size());
         if (ev->windowOpen(cr2::EventRuntime::Vista))
             drawWindow(vistaWindow, message && ev->messageWindow() == cr2::EventRuntime::Vista, screenW, screenH);
+        drawCutIns(screenW, screenH);
+        if (ev->windowOpen(cr2::EventRuntime::CutIn) || ev->windowClosing(cr2::EventRuntime::CutIn))
+            drawWindow(conversationWindow, message && ev->messageWindow() == cr2::EventRuntime::CutIn, screenW, screenH);
         if (ev->windowOpen(cr2::EventRuntime::Narration))
             drawWindow(narrationWindow, message && ev->messageWindow() == cr2::EventRuntime::Narration, screenW, screenH);
     }
@@ -1277,7 +1381,7 @@ std::string upscaleName(const cr2::UpscaleSettings& u) {
 int main(int argc, char** argv) {
     std::string data, model, capture, animName, renderer = "vulkan", lights = "d0101c", fieldName, at = "defaultPos", binary;
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
-    std::string eventName, vista = "null", fontPath, playFrom;
+    std::string eventName, vista = "null", fontPath, playFrom, callEntry = "evt000";
     float page = 3.0f;
     int width = 0, height = 0;    // the window (--size; else the resolution's, fitted to the display)
     int resW = 0, resH = 0;       // --resolution: the output frames (else the window's)
@@ -1307,6 +1411,7 @@ int main(int argc, char** argv) {
         else if (a == "--vista" && next) vista = next, ++i;
         else if (a == "--page" && next) page = float(std::atof(next)), ++i;
         else if (a == "--font" && next) fontPath = next, ++i;
+        else if (a == "--call" && next) callEntry = argv[++i]; // (--play: the map's event function, not its evt000)
         else if (a == "--play") playFrom = next && next[0] != '-' ? (++i, next) : "d1020";
         else if (a == "--resolution" && next) std::sscanf(next, "%dx%d", &resW, &resH), ++i;
         else if (a == "--upscaler" && next) upscaler = next, ++i;
@@ -1410,7 +1515,7 @@ int main(int argc, char** argv) {
         v.pageSeconds = page;
     }
     if (!fieldName.empty()) {
-        if (!v.loadField(fieldName, at, binary, data)) return 1;
+        if (!v.loadField(fieldName, at, binary, data, callEntry)) return 1;
     } else if (lights != "none") {
         if (v.loadLights(lights)) SDL_Log("lights: %s", lights.c_str());
         else SDL_Log("lights: %s has none (the engine's defaults)", lights.c_str());
@@ -1592,6 +1697,9 @@ int main(int argc, char** argv) {
     v.unload(v.vistaMap);
     v.unload(v.vistaWindow.fig);
     v.unload(v.narrationWindow.fig);
+    v.unload(v.conversationWindow.fig);
+    v.unload(v.conversationCursor);
+    for (ViewFigure& f : v.cutInFigures) v.unload(f);
     v.unload(v.pageCursor);
     for (auto& q : v.textQuads) dev->destroy(q.tex);
     for (ViewFigure& g : v.eventFigures) v.unload(g);

@@ -107,13 +107,39 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     vm.setNative("EvtWindow", "LoadSharedNameData", nameData);
     vm.setNative("EvtWindow", "LoadNameData", nameData);
     // (a window argument of null: the vista's, Cr3Work 2's usual value)
-    vm.setNative("EvtWindow", "Open", [this](NativeCall& c) { openWindows_.insert(c.integer(0, Vista)); });
-    vm.setNative("EvtWindow", "Close", [this](NativeCall& c) {
+    vm.setNative("EvtWindow", "Open", [this](NativeCall& c) {
         const int w = c.integer(0, Vista);
-        openWindows_.erase(w);
-        if (w == messageWindow_) message_ = 0;
+        if (openWindows_.insert(w).second) opened_[w] = 0, closing_.erase(w);
     });
-    vm.setNative("EvtWindow", "UnloadAll", [this](NativeCall&) { openWindows_.clear(), message_ = 0; });
+    auto close = [this](int w) {
+        if (openWindows_.erase(w)) opened_.erase(w), closing_[w] = 0;
+        if (w == messageWindow_) message_ = 0;
+    };
+    vm.setNative("EvtWindow", "Close", [close](NativeCall& c) { close(c.integer(0, Vista)); });
+    vm.setNative("EvtWindow", "UnloadAll", [this](NativeCall&) { openWindows_.clear(), opened_.clear(), closing_.clear(), message_ = 0; });
+    // the cut-ins' portraits
+    vm.setNative("EvtFace", "SetTexture", [this](NativeCall& c) { cutInImages_.push_back({c.integer(1), c.string(0)}); });
+    vm.setNative("EvtFace", "DeleteTexture", [this](NativeCall&) { cutInImages_.clear(); });
+    vm.setNative("EvtFace", "Create", [this](NativeCall& c) {
+        const int k = c.integer(0, -1);
+        if (k >= 0 && k < kCutIns) cutIns_[size_t(k)] = Portrait{true, false, 0, -1, 1};
+    });
+    auto endCutIn = [this](int n) {
+        static const int kEnd[6] = {0, 1, 2, -1, 3, 4}; // (EndCutInWindow: 3 every one)
+        if (n < 0 || n > 5) return;
+        for (int k = 0; k < kCutIns; ++k)
+            if ((n == 3 || kEnd[n] == k) && cutIns_[size_t(k)].open) cutIns_[size_t(k)].closing = true;
+    };
+    vm.setNative("EvtFace", "Delete", [endCutIn](NativeCall& c) { endCutIn(c.integer(0, -1)); });
+    vm.setNative("EvtFace", "DispOff", [endCutIn](NativeCall&) { endCutIn(3); });
+    vm.setNative("EvtFace", "ChangeTexture", [this](NativeCall& c) {
+        const int k = c.integer(0, -1), id = c.integer(1, -1);
+        if (k >= 0 && k < kCutIns && !cutInImage(id).empty()) cutIns_[size_t(k)].texture = id;
+    });
+    vm.setNative("EvtFace", "SetColor", [this](NativeCall& c) {
+        const int k = c.integer(0, -1);
+        if (k >= 0 && k < kCutIns) cutIns_[size_t(k)].bright = c.number(1, 1);
+    });
     vm.setNative("EvtWindow", "SetMessage", [this](NativeCall& c) {
         messageWindow_ = c.integer(0, Vista);
         message_ = c.integer(1);
@@ -140,7 +166,9 @@ void EventRuntime::reset() {
     fade_ = EventFade();
     faces_.clear();
     text_ = TextData(), names_ = TextData();
-    openWindows_.clear(), messageWindow_ = Vista, message_ = page_ = revealed_ = 0, pageTime_ = 0;
+    openWindows_.clear(), opened_.clear(), closing_.clear();
+    cutIns_ = {}, cutInImages_.clear();
+    messageWindow_ = Vista, message_ = page_ = revealed_ = 0, pageTime_ = 0;
     execution_ = false;
     terminated_ = drawSkip_ = false;
     wait_ = frame_ = 0;
@@ -179,7 +207,27 @@ bool EventRuntime::update(ScriptVM* vm) {
     if (message_ > 0 && !typed()) ++revealed_; // (a character an update; the page's time counts once it's typed)
     else if ((message_ > 0 || execution_) && autoPage > 0 && (pageTime_ += kTick) >= autoPage) advance();
     fade_.update();
+    for (auto& [w, t] : opened_) t += kTick;
+    for (auto it = closing_.begin(); it != closing_.end();) // (out animations: a second at most)
+        it = (it->second += kTick) > 1.0f ? closing_.erase(it) : std::next(it);
+    for (Portrait& c : cutIns_) {
+        if (!c.open) continue;
+        if (!c.closing) c.time = std::min(c.time + kTick, kCutInSeconds);
+        else if ((c.time -= kTick) <= 0) c = Portrait(); // (back to its start: gone)
+    }
     return true;
+}
+
+float EventRuntime::windowAge(int w) const {
+    if (auto it = opened_.find(w); it != opened_.end()) return it->second;
+    if (auto it = closing_.find(w); it != closing_.end()) return it->second;
+    return -1;
+}
+
+std::string EventRuntime::cutInImage(int id) const {
+    for (const auto& [i, image] : cutInImages_)
+        if (i == id) return image;
+    return {};
 }
 
 void EventRuntime::advance() {

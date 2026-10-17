@@ -11,10 +11,12 @@
 // script resumes), the windows, the fade. tick() is one of those updates.
 
 #include <algorithm>
+#include <array>
 #include <map>
 #include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "assets/mvgl.hpp"
 #include "assets/text.hpp"
@@ -71,6 +73,10 @@ public:
     enum Window { CutIn = 0, Vista = 1, AnnounceA = 2, AnnounceB = 3, Tutorial = 4, System = 5, Narration = 6 };
     bool windowOpen() const { return !openWindows_.empty(); }
     bool windowOpen(int w) const { return openWindows_.count(w) != 0; }
+    // how long a window has been open, or (closing) since it closed - its in / out animations'
+    // time (seconds, as of the last update); -1: neither
+    float windowAge(int w) const;
+    bool windowClosing(int w) const { return closing_.count(w) != 0; }
     int messageWindow() const { return messageWindow_; }
     bool messageShown() const { return message_ > 0; }
     const ParsedMessage& message() const { return parsed_; }
@@ -89,6 +95,23 @@ public:
     float autoPage = 3.0f;
     int language = 1; // (Cr3UtilOptionLanguage: 1 English)
 
+    // The cut-ins' portraits (EvtFace over InterfaceMain's CutInWindowMenus): five layouts -
+    // Create(kind) 0 `cutInR_io` (InterfaceMain::SetCutInWindow: interface 24), 1 `cutInLR_io`
+    // (23), 2 `cutInL_io` (22), 3 `cutInPty_io` (99), 4 `cutInSgl_io` (100) - each a face image
+    // (SetTexture(file, id) loads it, ChangeTexture(kind, id) puts it on), its brightness
+    // (SetColor: the one not speaking 0.5), its io animation forward on opening and back on
+    // closing (Delete: EndCutInWindow's table - 0, 1, 2, every one, 3, 4)
+    static constexpr int kCutIns = 5;
+    static constexpr float kCutInSeconds = 0.2f; // (the io animators' range)
+    struct Portrait {
+        bool open = false, closing = false;
+        float time = 0; // into the io animation
+        int texture = -1;
+        float bright = 1;
+    };
+    const Portrait& cutIn(int kind) const { return cutIns_[size_t(kind)]; }
+    std::string cutInImage(int id) const; // a loaded face's image ("" none)
+
     // where the event went at its end: BattleIN's battle (-1 none)
     int battle() const { return state_.next.battle; }
 
@@ -105,6 +128,9 @@ private:
     std::map<int, std::string> faces_;
     TextData text_, names_;
     std::set<int> openWindows_;
+    std::map<int, float> opened_, closing_; // (window -> seconds since)
+    std::array<Portrait, kCutIns> cutIns_;
+    std::vector<std::pair<int, std::string>> cutInImages_; // (id, image: the first of an id counts)
     int messageWindow_ = Vista;
     int message_ = 0, page_ = 0, revealed_ = 0;
     float pageTime_ = 0;

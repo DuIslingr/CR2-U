@@ -465,6 +465,20 @@ speaker's name (`typeS_L01`), `11` / `12` a page's lines (`typeM_L11`, `L12`), `
 centred ones; `sendCsr_loop` the page cursor at `call_sendCsr_loop`. A line types a character an
 update (MenuText::Step: + speed, EvtWindow::UpdatePage's 1 - 0 while skipping); the name at once.
 
+The cut-ins' message window (ConversationWindowMenu, Cr3Event's window 0): `msgWin` - its
+open and close animators `msgWin_in` / `msgWin_out` - stretched as the vista's on screens wider
+than 3:2, 0.0403125 lower on narrower ones; slots `01` the name (`typeS_L01`), `02`..`04` a page's
+three lines (EvtCutinWindow::GetLinePerPage), `05`..`07` centred ones; `msgCsr_loop` its page
+cursor. Behind it (depth -0.064 against -0.048) the portraits (CutInWindowMenu): `cutIn`, one
+material whose colour map is the face (`cutInNNN_LMM`, 512 x 256, set by EvtFace.SetTexture /
+ChangeTexture) and whose DiffuseColor is its brightness (SetColor: 0.5 for who isn't speaking);
+five layouts (EvtFace.Create 0..4: interfaces 24, 23, 22, 99, 100), each its io animation -
+`cutInR_io`, `cutInLR_io`, `cutInL_io`, `cutInPty_io`, `cutInSgl_io`, 0.2 s, forward on opening
+and back from where it is on closing - with the other side's `GEO_face*_L` / `_R` joints hidden.
+On screens wider than 3:2 a one-sided layout moves toward its side by the margin over the 3:2
+area's width (PositionCorrection: int((W - s 960) / 2) / (s 960), s = min(W / 960, H / 640); the
+fit parameter's side - Cr3UtilGetFitXOffset's 3 x 3 table, 1 / 4 / 7 left, 3 / 6 / 9 right).
+
 The narration (NarrationWindowMenu): `narrationPos`, no meshes - ten rows 0.048 apart, columns
 `typeM_C01`..`C10` (x 0), `L11`..`L20` (-0.368), `R21`..`R30` (0.368), the cursor at
 `call_sendCsr_loop50` - its text over the screen (the scripts fade it to black first). A page's

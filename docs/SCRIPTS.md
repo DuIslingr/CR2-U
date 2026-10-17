@@ -161,7 +161,12 @@ the button out too, then shows its set (FieldGimickEffect05Menu::SetAimingSet: `
 mark, `gmk5goal_io` on the leader, `gmk5line` from the mark to the touch, its length / 0.112):
 a press within 128 of the mark drags the ring, and letting go within 128 of the leader succeeds
 (SE 0x164, the function called); a press away from the mark, or letting go elsewhere, fails.
-(The mystic's and the hakkei's games: not yet.) `SkipMessage` shows the page whole
+A hakkei (FldHakkei) takes the button out, then shows a ball for each tap it wants
+(`SetHakkeiTouchCnt`; 5 unless the script says - FieldGimickEffect06Menu::SetCube: `gmk5ball` at
+the ring's `call_gmk5ball` joints, the triangle's for up to three, the pentagon's from four):
+each tap within 128 of the mark is a punch (`fp02` .. `fp06`, SE 0x160 or 0x161) and takes a ball;
+all of them within 60 frames of the first succeed (SE 0x164, the function called), a tap away
+from the mark or the time running out fails. (The mystic's game: not yet.) `SkipMessage` shows the page whole
 (the typing skipped); the message stays until a tap or the window's Close.
 
 An area's script runs on the game's 20 updates a second like an event's, and uses the same

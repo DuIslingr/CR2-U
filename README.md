@@ -161,10 +161,10 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       lit in its place; the leader's figure the field's character - `ChangeModel`); the
       announcements' window (annoWin, as the tutorials')
 - [x] Touch actions: their set-up by the scripts (on / off, their spots), their marks for their
-      characters; the sprint's and the high jump's hops, the iai's slash, the aim's drag (a tap on
-      the marker / the mark, Return, `--input sprint` / `action`, then `slash` / `slashfail`,
-      `drag` / `aim` / `aimfail`)
-- [ ] The mystic's and the hakkei's games
+      characters; the sprint's and the high jump's hops, the iai's slash, the aim's drag, the
+      hakkei's taps (a tap on the marker / the mark, Return, `--input sprint` / `action`, then
+      `slash` / `slashfail`, `drag` / `aim` / `aimfail`, `punch` / `punchfail`)
+- [ ] The mystic's game
 - [ ] Engine: events, battles, menus
 
 ## What you need

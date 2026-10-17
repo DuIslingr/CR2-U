@@ -480,7 +480,12 @@ struct Viewer {
     // gmk5goal_io on the leader, gmk5line between): a press within 128 of the mark, the ring
     // dragged with it (the line to it, scaled by its length / 0.112), let go within 128 of the
     // leader - SE 0x164, the function called -; let go elsewhere, or a press away from the mark,
-    // SE 0x165 and the mark anew
+    // SE 0x165 and the mark anew. A hakkei (FldHakkei) takes the button out, then its balls show
+    // (FieldGimickEffect06Menu::SetCube: gmk5ball at the ring's call_gmk5ball joints - the
+    // triangle's three, the pentagon's five from four on), one for each tap it wants (SetHakkei
+    // TouchCnt; 5): each tap within 128 of the mark a punch (fp02 .. fp06), SE 0x160 or 0x161, a
+    // ball gone; all of them, from the first, within 60 frames - SE 0x164, the function called -;
+    // a tap away from the mark, or the time out, SE 0x165 and the mark anew
     struct ActionMark {
         int gimmick = -1, kind = 0;
         bool able = false;
@@ -501,7 +506,12 @@ struct Viewer {
         int stage = 0; // 0 none, 1 a press on the mark awaited, 2 dragging
         float x = 0, y = 0; // (the touch: the interface's units)
     } aim;
-    bool actionRunning() const { return sprint.stage != 0 || iai.stage != 0 || aim.stage != 0; }
+    struct Hakkei {
+        int stage = 0; // 0 none, 1 the taps awaited
+        int wanted = 5;
+        std::vector<float> tappedAt;
+    } hakkei;
+    bool actionRunning() const { return sprint.stage != 0 || iai.stage != 0 || aim.stage != 0 || hakkei.stage != 0; }
     void updateActionMark() {
         if (actionRunning()) return;
         if (actionMark.startedAt >= 0 && (actionMark.endedAt < 0 || uiClock - actionMark.endedAt > 0.5f)) actionMark = ActionMark();
@@ -548,6 +558,9 @@ struct Viewer {
         } else if (actionMark.kind == 5) {
             aim = Aim();
             aim.stage = 1;
+        } else if (actionMark.kind == 6) {
+            hakkei = Hakkei();
+            hakkei.stage = 1, hakkei.wanted = std::min(script->touchAction(g.name)->touches, 8);
         } else {
             SDL_Log("%s: %s - its game isn't in yet", field.info().name.c_str(), g.name.c_str());
             return;
@@ -565,9 +578,9 @@ struct Viewer {
         return true;
     }
     void iaiEnd(bool success) {
-        if (!iai.stage && !aim.stage) return;
-        const char* what = iai.stage ? "iai" : "aim";
-        iai = Iai(), aim = Aim();
+        if (!iai.stage && !aim.stage && !hakkei.stage) return;
+        const char* what = iai.stage ? "iai" : aim.stage ? "aim" : "hakkei";
+        iai = Iai(), aim = Aim(), hakkei = Hakkei();
         const std::string function = field.gimmicks()[size_t(actionMark.gimmick)].name;
         SDL_Log("%s: %s %s", field.info().name.c_str(), what, success ? "succeeded" : "failed");
         if (!success) {
@@ -612,7 +625,24 @@ struct Viewer {
             iaiEnd(std::hypot(x - lx, y - ly) * 2048.0f <= 128.0f);
         }
     }
+    // a hakkei's tap (on the mark, or not)
+    void hakkeiTap(bool onMark) {
+        if (!hakkei.stage) return;
+        if (!onMark) return iaiEnd(false);
+        const int n = int(hakkei.tappedAt.size());
+        hakkei.tappedAt.push_back(uiClock);
+        playMotion(fig, ("fp0" + std::to_string(2 + std::min(n, 4))).c_str()), time = 0;
+        audio.playSe(uiClock * 997.0f - std::floor(uiClock * 997.0f) < 0.5f ? 0x160 : 0x161, false); // (lrand48 % 2)
+        if (n + 1 >= hakkei.wanted) iaiEnd(true);
+    }
+    void hakkeiPointer(float fx, float fy) {
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+        float mx, my;
+        if (actionMarkPlace(mx, my)) hakkeiTap(std::hypot(x - mx, y - my) * 2048.0f <= 128.0f);
+    }
     void updateIai() {
+        if (hakkei.stage && !hakkei.tappedAt.empty() && uiClock - hakkei.tappedAt[0] > 60.0f / 60.0f) iaiEnd(false); // (60 frames)
         if (iai.stage == 2 && uiClock - iai.pressedAt > 10.0f / 60.0f) iaiEnd(false); // (10 frames)
     }
     void drawActionMark(const Mat4& view) {
@@ -666,6 +696,23 @@ struct Viewer {
             UiFig& c = uiFig("gmk4csr_loop");
             poseUi(c, "gmk4csr_loop", ts - out, true);
             at(c);
+        } else if (actionMark.kind == 6 && hakkei.stage) { // (the hakkei's balls)
+            static const char* const kTriangle[3] = {"call_gmk5ball01", "call_gmk5ball02", "call_gmk5ball03"};
+            static const char* const kPentagon[5] = {"call_gmk5ball01_cpy", "call_gmk5ball02_cpy", "call_gmk5ball03_cpy", "call_gmk5ball04", "call_gmk5ball05"};
+            const int n = hakkei.wanted;
+            UiFig& ball = uiFig("gmk5ball");
+            const float d = duration(ball, "gmk5ball");
+            for (int i = 0; i < n && i < (n < 4 ? 3 : 5); ++i) {
+                float bx, by;
+                if (!uiJoint(r, n < 4 ? kTriangle[i] : kPentagon[i], bx, by)) continue;
+                const bool tapped = size_t(i) < hakkei.tappedAt.size();
+                const float bt = tapped ? uiClock - hakkei.tappedAt[size_t(i)] : std::max(d - (ts - out), 0.0f); // (appearing: played back; tapped: on)
+                if (tapped && bt >= d) continue;
+                poseUi(ball, "gmk5ball", bt);
+                ball.fig.place = cr2::Mat34();
+                ball.fig.place.m[3] = bx, ball.fig.place.m[7] = by, ball.fig.place.m[11] = -0.2f;
+                drawFigure(ball.fig, view.data());
+            }
         } else if (actionMark.kind == 5 && aim.stage) { // (the aim's: the mark, the goal, the line)
             float lx, ly;
             const float ta = ts - out;
@@ -1391,7 +1438,7 @@ struct Viewer {
         }
         boxesDungeon = dungeon;
         keyLock = KeyLock();
-        actionMark = ActionMark(), sprint = Sprint(), iai = Iai(), aim = Aim();
+        actionMark = ActionMark(), sprint = Sprint(), iai = Iai(), aim = Aim(), hakkei = Hakkei();
         // the dungeon's script sets the area up (evt000: which gimmicks show, which collide)
         if (!script) script = std::make_unique<cr2::FieldScript>(archive, game);
         script->events().autoPage = pageSeconds;
@@ -1451,6 +1498,13 @@ struct Viewer {
     bool fieldScriptRunning() const { return script && script->running(); }
     // --input's tokens the field takes (fieldToken: the tab, the camp), one a 0.4 s while it is idle
     void fieldInput() {
+        if (!inputScript.empty() && hakkei.stage && uiClock - actionMark.startedAt > 1.0f && uiClock >= inputNext &&
+            (inputScript.front() == "punch" || inputScript.front() == "punchfail")) { // (a hakkei's tap: on the mark, or away)
+            hakkeiTap(inputScript.front() == "punch");
+            inputScript.pop_front();
+            inputNext = uiClock + 0.1f;
+            return;
+        }
         if (!inputScript.empty() && uiClock >= inputNext && keyLock.stage == 1 && uiClock - keyLock.stageAt > 1.0f &&
             (inputScript.front() == "unlock" || inputScript.front() == "unlockfail")) { // (the lock: spread, or let go)
             unlockEnd(inputScript.front() == "unlock");
@@ -5115,7 +5169,7 @@ struct Viewer {
     float fieldTabAt = -10; // (uiClock: when it last began to open or close)
     bool fieldTabShown() const {
         return fieldMode && !eventMode && !battleMode && script && !script->running() && !campOpen && !mapOpen && !saveStage &&
-               keyLock.stage == 0 && changeStage == 0 && sprint.stage == 0 && iai.stage == 0 && aim.stage == 0;
+               keyLock.stage == 0 && changeStage == 0 && !actionRunning();
     }
     float fieldTabPose(UiFig& tab) {
         const float d = tab.fig.animLoaded ? tab.fig.anim.duration() : 0.0f;
@@ -6774,6 +6828,7 @@ int main(int argc, char** argv) {
                     else if (v.fieldMode && !v.eventMode && v.keyLock.stage != 0) v.unlockPointer(fx, fy, 0);
                     else if (v.fieldMode && !v.eventMode && v.iai.stage) v.iaiPointer(fx, fy, 0);
                     else if (v.fieldMode && !v.eventMode && v.aim.stage) v.aimPointer(fx, fy, 0);
+                    else if (v.fieldMode && !v.eventMode && v.hakkei.stage) v.hakkeiPointer(fx, fy);
                     else if (v.fieldMode && !v.eventMode && (v.sprintTap(fx, fy) || v.actionTap(fx, fy))) {}
                     else if (v.fieldMode && !v.eventMode && v.fieldClick(fx, fy)) {
                     } else if (v.eventMode || v.fieldMode || v.battleMode) v.tap();

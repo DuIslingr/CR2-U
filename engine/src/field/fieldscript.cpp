@@ -32,6 +32,9 @@ void FieldScript::bind() {
                 return;
             }
     });
+    vm.setNative("Cr3GimmickData", "SetHakkeiTouchCnt", [this](NativeCall& c) {
+        if (TouchAction* a = findAction(6, c.string(0))) a->touches = std::max(c.integer(1), 1);
+    });
     vm.setNative("Cr3GimmickData", "ResetSpot", [this](NativeCall& c) {
         if (TouchAction* a = findAction(c.integer(0), c.string(1))) a->spots.clear();
     });

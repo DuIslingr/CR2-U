@@ -91,6 +91,7 @@ public:
     struct TouchAction {
         bool enabled = false;
         std::vector<std::array<float, 3>> spots;
+        int touches = 5; // (a hakkei's taps: FldHakkei +0x44, SetHakkeiTouchCnt)
     };
     const TouchAction* touchAction(const std::string& gimmick) const {
         const auto it = actions_.find(gimmick);

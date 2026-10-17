@@ -157,6 +157,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       item and its window ("Obtained ...", the item's icon), the key boxes for Orlando alone - their
       mark and lock (two fingers spread on it: the mouse dragged from it) - the System window's
       message for the others
+- [x] The world select: the town's transporter - the dungeons and levels open to you, their
+      pictures and names, the question, then the warp there (`--input pick` / `up` / `down` /
+      `back` / `yes` / `no`)
 - [x] The field's HUD: the tab, the character change (its button, the leader darkened and the other
       lit in its place; the leader's figure the field's character - `ChangeModel`); the
       announcements' window (annoWin, as the tutorials')

@@ -16,7 +16,7 @@ void FieldScript::bind() {
     events_->bindNatives(vm); // (the field's events: their scene, windows, fades)
     vm.setNative("Cr3System", "GetDungeonNum", [this](NativeCall& c) { c.result(dungeon_); });
     vm.setNative("Cr3System", "GetAreaNum", [this](NativeCall& c) { c.result(area_); });
-    vm.setNative("Cr3System", "GetSelectDungeonNum", [this](NativeCall& c) { c.result(dungeon_); });
+    vm.setNative("Cr3System", "GetSelectDungeonNum", [this](NativeCall& c) { c.result(state_.selectDungeon); }); // (the world select's)
     vm.setNative("Cr3System", "SetDifficulty", [this](NativeCall& c) { state_.difficulty = c.integer(0); }); // (Cr3UtilSetDifficulty)
     vm.setNative("Cr3System", "GetDifficulty", [this](NativeCall& c) { c.result(state_.difficulty); });
     vm.setNative("Cr3GimmickData", "GetItemID", [this](NativeCall& c) { c.result(boxItem); });

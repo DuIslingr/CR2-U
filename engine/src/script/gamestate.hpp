@@ -60,6 +60,8 @@ struct GameState {
     // the difficulty (cr3_common_data[0]: Cr3UtilSetDifficulty, the world select's level - 1) and the
     // dungeon's treasure boxes (cr3_treasureBox)
     int difficulty = 0;
+    // the dungeon the world select chose last (FldWorldSelect::m_nSelectDungeonNum: GetSelectDungeonNum)
+    int selectDungeon = 0;
     TreasureBoxes boxes;
     bool equipReady = false;
     template <class Data> void initEquip(const Data& data, const int* levelExp) {
@@ -113,6 +115,7 @@ struct GameState {
         std::string popPoint;
         bool title = false;
         int fieldMode = -1; // -1: evt000
+        bool worldSelect = false; // (ReserveWorldSelect: cr3_script_work[4] - FldMain step 10)
     } next;
 };
 

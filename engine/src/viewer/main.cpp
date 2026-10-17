@@ -1708,6 +1708,16 @@ struct Viewer {
             inputNext = uiClock + 0.4f;
             return;
         }
+        if (!inputScript.empty() && uiClock >= inputNext && world.stage && uiClock - world.at > 0.5f) { // (the world select: up, down, pick, back, yes, no)
+            const std::string t = inputScript.front();
+            if (t == "up" || t == "down") worldKey(t == "up" ? SDLK_UP : SDLK_DOWN);
+            else if (t == "pick") worldKey(SDLK_RETURN);
+            else if (t == "back") worldKey(SDLK_BACKSPACE);
+            else if (t == "yes" || t == "no") worldKey(t == "yes" ? SDLK_Y : SDLK_N);
+            inputScript.pop_front();
+            inputNext = uiClock + 0.4f;
+            return;
+        }
         if (inputScript.empty() || uiClock < inputNext || (!campOpen && !fieldTabShown() && !mapOpen && !saveStage) || manualStage == 2) return;
         if (!fieldToken(inputScript.front())) return; // (not the field's: left for a battle)
         inputScript.pop_front();
@@ -1772,7 +1782,7 @@ struct Viewer {
             }
         } else if (eventMode) {
             updateEvent(dt);
-        } else if (fieldMode && (campOpen || mapOpen || saveStage)) { // (FldMain steps 5 .. 7: the camp, the map, saving - the field held)
+        } else if (fieldMode && (campOpen || mapOpen || saveStage || world.stage)) { // (FldMain steps 5 .. 7, 10: the camp, the map, saving, the world select - the field held)
             updateManual(dt);
             if (saveStage == 2 && uiClock - saveStart > 1.0f) saveStage = 0; // (a second, then closed)
             fieldInput();
@@ -1806,6 +1816,11 @@ struct Viewer {
     float returnPlayer[3] = {0, 0, 0}, returnHeading = 0;
     void branchAfterField() {
         cr2::GameState::Next& n = game.next;
+        if (n.worldSelect) { // (FldMain step 10: the world select, then WarpTask)
+            n.worldSelect = false;
+            openWorldSelect();
+            return;
+        }
         if (!n.popPoint.empty()) {
             const std::string pp = n.popPoint;
             n.popPoint.clear();
@@ -5372,7 +5387,7 @@ struct Viewer {
     float fieldTabAt = -10; // (uiClock: when it last began to open or close)
     bool fieldTabShown() const {
         return fieldMode && !eventMode && !battleMode && script && !script->running() && !campOpen && !mapOpen && !saveStage &&
-               keyLock.stage == 0 && changeStage == 0 && !actionRunning();
+               keyLock.stage == 0 && changeStage == 0 && !actionRunning() && world.stage == 0;
     }
     float fieldTabPose(UiFig& tab) {
         const float d = tab.fig.animLoaded ? tab.fig.anim.duration() : 0.0f;
@@ -6395,6 +6410,16 @@ struct Viewer {
             return true;
         }
         if (saveStage == 2) return true;
+        if (world.stage) { // (the world select's rows, its question)
+            const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+            const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+            for (const TapRect& r : tapRects)
+                if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
+                    worldTap(r.id);
+                    break;
+                }
+            return true;
+        }
         if (!campOpen && !fieldTabShown() && !saveStage) return false;
         if (campOpen && manualStage == 2) {
             if (manualEvents) manualEvents->advance();
@@ -6523,10 +6548,123 @@ struct Viewer {
                 tapRects.push_back({6100, sx, sy, ex, ey});
     }
 
+    // The world select (FldWorldSelect - InterfaceMain::SetMapSelectParameter: MapSelectMenu, a
+    // scroll list, with MapSelectTitleMenu's `menu` on menuWld_io and MapSelectPicMenu's `mapPic`
+    // wearing the focused dungeon's mapPic_dNN). Its rows (SetMapList): the dungeons whose flags
+    // are set (0x534510: 1041 ..), in the table's order (0x534544: 1, 9, 6, 7, 8, 4, 3, 5, 2, 10 ..),
+    // named by announcemenuname (the dungeon's number); picked, the levels (SetLevelList: Lv. 1 ..
+    // 11, those whose flags 0x5345a8 say - announcemenuname 0x14 + the level); picked, the
+    // question (the System window: the dungeon, the level, announce 0x80 - yes / no). Yes: the
+    // dungeon chosen (GetSelectDungeonNum), the difficulty the level less one (Cr3UtilSetDifficulty),
+    // the town's WarpTask called; no: the levels again; back: the dungeons, then the field.
+    struct WorldSelect {
+        int stage = 0; // 0 shut, 1 the dungeons, 2 the levels, 3 the question
+        float at = 0;  // (since: uiClock)
+        int focus = 0, dungeonFocus = 0;
+        int dungeon = 0, level = 0;
+    } world;
+    std::vector<ListRow> worldRows() {
+        static const int kFlags[13] = {1041, 1049, 1046, 1047, 1048, 1044, 1043, 1045, 1042, 1050, 1051, 1051, 1052};
+        static const int kDungeons[13] = {1, 9, 6, 7, 8, 4, 3, 5, 2, 10, 11, 12, 13};
+        static const int kLevelFlags[11] = {0, 1081, 1082, 1083, 1084, 1085, 1086, 1086, 1087, 1087, 1088};
+        std::vector<ListRow> rows;
+        if (world.stage == 1) {
+            for (int i = 0; i < 13; ++i)
+                if (game.flag(kFlags[i])) {
+                    ListRow r;
+                    r.id = kDungeons[i], r.name = menuName(kDungeons[i]), r.number = -1;
+                    rows.push_back(r);
+                }
+        } else {
+            for (int k = 1; k <= 11; ++k)
+                if (kLevelFlags[k - 1] == 0 || game.flag(kLevelFlags[k - 1])) {
+                    ListRow r;
+                    r.id = k, r.name = menuName(0x14 + k), r.number = -1;
+                    rows.push_back(r);
+                }
+        }
+        return rows;
+    }
+    void openWorldSelect() {
+        world = WorldSelect();
+        world.stage = 1, world.at = uiClock;
+        SDL_Log("world select: %zu dungeons", worldRows().size());
+        if (worldRows().empty()) world.stage = 0, pendingBranch = true;
+    }
+    void worldPick(const ListRow& r) {
+        audio.playSe(0xb4, false);
+        if (world.stage == 1) world.dungeon = r.id, world.dungeonFocus = world.focus, world.stage = 2, world.focus = 0;
+        else if (world.stage == 2) world.level = r.id, world.stage = 3;
+        world.at = uiClock;
+    }
+    void worldBack() {
+        audio.playSe(0xb5, false);
+        if (world.stage == 2) world.stage = 1, world.focus = world.dungeonFocus, world.at = uiClock;
+        else if (world.stage == 3) world.stage = 2, world.at = uiClock;
+        else world.stage = 0, pendingBranch = true; // (back to the field: what else was reserved)
+    }
+    void worldAnswer(bool yes) {
+        if (world.stage != 3) return;
+        if (!yes) return worldBack();
+        audio.playSe(0xb4, false);
+        game.selectDungeon = world.dungeon, game.difficulty = world.level - 1;
+        SDL_Log("world select: dungeon %d, level %d", world.dungeon, world.level);
+        world.stage = 0;
+        callGimmick("WarpTask"); // (FldMain step 10: CallEvent("WarpTask"))
+    }
+    void worldTap(int id) {
+        if (world.stage == 3) {
+            if (id == 7601 || id == 7602) worldAnswer(id == 7601);
+            return;
+        }
+        const std::vector<ListRow> rows = worldRows();
+        if (id >= 1000 && id < 1000 + int(rows.size())) world.focus = id - 1000;
+        else
+            for (const ListRow& r : rows)
+                if (r.id == id) return worldPick(r);
+    }
+    void worldKey(SDL_Keycode k) {
+        if (world.stage == 3) {
+            if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) worldAnswer(true);
+            else if (k == SDLK_BACKSPACE || k == SDLK_N) worldAnswer(false);
+            return;
+        }
+        const std::vector<ListRow> rows = worldRows();
+        const int n = std::max(int(rows.size()), 1);
+        if (k == SDLK_UP) world.focus = (world.focus + n - 1) % n;
+        else if (k == SDLK_DOWN) world.focus = (world.focus + 1) % n;
+        else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && world.focus < int(rows.size())) worldPick(rows[size_t(world.focus)]);
+        else if (k == SDLK_BACKSPACE) worldBack();
+    }
+    void drawWorldSelect(const Mat4& view, int w, int h) {
+        const float t = uiClock - world.at;
+        UiFig& title = uiFig("menu"); // (MapSelectTitleMenu)
+        title.fig.place = cr2::Mat34();
+        poseUi(title, "menuwld_io", uiClock - world.at + (world.stage > 1 ? 10.0f : 0.0f));
+        drawFigure(title.fig, view.data());
+        if (world.stage == 3) {
+            const std::string q = menuName(world.dungeon) + "\\n" + menuName(0x14 + world.level) + "\\n" + announce(0x80);
+            return drawAsk(q, t, view, w, h, 7601, 7602);
+        }
+        const std::vector<ListRow> rows = worldRows();
+        if (rows.empty()) return;
+        world.focus = std::clamp(world.focus, 0, int(rows.size()) - 1);
+        const int shown = world.stage == 1 ? rows[size_t(world.focus)].id : world.dungeon;
+        UiFig& pic = uiFig("mappic"); // (MapSelectPicMenu: the dungeon's picture)
+        char tex[24];
+        std::snprintf(tex, sizeof tex, "mapPic_d%02d", shown);
+        if (cr2::Texture* tx = texture(tex))
+            for (ViewMesh& vm : pic.fig.meshes) vm.texture = tx;
+        pic.fig.place = cr2::Mat34();
+        poseUi(pic, "mappic_in", t);
+        drawFigure(pic.fig, view.data());
+        drawSkillList(rows, rows[size_t(world.focus)].id, t, view, w, h, -1, -1);
+    }
+
     void drawFieldUi(int w, int h) {
         if (!fieldMode || battleMode || eventMode) return;
         const bool tabShown = fieldTabShown();
-        if (!campOpen && !tabShown && !mapOpen && !saveStage) return;
+        if (!campOpen && !tabShown && !mapOpen && !saveStage && !world.stage) return;
         const Mat4 proj = uiProjection(w, h);
         Mat4 camera = cr2::mat4Identity();
         camera[14] = -0.881f;
@@ -6537,6 +6675,7 @@ struct Viewer {
         if (campOpen) drawCamp(view, proj, w, h);
         else if (mapOpen) tapRects.clear(), drawDungeonMap(view);
         else if (saveStage) tapRects.clear(), drawSave(view, proj, w, h);
+        else if (world.stage) tapRects.clear(), drawWorldSelect(view, w, h);
         else {
             tapRects.clear();
             if (game.tabEnable) drawFieldTab(view); // (Cr3TabMenu.SetEnable)
@@ -7103,6 +7242,10 @@ int main(int argc, char** argv) {
                     }
                     if (v.campOpen) { // (the camp: Up / Down and Return, Backspace back)
                         v.campKey(k);
+                        continue;
+                    }
+                    if (v.world.stage) { // (the world select: Up / Down, Return, Backspace; Y / N its question)
+                        v.worldKey(k);
                         continue;
                     }
                     if (v.mapOpen) { // (the map: any key closes it)

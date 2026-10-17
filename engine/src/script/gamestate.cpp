@@ -81,6 +81,7 @@ void bindGameState(ScriptVM& vm, GameState& state) {
     });
     vm.setNative("Cr3System", "SetPopPoint", [&next](NativeCall& c) { next.popPoint = c.string(0); }); // (FldUtilSetPopPoint)
     vm.setNative("Cr3System", "SetComeFromBattleToField", [&next](NativeCall&) { next.fieldMode = 1; });
+    vm.setNative("Cr3System", "ReserveWorldSelect", [&next](NativeCall&) { next.worldSelect = true; }); // (FldUtilReserveWorldSelect)
     vm.setNative("Cr3System", "SetComeFromVistaToField", [&next](NativeCall&) { next.fieldMode = 2; });
 }
 
@@ -111,6 +112,7 @@ std::string GameState::save(const std::map<std::string, std::string>& extra) con
     for (int s = 0; s < 32; ++s) o << "sopia " << s << ' ' << int(sopiaLevel[s]) << ' ' << sopiaExp[s] << '\n';
     o << "owned " << sopiaOwned << '\n';
     o << "difficulty " << difficulty << '\n';
+    o << "select " << selectDungeon << '\n';
     o << "boxes " << boxes.table;
     for (int k = 0; k < 3; ++k)
         for (int n = 0; n < 10; ++n) o << ' ' << int(boxes.set[k][n]) * 1 + int(boxes.open[k][n]) * 2;
@@ -165,6 +167,8 @@ bool GameState::load(const std::string& text, std::map<std::string, std::string>
             if (l >> s >> lv >> e && s >= 0 && s < 32) sopiaLevel[s] = static_cast<signed char>(lv), sopiaExp[s] = e;
         } else if (key == "owned") {
             l >> sopiaOwned;
+        } else if (key == "select") {
+            l >> selectDungeon;
         } else if (key == "difficulty") {
             l >> difficulty;
         } else if (key == "boxes") {

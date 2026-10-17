@@ -201,6 +201,17 @@ warp's `WarpEffect` - effect 1 on the player). The saves (Cr3Save): `SaveCont` -
 field's Save), `DeleteCont` empties the continue data (a real save made); `--continue` takes the
 continue data first. Only a game being played saves (`--play` / `--continue`, not a capture).
 
+The world select (the town's transporter, `obj002_00`: `Cr3System.ReserveWorldSelect` -
+FldMain step 10, FldWorldSelect; InterfaceMain::SetMapSelectParameter): MapSelectMenu's scroll
+list beside MapSelectTitleMenu's `menu` (menuWld_io) and MapSelectPicMenu's `mapPic` (the
+focused dungeon's mapPic_dNN). Its rows: the dungeons whose flags are set (0x534510: 1041, 1049,
+1046 ...) in the table's order (0x534544: dungeons 1, 9, 6, 7, 8, 4, 3, 5, 2, 10, 11, 12, 13 - their
+names announcemenuname's), then the levels (Lv. 01 - 10 .. : eleven, flags 0x5345a8), then the
+question in the System window (the dungeon, the level, announce 0x80: yes / no). Yes chooses
+the dungeon (`GetSelectDungeonNum`, saved) and the difficulty, the level less one, and calls the
+town's `WarpTask` (CallEvent: the warp's tutorial, effect and jump to the dungeon); no asks
+again, Back steps back to the field. (CheckCoupling's party conditions on a dungeon: not yet.)
+
 Questions (EvtWindow.ShowYesNoButton: BattleYNChoice's `choice_io` with the circle buttons 11
 yes and 12 no; SE 0xb4) wait for an answer: `CheckYesNoButton` 0 until then, 1 yes, 2 no, and
 HideYesNoButton takes them away - the scripts' `ShowYesNoButton()` loops on it (the sealed

@@ -259,6 +259,7 @@ struct Viewer {
     void tap() {
         if (battleMode) {
             if (battleScript && battleScript->running()) battleScript->events().advance();
+            else if (result.stage > 0) result.tapped = true;
             return;
         }
         if (eventMode) {
@@ -887,8 +888,10 @@ struct Viewer {
             battleClock += dt;
             updateBattleScript(dt);
             updateBattleShow();
-            // a fight of the flow over: its last action shown, a moment after
-            if (fightingInFlow && battleStep == BattleStep::Over && !battleScriptRunning() && battleClock > showEnd + 1.5f) {
+            updateResult();
+            // a fight of the flow over: its last action shown, a moment after (a win: its result)
+            if (fightingInFlow && battleStep == BattleStep::Over && !battleScriptRunning() && battleClock > showEnd + 1.5f &&
+                (result.stage == 0 || result.stage >= 4)) {
                 fightingInFlow = false;
                 SDL_Log("play: battle %s", battleRules->exited() ? "ended by its script" : battleRules->escaped() ? "escaped" : battleRules->outcome() == 1 ? "won" : "lost (taken as won: no game over yet)");
                 ++battlesSkipped;
@@ -1050,7 +1053,7 @@ struct Viewer {
     void newGame() {
         std::vector<uint8_t> d;
         if (!archive.read("data\\battledata.dat", d) || !battleData.parse(d)) return;
-        game.initSopia(battleData), game.initItems(battleData), game.initEquip(battleData);
+        game.initSopia(battleData), game.initItems(battleData), game.initEquip(battleData, cr2::levelExpTable());
     }
     bool startBattle(int id, const int party[2]) {
         std::vector<uint8_t> d;
@@ -1061,7 +1064,7 @@ struct Viewer {
         }
         game.initSopia(battleData); // (a new game's levels, the first time)
         game.initItems(battleData); // (and items)
-        game.initEquip(battleData); // (and equipment)
+        game.initEquip(battleData, cr2::levelExpTable()); // (and equipment, levels)
         cr2::Skeleton dpos;
         if (!archive.read("battledpos.skel", d, &err) || !cr2::parseSkeleton(d, dpos, &err)) {
             SDL_Log("battledpos: %s", err.c_str());
@@ -1409,7 +1412,7 @@ struct Viewer {
         std::string err;
         int party[2] = {0, 0};
         for (size_t k = 0; k < battle.party.size() && k < 2; ++k) party[k] = battle.party[k].id;
-        if (!battleRules->start(battle.coupling, party, 0, &err, game.sopiaLevel, game.equip)) {
+        if (!battleRules->start(battle.coupling, party, 0, &err, game.sopiaLevel, game.equip, game.level)) {
             SDL_Log("fight: %s", err.c_str());
             battleRules.reset();
             return;
@@ -1469,7 +1472,10 @@ struct Viewer {
         if (battleScriptRunning() || battleClock < showEnd) return;
         if (battleRules->exitTimer() >= 0) return; // (its exit coming: before a win or a loss is shown)
         if (battleStep != BattleStep::Over && (battleRules->exited() || (battleRules->outcome() && battleStep != BattleStep::ActionEnd))) {
-            if (!battleRules->exited() && battleRules->outcome() == 1) battleRules->script("Battle_End"); // (BtlResult)
+            if (!battleRules->exited() && battleRules->outcome() == 1) {
+                battleRules->script("Battle_End"); // (BtlResult)
+                beginResult();
+            }
             for (int id = 1; id < 300; ++id) game.itemCount[id] = static_cast<short>(battleRules->itemCount(id)); // (the items used)
             battleStep = BattleStep::Over;
             showIndex = showActions.size();
@@ -1587,6 +1593,106 @@ struct Viewer {
     int shownHp(int f) const { return hudHeld() ? hudBefore.hp[size_t(f)] : battleRules->fighter(f).hp; }
     int shownGauge() const { return hudHeld() ? hudBefore.gauge : battleRules->gauge(); }
     int shownCharge() const { return hudHeld() ? hudBefore.charge : battleRules->charge(); }
+    // BtlResult, a battle won: a moment (Battle_End, the music fading: 1.2 s), then "Victory!"
+    // (announce 6) with the party standing in its victory motion (bb03) under Cam_Win_*, a tap
+    // (or 5 s), then the result window (ResultMenu) - over 60 frames the EXP goes in and the HP
+    // back (ProcessLvup; a tap: at once) -, then a tap (or 5 s) and the battle is over
+    struct ResultMember {
+        int ch = -1, id = 0, level = 1, exp0 = 0, gain = 0, hp0 = 0, hpMax = 1, mp = 0, mpMax = 0;
+    };
+    struct BattleResultShow {
+        int stage = 0; // 0 none, 1 the moment, 2 victory, 3 the window, 4 over
+        float start = 0, windowStart = 0, transferStart = 0, transferEnd = 0;
+        bool tapped = false;
+        int exp = 0, sp = 0, oz = 0;
+        ResultMember member[2];
+    } result;
+    static constexpr float kTransfer = 2.0f; // (ProcessLvup's 60 frames at 30 a second)
+    // the battle's announcements (BtlAnnounceData, message\announcebattle.dat: u32 the records'
+    // offset, the texts', the count; a record 0x20 bytes - eight languages' text offsets)
+    std::vector<uint8_t> announceData;
+    std::string announce(int id) {
+        if (announceData.empty() && !archive.read("message\\announcebattle.dat", announceData)) return {};
+        const std::vector<uint8_t>& d = announceData;
+        auto u32 = [&](size_t o) { return o + 4 <= d.size() ? uint32_t(d[o] | d[o + 1] << 8 | d[o + 2] << 16 | uint32_t(d[o + 3]) << 24) : 0u; };
+        if (id < 1 || uint32_t(id) > u32(8)) return {};
+        const size_t o = size_t(u32(4)) + u32(size_t(u32(0)) + size_t(id - 1) * 0x20 + 4); // (English: the second)
+        std::string s;
+        for (size_t k = o; k < d.size() && d[k]; ++k) s += char(d[k]);
+        return s;
+    }
+    bool announceHeld = false; // (the banner kept: the victory's)
+    void beginResult() {
+        result = BattleResultShow();
+        result.stage = 1, result.start = battleClock;
+        result.exp = battleRules->expGained(), result.sp = battleRules->spGained(), result.oz = battleRules->ozGained();
+        for (int k = 0; k < 2; ++k) {
+            const cr2::Fighter& f = battleRules->fighter(k);
+            if (!f.present) continue;
+            ResultMember& r = result.member[k];
+            r.ch = f.id - 1, r.id = f.id;
+            r.level = r.ch >= 0 && r.ch < 9 && game.level[r.ch] > 0 ? game.level[r.ch] : f.level;
+            r.exp0 = r.ch >= 0 && r.ch < 9 ? game.exp[r.ch] : cr2::levelExp(r.level);
+            r.gain = f.alive ? result.exp : result.exp * 50 / 100; // (CheckLvUp: the downed half)
+            r.hp0 = f.alive ? f.hp : 0, r.hpMax = f.maxHp, r.mp = f.mp, r.mpMax = f.maxMp;
+        }
+    }
+    // a member's EXP, level, next and HP as the window has them now
+    struct ResultNow {
+        int exp, level, next, percent, hp;
+    };
+    ResultNow resultNow(const ResultMember& r) const {
+        const float p = result.stage >= 4 ? 1.0f : result.transferEnd > result.transferStart
+                                                       ? std::clamp((battleClock - result.transferStart) / (result.transferEnd - result.transferStart), 0.0f, 1.0f)
+                                                       : 0.0f;
+        ResultNow n;
+        n.exp = r.exp0 + int(float(r.gain) * p);
+        n.level = std::max(r.level, 1);
+        while (n.level < 200 && cr2::levelExp(n.level + 1) <= n.exp) ++n.level;
+        const int lo = cr2::levelExp(n.level), hi = cr2::levelExp(n.level + 1);
+        n.next = n.level >= 200 ? 0 : hi - n.exp;
+        n.percent = n.level >= 200 || hi <= lo ? 0 : (n.exp - lo) * 100 / (hi - lo);
+        n.hp = r.hp0 + int(float(r.hpMax - r.hp0) * p);
+        return n;
+    }
+    void updateResult() {
+        if (result.stage == 0 || result.stage >= 4) return;
+        const bool tapped = result.tapped;
+        result.tapped = false;
+        const float t = battleClock - result.start;
+        if (result.stage == 1 && t >= 1.2f) { // (SetVictoryMotion / SetVictoryCamera)
+            result.stage = 2, result.start = battleClock;
+            SDL_Log("result: victory at %.1f s", battleClock);
+            commandShown = announce(6), commandShownStart = battleClock, announceHeld = true;
+            for (int k = 0; k < 2; ++k)
+                if (battleRules->fighter(k).alive && fighterUnit[k] >= 0) playMotion(battleUnits[size_t(fighterUnit[k])], "bb03", battleClock, "bb03");
+            const bool both = battleRules->fighter(0).alive && battleRules->fighter(1).alive;
+            setBattleCamera(fighterUnit[1] < 0 ? "Cam_Win_PCsolo_00"
+                            : battleRules->fighter(0).partner >= 0 && both ? "Cam_Win_PCpair_00"
+                            : battleRules->fighter(0).alive ? "Cam_Win_PCfighter_00" : "Cam_Win_PCpartner_00");
+        } else if (result.stage == 2 && (tapped || t > 5.0f)) { // (ShowResult: the HUD gone, the window)
+            result.stage = 3, result.start = result.windowStart = battleClock;
+            SDL_Log("result: the window at %.1f s", battleClock);
+            announceHeld = false, commandShown.clear();
+            UiFig& seat = uiFig("seatrslt_io");
+            poseUi(seat, "seatrslt_io", 0);
+            result.transferStart = battleClock + (seat.fig.animLoaded ? seat.fig.anim.duration() : 0.5f);
+            result.transferEnd = result.transferStart + kTransfer;
+        } else if (result.stage == 3) {
+            if (tapped && battleClock < result.transferEnd) result.transferStart = result.transferEnd = battleClock; // (all at once)
+            else if (battleClock >= result.transferEnd && (tapped || battleClock - result.transferEnd > 5.0f)) {
+                // ProcessResult: the levels and EXP kept, the Oz added
+                for (const ResultMember& r : result.member) {
+                    if (r.ch < 0 || r.ch >= 9) continue;
+                    const ResultNow n = resultNow(r);
+                    game.level[r.ch] = n.level, game.exp[r.ch] = n.exp;
+                }
+                game.oz = std::min(game.oz + result.oz, 99999999);
+                result.stage = 4;
+                SDL_Log("result: EXP %d, SP %d, Oz %d", result.exp, result.sp, result.oz);
+            }
+        }
+    }
     void beginShowAction(const ShowAction& a) {
         showStart = battleClock, showHitDone = false;
         const cr2::BattleData::Command* c = battleData.command(a.command);
@@ -2315,6 +2421,31 @@ struct Viewer {
         const float rgba[4] = {1, 1, 1, 1};
         dev->drawQuad(*tex, v, proj.data(), rgba);
     }
+    // StatusId2::SetSign: label n of hud_statusAI (StatusIdParamPackTable: its width and height in
+    // pixels of a 1000-a-unit layout, u0, v0, u1, v1), from (x, y) on - 1 "HP", 2 "MP", 3 / 7 the
+    // status window's others
+    void drawStatusSign(int n, float x, float y, const Mat4& proj) {
+        static const float kStatus[23][6] = {
+            {0, 0, 0, 0, 0, 0}, {40, 24, 0, 1, 0.156f, 0.906f}, {40, 24, 0, 0.906f, 0.156f, 0.813f},
+            {72, 24, 0, 0.813f, 0.281f, 0.719f}, {72, 24, 0, 0.719f, 0.281f, 0.625f},
+            {24, 24, 0.438f, 1, 0.531f, 0.906f}, {24, 24, 0.438f, 0.906f, 0.531f, 0.813f},
+            {48, 24, 0.313f, 0.813f, 0.5f, 0.719f}, {0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0},
+            {48, 24, 0.188f, 0.531f, 0.375f, 0.437f}, {112, 24, 0.063f, 0.438f, 0.5f, 0.344f},
+            {96, 24, 0.094f, 0.344f, 0.469f, 0.25f}, {60, 24, 0.648f, 1, 0.883f, 0.906f},
+            {120, 24, 0.531f, 0.906f, 1, 0.813f}, {120, 24, 0.531f, 0.813f, 1, 0.719f},
+            {120, 24, 0.531f, 0.719f, 1, 0.625f}, {120, 24, 0.531f, 0.625f, 1, 0.531f},
+            {120, 24, 0.531f, 0.531f, 1, 0.438f}, {120, 24, 0.531f, 0.438f, 1, 0.344f},
+            {120, 24, 0.531f, 0.344f, 1, 0.25f}, {112, 32, 0.313f, 0.25f, 0.75f, 0.125f},
+            {256, 32, 0, 0.125f, 1, 0}};
+        cr2::Texture* tex = texture("hud_statusAI", false);
+        if (!tex || n <= 0 || n >= 23 || kStatus[n][0] <= 0) return;
+        const float* g = kStatus[n];
+        const float x0 = x, x1 = x + g[0] / 1000.0f, y0 = y - g[1] / 2000.0f, y1 = y + g[1] / 2000.0f;
+        const float v[24] = {x0, y0, g[2], g[5], x1, y0, g[4], g[5], x1, y1, g[4], g[3],
+                             x0, y0, g[2], g[5], x1, y1, g[4], g[3], x0, y1, g[2], g[3]};
+        const float rgba[4] = {1, 1, 1, 1};
+        dev->drawQuad(*tex, v, proj.data(), rgba);
+    }
     // a fighter's element sign (BtlInterfaceCtrl::GetCharaUIState: elements 1..3 bits 1..3, any
     // other bit 0 - SetStatusIcon's bit k sign k + 1)
     static int elementSign(const cr2::Fighter& f) { return f.element >= 1 && f.element <= 3 ? f.element + 1 : 1; }
@@ -2606,6 +2737,91 @@ struct Viewer {
             if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
         }
     }
+    // The result window (ResultMenu: ResultTitle - `menu` with menuRslt_io -, ResultSeat -
+    // seatRslt_io: once in, the EXP at call_dotNum_id01, 6 digits, and the SP at id11, 4, of set
+    // 90 -, the two characters' CharaStatusWindowMenu - campWin with campWin2_io: each one's face
+    // (campFace, cmpFaceC00<n> / A00<n>) at call_cmpFace_id000 / 500, name (pcNameEN_id at the
+    // character's frame / 20 s) at call_pcNameEN_id021 / 521, labels at call_status_frNNN (the sign
+    // NNN, less 500), level (3 digits of set 130) at call_dotNum_id031, HP (5 of 110: the most,
+    // glyph 164's "/", the HP - right to left) at id041 / 100 / 051, MP (4 of 110) at 061 / 200 /
+    // 071, the EXP to the
+    // next level (6 of 110) at 081 - the second's 531 ... 581, 0.01 to the right but its level -,
+    // their HP / MP / next bars (cmpHpBar_per ... at its percent / 20 s) -, and the system window
+    // (sysWin_io) with "Victory!" (announce 16) at typeM_L01
+    void drawResult(const Mat4& view, const Mat4& proj, int w, int h) {
+        const float t = battleClock - result.windowStart;
+        auto part = [&](const std::string& fig, const std::string& anim, const char* hide = nullptr) -> UiFig& {
+            UiFig& u = uiFig(fig);
+            u.fig.place = cr2::Mat34();
+            poseUi(u, anim, t);
+            if (hide) // (a part the window does not use: its joint's meshes)
+                for (ViewMesh& vm : u.fig.meshes) {
+                    const uint32_t j = vm.source.palette.empty() ? ~0u : vm.source.palette[0];
+                    vm.hidden = j < u.joints.size() && u.joints[j] == hide;
+                }
+            drawFigure(u.fig, view.data());
+            return u;
+        };
+        auto at = [&](UiFig& in, const std::string& joint, const std::string& fig, float pose, bool draw = true) -> UiFig* {
+            float x, y;
+            if (!uiJoint(in, joint, x, y)) return nullptr;
+            UiFig& c = uiFig(fig);
+            c.fig.place = cr2::Mat34();
+            c.fig.place.m[3] = x, c.fig.place.m[7] = y;
+            poseUi(c, fig, pose);
+            if (draw) drawFigure(c.fig, view.data());
+            return &c;
+        };
+        part("menu", "menurslt_io");
+        UiFig& seat = part("seatrslt_io", "seatrslt_io");
+        float x, y;
+        if (battleClock >= result.transferStart) {
+            if (uiJoint(seat, "call_dotNum_id01", x, y)) drawDigits(result.exp, 90, 6, x, y, proj);
+            if (uiJoint(seat, "call_dotNum_id11", x, y)) drawDigits(result.sp, 90, 4, x, y, proj);
+        }
+        UiFig& win = part("campwin", "campwin2_io", "GEO_campWin3"); // (the third's: a one-character window's)
+        for (int k = 0; k < 2; ++k) {
+            const ResultMember& r = result.member[k];
+            if (r.ch < 0) continue;
+            const ResultNow n = resultNow(r);
+            const std::string b = k == 0 ? "0" : "5";
+            if (UiFig* face = at(win, "call_cmpFace_id" + b + "00", "campface", 0, false)) {
+                const std::string id = std::to_string(r.id);
+                for (ViewMesh& vm : face->fig.meshes) vm.texture = texture("cmpFaceC00" + id), vm.extraMap = texture("cmpFaceA00" + id);
+                drawFigure(face->fig, view.data());
+            }
+            at(win, "call_pcNameEN_id" + b + "21", "pcnameen_id", float(r.id) / 20.0f);
+            for (int s : {1, 2, 3, 7})
+                if (uiJoint(win, "call_status_fr" + b + "0" + std::to_string(s), x, y)) drawStatusSign(s, x, y, proj);
+            const float dx = k == 0 ? 0.0f : 0.01f;
+            auto num = [&](const char* id, int value, int set, int digits, float off) {
+                float nx, ny;
+                if (uiJoint(win, std::string("call_dotNum_id") + id, nx, ny)) drawDigits(value, set, digits, nx + off, ny, proj);
+            };
+            const char* const ids[2][8] = {{"031", "041", "100", "051", "061", "200", "071", "081"},
+                                           {"531", "541", "500", "551", "561", "600", "571", "581"}};
+            num(ids[k][0], n.level, 130, 3, 0);
+            num(ids[k][1], r.hpMax, 110, 5, dx); // (SetParameterNumberID: the first the most, on the right)
+            num(ids[k][2], 0, 164, 1, dx);
+            num(ids[k][3], n.hp, 110, 5, dx);
+            num(ids[k][4], r.mpMax, 110, 4, dx);
+            num(ids[k][5], 0, 164, 1, dx);
+            num(ids[k][6], r.mp, 110, 4, dx);
+            num(ids[k][7], n.next, 110, 6, dx);
+            // the bars (their joints in order: the first's, the second's)
+            const float hpT = n.hp > 0 ? std::max(float(n.hp) * 5.0f / float(std::max(r.hpMax, 1)), 0.07f) : 0.0f;
+            const float mpT = r.mpMax > 0 ? float(r.mp) * 5.0f / float(r.mpMax) : 0.0f;
+            const struct { const char* prefix; const char* fig; float pose; } bars[3] = {
+                {"call_cmpHpBar_per", "cmphpbar_per", hpT}, {"call_cmpMpBar_per", "cmpmpbar_per", mpT}, {"call_cmpNxBar_per", "cmpnxbar_per", float(n.percent) / 20.0f}};
+            for (const auto& bar : bars) {
+                int seen = 0;
+                for (const std::string& j : win.joints)
+                    if (j.rfind(bar.prefix, 0) == 0 && seen++ == k) at(win, j, bar.fig, bar.pose);
+            }
+        }
+        UiFig& sys = part("syswin_io", "syswin_io");
+        if (uiJoint(sys, "typeM_L01", x, y)) drawUiText(announce(16), 24, x, y, w, h, true);
+    }
     void drawBattleHud(int w, int h) {
         if (!battleMode || !battleRules) return;
         if (battleScript && !battleScript->statusShown()) return; // (its talk on)
@@ -2615,6 +2831,10 @@ struct Viewer {
         const Mat4 view = cr2::mat4Multiply(proj, camera);
         cr2::SceneLighting l;
         dev->setLighting(l);
+        if (result.stage >= 3) { // (BtlInterfaceCtrl::HideBattleStatus: the window alone)
+            drawResult(view, proj, w, h);
+            return;
+        }
         for (int k = 0; k < 2; ++k) {
             const cr2::Fighter& f = battleRules->fighter(k);
             if (!f.present) continue;
@@ -2645,21 +2865,12 @@ struct Viewer {
                 }
                 drawFigure(c->fig, view.data());
             }
-            // the labels (StatusId2: hud_statusAI by StatusIdParamPackTable, the id the joint's
-            // number - call_status_fr01 "HP", fr02 "MP")
-            static const float kStatus[3][6] = {{0, 0, 0, 0, 0, 0}, {40, 24, 0.0f, 1.0f, 0.156f, 0.906f}, {40, 24, 0.0f, 0.906f, 0.156f, 0.813f}};
+            // the labels (call_status_fr01 "HP", fr02 "MP")
             for (int id = 1; id <= 2; ++id) {
                 float x, y;
                 char jn[24];
                 std::snprintf(jn, sizeof jn, "call_status_fr%02d", id);
-                cr2::Texture* tex = texture("hud_statusAI", false);
-                if (!tex || !uiJoint(win, jn, x, y)) continue;
-                const float* g = kStatus[id];
-                const float x0 = x, x1 = x + g[0] / 1000.0f, y0 = y - g[1] / 2000.0f, y1 = y + g[1] / 2000.0f;
-                const float v[24] = {x0, y0, g[2], g[5], x1, y0, g[4], g[5], x1, y1, g[4], g[3],
-                                     x0, y0, g[2], g[5], x1, y1, g[4], g[3], x0, y1, g[2], g[3]};
-                const float rgba[4] = {1, 1, 1, 1};
-                dev->drawQuad(*tex, v, proj.data(), rgba);
+                if (uiJoint(win, jn, x, y)) drawStatusSign(id, x, y, proj);
             }
             // the signs (BattleStatusMenu::SetPlayerStatusIcon: pcNNinfo's call_enchant_id00 the
             // first - the element -, id01 / id07 six states each, id13, id14)
@@ -2704,7 +2915,7 @@ struct Viewer {
         if (const char* m = SDL_getenv("CR2_MENU")) drawCommandMenu(std::string("btlbtn") + m + "_io", 10.0f, view, {}); // (debugging)
         if (choosing) drawChoosing(view, w, h);
         // the command's name
-        if (!commandShown.empty() && battleClock - commandShownStart < 3.0f) {
+        if (!commandShown.empty() && (battleClock - commandShownStart < 3.0f || announceHeld)) {
             UiFig& m = uiFig("btlmsg");
             m.fig.place = cr2::Mat34();
             poseUi(m, "btlmsg_in", battleClock - commandShownStart);
@@ -3158,7 +3369,7 @@ int main(int argc, char** argv) {
                         const float k = std::min(float(pw) / sw, float(ph) / sh);
                         const float ox = (float(pw) - sw * k) * 0.5f, oy = (float(ph) - sh * k) * 0.5f;
                         v.battleClick((px - ox) / (sw * k), (py - oy) / (sh * k));
-                    } else if (v.eventMode || v.fieldMode) v.tap();
+                    } else if (v.eventMode || v.fieldMode || v.battleMode) v.tap();
                 }
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) dragging = false;
                 else if (e.type == SDL_EVENT_MOUSE_MOTION && dragging && !v.fieldMode) {

@@ -36,6 +36,8 @@ public:
                             // the images m206a01...)
         int hp = 0;         // +0x1c (GetMonsterHP: + 25 a level)
         int param[5] = {0, 0, 0, 0, 0}; // +0x20 (GetMonsterParam: + 7, 6, 4, 6, 6 a level)
+        int exp = 0, sp = 0, oz = 0; // +0x2c, +0x30, +0x34 its rewards (GetMonsterEXP: + the level
+                                     // squared; GetMonsterSP; GetMonsterOZ: + 10 a level)
         int level = 0;      // +0x3b its own (0: the party's, BtlWork::SetupEnemy)
         int resist[7] = {0, 0, 0, 0, 0, 0, 0}; // +0x3c: elements 1..5, physical, magic (1 weak, 2 resists)
         int stateResist[5] = {0, 0, 0, 0, 0};  // +0x43
@@ -150,6 +152,13 @@ struct BattleSetup {
     std::string camera;      // "Cam_Getset_SSS_00"
     std::string startCamera; // "Cam_Start_SSS_00"
 };
+
+// The EXP tables (BtlData's lvup_exp, chara_sopia_lvup_exp, mons_sopia_lvup_exp: tools/
+// gen_level_table.py -> leveltable.inc): the EXP a character has at a level (1..200, the most
+// Cr3UtilGetMaxCharaLevel allows), a sopia's at its levels 1..5
+const int* levelExpTable(); // (200 entries, level 1 first)
+int levelExp(int level);    // (level 1..200; past 200 the last's)
+int sopiaExp(bool monsters, int level);
 
 // `party`: the characters fighting (cr3_common_data 1, 2; 0 none)
 bool setupBattle(const BattleData& data, int coupling, const int party[2], BattleSetup& out, std::string* error = nullptr);

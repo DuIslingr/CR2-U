@@ -117,9 +117,12 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       party (the sopia's elements and auto skills, the scripts' equipment) - as the reference
       video shows them (`cr2view --battle 222 --fight manual`, `--play`; `--input "solo attack 2
       defend"` gives the choices)
+- [x] A battle won: "Victory!", the party's victory motion and camera, the result window (the
+      EXP and SP gained, the levels, HP, MP and NEXT, the EXP going in, the levels kept) - as the
+      reference video's first battle
 - [ ] Battles on screen: Options, the advents' list, the awakenings' own scenes, the
       states (the sopia's buffs and ailments, their signs), the actions' effects, the battles'
-      tutorials
+      tutorials; the result's SP to the sopia, drops and bonuses
 - [ ] Treasure boxes, the other windows (announcements, tutorials, items), the HUD, the sounds
       between areas
 - [ ] Engine: events, battles, menus
@@ -157,6 +160,7 @@ and the APK) or `ipad/` (the `.app` or the unpacked `.ipa`).
 | `tools/skel.py` | Edge skeletons: base pose, hierarchy, world matrices; `check` against the inverse binds |
 | `tools/gen_camera_table.py` | the battle cameras' table (BtlCameraTable and their names) from the decompilation and the library, as `engine/src/battle/cameratable.inc` |
 | `tools/gen_dotnum_table.py` | the interface's digits (DotNumParamPackTable: each glyph's size and place in hud_dotnum) from the library, as `engine/src/gfx/dotnumtable.inc` |
+| `tools/gen_level_table.py` | the EXP tables (BtlData's lvup_exp and the sopia's) from the library, as `engine/src/battle/leveltable.inc` |
 | `tools/gen_awake_table.py` | the characters' awakenings (their commands, the flags they need, their charge costs) from the decompilation and the library, as `engine/src/battle/awaketable.inc` |
 | `tools/gen_motion_table.py` | the battle motions' timing table (BtlMotionTable, built in the game's code) from the decompilation, as `engine/src/battle/motiontable.inc` |
 | `tools/sq_bindings.py` | the scripts' native API, from the Android library's decompilation |

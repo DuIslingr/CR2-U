@@ -38,14 +38,19 @@ struct GameState {
     // the characters' equipment (cr3_player_data +0x3c, 0x4c bytes a character from 0): weapon,
     // armour, accessory, then the five sopia - a new game's the battle data's (initEquip);
     // Cr3System.SetEquip / GetEquip
+    // and their levels and EXP (cr3_player_data +0, +4): a new game's the records' levels, with
+    // the EXP of that level (the battle data's kLevelExp, `levelExp`)
     short equip[9][8] = {};
+    int level[9] = {}, exp[9] = {};
     bool equipReady = false;
-    template <class Data> void initEquip(const Data& data) {
+    template <class Data> void initEquip(const Data& data, const int* levelExp) {
         if (equipReady) return;
         equipReady = true;
         for (int c = 0; c < 9; ++c)
-            if (const auto* ch = data.character(c + 1))
+            if (const auto* ch = data.character(c + 1)) {
                 for (int e = 0; e < 8; ++e) equip[c][e] = static_cast<short>(ch->equip[e]);
+                level[c] = ch->level, exp[c] = ch->level >= 1 && ch->level <= 200 ? levelExp[ch->level - 1] : 0;
+            }
     }
     signed char sopiaLevel[32] = {};
     int sopiaExp[32] = {};

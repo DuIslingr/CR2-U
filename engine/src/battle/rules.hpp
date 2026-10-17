@@ -64,9 +64,10 @@ public:
     // a new game's party in `coupling` (the characters at their first levels and equipment);
     // `dungeonLevel` the monsters' band (cr3_common_data[0])
     // `sopiaLevel`: the sopia's levels (cr3_common_data +0x26c by number; null: their starting ones);
-    // `equip`: the characters' equipment by character from 0 (GameState::equip; null: a new game's)
+    // `equip`, `level`: the characters' equipment and levels by character from 0 (GameState's; null:
+    // a new game's)
     bool start(int coupling, const int party[2], int dungeonLevel = 0, std::string* error = nullptr,
-               const signed char* sopiaLevel = nullptr, const short (*equip)[8] = nullptr);
+               const signed char* sopiaLevel = nullptr, const short (*equip)[8] = nullptr, const int* level = nullptr);
 
     const Fighter& fighter(int i) const { return fighters_[size_t(i)]; }
     const BattleData& data() const { return data_; }
@@ -118,6 +119,11 @@ public:
     int paramI(int id) const;
     void setParamI(int id, int value);
     int charge() const { return charge_; }       // +0x28: the charge gauge, 0..300
+    // what the monsters downed give (BtlActionCtrl::CheckDead: BtlWork +0xabc EXP, +0xac0 SP,
+    // +0xac4 Oz - each its GetMonsterEXP / SP / OZ, at most 9999999)
+    int expGained() const { return exp_; }
+    int spGained() const { return sp_; }
+    int ozGained() const { return oz_; }
     // the items the battle has (BtlWork +0x52: a count by number, copied from the save's), one used
     // up as it acts (an item +0x2d's)
     int itemCount(int item) const { return item > 0 && item < 300 ? items_[item] : 0; }
@@ -194,6 +200,7 @@ private:
     std::vector<int> downed_; // (this action's: Dead for each)
     // the script's
     int charge_ = 0, ints_[5] = {0, 0, 0, 0, 0}, commandActor_ = -1;
+    int exp_ = 0, sp_ = 0, oz_ = 0;
     short items_[300] = {};
     bool switches_[6] = {false, true, true, true, true, true}; // (BtlWork::InitializeVariables: 42 off, 43..47 on)
     struct Scripted {

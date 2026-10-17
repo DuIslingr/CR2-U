@@ -1,5 +1,6 @@
 #include "battle/battledata.hpp"
 
+#include <algorithm>
 #include <cstring>
 
 namespace cr2 {
@@ -86,6 +87,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         m.name[0] = text(o), m.name[1] = text(o + 4);
         m.figure = cstr(d, o + 0x10, 12);
         m.hp = int(u32(d, o + 0x1c));
+        m.exp = int(u32(d, o + 0x2c)), m.sp = int(u32(d, o + 0x30)), m.oz = int(u32(d, o + 0x34));
         m.size = int(int8_t(d[o + 0x53]));
         for (int k = 0; k < 5; ++k) m.param[k] = s16(d, o + 0x20 + size_t(k) * 2);
         m.level = d[o + 0x3b];
@@ -197,6 +199,14 @@ const BattleData::Sopia* BattleData::sopia(int id) const {
 const BattleData::AutoSkill* BattleData::autoSkill(int id) const {
     return id >= 1 && id <= int(autoSkills_.size()) ? &autoSkills_[size_t(id - 1)] : nullptr;
 }
+
+namespace {
+#include "battle/leveltable.inc"
+} // namespace
+
+const int* levelExpTable() { return kLevelExp; }
+int levelExp(int level) { return kLevelExp[std::clamp(level, 1, 200) - 1]; }
+int sopiaExp(bool monsters, int level) { return (monsters ? kMonsterSopiaExp : kCharaSopiaExp)[std::clamp(level, 1, 5) - 1]; }
 
 bool setupBattle(const BattleData& data, int id, const int party[2], BattleSetup& out, std::string* error) {
     out = BattleSetup();

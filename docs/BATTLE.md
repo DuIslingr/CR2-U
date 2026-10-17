@@ -277,6 +277,26 @@ added up, +0x20, over their count) less the monsters' levels added up (+0x26, Bt
 through CheckResult's -50 / -1 / 49 to 40, 50, 60 or 70 in 100 (BtlRand). Away: the battle over
 after 2 s (cr3_battle_post[8] 1); else, after 1 s, the turn the monsters' alone.
 
+## The result (BtlResult)
+
+A monster downed adds its rewards (BtlActionCtrl::CheckDead: BtlWork +0xabc EXP, +0xac0 SP,
++0xac4 Oz, each at most 9999999): EXP its level squared + its +0x2c, SP its +0x30, Oz its level x
+10 + its +0x34 (GetMonsterEXP / SP / OZ) - the prologue's three mantises at level 1: 6 EXP, 9 SP,
+as the reference video's result shows. A win (BtlResult::Update): Battle_End, the music fading
+(1.1 s), then "Victory!" (BtlAnnounce 6: `message\announcebattle.dat`, u32 the records' offset,
+the texts', the count; 0x20 bytes a record - eight languages' text offsets) on the battle's
+banner, the party standing in its victory motion (bb03) under `Cam_Win_PCsolo_00` (one alone),
+`_PCpair_00` (a pair, both standing), `_PCfighter_00` or `_PCpartner_00`; a tap or 5 s; then the
+battle's windows go (HideBattleStatus) for the result window (InterfaceMain::
+SetResultWindowParameter: ResultMenu, CharaStatusWindowMenu, SystemWindowMenu - see
+`drawResult` for their parts). Each member gets the EXP (one down: half - CheckLvUp), and over 60
+frames (ProcessLvup; a tap: at once) its EXP goes in - the level rising as it passes the next's
+(lvup_exp: tools/gen_level_table.py -> engine/src/battle/leveltable.inc; Darwin 0 at 1, 15 at 2;
+Orlando 495 at 5, 885 at 6) - and its HP back to the most (Cr3RestorePlayerHP); NEXT the EXP to
+the next level, its bar the part of this level's gone. ProcessResult keeps the levels and EXP and
+adds the Oz; the SP to the sopia (CheckSpUp), the dropped items and sopia, the bonuses (CheckBonus:
+states 0x26..0x28 and the auto skills doubling or adding a fifth) not yet.
+
 ## The battle's script (BtlEvent)
 
 Every battle runs `script\battle.nut` (BtlEvent::Initialize; the same VM and helper library as

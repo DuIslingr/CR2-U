@@ -24,7 +24,7 @@ BattleRules::BattleRules(const BattleData& data, uint32_t seed) : data_(data) {
     if (seed) rand_.seed48(seed);
 }
 
-bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std::string* error, const signed char* sopiaLevel, const short (*equip)[8]) {
+bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std::string* error, const signed char* sopiaLevel, const short (*equip)[8], const int* level) {
     BattleSetup setup;
     if (!setupBattle(data_, coupling, party, setup, error)) return false;
     for (Fighter& f : fighters_) f = Fighter();
@@ -40,7 +40,7 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
         for (int e = 0; e < 8; ++e) eq[e] = equip && c->id >= 1 && c->id <= 9 ? equip[c->id - 1][e] : c->equip[e];
         Fighter& f = fighters_[size_t(k)];
         f.present = f.alive = true;
-        f.side = 0, f.id = c->id, f.name = c->name[1], f.level = c->level;
+        f.side = 0, f.id = c->id, f.name = c->name[1], f.level = level && c->id >= 1 && c->id <= 9 && level[c->id - 1] > 0 ? level[c->id - 1] : c->level;
         f.maxHp = std::clamp(c->hp + c->hpGrowth * f.level * 50 / 100, 1, 99999);
         f.maxMp = std::clamp(c->mp + c->mpGrowth * f.level * 5 / 100, 0, 9999);
         for (int n = 0; n < 5; ++n) f.param[n] = std::clamp(c->param[n] + c->paramGrowth[n] * f.level * 5 / 100, 0, 9999);
@@ -86,6 +86,7 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
     }
     // BtlWork::CheckChargeSkill: the charge at 100 when the first standing has the skill (5, 4)
     charge_ = 0;
+    exp_ = sp_ = oz_ = 0;
     for (int k = 0; k < 2; ++k)
         if (fighters_[size_t(k)].alive) {
             if (fighters_[size_t(k)].has(5, 4)) charge_ = 100;
@@ -423,7 +424,14 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
             e.critical = critical(o.actor, t, *c);
             e.damage = damage(o.actor, t, *c, e.critical, &e.weak);
             tf.hp = std::max(tf.hp - e.damage, 0);
-            if (tf.hp == 0) tf.alive = false, e.defeated = true;
+            if (tf.hp == 0) {
+                tf.alive = false, e.defeated = true;
+                if (const BattleData::Monster* m = tf.side == 1 ? data_.monster(tf.id) : nullptr) {
+                    exp_ = std::min(exp_ + tf.level * tf.level + m->exp, 9999999);
+                    sp_ = std::min(sp_ + m->sp, 9999999);
+                    oz_ = std::min(oz_ + tf.level * 10 + m->oz, 9999999);
+                }
+            }
         }
         moveGauge(e, *c);
         chargeFor(e, *c, t == targets.front());

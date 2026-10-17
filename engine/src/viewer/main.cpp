@@ -318,12 +318,12 @@ struct Viewer {
             return;
         }
         if (eventMode) {
-            if (event) event->advance();
+            if (event) event->touch();
             return;
         }
         if (!fieldMode || !script) return;
         if (script->running()) {
-            script->events().advance();
+            script->events().touch();
             return;
         }
         if (const int s = sprintAt(); s >= 0) return startSprint(s); // (FldMain: a sprint's before the balloons)

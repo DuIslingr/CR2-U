@@ -150,6 +150,15 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     auto textData = [this](NativeCall& c) { loadText(c.string(0), text_); };
     auto nameData = [this](NativeCall& c) { loadText(c.string(0), names_); };
     vm.setNative("EvtWindow", "LoadSharedTextData", textData);
+    vm.setNative("EvtWindow", "UnloadSharedData", [this](NativeCall&) { text_ = TextData(); });
+    // Cr3Touch.GetTouchState (Cr3UtilGetTouchState: the first finger's event bits): 1 once after a
+    // tap - and, pages turning by themselves, once a call has gone on autoPage's seconds - else 0
+    vm.setNative("Cr3Touch", "GetTouchState", [this](NativeCall& c) {
+        if (!touched_ && autoPage > 0 && (touchWait_ += kTick) >= autoPage) touched_ = true;
+        c.result(touched_ ? 1 : 0);
+        if (touched_) touched_ = false, touchWait_ = 0;
+    });
+    vm.setNative("VistaEvent", "GetMapAnimPause", [this](NativeCall& c) { c.result(mapAnimPaused); });
     // (LoadMessageData(name), or (window, name): the tutorials' AnnounceTutorialTxt for 3 / 4)
     vm.setNative("EvtWindow", "LoadMessageData", [this](NativeCall& c) {
         if (!c.string(0).empty() || c.count() < 2) loadText(c.string(0), text_);

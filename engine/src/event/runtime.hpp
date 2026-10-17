@@ -95,6 +95,8 @@ public:
     // a tap (a swipe): the slash awaited, else the page typed at once, else the message's next
     // page, or its end (CheckMessage then says it's done)
     void advance();
+    // a tap: also the touch Cr3Touch.GetTouchState says once (1: a finger down - WaitTouch's)
+    void touch() { touched_ = true, advance(); }
     // pages turn (and slashes happen) by themselves after this many seconds (0: only advance())
     float autoPage = 3.0f;
     // The yes / no buttons (EvtWindow.ShowYesNoButton: BattleYNChoice - choice_io, circleBtn_fr 11
@@ -180,6 +182,8 @@ private:
     std::set<int> openWindows_;
     std::set<int> skipOff_; // (SetSkipButtonEnable false)
     bool skipButton_ = false;
+    bool touched_ = false;
+    float touchWait_ = 0;
     std::map<int, float> opened_, closing_; // (window -> seconds since)
     std::array<Portrait, kCutIns> cutIns_;
     std::vector<std::pair<int, std::string>> cutInImages_; // (id, image: the first of an id counts)

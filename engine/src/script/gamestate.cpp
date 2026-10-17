@@ -92,6 +92,7 @@ void bindGameState(ScriptVM& vm, GameState& state) {
     // (FldMain::ChangeCharacterQuick: the other of the two, unless it leads already); the tab
     vm.setNative("Cr3ChangeCharacter", "SetEnable", [&state](NativeCall& c) { state.changeEnable = c.boolean(0); });
     vm.setNative("Cr3TabMenu", "SetEnable", [&state](NativeCall& c) { state.tabEnable = c.boolean(0); }); // (FldUtilSetTabMenuEnable)
+    vm.setNative("Cr3TabMenu", "GetEnable", [&state](NativeCall& c) { c.result(state.tabEnable); });
     vm.setNative("Cr3ChangeCharacter", "GetEnable", [&state](NativeCall& c) { c.result(state.changeEnable); });
     vm.setNative("Cr3ChangeCharacter", "GetActive", [&state](NativeCall& c) { c.result(state.active); });
     vm.setNative("Cr3ChangeCharacter", "ExeQuick", [&state](NativeCall& c) {

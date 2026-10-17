@@ -321,7 +321,10 @@ After a field event the game goes on as FldMain::BranchAfterEvent orders it: an 
 place), a battle, a vista, then the world select, the camp (`ReserveCamp`), the shop, the party,
 the pub (`ReservePUB`: not in yet), the chapter select, the library, the title (`ReserveTitle`).
 `OZSet(n)` sets the Oz (0 .. 9,999,999), `OZCheck()` reads it; `SetEncountEnable(on)` keeps the
-scripts' encounters switch.
+scripts' encounters switch. `Cr3Touch.GetTouchState()` is 1 once after a tap (WaitTouch waits for
+exactly that; with pages turning by themselves, once it has waited that long), `Cr3TabMenu.GetEnable`
+the tab's switch, `VistaEvent.GetMapAnimPause` the pause, `EvtWindow.UnloadSharedData` drops the
+shared text.
 
 `SetComeFromBattleToField()` / `SetComeFromVistaToField()` (the next area's entry: `evt100` /
 `evt200`). When a field's script ends, FldMain::BranchAfterEvent takes the first reserved of: an

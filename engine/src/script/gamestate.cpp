@@ -22,6 +22,23 @@ void bindGameState(ScriptVM& vm, GameState& state) {
         const int k = c.integer(0);
         if (k == 0 || k == 1) next.battleParty[k] = c.integer(1, -1);
     });
+    // the party (Cr3UtilSetActivePartyMember / Get..., SetPartyMember, CopyPartyMember)
+    vm.setNative("Cr3System", "SetActivePartyMember", [&state](NativeCall& c) {
+        const int k = c.integer(0);
+        if (k == 0 || k == 1) state.party[k] = c.integer(1, -1);
+    });
+    vm.setNative("Cr3System", "GetActivePartyMember", [&state](NativeCall& c) {
+        const int k = c.integer(0);
+        c.result(k == 0 || k == 1 ? state.party[k] : -1);
+    });
+    vm.setNative("Cr3System", "SetPartyMember", [&state](NativeCall& c) {
+        const int s = c.integer(0), k = c.integer(1);
+        if (s >= 0 && s < 3 && (k == 0 || k == 1)) state.partySets[s][k] = c.integer(2, -1);
+    });
+    vm.setNative("Cr3System", "CopyPartyMember", [&state](NativeCall& c) {
+        const int s = c.integer(0);
+        if (s >= 0 && s < 3) state.party[0] = state.partySets[s][0], state.party[1] = state.partySets[s][1];
+    });
     vm.setNative("Cr3System", "SetPopPoint", [&next](NativeCall& c) { next.popPoint = c.string(0); }); // (FldUtilSetPopPoint)
     vm.setNative("Cr3System", "SetComeFromBattleToField", [&next](NativeCall&) { next.fieldMode = 1; });
     vm.setNative("Cr3System", "SetComeFromVistaToField", [&next](NativeCall&) { next.fieldMode = 2; });

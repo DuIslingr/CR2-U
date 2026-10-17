@@ -131,8 +131,10 @@ field.
 A new game starts on map d1020 (area 19), its set-up `D10_01_01_set`: `NewGameFlgSet`,
 `PartySet`, the field event `D10_01_0104`, then `D10_01_0101` - the prologue's vista
 (`D10_01_0101_evt` in `d1053v`) and its battle. `engine/src/script/gamestate.cpp` holds the
-flags, the work values and the reservations; `cr2view --play` follows them from d1020 (battles,
-not in yet, taken as won).
+flags, the work values and the reservations; `cr2view --play` follows them from d1020, fighting
+the battles it reaches (the party SetBattleParty set, else the party now). The party: the pair
+fighting now (cr3_common_data +3, +4; Cr3System.SetActivePartyMember / GetActivePartyMember) and
+three kept (SetPartyMember, CopyPartyMember) - a new game's Darwin and Marie.
 
 ## Events
 

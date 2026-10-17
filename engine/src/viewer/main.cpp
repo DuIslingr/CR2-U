@@ -878,6 +878,14 @@ struct Viewer {
     void advance(float dt, float sx, float sy, bool run) {
         if (battleMode) {
             battleClock += dt;
+            updateBattleShow();
+            // a fight of the flow over: its last action shown, a moment after
+            if (fightingInFlow && battleRules && battleRules->outcome() && showIndex >= showActions.size() && battleClock > showEnd + 1.5f) {
+                fightingInFlow = false;
+                SDL_Log("play: battle %s", battleRules->outcome() == 1 ? "won" : "lost (taken as won: no game over yet)");
+                ++battlesSkipped;
+                afterBattle();
+            }
         } else if (eventMode) {
             updateEvent(dt);
         } else if (fieldMode) {
@@ -917,11 +925,37 @@ struct Viewer {
             if (!startVista(n.vistaFunction, n.vistaMap)) returnToField(-1);
         }
     }
+    // a battle the flow reached: fought (its party SetBattleParty's, else the party now; the party
+    // attacking as a pair each turn), then on as the game goes after it (BtlMain::Exit) - or,
+    // with --skip-battles, taken as won at once
+    bool skipBattles = false;
     void skipBattle() {
         cr2::GameState::Next& n = game.next;
-        SDL_Log("play: battle %d - battles aren't in yet: taken as won", n.battle);
+        if (!skipBattles) {
+            int party[2];
+            for (int k = 0; k < 2; ++k) {
+                const int c = n.battleParty[k] >= 0 ? n.battleParty[k] : game.party[k];
+                party[k] = c >= 0 ? c + 1 : 0; // (characters from 1 in the battle's data)
+            }
+            SDL_Log("play: battle %d (characters %d, %d)", n.battle, party[0], party[1]);
+            const int id = n.battle;
+            n.battle = -1, n.battleParty[0] = n.battleParty[1] = -1;
+            if (startBattle(id, party)) {
+                startFight(2, 1u + uint32_t(battlesSkipped));
+                fightingInFlow = true;
+                return;
+            }
+        }
+        SDL_Log("play: battle %d - taken as won", n.battle);
         n.battle = -1;
         ++battlesSkipped;
+        afterBattle();
+    }
+    bool fightingInFlow = false;
+    // BtlMain::Exit: a vista reserved goes on to it, else the field (evt100)
+    void afterBattle() {
+        cr2::GameState::Next& n = game.next;
+        battleMode = false;
         if (n.vista) { // (BtlMain::Exit: a vista reserved goes on to it)
             n.vista = false;
             if (startVista(n.vistaFunction, n.vistaMap)) return;
@@ -1324,10 +1358,7 @@ struct Viewer {
     }
 
     void poseBattleShow() {
-        if (!battleRules || battleFight == 0) return;
-        stepBattleShow();
-        if (showIndex >= showActions.size()) return;
-        const ShowAction& a = showActions[showIndex];
+        if (!battleRules || battleFight == 0 || showIndex >= showActions.size()) return;
         const float s = battleClock - showStart;
         // the attackers' way there and back
         for (const Move& m : showMoves) {
@@ -1345,6 +1376,15 @@ struct Viewer {
             for (int r = 0; r < 3; ++r) p.m[r * 4 + 3] = bu.home.m[r * 4 + 3] + (m.to.m[r * 4 + 3] - bu.home.m[r * 4 + 3]) * k;
             bu.fig.place = p;
         }
+    }
+
+    // the fight's time going on: the next action (or turn), the hits as they land
+    void updateBattleShow() {
+        if (!battleRules || battleFight == 0) return;
+        stepBattleShow();
+        if (showIndex >= showActions.size()) return;
+        const ShowAction& a = showActions[showIndex];
+        const float s = battleClock - showStart;
         // the hits
         if (!showHitDone && s >= showHitAt) {
             showHitDone = true;
@@ -2202,6 +2242,7 @@ int main(int argc, char** argv) {
     bool tapAfter = false;
     std::string eventName, vista = "null", fontPath, playFrom, callEntry = "evt000";
     int fightMode = 0;
+    bool skipBattlesOpt = false;
     uint32_t fightSeed = 1;
     int battleId = 0, battleParty[2] = {1, 2}; // (--battle: Darwin and Orlando unless --party)
     float page = 3.0f;
@@ -2231,6 +2272,7 @@ int main(int argc, char** argv) {
         else if (a == "--walk" && next) std::sscanf(next, "%f,%f,%f", &walkX, &walkY, &walkSeconds), ++i;
         else if (a == "--event" && next) eventName = next, ++i;
         else if (a == "--battle" && next) battleId = std::atoi(next), ++i;
+        else if (a == "--skip-battles") skipBattlesOpt = true;
         else if (a == "--fight" && next) fightMode = !std::strcmp(next, "pair") ? 2 : 1, ++i;
         else if (a == "--seed" && next) fightSeed = uint32_t(std::atoi(next)), ++i;
         else if (a == "--party" && next) std::sscanf(next, "%d,%d", &battleParty[0], &battleParty[1]), ++i;
@@ -2329,7 +2371,8 @@ int main(int argc, char** argv) {
     v.upscale = upscale;
     dev->setUpscaler(upscale);
     v.shaders = std::make_unique<cr2::ShaderLibrary>(v.archive);
-    if (!playFrom.empty()) fieldName = playFrom, v.playMode = true; // (a new game: every flag clear)
+    if (!playFrom.empty()) fieldName = playFrom, v.playMode = true;
+    v.skipBattles = skipBattlesOpt; // (a new game: every flag clear)
     if (!fieldName.empty() || !eventName.empty() || battleId > 0) {
         // the font: --font, CR2_FONT, the Vita's beside its archive, else the system's
         std::string dataDir = data.substr(0, data.find_last_of("/\\") == std::string::npos ? 0 : data.find_last_of("/\\") + 1);
@@ -2407,8 +2450,8 @@ int main(int argc, char** argv) {
             dev->endFrame(false);
         }
         // --run: frames as the window would show them, the event and animations going on
-        if (v.battleMode) { // (--time: that far into the battle, played at 60 a second)
-            for (float t = 0; t + 0.5f / 60.0f < startTime; t += 1.0f / 60.0f) v.battleClock += 1.0f / 60.0f, v.pose();
+        if (v.battleMode && !v.playMode) { // (--time: that far into the battle, played at 60 a second)
+            for (float t = 0; t + 0.5f / 60.0f < startTime; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, 0, 0, false), v.pose();
         }
         for (int k = 0; k < int(runSeconds * 60.0f + 0.5f); ++k) {
             v.time += 1.0f / 60.0f;
@@ -2506,7 +2549,7 @@ int main(int argc, char** argv) {
             }
             if (!v.paused) v.time += dt;
             last = now;
-            if (!v.paused && v.battleMode) v.advance(dt, 0, 0, false);
+            if (!v.paused && v.battleMode && !v.fieldMode && !v.eventMode) v.advance(dt, 0, 0, false);
             if (!v.paused && (v.eventMode || v.fieldMode)) { // the arrows / WASD run, with Shift walk
                 const bool* keys = SDL_GetKeyboardState(nullptr);
                 const float sx = float((keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) - (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]));

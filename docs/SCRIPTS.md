@@ -212,6 +212,20 @@ the dungeon (`GetSelectDungeonNum`, saved) and the difficulty, the level less on
 town's `WarpTask` (CallEvent: the warp's tutorial, effect and jump to the dungeon); no asks
 again, Back steps back to the field. (CheckCoupling's party conditions on a dungeon: not yet.)
 
+The shop (Piupiu, `c103_00`: `ReserveShop` - FldMain step 0xb, FldShop; InterfaceMain::
+SetFieldShopParameter): ShopTitleMenu's `menu` (menuShop_io), Piupiu's cut-in (`cutIn` on
+cutInSgl_io wearing cutIn102_L02), the Oz window; ShopFirstMenu (`shopBtn_io`: circle buttons 13
+Talk - FldShop's 3, the town's `shop_talk` -, 14 Buy, 15 Sell, btlBack); ShopSecondMenu
+(`shopCmd_io`, played to half its length: 16 Items, 21 Weapons, 22 Armor, 23 Jewels - to sell,
+Items and Jewels greyed with none to sell); the lists (ShopItem / ShopWepon Buy / SellListMenu):
+to buy, the items of the kind (+0x10: 0, 1, 2, 3) whose rank (+0x2c) is no higher than the shop's
+- the flags 1081 .. 1085 set -, an equipment's those its character can wear (+0x12; Left / Right
+the other of the two), at their price (+0x24), greyed past the Oz or held 99; to sell, those held
+at +0x28 (an equipment's greyed with none spare of those worn); then how many (CampChooseQuantityMenu:
+`shopNum_io`, 1 .. the Oz's worth or 99 less those held - the spare ones to sell; `pliceNum_io`
+the whole price) and the question (announce 0x70 / 0x71: the count held): yes - the items and
+the Oz (SE 200). (The equipment's stat comparison and the buy / sell sign: not yet.)
+
 Questions (EvtWindow.ShowYesNoButton: BattleYNChoice's `choice_io` with the circle buttons 11
 yes and 12 no; SE 0xb4) wait for an answer: `CheckYesNoButton` 0 until then, 1 yes, 2 no, and
 HideYesNoButton takes them away - the scripts' `ShowYesNoButton()` loops on it (the sealed

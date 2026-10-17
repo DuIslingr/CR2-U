@@ -160,6 +160,10 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] The world select: the town's transporter - the dungeons and levels open to you, their
       pictures and names, the question, then the warp there (`--input pick` / `up` / `down` /
       `back` / `yes` / `no`)
+- [x] The shop: Piupiu's buy and sell - the items and equipment for sale by the shop's rank,
+      their prices, how many, the Oz (`--input buy` / `sell` / `talk`, then `items` / `weapons` /
+      `armour` / `accessories`, `up` / `down` / `char`, `pick`, `more` / `less`, `yes` / `no`, `back`;
+      `--oz n` for tests)
 - [x] The field's HUD: the tab, the character change (its button, the leader darkened and the other
       lit in its place; the leader's figure the field's character - `ChangeModel`); the
       announcements' window (annoWin, as the tutorials')

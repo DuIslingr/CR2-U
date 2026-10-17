@@ -116,6 +116,7 @@ struct GameState {
         bool title = false;
         int fieldMode = -1; // -1: evt000
         bool worldSelect = false; // (ReserveWorldSelect: cr3_script_work[4] - FldMain step 10)
+        bool shop = false;        // (ReserveShop - FldMain step 0xb)
     } next;
 };
 

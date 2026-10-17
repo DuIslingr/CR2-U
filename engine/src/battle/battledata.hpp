@@ -109,6 +109,8 @@ public:
         int wearers = 0;      // +0x12: the characters who can equip it (bit c: character c + 1)
         int command = 0;      // +0x2e: the command it is
         int icon = 0;         // +0x34: its icon (mainIcon_id's frame)
+        int price = 0, sellPrice = 0; // +0x24, +0x28: the shop's (ShopItemBuyListMenu / SellListMenu)
+        int shopRank = 0;     // +0x2c (a byte): the shop's rank it is sold from (flags 1081.. set)
     };
     // the party's record (GetPartyDataPointer, the first): a new game's five items and their
     // counts (+0, +0xa), its Oz (+0x14) - Cr3InitWorkFromBattleData

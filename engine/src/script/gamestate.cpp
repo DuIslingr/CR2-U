@@ -82,6 +82,7 @@ void bindGameState(ScriptVM& vm, GameState& state) {
     vm.setNative("Cr3System", "SetPopPoint", [&next](NativeCall& c) { next.popPoint = c.string(0); }); // (FldUtilSetPopPoint)
     vm.setNative("Cr3System", "SetComeFromBattleToField", [&next](NativeCall&) { next.fieldMode = 1; });
     vm.setNative("Cr3System", "ReserveWorldSelect", [&next](NativeCall&) { next.worldSelect = true; }); // (FldUtilReserveWorldSelect)
+    vm.setNative("Cr3System", "ReserveShop", [&next](NativeCall&) { next.shop = true; });
     vm.setNative("Cr3System", "SetComeFromVistaToField", [&next](NativeCall&) { next.fieldMode = 2; });
 }
 

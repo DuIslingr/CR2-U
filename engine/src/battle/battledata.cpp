@@ -175,6 +175,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         for (int k = 0; k < 5; ++k) it.param[k] = s16(d, o + 0x1a + size_t(k) * 2);
         it.skills[0] = s16(d, o + 0x30), it.skills[1] = s16(d, o + 0x32);
         it.battle = d[o + 0x11] == 1, it.usedUp = d[o + 0x2d] == 1, it.wearers = uint16_t(s16(d, o + 0x12)), it.command = s16(d, o + 0x2e), it.icon = int8_t(d[o + 0x34]);
+        it.price = int(u32(d, o + 0x24)), it.sellPrice = int(u32(d, o + 0x28)), it.shopRank = d[o + 0x2c];
         items_.push_back(it);
     }
     voices_.clear();

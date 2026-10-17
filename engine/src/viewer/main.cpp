@@ -1708,6 +1708,12 @@ struct Viewer {
             inputNext = uiClock + 0.4f;
             return;
         }
+        if (!inputScript.empty() && uiClock >= inputNext && shop.stage && uiClock - shop.at > 0.5f) { // (the shop: its buttons by name, the list's, how many, yes / no)
+            shopToken(inputScript.front());
+            inputScript.pop_front();
+            inputNext = uiClock + 0.3f;
+            return;
+        }
         if (!inputScript.empty() && uiClock >= inputNext && world.stage && uiClock - world.at > 0.5f) { // (the world select: up, down, pick, back, yes, no)
             const std::string t = inputScript.front();
             if (t == "up" || t == "down") worldKey(t == "up" ? SDLK_UP : SDLK_DOWN);
@@ -1782,7 +1788,7 @@ struct Viewer {
             }
         } else if (eventMode) {
             updateEvent(dt);
-        } else if (fieldMode && (campOpen || mapOpen || saveStage || world.stage)) { // (FldMain steps 5 .. 7, 10: the camp, the map, saving, the world select - the field held)
+        } else if (fieldMode && (campOpen || mapOpen || saveStage || world.stage || shop.stage)) { // (FldMain steps 5 .. 7, 10: the camp, the map, saving, the world select - the field held)
             updateManual(dt);
             if (saveStage == 2 && uiClock - saveStart > 1.0f) saveStage = 0; // (a second, then closed)
             fieldInput();
@@ -1819,6 +1825,11 @@ struct Viewer {
         if (n.worldSelect) { // (FldMain step 10: the world select, then WarpTask)
             n.worldSelect = false;
             openWorldSelect();
+            return;
+        }
+        if (n.shop) { // (FldMain step 0xb: the shop)
+            n.shop = false;
+            openShop();
             return;
         }
         if (!n.popPoint.empty()) {
@@ -5387,7 +5398,7 @@ struct Viewer {
     float fieldTabAt = -10; // (uiClock: when it last began to open or close)
     bool fieldTabShown() const {
         return fieldMode && !eventMode && !battleMode && script && !script->running() && !campOpen && !mapOpen && !saveStage &&
-               keyLock.stage == 0 && changeStage == 0 && !actionRunning() && world.stage == 0;
+               keyLock.stage == 0 && changeStage == 0 && !actionRunning() && world.stage == 0 && shop.stage == 0;
     }
     float fieldTabPose(UiFig& tab) {
         const float d = tab.fig.animLoaded ? tab.fig.anim.duration() : 0.0f;
@@ -6410,6 +6421,16 @@ struct Viewer {
             return true;
         }
         if (saveStage == 2) return true;
+        if (shop.stage) { // (the shop's buttons, rows, question)
+            const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+            const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+            for (const TapRect& r : tapRects)
+                if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
+                    shopTap(r.id);
+                    break;
+                }
+            return true;
+        }
         if (world.stage) { // (the world select's rows, its question)
             const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
             const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
@@ -6661,10 +6682,257 @@ struct Viewer {
         drawSkillList(rows, rows[size_t(world.focus)].id, t, view, w, h, -1, -1);
     }
 
+    // The shop (Piupiu's: ReserveShop - FldMain step 0xb, FldShop; InterfaceMain::
+    // SetFieldShopParameter): ShopTitleMenu's `menu` (menuShop_io), Piupiu's cut-in (cutIn on
+    // cutInSgl_io, wearing cutIn102_L02, its GEO_face parts hidden), the Oz window; ShopFirstMenu
+    // (shopBtn_io: circle buttons 13 talk - the town's shop_talk -, 14 buy, 15 sell, btlBack);
+    // ShopSecondMenu (shopCmd_io: 16 items, 21 weapons, 22 armour, 23 accessories); the lists
+    // (ShopItem / ShopWepon Buy / SellListMenu: the shop's rank the flags 1081 .. 1085 set - those
+    // items of the kind (+0x10) whose rank (+0x2c) is no higher, an equipment's for the character
+    // shown (its wearers, +0x12), at their price (+0x24) - greyed past the Oz, or held 99 -; to sell,
+    // those held, at +0x28 - an equipment's greyed when none is spare of what is worn); then how many
+    // (CampChooseQuantityMenu: shopNum_io, 1 .. GetItemBuyUpLimit - the Oz's worth, 99 less those held -
+    // / the spare ones; pliceNum_io the whole price) and the System window's question (announce 0x70 /
+    // 0x71: the item, those held): yes - the items and the Oz (SE 200).
+    struct Shop {
+        int stage = 0; // 0 shut, 1 buy / sell / talk, 2 the kinds, 3 the list, 4 how many and the question
+        bool buy = true;
+        int kind = 0;     // (0 items, 1 weapons, 2 armour, 3 accessories)
+        int focus = 0, item = 0, count = 1, who = 0;
+        float at = 0;
+    } shop;
+    void openShop() {
+        shop = Shop();
+        shop.stage = 1, shop.at = uiClock;
+        SDL_Log("shop: open");
+    }
+    int shopRank() const {
+        int r = 0;
+        for (int f = 1081; f <= 1085; ++f) r += game.flag(f);
+        return r;
+    }
+    std::vector<int> shopChars() const { // (the characters an equipment list is for: the two)
+        std::vector<int> c;
+        for (int k = 0; k < 2; ++k)
+            if (game.party[k] >= 0 && game.party[k] < 9) c.push_back(game.party[k]);
+        if (c.empty()) c.push_back(0);
+        return c;
+    }
+    int spareCount(int id) const { // (Cr3UtilGetNotEquippedItemNumber: held, less those worn)
+        int worn = 0;
+        for (int c = 0; c < 9; ++c)
+            for (int s = 0; s < 3; ++s) worn += game.equip[c][s] == id;
+        return std::max(int(game.itemCount[id]) - worn, 0);
+    }
+    std::vector<ListRow> shopRows() {
+        std::vector<ListRow> rows;
+        const int rank = shopRank();
+        const std::vector<int> chars = shopChars();
+        const int ch = chars[size_t(std::clamp(shop.who, 0, int(chars.size()) - 1))];
+        for (int id = 1; id < 300; ++id) {
+            const cr2::BattleData::Item* it = battleData.item(id);
+            if (!it || it->type != shop.kind) continue;
+            if (shop.kind > 0 && !(it->wearers >> ch & 1)) continue;
+            ListRow r;
+            r.id = id, r.name = it->name[1], r.icon = it->icon;
+            if (shop.buy) {
+                if (it->shopRank > rank) continue;
+                r.number = it->price, r.selectable = game.oz >= it->price && game.itemCount[id] < 99;
+            } else {
+                if (game.itemCount[id] <= 0) continue;
+                r.number = it->sellPrice, r.selectable = shop.kind == 0 || spareCount(id) > 0;
+            }
+            rows.push_back(r);
+        }
+        return rows;
+    }
+    int shopLimit() const {
+        const cr2::BattleData::Item* it = battleData.item(shop.item);
+        if (!it) return 0;
+        if (!shop.buy) return shop.kind == 0 ? game.itemCount[shop.item] : spareCount(shop.item);
+        const int room = 99 - game.itemCount[shop.item];
+        return it->price <= 0 ? room : std::min(room, game.oz / it->price);
+    }
+    void shopClose(const char* call = nullptr) {
+        shop.stage = 0;
+        if (call) callGimmick(call); // (FldMain: CallEvent)
+        else pendingBranch = true;   // (back to the field)
+    }
+    void shopTap(int id) {
+        auto stage = [&](int s) { shop.stage = s, shop.at = uiClock, shop.focus = 0; };
+        if (shop.stage == 1) {
+            if (id == 14 || id == 15) audio.playSe(0xb4, false), shop.buy = id == 14, stage(2); // (ShopFirstMenu: 4 buy, 5 sell)
+            else if (id == 13) audio.playSe(0xb4, false), shopClose("shop_talk"); // (3: FldShop's 3 - CallEvent shop_talk)
+            else if (id == 100) audio.playSe(0xb5, false), shopClose();
+        } else if (shop.stage == 2) {
+            static const std::pair<int, int> kKinds[4] = {{16, 0}, {21, 1}, {22, 2}, {23, 3}};
+            for (const auto& [b, k] : kKinds)
+                if (id == b) audio.playSe(0xb4, false), shop.kind = k, shop.who = 0, stage(3);
+            if (id == 100) audio.playSe(0xb5, false), stage(1);
+        } else if (shop.stage == 3) {
+            const std::vector<ListRow> rows = shopRows();
+            if (id >= 1000 && id < 1000 + int(rows.size())) shop.focus = id - 1000;
+            else if (id == 100) audio.playSe(0xb5, false), stage(2);
+            else
+                for (const ListRow& r : rows)
+                    if (r.id == id && r.selectable && shopLimit() >= 0) {
+                        shop.item = id;
+                        if (shopLimit() < 1) return (void)audio.playSe(0xb6, false);
+                        audio.playSe(0xb4, false);
+                        shop.count = 1, shop.stage = 4, shop.at = uiClock;
+                    }
+        } else if (shop.stage == 4) {
+            if (id == 7101 || id == 7102) { // (CampChooseQuantityMenu::SetViewNumber: one less / more, within 1 .. its limit)
+                const int n = shop.count + (id == 7102 ? 1 : -1);
+                if (n < 1 || n > shopLimit()) audio.playSe(0xb6, false);
+                else shop.count = n, audio.playSe(0xb4, false);
+            } else if (id == 7801 || id == 7802) {
+                const cr2::BattleData::Item* it = battleData.item(shop.item);
+                if (id == 7801 && it) { // (ShopCutInPiupiuMenu::Update 10 / 12)
+                    if (shop.buy) game.itemCount[shop.item] = static_cast<short>(std::min(game.itemCount[shop.item] + shop.count, 99)), game.oz -= it->price * shop.count;
+                    else game.itemCount[shop.item] = static_cast<short>(std::max(game.itemCount[shop.item] - shop.count, 0)), game.oz += it->sellPrice * shop.count;
+                    game.oz = std::clamp(game.oz, 0, 9999999);
+                    audio.playSe(200, false);
+                    SDL_Log("shop: %s %d of %s - %d Oz now", shop.buy ? "bought" : "sold", shop.count, it->name[1].c_str(), game.oz);
+                } else audio.playSe(0xb4, false);
+                shop.stage = 3, shop.at = uiClock;
+            }
+        }
+    }
+    void shopKey(SDL_Keycode k) {
+        if (shop.stage == 1 || shop.stage == 2) {
+            static const int kFirst[3] = {14, 15, 13}, kKinds[4] = {16, 21, 22, 23}; // (1 buy, 2 sell, 3 talk)
+            if (k >= SDLK_1 && k <= SDLK_4) {
+                const int i = int(k - SDLK_1);
+                if (shop.stage == 1 && i < 3) shopTap(kFirst[i]);
+                else if (shop.stage == 2) shopTap(kKinds[i]);
+            } else if (k == SDLK_BACKSPACE) shopTap(100);
+            return;
+        }
+        if (shop.stage == 4) {
+            if (k == SDLK_LEFT || k == SDLK_DOWN) shopTap(7101);
+            else if (k == SDLK_RIGHT || k == SDLK_UP) shopTap(7102);
+            else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) shopTap(7801);
+            else if (k == SDLK_BACKSPACE || k == SDLK_N) shopTap(7802);
+            return;
+        }
+        const std::vector<ListRow> rows = shopRows();
+        const int n = std::max(int(rows.size()), 1);
+        if (k == SDLK_UP) shop.focus = (shop.focus + n - 1) % n;
+        else if (k == SDLK_DOWN) shop.focus = (shop.focus + 1) % n;
+        else if ((k == SDLK_LEFT || k == SDLK_RIGHT) && shop.kind > 0) { // (ShopWepon..ListMenu::CharaChange)
+            const int c = int(shopChars().size());
+            shop.who = (shop.who + (k == SDLK_RIGHT ? 1 : c - 1)) % c, shop.focus = 0;
+            audio.playSe(0xb4, false);
+        } else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && shop.focus < int(rows.size())) shopTap(rows[size_t(shop.focus)].id);
+        else if (k == SDLK_BACKSPACE) shopTap(100);
+    }
+    void shopToken(const std::string& t) {
+        static const std::map<std::string, int> kButtons = {{"talk", 13}, {"buy", 14}, {"sell", 15}, {"items", 16}, {"weapons", 21},
+                                                            {"armour", 22}, {"accessories", 23}, {"back", 100}};
+        if (auto b = kButtons.find(t); b != kButtons.end()) return shopTap(b->second);
+        static const std::map<std::string, SDL_Keycode> kKeys = {{"up", SDLK_UP}, {"down", SDLK_DOWN}, {"pick", SDLK_RETURN}, {"more", SDLK_UP},
+                                                                 {"less", SDLK_DOWN}, {"yes", SDLK_Y}, {"no", SDLK_N}, {"char", SDLK_RIGHT}};
+        if (auto k = kKeys.find(t); k != kKeys.end()) shopKey(k->second);
+    }
+    void drawShop(const Mat4& view, const Mat4& proj, int w, int h) {
+        const float t = uiClock - shop.at;
+        auto keepLook = buttonLook;
+        auto keepLevel = buttonLevel;
+        auto keepFighter = buttonFighter;
+        buttonLook = nullptr, buttonLevel = nullptr, buttonFighter = nullptr;
+        UiFig& title = uiFig("menu"); // (ShopTitleMenu)
+        title.fig.place = cr2::Mat34();
+        poseUi(title, "menushop_io", uiClock - shop.at + (shop.stage > 1 ? 10.0f : 0.0f));
+        drawFigure(title.fig, view.data());
+        UiFig& cut = uiFig("cutin"); // (ShopCutInPiupiuMenu: Piupiu)
+        cut.fig.place = cr2::Mat34();
+        poseUi(cut, "cutinsgl_io", 10.0f);
+        cr2::Texture* face = texture("cutIn102_L02");
+        for (ViewMesh& vm : cut.fig.meshes) {
+            const uint32_t j = vm.source.palette.empty() ? ~0u : vm.source.palette[0];
+            const std::string jn = j < cut.joints.size() ? cut.joints[j] : "";
+            vm.hidden = jn == "GEO_faceUp_R" || jn == "GEO_faceLow_R";
+            if (face) vm.texture = face;
+        }
+        if (shop.stage <= 2) drawFigure(cut.fig, view.data());
+        { // (OzViewWindowMenu)
+            float x, y;
+            UiFig& oz = uiFig("ozwin_io");
+            oz.fig.place = cr2::Mat34();
+            poseUi(oz, "ozwin_io", t);
+            drawFigure(oz.fig, view.data());
+            if (uiJoint(oz, "call_status_fr13", x, y)) drawStatusSign(13, x, y, proj);
+            if (uiJoint(oz, "call_dotNum_id07", x, y)) drawDigits(std::clamp(game.oz, 0, 9999999), 110, 7, x, y, proj);
+        }
+        auto back = [&] {
+            UiFig& bk = uiFig("btlback");
+            bk.fig.place = cr2::Mat34();
+            poseUi(bk, "btlback_in", t);
+            drawFigure(bk.fig, view.data());
+            float sx, sy, ex, ey;
+            if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
+        };
+        if (shop.stage == 1) drawCommandMenu("shopbtn_io", t, view, {}, {}, w, h, 0, "shopbtn_io"), back();
+        else if (shop.stage == 2) { // (ShopSecondMenu::Initialize: ChangeAnimeTime - shopCmd_io to half its length, its in; to sell, items / accessories greyed with none to sell - Cr3UtilNumberAvailableForSale)
+            UiFig& cmd = uiFig("shopcmd_io");
+            poseUi(cmd, "shopcmd_io", 0);
+            const float half = cmd.fig.animLoaded ? cmd.fig.anim.duration() * 0.5f : t;
+            auto sellable = [&](int kind) {
+                for (int id = 1; id < 300; ++id)
+                    if (const cr2::BattleData::Item* it = game.itemCount[id] > 0 ? battleData.item(id) : nullptr)
+                        if (it->type == kind && (kind == 0 || spareCount(id) > 0)) return true;
+                return false;
+            };
+            buttonLook = [&, this](int n) { return !shop.buy && ((n == 16 && !sellable(0)) || (n == 23 && !sellable(3))) ? 0 : 1; };
+            drawCommandMenu("shopcmd_io", std::min(t, half), view, {}, {}, w, h, 0, "shopcmd_io");
+            buttonLook = nullptr;
+            back();
+        }
+        else if (shop.stage == 3) {
+            const std::vector<ListRow> rows = shopRows();
+            if (rows.empty()) back();
+            else { // (its own back: scrlBack, 100)
+                shop.focus = std::clamp(shop.focus, 0, int(rows.size()) - 1);
+                drawSkillList(rows, rows[size_t(shop.focus)].id, t, view, w, h, -1, -1);
+            }
+        } else if (shop.stage == 4) {
+            const cr2::BattleData::Item* it = battleData.item(shop.item);
+            UiFig& num = uiFig("shopnum_io");
+            num.fig.place = cr2::Mat34();
+            poseUi(num, "shopnum_io", t);
+            drawFigure(num.fig, view.data());
+            float x, y, sx, sy, ex, ey;
+            if (uiJoint(num, "call_dotNum_id01", x, y)) drawDigits(shop.count, 70, 2, x, y, proj); // (DotNumId2 set 0x46, the zeros shown)
+            for (int k = 1; k <= 2; ++k) {
+                char sa[16], ea[16];
+                std::snprintf(sa, sizeof sa, "tapAreaS%02d", k), std::snprintf(ea, sizeof ea, "tapAreaE%02d", k);
+                if (uiJoint(num, sa, sx, sy) && uiJoint(num, ea, ex, ey)) tapRects.push_back({7100 + k, sx, sy, ex, ey});
+            }
+            UiFig& plate = uiFig("plicenum_io"); // (the price: count x the item's)
+            plate.fig.place = cr2::Mat34();
+            poseUi(plate, "plicenum_io", t);
+            drawFigure(plate.fig, view.data());
+            bool sign = false, digits = false; // (the first of each: Cr3UtilGetCallAnyStringParameter / GetCallDotNumParameter 0)
+            for (const std::string& j : plate.joints) {
+                if (!sign && j.rfind("call_status_fr", 0) == 0 && uiJoint(plate, j, x, y)) drawStatusSign(std::atoi(j.c_str() + 14), x, y, proj), sign = true;
+                if (!digits && j.rfind("call_dotNum_id", 0) == 0 && uiJoint(plate, j, x, y) && it)
+                    drawDigits(shop.count * (shop.buy ? it->price : it->sellPrice), 90, 7, x, y, proj), digits = true;
+            }
+            if (it) { // (Cr3UtilSPrint: the name for %s; DPrint: the count held for %d)
+                std::string q = announce(shop.buy ? 0x70 : 0x71);
+                if (size_t at = q.find("%s"); at != std::string::npos) q.replace(at, 2, it->name[1]);
+                if (size_t at = q.find("%d"); at != std::string::npos) q.replace(at, 2, std::to_string(game.itemCount[shop.item]));
+                drawAsk(q, t, view, w, h, 7801, 7802);
+            }
+        }
+        buttonLook = keepLook, buttonLevel = keepLevel, buttonFighter = keepFighter;
+    }
+
     void drawFieldUi(int w, int h) {
         if (!fieldMode || battleMode || eventMode) return;
         const bool tabShown = fieldTabShown();
-        if (!campOpen && !tabShown && !mapOpen && !saveStage && !world.stage) return;
+        if (!campOpen && !tabShown && !mapOpen && !saveStage && !world.stage && !shop.stage) return;
         const Mat4 proj = uiProjection(w, h);
         Mat4 camera = cr2::mat4Identity();
         camera[14] = -0.881f;
@@ -6676,6 +6944,7 @@ struct Viewer {
         else if (mapOpen) tapRects.clear(), drawDungeonMap(view);
         else if (saveStage) tapRects.clear(), drawSave(view, proj, w, h);
         else if (world.stage) tapRects.clear(), drawWorldSelect(view, w, h);
+        else if (shop.stage) tapRects.clear(), drawShop(view, proj, w, h);
         else {
             tapRects.clear();
             if (game.tabEnable) drawFieldTab(view); // (Cr3TabMenu.SetEnable)
@@ -6882,7 +7151,7 @@ int main(int argc, char** argv) {
     bool continueSave = false;
     std::vector<std::pair<int, int>> itemArg;
     std::vector<std::tuple<int, int, int>> equipArg;
-    int chargeArg = -1, difficultyArg = -1, membersArg[2] = {-2, -2};
+    int chargeArg = -1, difficultyArg = -1, membersArg[2] = {-2, -2}, ozArg = -1;
     std::vector<std::pair<int, int>> stateArg;
     std::vector<std::pair<int, int>> sopiaArg;
     bool skipBattlesOpt = false;
@@ -6932,6 +7201,7 @@ int main(int argc, char** argv) {
         }
         else if (a == "--charge" && next) chargeArg = std::atoi(next), ++i; // (the charge gauge to begin with: tests)
         else if (a == "--difficulty" && next) difficultyArg = std::atoi(next), ++i; // (the world select's level - 1: tests)
+        else if (a == "--oz" && next) ozArg = std::atoi(next), ++i; // (the Oz to begin with: tests)
         else if (a == "--members" && next) std::sscanf(next, "%d,%d", &membersArg[0], &membersArg[1]), ++i; // (the field's two, from 0: tests)
         else if (a == "--item" && next) { // (an item's count to begin with: id:count, tests)
             int id = 0, n = 0;
@@ -7081,6 +7351,7 @@ int main(int argc, char** argv) {
     for (const auto& [c, slot, item] : equipArg)
         if (c >= 1 && c <= 9 && slot >= 0 && slot < 8) v.game.equip[c - 1][slot] = static_cast<short>(item);
     if (difficultyArg >= 0) v.game.difficulty = difficultyArg;
+    if (ozArg >= 0) v.game.oz = ozArg;
     if (membersArg[0] > -2) v.game.party[0] = membersArg[0], v.game.party[1] = membersArg[1];
     if (continueSave) {
         v.playMode = true;
@@ -7242,6 +7513,10 @@ int main(int argc, char** argv) {
                     }
                     if (v.campOpen) { // (the camp: Up / Down and Return, Backspace back)
                         v.campKey(k);
+                        continue;
+                    }
+                    if (v.shop.stage) { // (the shop: 1 .. 4 its buttons, Up / Down, Left / Right, Return, Backspace; Y / N)
+                        v.shopKey(k);
                         continue;
                     }
                     if (v.world.stage) { // (the world select: Up / Down, Return, Backspace; Y / N its question)

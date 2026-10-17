@@ -42,6 +42,14 @@ struct Gimmick {
     // a sphere of radius r at p meets the gimmick's shape (its joint's scale / 100: a ball's
     // radius, a box's half extents - turned by the joint - a capsule's radius and half height)
     bool touches(const float* p, float r) const;
+    // Tapping it (FldMain::CheckBalloon / CheckGimmickStart): a _check gimmick shown, its event on,
+    // within its check length of the leader gets a balloon - NPCs, objects 0.2 (FldNPC / FldObject
+    // +0x14), event boxes and effects 0.15 - and a tap anywhere calls the nearest one's function.
+    // 0: not one to tap (treasure boxes open by themselves: not yet)
+    float checkLength() const;
+    // the balloon's height over it (FldUtilGetBalloonPosOffset: the table by name - c001 0.21,
+    // obj002 0.23, ... - else NPCs 0.2, objects and events 0.25, effects 0.1)
+    float balloonHeight() const;
 };
 
 // The gimmicks of a <map>p figure: its skeleton, the joints' names (the .name file's order)

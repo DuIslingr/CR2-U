@@ -219,6 +219,49 @@ struct Viewer {
         stepClock = 0, substep = 0;
     }
 
+    // The balloons over what the leader can tap (FldMain::CheckBalloon, each update it has control:
+    // Gimmick::checkLength), the nearest the one a tap talks to (CalcNearestBalloonNum)
+    std::vector<size_t> balloons; // (field.gimmicks() indices)
+    int nearestBalloon = -1;
+    void checkBalloons() {
+        balloons.clear(), nearestBalloon = -1;
+        if (!script || script->running()) return;
+        float best = 30000;
+        const std::vector<cr2::Gimmick>& gs = field.gimmicks();
+        for (size_t i = 0; i < gs.size(); ++i) {
+            const cr2::Gimmick& g = gs[i];
+            const float reach = g.checkLength();
+            if (reach <= 0 || !script->visible(g)) continue;
+            const auto st = script->gimmicks().find(g.id);
+            if (st != script->gimmicks().end() && !st->second.event) continue;
+            const float d = std::hypot(g.position[0] - playerCur[0], g.position[1] - playerCur[1], g.position[2] - playerCur[2]); // (as of the update)
+            if (d > reach) continue;
+            balloons.push_back(i);
+            if (d < best) best = d, nearestBalloon = int(i);
+        }
+    }
+
+    // A tap (Return, a click): the vista's page; the field's - its event's page, else the nearest
+    // balloon's function (FldMain::CheckTouchEventExec_Tap, EventExecute), the leader turned to it
+    void tap() {
+        if (eventMode) {
+            if (event) event->advance();
+            return;
+        }
+        if (!fieldMode || !script) return;
+        if (script->running()) {
+            script->events().advance();
+            return;
+        }
+        if (nearestBalloon < 0) return;
+        const cr2::Gimmick& g = field.gimmicks()[size_t(nearestBalloon)];
+        heading = std::atan2(g.position[0] - player[0], g.position[2] - player[2]);
+        SDL_Log("%s: tapped %s - %s", field.info().name.c_str(), g.name.c_str(), g.function.c_str());
+        if (!script->call(g.function)) SDL_Log("%s", script->error().c_str());
+        else if (!script->running() && playMode) pendingBranch = true;
+        checkBalloons();
+    }
+
     void walk(float dt, float sx, float sy, bool run) {
         if (!controller) return;
         cr2::Vec3 right, forward;
@@ -243,6 +286,7 @@ struct Viewer {
             if (exit.empty()) exitsArmed = true;
             else if (exitsArmed && exit.size() >= 5) exitTo = exit;
             touchEvents(p);
+            checkBalloons();
         }
         playMotion(fig, speed == 0 ? "fn01" : run ? "ff02" : "ff01");
         if (!exitTo.empty()) {
@@ -623,6 +667,7 @@ struct Viewer {
                 fr = field.frame(w, h, player);
             }
             if (script) script->setShownScroll(-fr.scroll[0] / (float(w) / 960.0f), -fr.scroll[1] / (float(w) / 960.0f));
+            fieldScene = fr.scene;
             dev->setCamera(fr.zNear, fr.zFar, fr.fovY * 3.14159265f / 180);
             cr2::SceneLighting l = field.lighting();
             std::memcpy(l.camera, fr.camera, sizeof l.camera);
@@ -760,6 +805,7 @@ struct Viewer {
             for (const cr2::Gimmick& g : field.gimmicks())
                 if (g.kind == cr2::Gimmick::Event && !g.check && g.touches(player, 0.02f)) insideEvents.insert(g.name);
         }
+        checkBalloons();
         std::string exits;
         for (const std::string& e : field.exitNames()) exits += " " + e;
         SDL_Log("%zu gimmicks, %zu with figures; layers bg [%s] fg [%s]", field.gimmicks().size(), gimmicks.size(), field.backgroundImage().c_str(), field.foregroundImage().c_str());
@@ -790,11 +836,15 @@ struct Viewer {
                 if (!fieldMode) return;
                 continue;
             }
-            if (!script->running()) continue;
+            // (the windows, the fade, the scene go on updating once the script has ended: GameMain's
+            // update runs them whether or not a script waits)
+            const bool wasRunning = script->running();
             if (!script->tick()) SDL_Log("%s's script: %s", field.info().name.c_str(), script->error().c_str());
+            if (!wasRunning) continue;
             refreshGimmicks();
             if (script->events().scene().loaded()) syncEventFigures(script->events());
             placePlayer(script->takePlacement());
+            checkBalloons();
             if (!script->running()) {
                 SDL_Log("%s: the script ended", field.info().name.c_str());
                 if (playMode) branchAfterField();
@@ -1355,9 +1405,48 @@ struct Viewer {
         }
     }
 
+    // The balloons (FldBalloon: the `balloon` figure, looping), drawn after the foreground through
+    // the interface's camera: each over its gimmick - its height up - where the field's camera
+    // shows that (Cr3UtilSetBalloonPos: projected, then back through the interface's camera)
+    Mat4 fieldScene = cr2::mat4Identity();
+    ViewFigure balloonFigure;
+    bool balloonLoaded = false;
+    void drawBalloons(int w, int h) {
+        if (!fieldMode || eventMode || balloons.empty()) return;
+        if (!balloonLoaded) {
+            balloonLoaded = true;
+            std::string err;
+            const float keep = time;
+            if (!loadFigure("balloon.geom", balloonFigure, &err)) SDL_Log("balloon: %s", err.c_str());
+            time = keep;
+        }
+        if (balloonFigure.meshes.empty()) return;
+        const float k = std::min(float(w) / 0.96f, float(h) / 0.64f);
+        const Mat4 proj = uiProjection(w, h);
+        Mat4 camera = cr2::mat4Identity();
+        camera[14] = -0.881f;
+        const Mat4 view = cr2::mat4Multiply(proj, camera);
+        cr2::SceneLighting l;
+        dev->setLighting(l);
+        for (size_t i : balloons) {
+            const cr2::Gimmick& g = field.gimmicks()[i];
+            const float p[3] = {g.position[0], g.position[1] + g.balloonHeight(), g.position[2]};
+            const float* m = fieldScene.data();
+            const float cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
+            if (cw <= 0) continue;
+            const float nx = (m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / cw;
+            const float ny = (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / cw;
+            balloonFigure.place = cr2::Mat34();
+            balloonFigure.place.m[3] = nx * float(w) * 0.5f / k, balloonFigure.place.m[7] = ny * float(h) * 0.5f / k;
+            pose(balloonFigure, time);
+            drawFigure(balloonFigure, view.data());
+        }
+    }
+
     // the event's UI, over the resolved scene: the fade, then the windows over it (their depths
     // in front of the fade windows')
     void drawEventUi() {
+        drawBalloons(screenW, screenH);
         cr2::EventRuntime* ev = activeEvents();
         if (!ev || !eventDrawingReady) return;
         const cr2::EventFade& fd = ev->fade();
@@ -1413,6 +1502,7 @@ std::string upscaleName(const cr2::UpscaleSettings& u) {
 int main(int argc, char** argv) {
     std::string data, model, capture, animName, renderer = "vulkan", lights = "d0101c", fieldName, at = "defaultPos", binary;
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
+    bool tapAfter = false;
     std::string eventName, vista = "null", fontPath, playFrom, callEntry = "evt000";
     float page = 3.0f;
     int width = 0, height = 0;    // the window (--size; else the resolution's, fitted to the display)
@@ -1443,6 +1533,7 @@ int main(int argc, char** argv) {
         else if (a == "--vista" && next) vista = next, ++i;
         else if (a == "--page" && next) page = float(std::atof(next)), ++i;
         else if (a == "--font" && next) fontPath = next, ++i;
+        else if (a == "--tap") tapAfter = true;
         else if (a == "--call" && next) callEntry = argv[++i]; // (--play: the map's event function, not its evt000)
         else if (a == "--play") playFrom = next && next[0] != '-' ? (++i, next) : "d1020";
         else if (a == "--resolution" && next) std::sscanf(next, "%dx%d", &resW, &resH), ++i;
@@ -1484,7 +1575,7 @@ int main(int argc, char** argv) {
         if (e.name.size() > 5 && e.name.compare(e.name.size() - 5, 5, ".geom") == 0) v.models.push_back(e.name);
     std::sort(v.models.begin(), v.models.end());
     if (v.models.empty()) return std::fprintf(stderr, "no models in %s\n", data.c_str()), 1;
-    if (model.empty() && !fieldName.empty()) model = "c001";
+    if (model.empty() && (!fieldName.empty() || !playFrom.empty())) model = "c001"; // (the leader: Darwin)
     size_t start = 0;
     if (!model.empty()) {
         const std::string want = model.size() > 5 && model.compare(model.size() - 5, 5, ".geom") == 0 ? model : model + ".geom";
@@ -1568,6 +1659,7 @@ int main(int argc, char** argv) {
     if (v.playMode) { // --time: the game played that long first (60 frames a second), then --walk
         for (float t = 0; t + 0.5f / 60.0f < startTime; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, 0, 0, false);
         for (float t = 0; t < walkSeconds; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, walkX, walkY, true);
+        if (tapAfter) v.tap(); // (--tap: then a tap, before --run)
         for (float t = 0; t < runSeconds; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, 0, 0, false); // (--run: on after the walk)
         runSeconds = 0;
         SDL_Log("play: after %.2f s (+ %.2f s walking) %s, %d battles skipped", startTime, walkSeconds,
@@ -1664,7 +1756,7 @@ int main(int argc, char** argv) {
                         SDL_Log("output: %s", describe().c_str());
                         continue;
                     }
-                    if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && v.activeEvents()) v.activeEvents()->advance(); // (a tap)
+                    if (k == SDLK_RETURN || k == SDLK_KP_ENTER) v.tap();
                     if (v.eventMode) continue;
                     ViewFigure& f = v.fig;
                     if (v.fieldMode) {
@@ -1681,7 +1773,7 @@ int main(int argc, char** argv) {
                         v.loadAnim(f, (f.animIndex + (k == SDLK_DOWN ? 1 : f.anims.size() - 1)) % f.anims.size());
                 } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
                     dragging = true;
-                    if ((v.eventMode || v.fieldMode) && v.activeEvents()) v.activeEvents()->advance();
+                    if (v.eventMode || v.fieldMode) v.tap();
                 }
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) dragging = false;
                 else if (e.type == SDL_EVENT_MOUSE_MOTION && dragging && !v.fieldMode) {

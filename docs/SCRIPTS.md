@@ -88,8 +88,19 @@ objects, effects and boxes shown. A gimmick's touch / tap calls the script funct
 fires on touch: the player's body entering its shape (a box, ball or capsule in its joint's frame,
 sized by the joint's scale / 100) calls the function once, until the player has left it again.
 
+A `_check` gimmick is tapped (FldMain::CheckBalloon, CheckGimmickStart): each update the leader
+has control, every one shown with its event on and within its check length of the leader - NPCs
+and objects 0.2 (FldNPC / FldObject +0x14), event boxes and effects 0.15 - gets a balloon (the
+`balloon` figure through the interface's camera, over the gimmick by a height from a table by
+name - c001 0.21, obj002 0.23, ... - else NPCs 0.2, objects and events 0.25, effects 0.1), and
+a tap anywhere calls the nearest one's function (EventExecute: `c003_01`, `obj002_00`, `evt023`)
+with the leader turned to it. From a new game's state, `cr2tool fieldscript`: 137 to tap across
+the maps, every one's function there and playing to its end, 55 of them saying something.
+(Treasure boxes - FldBox, opening by themselves - aren't yet.)
+
 An area's script runs on the game's 20 updates a second like an event's, and uses the same
-natives (the scene, the windows, the fades: Events below); while it runs the player stands. A
+natives (the scene, the windows, the fades: Events below); while it runs the player stands. The
+windows, the fade and the scene go on updating after it ends. A
 field event's scene (`EvtSceneLoad('D01_01_0502')`: EvtScene.Init on the figure named after it -
 no camera or lights of its own) puts its models among the field's figures, seen through the
 field's camera; the scripts hide the leader meanwhile (`Cr3FieldMapCharacter.SetVisible`) and at

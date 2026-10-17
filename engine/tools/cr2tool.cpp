@@ -452,6 +452,7 @@ int fieldScripts(const char* path, const char* binary, const char* only) {
     if (!openArchive(a, path) || !readTable(binary, table)) return 1;
     size_t maps = 0, ran = 0, npcs = 0, npcsShown = 0;
     size_t events = 0, reserved = 0, eventBoxes = 0, eventFunctions = 0, faded = 0;
+    size_t taps = 0, tapFunctions = 0, tapsEnded = 0, tapsTalking = 0;
     std::map<std::string, int> stubs;
     for (const cr2::MapInfo& info : table) {
         if (only && info.name != only) continue;
@@ -484,6 +485,31 @@ int fieldScripts(const char* path, const char* binary, const char* only) {
                 if (script.hasFunction(g.function)) ++eventFunctions;
                 else if (only) std::printf("  event box %s: no function %s\n", g.name.c_str(), g.function.c_str());
             }
+        // what the leader could tap there now (a _check gimmick shown, its event on): its function
+        // called on the area as its entry left it, played to its end
+        for (const cr2::Gimmick& g : f.gimmicks()) {
+            if (!ok || g.checkLength() <= 0 || !script.visible(g)) continue;
+            const auto st = script.gimmicks().find(g.id);
+            if (st != script.gimmicks().end() && !st->second.event) continue;
+            ++taps;
+            if (!script.hasFunction(g.function)) {
+                if (only) std::printf("  %s: no function %s\n", g.name.c_str(), g.function.c_str());
+                continue;
+            }
+            ++tapFunctions;
+            cr2::GameState tapState = state;
+            cr2::FieldScript tapScript(a, tapState);
+            bool tapped = tapScript.enter(info.name, f.gimmicks()) && tapScript.runToEnd();
+            const int before = tapScript.events().messagesSet();
+            tapped = tapped && tapScript.call(g.function) && tapScript.runToEnd();
+            tapsEnded += tapped;
+            const int said = tapScript.events().messagesSet() - before;
+            tapsTalking += said > 0;
+            if (only || !tapped)
+                std::printf("  %s: tapped %s (at %.3f %.3f %.3f) - %s: %d messages, %s\n", info.name.c_str(), g.name.c_str(), g.position[0],
+                            g.position[1], g.position[2], g.function.c_str(), said, tapped ? "ran to its end" : tapScript.error().empty() ? "still running" : tapScript.error().c_str());
+            for (const auto& [k, n] : tapScript.stubCalls()) stubs[k] += n;
+        }
         std::string shown;
         for (const cr2::Gimmick& g : f.gimmicks()) {
             if (g.kind != cr2::Gimmick::Npc) continue;
@@ -495,6 +521,8 @@ int fieldScripts(const char* path, const char* binary, const char* only) {
         for (const auto& [k, n] : script.stubCalls()) stubs[k] += n;
     }
     std::printf("%zu event boxes, %zu with their function in the dungeon's script\n", eventBoxes, eventFunctions);
+    std::printf("%zu things to tap (a new game's), %zu with their function, %zu ran to their end, %zu said something\n", taps, tapFunctions,
+                tapsEnded, tapsTalking);
     std::printf("%zu maps: evt000 ran to its end on %zu (%zu waiting on the way, %zu reserving what comes next, %zu leaving a fade); NPCs %zu, shown %zu (a new game's flags)\n",
                 maps, ran, events, reserved, faded, npcs, npcsShown);
     std::vector<std::pair<int, std::string>> top;

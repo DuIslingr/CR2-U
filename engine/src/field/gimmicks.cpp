@@ -13,6 +13,32 @@ const char* Gimmick::kindName() const {
     return kNames[kind];
 }
 
+float Gimmick::checkLength() const {
+    if (!check) return 0;
+    switch (kind) {
+    case Npc:
+    case Object: return 0.2f;
+    case Event:
+    case Effect: return 0.15f;
+    default: return 0;
+    }
+}
+
+float Gimmick::balloonHeight() const {
+    static const struct {
+        const char* name;
+        float height;
+    } kTable[] = {{"c001", 0.21f},   {"c002", 0.21f},   {"c004", 0.22f},   {"c006", 0.21f},   {"c103", 0.32f},
+                  {"obj002", 0.23f}, {"obj004", 0.2f},  {"obj028", 0.03f}, {"obj029", 0.1f},  {"obj030", 0.1f},
+                  {"obj031", 0.0f},  {"obj041", 0.2f},  {"obj042", 0.15f}, {"obj043", 0.15f}, {"obj044", 0.2f},
+                  {"obj045", 0.2f},  {"obj141", 0.12f}, {"eff104", 0.05f}};
+    // (matched in the name's start: GetGimmickDataStrSimple - 4 characters of an NPC's, 6 of others')
+    const std::string start = name.substr(0, kind == Npc ? 4 : 6);
+    for (const auto& e : kTable)
+        if (start.find(e.name) != std::string::npos) return e.height;
+    return kind == Npc ? 0.2f : kind == Effect ? 0.1f : 0.25f;
+}
+
 bool Gimmick::touches(const float* p, float r) const {
     // into the joint's frame (the rotation undone)
     const float d[3] = {p[0] - position[0], p[1] - position[1], p[2] - position[2]};

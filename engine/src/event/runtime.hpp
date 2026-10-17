@@ -86,6 +86,7 @@ public:
     int revealed() const { return revealed_; }
     bool typed() const;
     std::string speakerName() const; // the speaker's name tag (name data), "" none
+    int messagesSet() const { return messagesSet_; } // (SetMessages since the start: checks)
     // the scene waits for the player's slash (VistaEvent.ExecutionStart)
     bool awaitingSlash() const { return execution_; }
     // a tap (a swipe): the slash awaited, else the page typed at once, else the message's next
@@ -132,7 +133,7 @@ private:
     std::array<Portrait, kCutIns> cutIns_;
     std::vector<std::pair<int, std::string>> cutInImages_; // (id, image: the first of an id counts)
     int messageWindow_ = Vista;
-    int message_ = 0, page_ = 0, revealed_ = 0;
+    int message_ = 0, page_ = 0, revealed_ = 0, messagesSet_ = 0;
     float pageTime_ = 0;
     ParsedMessage parsed_;
     bool execution_ = false;

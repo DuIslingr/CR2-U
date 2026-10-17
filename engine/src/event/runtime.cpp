@@ -146,6 +146,7 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
         parsed_ = parseMessage(text_.message(message_, language));
         page_ = 0, pageTime_ = 0, revealed_ = 0;
         if (parsed_.pages.empty()) message_ = 0;
+        else ++messagesSet_;
     });
     vm.setNative("EvtWindow", "CheckMessage", [this](NativeCall& c) { c.result(message_ == 0); });
     vm.setNative("EvtWindow", "SkipMessage", [this](NativeCall&) { message_ = 0; });

@@ -123,7 +123,7 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       left (rolled as each monster falls) - as the reference video's first battle
 - [ ] Battles on screen: Options, the advents' list, the awakenings' own scenes, the
       states (the sopia's buffs and ailments, their signs), the actions' effects, the battles'
-      tutorials; the result's bonuses
+      tutorials; the states that double a result's EXP / SP / Oz
 - [ ] Treasure boxes, the other windows (announcements, tutorials, items), the HUD, the sounds
       between areas
 - [ ] Engine: events, battles, menus

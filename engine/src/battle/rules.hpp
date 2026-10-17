@@ -64,10 +64,11 @@ public:
     // a new game's party in `coupling` (the characters at their first levels and equipment);
     // `dungeonLevel` the monsters' band (cr3_common_data[0])
     // `sopiaLevel`: the sopia's levels (cr3_common_data +0x26c by number; null: their starting ones);
-    // `equip`, `level`: the characters' equipment and levels by character from 0 (GameState's; null:
-    // a new game's)
+    // `equip`, `level`, `mp`: the characters' equipment, levels and MP (-1 full) by character from 0
+    // (GameState's; null: a new game's)
     bool start(int coupling, const int party[2], int dungeonLevel = 0, std::string* error = nullptr,
-               const signed char* sopiaLevel = nullptr, const short (*equip)[8] = nullptr, const int* level = nullptr);
+               const signed char* sopiaLevel = nullptr, const short (*equip)[8] = nullptr, const int* level = nullptr,
+               const int* mp = nullptr);
 
     const Fighter& fighter(int i) const { return fighters_[size_t(i)]; }
     const BattleData& data() const { return data_; }

@@ -43,6 +43,8 @@ struct GameState {
     // the EXP of that level (the battle data's kLevelExp, `levelExp`)
     short equip[9][8] = {};
     int level[9] = {}, exp[9] = {};
+    // their MP between battles (cr3_player_data +0x10; -1 the most: MPFullRecovery, a new game)
+    int mp[9] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
     bool equipReady = false;
     template <class Data> void initEquip(const Data& data, const int* levelExp) {
         if (equipReady) return;

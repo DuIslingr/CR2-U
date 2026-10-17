@@ -315,8 +315,11 @@ level less the monsters' added up through -5 / 0 / 4 - 20, 30, 40, 50 in 100 -, 
 rare item (+0xba) else its item (+0xb4), each of three by its level (under 20, under 40, more:
 GetDropIndex), at most 99 had; its sopia (+0x18) the same chance if not had nor left already and
 it is at +0x52's level. The reference video's first result: "Obtained 30 OZ!", "Obtained Chocolate
-×2!". The bonuses (CheckBonus: states 0x26..0x28 and auto skills - ExpUp, SpUp, OzUp, ItemUp,
-RareGetter) not yet.
+×2!". The bonuses (CheckBonus): either member's ExpUp / SpUp / OzUp (skill group 3, bits 0 / 1 /
+2) +20 in 100 of it (BtlCalcValue); ItemUp (3, 3) +20 in 100 to the item's chance, RareGetter (3,
+4: the first's, either's in a pair) 45 in 90 its rare one; the party's states that double them
+(0x26..0x28) not yet. After it the HP is back to the most and the MP kept as it is (cr3_player_data
++0x10; the most with RestoreMp, 3, 5, standing - and after the scripts' MPFullRecovery).
 
 ## The battle's script (BtlEvent)
 

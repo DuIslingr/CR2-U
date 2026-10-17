@@ -63,6 +63,9 @@ void bindGameState(ScriptVM& vm, GameState& state) {
         const int s = c.integer(0);
         c.result(s >= 0 && s < 32 ? int(state.sopiaLevel[s]) : 0);
     });
+    vm.setNative("Cr3System", "MPFullRecovery", [&state](NativeCall&) {
+        for (int& m : state.mp) m = -1;
+    });
     vm.setNative("Cr3System", "SetPopPoint", [&next](NativeCall& c) { next.popPoint = c.string(0); }); // (FldUtilSetPopPoint)
     vm.setNative("Cr3System", "SetComeFromBattleToField", [&next](NativeCall&) { next.fieldMode = 1; });
     vm.setNative("Cr3System", "SetComeFromVistaToField", [&next](NativeCall&) { next.fieldMode = 2; });

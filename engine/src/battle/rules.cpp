@@ -24,7 +24,7 @@ BattleRules::BattleRules(const BattleData& data, uint32_t seed) : data_(data) {
     if (seed) rand_.seed48(seed);
 }
 
-bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std::string* error, const signed char* sopiaLevel, const short (*equip)[8], const int* level) {
+bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std::string* error, const signed char* sopiaLevel, const short (*equip)[8], const int* level, const int* mp) {
     BattleSetup setup;
     if (!setupBattle(data_, coupling, party, setup, error)) return false;
     for (Fighter& f : fighters_) f = Fighter();
@@ -56,6 +56,7 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
                 }
         }
         f.hp = f.maxHp, f.mp = f.maxMp;
+        if (mp && c->id >= 1 && c->id <= 9 && mp[c->id - 1] >= 0) f.mp = std::min(mp[c->id - 1], f.maxMp); // (cr3_player_data +0x10)
         f.attack = c->attack, f.pairAttack = c->pairAttack;
         for (int k = 0; k < 5; ++k) f.sopia[k] = eq[3 + k];
         // BtlWork::SetupPlayerSkill: the element of the first sopia with one, and each sopia's auto
@@ -646,9 +647,13 @@ void BattleRules::checkDrops(const Fighter& monster, const BattleData::Monster& 
     int i = 0;
     while (i < 3 && kThresholds[i] < (count ? levels / count : 0) - monsters) ++i; // (CheckResult)
     const int band = monster.level < 20 ? 0 : monster.level < 40 ? 1 : 2; // (BtlUtilData::GetDropIndex)
-    // the item (auto skills ItemUp / RareGetter: not yet)
-    if (rand_.below(100) < kChance[i]) {
-        const int item = rand_.below(90) < 30 ? m.rareDrops[band] : m.drops[band];
+    // the item: ItemUp (skill 3, 3) of either +20 in 100; RareGetter (3, 4) the first's - either's,
+    // a pair - 45 in 90 the rare one
+    const Fighter &a = fighters_[0], &b = fighters_[1];
+    const bool itemUp = (a.present && a.has(3, 3)) || (b.present && b.has(3, 3));
+    const bool rare = (a.present && a.has(3, 4)) || (a.partner >= 0 && b.present && b.has(3, 4));
+    if (rand_.below(100) < kChance[i] + (itemUp ? 20 : 0)) {
+        const int item = rand_.below(90) < (rare ? 45 : 30) ? m.rareDrops[band] : m.drops[band];
         if (item > 0 && item < 300 && itemCount(item) + drops_[item] < 99) ++drops_[item];
     }
     // the sopia

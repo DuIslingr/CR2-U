@@ -1416,7 +1416,7 @@ struct Viewer {
         std::string err;
         int party[2] = {0, 0};
         for (size_t k = 0; k < battle.party.size() && k < 2; ++k) party[k] = battle.party[k].id;
-        if (!battleRules->start(battle.coupling, party, 0, &err, game.sopiaLevel, game.equip, game.level)) {
+        if (!battleRules->start(battle.coupling, party, 0, &err, game.sopiaLevel, game.equip, game.level, game.mp)) {
             SDL_Log("fight: %s", err.c_str());
             battleRules.reset();
             return;
@@ -1482,6 +1482,10 @@ struct Viewer {
                 beginResult();
             }
             for (int id = 1; id < 300; ++id) game.itemCount[id] = static_cast<short>(battleRules->itemCount(id)); // (the items used)
+            for (int k = 0; k < 2; ++k) { // (the MP kept - the most with RestoreMp, skill 3, 5, standing; the HP back: Cr3RestorePlayerHP)
+                const cr2::Fighter& f = battleRules->fighter(k);
+                if (f.present && f.id >= 1 && f.id <= 9) game.mp[f.id - 1] = f.alive && f.has(3, 5) ? -1 : f.mp;
+            }
             battleStep = BattleStep::Over;
             showIndex = showActions.size();
             setBattleCamera(battle.camera);
@@ -1703,6 +1707,16 @@ struct Viewer {
         result = BattleResultShow();
         result.stage = 1, result.start = battleClock;
         result.exp = battleRules->expGained(), result.sp = battleRules->spGained(), result.oz = battleRules->ozGained();
+        // CheckBonus: ExpUp / SpUp / OzUp (skill 3, 0 / 1 / 2) of either +20 in 100 (the states
+        // doubling them: not yet)
+        auto bonus = [&](int bit, int& v) {
+            for (int k = 0; k < 2; ++k)
+                if (battleRules->fighter(k).present && battleRules->fighter(k).has(3, bit)) {
+                    v += v * 20 / 100;
+                    return;
+                }
+        };
+        bonus(0, result.exp), bonus(1, result.sp), bonus(2, result.oz);
         for (int k = 0; k < 2; ++k) {
             const cr2::Fighter& f = battleRules->fighter(k);
             if (!f.present) continue;

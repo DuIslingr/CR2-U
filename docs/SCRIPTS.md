@@ -469,7 +469,9 @@ camera, the moves, the animations and the fades where they are by then. The scri
   `ChangeDirection(model, other, frames)` (EvtModel::ChangeDirection, FldDirectionManager: turned
   about y, the shorter way, to face the other over the frames), `ShadowVisible(model, on)` /
   `IsShadowVisible` (a c / v model's shadow - FldShadow, shown at first), `ChangeModelColor(model,
-  n)` (its variant m<number><a .. d>01 and that one's normal map on every material), `SetDrawSkip`,
+  n)` (its variant m<number><a .. d>01 and that one's normal map on every material), `Move(model,
+  frame, updates)` (from where it is to its locator's place at that frame - no script calls it),
+  `SetDrawSkip`,
   `Terminate`; `Cr3System.SetBGColor(r, g, b)` the frame's clear colour (GameMain::Draw's: the
   white behind an awakening's message, the field's layers hidden by `Cr3FieldMap.SetVisibleBG` /
   `FG` / `MG` / `3D`, which the field's drawing now honours);

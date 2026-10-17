@@ -115,6 +115,16 @@ Mat34 EventScene::placeAt(const EventModel& m, float lead) const {
     return p;
 }
 
+void EventScene::slide(const std::string& name, int frame, int updates) {
+    EventModel* m = model(name);
+    if (!m || !locators_.count(lower(m->name))) return;
+    const Mat34 at = locator(m->name, float(frame) * 0.05f);
+    for (int k = 0; k < 3; ++k) m->slideFrom[k] = m->place.m[k * 4 + 3], m->slideTo[k] = at.m[k * 4 + 3];
+    m->slideUpdates = std::max(updates, 1), m->slideTick = 0;
+    m->pinned = true;
+    for (int k = 0; k < 3; ++k) m->pin[k] = m->slideFrom[k];
+}
+
 void EventScene::turnTo(const std::string& name, const std::string& other, int frames) {
     EventModel* m = model(name);
     const EventModel* o = model(other);
@@ -163,6 +173,11 @@ void EventScene::update(float dt) {
         }
         m.animTime += dt;
         m.alphaTime += dt;
+        if (m.slideUpdates > 0 && m.slideTick < m.slideUpdates) { // (an update's step of a Move)
+            const float k = float(++m.slideTick) / float(m.slideUpdates);
+            for (int c = 0; c < 3; ++c) m.pin[c] = m.slideFrom[c] + (m.slideTo[c] - m.slideFrom[c]) * k;
+            place(m);
+        }
         if (m.turned) {
             m.turnTime += dt;
             place(m);

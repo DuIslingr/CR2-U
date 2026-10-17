@@ -45,6 +45,10 @@ struct EventModel {
     // SetPosDirect / SetPosLocator: held at a point (its figure's position), not where its locator is
     bool pinned = false;
     float pin[3] = {0, 0, 0};
+    // Move(model, frame, updates) (Cr3EvtSceneMove - EvtMoveParam): from where it is to where its
+    // locator is at that frame, a step each update
+    int slideUpdates = 0, slideTick = 0;
+    float slideFrom[3] = {0, 0, 0}, slideTo[3] = {0, 0, 0};
     // ChangeDirection(model, other, frames) (EvtModel::ChangeDirection - FldDirectionManager): turned
     // about y to face the other over the frames, then held so
     bool turned = false;
@@ -72,6 +76,7 @@ public:
     void pin(const std::string& model, float x, float y, float z);
     void pinTo(const std::string& model, const std::string& other);
     void turnTo(const std::string& model, const std::string& other, int frames);
+    void slide(const std::string& model, int frame, int updates);
     void cameraMove(float from, float to);
     // VistaEvent.CameraQuake(width, from %, to %, frames) (EvtUtilVistaCameraQuake; VistaMain::Pose):
     // each update the camera moved along its up axis by width x the rate - from .. to over the

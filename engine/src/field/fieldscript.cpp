@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "field/fieldscript.hpp"
 
 #include <algorithm>
@@ -32,6 +33,15 @@ void FieldScript::bind() {
                 a->spotNames.push_back(spot.substr(0, 6));
                 return;
             }
+    });
+    vm.setNative("EvtIntroduction", "SetDungeonNum", [this](NativeCall& c) {
+        const int n = c.integer(0);
+        if (n >= 0 && n < 14) introDungeon_ = std::max(n, 1), introTick_ = ticks_, introSeconds = 2;
+    });
+    vm.setNative("EvtIntroduction", "GetVisible", [this](NativeCall& c) {
+        const bool shown = introDungeon_ > 0 && float(ticks_ - introTick_) * EventRuntime::kTick < introSeconds;
+        if (!shown) introDungeon_ = -1;
+        c.result(shown);
     });
     vm.setNative("Cr3GimmickData", "SetFlagMark", [this](NativeCall& c) { flagMarks_.insert(c.string(0)); });
     vm.setNative("Cr3GimmickData", "ClearFlagMark", [this](NativeCall& c) { flagMarks_.erase(c.string(0)); });

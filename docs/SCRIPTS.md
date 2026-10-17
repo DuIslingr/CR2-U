@@ -188,7 +188,9 @@ the character change's +0x32). Flag marks (FldFlagMark: `SetFlagMark(gimmick)`, 
 `AllClearFlagMark` - the town's requests, by flags 1113..1119) put the `flag` figure where a
 gimmick's balloon would be, but for those with a balloon now (FldMain::CheckEntryFlagName);
 `SetBoxVisible(false)` hides the balloons, the flags and the touch actions' marks while an event
-plays (FldMain +0xa4, GimmickAllViewOff).
+plays (FldMain +0xa4, GimmickAllViewOff). A dungeon entered the first time shows its name
+(`MapNameDisp`: `EvtIntroduction.SetDungeonNum(n)` - MapTitleMenu, the language's `mapName`
+figure on its `mapNameDNN` animator, played once -, then waits while `GetVisible`).
 
 Questions (EvtWindow.ShowYesNoButton: BattleYNChoice's `choice_io` with the circle buttons 11
 yes and 12 no; SE 0xb4) wait for an answer: `CheckYesNoButton` 0 until then, 1 yes, 2 no, and

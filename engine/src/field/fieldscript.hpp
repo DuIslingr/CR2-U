@@ -128,6 +128,13 @@ public:
     // FldMain +0xa4, InterfaceMain::GimmickAllViewOn / Off)
     const std::set<std::string>& flagMarks() const { return flagMarks_; }
     bool boxVisible() const { return boxVisible_; }
+    // The dungeon's name, shown as it is entered (EvtIntroduction.SetDungeonNum(n): InterfaceMain::
+    // SetMapNameMenuParameter - MapTitleMenu, `mapName` (mapNameFre, ...: the language's) on its
+    // mapNameD01.. animator, n 0 and 1 the first; GetVisible: till that animation ends): the
+    // dungeon (1.., 0 none) and since when (ticks()); -1 none
+    int introDungeon() const { return introDungeon_; }
+    int introTick() const { return introTick_; }
+    float introSeconds = 0; // (the animator's length: the viewer's, as it loads it)
     // the spot a mystic's tap chose (FldMystic::SetTapSpotName: its game's last)
     std::string mysticTapSpot;
     const TouchAction* touchAction(const std::string& gimmick) const {
@@ -165,6 +172,7 @@ private:
     std::vector<Gimmick> fieldGimmicks_;
     std::map<std::string, TouchAction> actions_;
     std::set<std::string> flagMarks_;
+    int introDungeon_ = -1, introTick_ = 0;
     bool boxVisible_ = true;
     TouchAction* findAction(int kind, const std::string& name);
     Placement placement_;

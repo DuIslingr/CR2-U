@@ -6542,8 +6542,27 @@ struct Viewer {
 
     // the event's UI, over the resolved scene: the fade, then the windows over it (their depths
     // in front of the fade windows')
+    // the dungeon's name as it is entered (EvtIntroduction: MapTitleMenu - the language's mapName
+    // figure on its mapNameDNN animator, played once)
+    void drawIntro(int w, int h) {
+        if (!fieldMode || !script || script->introDungeon() <= 0) return;
+        static const char* const kFigures[8] = {"mapname", "mapname", "mapnamefre", "mapnameger", "mapnamespa", "mapnamechs", "mapnamecht", "mapnamekor"};
+        const std::string figure = kFigures[std::clamp(optionLanguage, 0, 7)];
+        char anim[32];
+        std::snprintf(anim, sizeof anim, "%sd%02d", figure.c_str(), script->introDungeon());
+        UiFig& u = uiFig(figure);
+        u.fig.place = cr2::Mat34();
+        poseUi(u, anim, float(script->ticks() - script->introTick()) * cr2::EventRuntime::kTick + fieldClock);
+        if (u.fig.animLoaded) script->introSeconds = u.fig.anim.duration();
+        Mat4 camera = cr2::mat4Identity();
+        camera[14] = -0.881f;
+        cr2::SceneLighting l;
+        dev->setLighting(l);
+        drawFigure(u.fig, cr2::mat4Multiply(uiProjection(w, h), camera).data());
+    }
     void drawEventUi() {
         dev->clearDepth(); // (the scene's depths behind all of it: a near camera's ground too)
+        drawIntro(screenW, screenH);
         drawBalloons(screenW, screenH);
         drawKeyMark(screenW, screenH);
         drawFieldUi(screenW, screenH);

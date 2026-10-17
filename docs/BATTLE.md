@@ -357,7 +357,8 @@ They come with a command (BtlActionCtrl::CalcCommand - kinds 1, 2, 3, 26, 28 sta
 - CheckParamStatus: +0x5c + k of 1 lowers (13 + k; a raise there just undone), 2 raises (5 + k; a
   lowering undone); CheckSpecialStatus: +0x64's bit b the state 26 + b (0x535c08); both lasting by
   +0x6c - 1 one use, 2 a turn, 3 +0x6d turns, else for good; CheckAttachTarget: +0x70 1..3 lends
-  that element, 4 takes it.
+  that element, 4 takes it; after the command +0x71 the same for the one acting and its partner
+  (PostCommandAction, CheckAttachSelf).
 
 What they do: a raised parameter x 1.25, a lowered x 0.75 (GetCharaParam: a use each read); blind
 halves the hit chance (a use); 32 makes a critical sure (a use); a cancelled or time-stopped one

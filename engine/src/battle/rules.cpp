@@ -669,6 +669,14 @@ void BattleRules::doAction(std::vector<Event>& out) {
     const size_t first = out.size();
     counters_.clear();
     act(nextAction(), out);
+    // (BtlActionCtrl::PostCommandAction, CheckAttachSelf: the command's +0x71 1..3 lends the one
+    // acting - and its partner in a pair - that element, 4 takes it; none for an action not done)
+    const BattleData::Command* done = data_.command(nextAction().command);
+    const Fighter& doer = fighters_[size_t(nextAction().actor)];
+    if (done && done->attachSelf >= 1 && done->attachSelf <= 4 && !(out.size() > first && out[first].failed) && !doer.canceled &&
+        !doer.hasState(21))
+        for (int f : {nextAction().actor, isPairAction(nextAction().actor) ? fighters_[size_t(nextAction().actor)].partner : -1})
+            if (f >= 0 && fighters_[size_t(f)].alive) fighters_[size_t(f)].element = done->attachSelf == 4 ? 0 : done->attachSelf;
     for (size_t k = first; k < out.size(); ++k) // (BtlActionCtrl::ActionDeadEvent: each downed)
         if (out[k].defeated) {
             commandActor_ = out[k].target;

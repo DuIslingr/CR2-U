@@ -68,6 +68,8 @@ struct GameState {
     int libraryArchive = 0, libraryId = 0;
     // the frame's clear colour (Cr3System.SetBGColor - Cr3UtilSetBGColor, GameMain::Draw's) - not saved
     float bgColor[3] = {0, 0, 0};
+    // the area last entered (FldUtil's: GetDungeonNum - 0 the town - and GetAreaNum, from 0)
+    int dungeon = 0, area = 0;
     TreasureBoxes boxes;
     bool equipReady = false;
     template <class Data> void initEquip(const Data& data, const int* levelExp) {

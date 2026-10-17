@@ -252,7 +252,8 @@ int traceEvent(const char* path, const char* script, const char* function, int m
 
 // An event to its end through the runtime: what it shows, per change (a message's number and
 // pages, never its text); `quiet` only the outcome. 0: it ended
-int playEvent(const cr2::MvglArchive& a, const std::string& event, bool quiet, std::string* outcome = nullptr) {
+int playEvent(const cr2::MvglArchive& a, const std::string& event, bool quiet, std::string* outcome = nullptr,
+              std::map<std::string, int>* stubsOut = nullptr) {
     cr2::GameState state;
     cr2::EventRuntime rt(a, state);
     rt.autoPage = 1.0f;
@@ -299,6 +300,8 @@ int playEvent(const cr2::MvglArchive& a, const std::string& event, bool quiet, s
     std::snprintf(buf, sizeof buf, "%s at frame %d (%.1f s)%s", !ok ? ("failed: " + rt.error()).c_str() : rt.running() ? "still running" : "ended",
                   rt.frame(), rt.frame() * cr2::EventRuntime::kTick, rt.battle() >= 0 ? (", battle " + std::to_string(rt.battle())).c_str() : "");
     if (outcome) *outcome = buf;
+    if (stubsOut)
+        for (const auto& [n, k] : rt.stubCalls()) (*stubsOut)[n] += k;
     if (!quiet) {
         std::printf("%s: %s\n", event.c_str(), buf);
         std::string stubs;
@@ -313,20 +316,23 @@ int play(const char* path, const char* event) {
     if (!openArchive(a, path)) return 1;
     if (std::strcmp(event, "all") != 0) return playEvent(a, event, false);
     // every event script: script\<name>.nut whose name ends in _evt (its function the same, but for case)
-    std::map<std::string, int> outcomes;
+    std::map<std::string, int> outcomes, stubs;
     int n = 0, ended = 0;
     for (const auto& e : a.entries()) {
         const std::string& f = e.name;
         if (f.compare(0, 7, "script\\") != 0 || f.size() < 12 || f.compare(f.size() - 8, 8, "_evt.nut") != 0) continue;
         std::string outcome;
         ++n;
-        ended += playEvent(a, f.substr(7, f.size() - 11), true, &outcome) == 0;
+        ended += playEvent(a, f.substr(7, f.size() - 11), true, &outcome, &stubs) == 0;
         const std::string kind = outcome.substr(0, outcome.find(" at frame"));
         if (kind != "ended") std::printf("%s: %s\n", f.c_str(), outcome.c_str());
         ++outcomes[kind.substr(0, 40)];
     }
     std::printf("%d events: %d ended\n", n, ended);
     for (const auto& [k, c] : outcomes) std::printf("  %s: %d\n", k.c_str(), c);
+    std::printf("  stub natives reached (calls):");
+    for (const auto& [k, c] : stubs) std::printf(" %s %d", k.c_str(), c);
+    std::printf("\n");
     return ended == n ? 0 : 1;
 }
 

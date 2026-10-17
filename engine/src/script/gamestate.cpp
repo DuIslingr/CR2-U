@@ -86,6 +86,17 @@ void bindGameState(ScriptVM& vm, GameState& state) {
     vm.setNative("Cr3System", "ReserveParty", [&next](NativeCall&) { next.party = true; });
     vm.setNative("Cr3System", "ReserveChapter", [&next](NativeCall&) { next.chapter = true; });
     vm.setNative("InterfaceWindow", "GetChapterID", [&state](NativeCall& c) { c.result(state.selectChapter); }); // (CR3InterfaceEvent_GetSelectChapterID)
+    vm.setNative("Cr3System", "GetDungeonNum", [&state](NativeCall& c) { c.result(state.dungeon); });
+    vm.setNative("Cr3System", "GetAreaNum", [&state](NativeCall& c) { c.result(state.area); });
+    // the character change (FldChangeCharacter): its button allowed, the leader, a change at once
+    // (FldMain::ChangeCharacterQuick: the other of the two, unless it leads already); the tab
+    vm.setNative("Cr3ChangeCharacter", "SetEnable", [&state](NativeCall& c) { state.changeEnable = c.boolean(0); });
+    vm.setNative("Cr3TabMenu", "SetEnable", [&state](NativeCall& c) { state.tabEnable = c.boolean(0); }); // (FldUtilSetTabMenuEnable)
+    vm.setNative("Cr3ChangeCharacter", "GetEnable", [&state](NativeCall& c) { c.result(state.changeEnable); });
+    vm.setNative("Cr3ChangeCharacter", "GetActive", [&state](NativeCall& c) { c.result(state.active); });
+    vm.setNative("Cr3ChangeCharacter", "ExeQuick", [&state](NativeCall& c) {
+        if (c.integer(0) != state.active) state.active = state.active == 0 ? 1 : 0;
+    });
     vm.setNative("Cr3System", "SetBGColor", [&state](NativeCall& c) {
         for (int k = 0; k < 3; ++k) state.bgColor[k] = c.number(k);
     });

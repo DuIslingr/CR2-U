@@ -14,8 +14,6 @@ void FieldScript::bind() {
     ScriptVM& vm = *vm_;
     bindGameState(vm, state_);
     events_->bindNatives(vm); // (the field's events: their scene, windows, fades)
-    vm.setNative("Cr3System", "GetDungeonNum", [this](NativeCall& c) { c.result(dungeon_); });
-    vm.setNative("Cr3System", "GetAreaNum", [this](NativeCall& c) { c.result(area_); });
     vm.setNative("Cr3System", "GetSelectDungeonNum", [this](NativeCall& c) { c.result(state_.selectDungeon); }); // (the world select's)
     vm.setNative("Cr3System", "SetDifficulty", [this](NativeCall& c) { state_.difficulty = c.integer(0); }); // (Cr3UtilSetDifficulty)
     vm.setNative("Cr3System", "GetDifficulty", [this](NativeCall& c) { c.result(state_.difficulty); });
@@ -147,15 +145,6 @@ void FieldScript::bind() {
         const int slot = c.integer(0, -1) == -1 ? state_.active : c.integer(0);
         if (slot == 0 || slot == 1) fieldCharacters_[slot] = c.integer(1);
     });
-    // the character change (FldChangeCharacter): its button allowed, the leader, a change at once
-    // (FldMain::ChangeCharacterQuick: the other of the two, unless it leads already)
-    vm.setNative("Cr3ChangeCharacter", "SetEnable", [this](NativeCall& c) { state_.changeEnable = c.boolean(0); });
-    vm.setNative("Cr3TabMenu", "SetEnable", [this](NativeCall& c) { state_.tabEnable = c.boolean(0); }); // (FldUtilSetTabMenuEnable)
-    vm.setNative("Cr3ChangeCharacter", "GetEnable", [this](NativeCall& c) { c.result(state_.changeEnable); });
-    vm.setNative("Cr3ChangeCharacter", "GetActive", [this](NativeCall& c) { c.result(state_.active); });
-    vm.setNative("Cr3ChangeCharacter", "ExeQuick", [this](NativeCall& c) {
-        if (c.integer(0) != state_.active) state_.active = state_.active == 0 ? 1 : 0;
-    });
     vm.setNative("Cr3FieldMapCharacter", "SetPos_p000", [this](NativeCall&) {
         Mat34 w;
         if (!events_->scene().p000(w)) return;
@@ -184,6 +173,7 @@ bool FieldScript::enter(const std::string& map, const std::vector<Gimmick>& gimm
     // area the map's last two digits - 1
     dungeon_ = map[0] == 't' ? 0 : std::atoi(map.substr(1, 2).c_str());
     area_ = std::atoi(map.substr(3, 2).c_str()) - 1;
+    state_.dungeon = dungeon_, state_.area = area_; // (GetDungeonNum / GetAreaNum: a vista's too)
     const std::string script = map[0] == 't' ? "t01" : "d" + map.substr(1, 2);
     if (!vm_ || script != script_) {
         vm_ = std::make_unique<ScriptVM>();

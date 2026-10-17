@@ -307,36 +307,71 @@ after 2 s (cr3_battle_post[8] 1); else, after 1 s, the turn the monsters' alone.
 ## States (BtlStateManager)
 
 Each fighter keeps a list of states (BtlWork +0x2384 + 8 x its number): an id, the turns left (0:
-for good) and the uses left (0: not counted). 0 poison, 1 blind, 2 seal, 3 a turn's, 4 guard, 5..12
-raised and 13..20 lowered Attack, Magic, Defense, Speed, Luck and three more, 21 time stopped,
-22..25 attack / sopia / defend / items sealed, 26.. the special ones (29 strength, 30 provoking,
-32 sure criticals, 33 a magic barrier, 35 revived once, 38..40 EXP / SP / Oz doubled).
+for good) and the uses left (0: not counted). 0 poison, 1 blind, 2 seal, 3 its next action
+cancelled, 4 guard, 5..12 raised and 13..20 lowered Attack, Magic, Defense, Speed, Luck and three
+more, 21 time stopped, 22..25 attack / sopia / defend / items sealed, 26.. the special ones (by
+ShowAnnounceStatus3's announcements and their users: 26 / 27 counters, 28 a sopia counter, 29 a
+magic barrier, 30 provoking, 31 blocking blows, 32 sure criticals, 33 revived once, 35 physical
+strength doubled, 37 charging, 38..40 EXP / SP / Oz doubled - the commands Counter, Beng Quan,
+Devotion, Mental Wall, Provoke, Stone Wall, Brave Horn, Regenerate, Demonic Strength, the Paradise
+Apples).
 They come with a command (BtlActionCtrl::CalcCommand - kinds 1, 2, 3, 26, 28 states alone, a sure
 "hit"; 0, 4..17, 27, 29, 32 damage, the states after a hit - CalcStatus):
 - CheckBadStatus (BtlCalc::BadStatus: the command's +0x50 + k of 1, or for a physical one the
-  attacker's - its partner's in a pair - auto skill lending it, skill group -1 bit k; the target's
-  resistance +0xfa3 + k halving it, 2 none): the action cancelled (k 3, 50 in 100, 70 in its side's
-  turn break); poison, blind, seal (k 0..2: 80 / 100 - the command's +0x6d turns, else 3; +1 with
-  skill 5, 5); state 3 for a turn (k 4). CheckCureStatus: +0x50 + k of 2 ends it.
+  attacker's - its partner's in a pair - auto skill lending it, skill group -1 bit k; for k under 5
+  the target's resistance +0xfa3 + k halving it, 2 none): the action cancelled (k 3, 50 in 100, 70
+  in its side's turn break); poison, blind, seal (k 0..2: 80 / 100 - the command's +0x6d turns,
+  else 3; +1 with skill 5, 5); state 3 for a turn (k 4); then (0x525d38, 100 in 100, +0x6d turns)
+  k 5 time stopped, 6 attacks, 7 sopia, 8 items, 9 defending sealed. CheckCureStatus: +0x50 + k of
+  2 ends it.
 - CheckParamStatus: +0x5c + k of 1 lowers (13 + k; a raise there just undone), 2 raises (5 + k; a
   lowering undone); CheckSpecialStatus: +0x64's bit b the state 26 + b (0x535c08); both lasting by
   +0x6c - 1 one use, 2 a turn, 3 +0x6d turns, else for good; CheckAttachTarget: +0x70 1..3 lends
   that element, 4 takes it.
+
 What they do: a raised parameter x 1.25, a lowered x 0.75 (GetCharaParam: a use each read); blind
 halves the hit chance (a use); 32 makes a critical sure (a use); a cancelled or time-stopped one
 does not act; a provoking one draws a monster's single attack (CheckProvoke, when only one of the
-two provokes); seals grey the commands (CheckCommandEnable); 38..40 double the result's EXP / SP /
-Oz. At the turn's end (BtlTurnEnd) poison takes ceil(a tenth) of the most HP (one left at least),
-then each standing one's states a turn on (Turn: gone at none left); one down loses them all.
+two provokes); 35 doubles a physical command's damage (Damage3, a use - both of a pair's); 4
+halves the damage taken; 38..40 double the result's EXP / SP / Oz.
+- Seals grey the party's commands (CheckCommandEnable); an action of a sealed kind - an attack by
+  22, a sopia by 2 or 23, an item by 25, not an awakening - is not done (SetActionTable, then
+  ActionDontActionAnnounce: "Attack power sealed!", "Skills sealed!", "Items sealed!"; "You don't
+  have enough MP!" for one short of MP).
+- 29, a magic barrier (ActionSopiaLaunch / ActionSopiaMirror*): a sopia at one holding it - or at
+  its partner - unless the command pierces (+0x4e bit 3) turns back on the caster and its partner
+  (the caster's side for one on all), a use of it on each holding it.
+- The blocks (BtlActionCtrl::CalcDamage, after a hit): CheckSkillAutoGuard - at a quarter of its HP
+  or under, not defending, skill 1, 0 guards it a turn (state 4) at 20% (40% in its side's turn
+  break), "Auto Defend"; CheckAttackBlock - a blow on one with 31 or skill 5, 11 (full guard), or
+  its skill 1, 3 at 10% (20%) unless +0x4e bit 6; CheckMagicBlock - a sopia on one with 5, 11, or
+  skill 1, 4 at 10% (20%) unless bit 6: no critical, no damage ("Neutralized physical / magical
+  damage!"), the states still. BtlCalc::Hit: a sopia always hits, but on one with skill 1, 5.
+- The counters (CheckCounter, on one struck and standing - Damage, after CheckDead): a blow on one
+  with 26 or 27, or its skill 1, 1 at 10% (20% in its side's turn break); a sopia on one with 28
+  (a use) or its skill 1, 2 at the same chances - none for a command with +0x4e bit 4, on one with
+  state 3, its action cancelled or its time stopped. It strikes back at once with its attack (a
+  character's +0x44, a monster's +0x4c), put first in the turn (BtlActionTaskQueue::Insert), once
+  an action, "Counter" on the banner.
+- 33, revived once (ActionDeadWaitDeadMotion, ActionRevive*): one of the party downed with it - a
+  use - stands again after its death motion with a quarter of its most HP: "Regenerate" (0x5d),
+  Cam_Unit_PCrevival_00 at it, motion 8 (bh01), its HP in green at DummyDP01, eff216.
+
+At the turn's end (BtlTurnEnd) each standing one's HP goes by poison's ceil(a tenth) of the most HP
+(one left at least) less the life pool's (skill 5, 6) ceil(a twentieth) - all of it back with the
+full life pool (5, 10), a heal when that comes to less than none -, its MP up by the mana pool's
+(5, 7) ceil(a twentieth) of the most, then each standing one's states a turn on (Turn: gone at
+none left). One downed loses them (CheckDead) but for 21, 33, 34 and 36..40.
 The signs (GetCharaUIState: 0x536648's states as bits - poison 4, blind 5, seal 6, 12 7, 35 9, 30
 10, 29 11, 33 12, raised 14..18, lowered 19..23, time stopped 24, 11 or 32 bit 8; the sign the bit +
 1) on the targets' buttons from call_enchant_id01 and the party's windows (six at id01, six at
 id07, one at id13, two at id14), 0.04 apart. Each change is announced on the banner (btlMsg,
-AnnouncementWindowMenu), 1.5 s each: "You poisoned %s!" on a monster, "%s has been poisoned!" on
-the party, "Poison does not affect %s!", "%s is hit with status effects!" for several at once,
-the parameters' and the special states' (BtlAnnounce::ShowAnnounceStatus1..3). Not yet: the
-special states' effects past provoking, sure criticals and the result's doubling (counters,
-barriers, revival, strength), the monsters' seals, the regeneration skills (LifePool, ManaPool).
+AnnouncementWindowMenu), 1.5 s each (announcebattle's ids, the records from 1): "You poisoned
+%s!" on a monster, "%s has been poisoned!" on the party, "Poison does not affect %s!" - one of them
+(ShowAnnounceStatus1: the first of poison, blind, seal, state 3; none after a cancel), "%s is hit
+with status effects!" for more than one of poison, blind and seal -, the seals' and time's
+(ShowAnnounceStatus3), the parameters' and the special states'. Not yet: 37's motions
+(CheckThrowBack).
 
 ## The result (BtlResult)
 

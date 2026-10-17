@@ -935,10 +935,11 @@ int fight(const char* path, int coupling, bool pair, uint32_t seed, const int pa
         const int turn = r.turn() + 1;
         for (const auto& e : r.playTurn(pair, orders)) {
             const cr2::BattleData::Command* c = data.command(e.command);
-            std::printf("turn %2d: %s%s%s %s -> %s: %s%s%s\n", turn, name(e.actor).c_str(), e.partner >= 0 ? " + " : "",
-                        e.partner >= 0 ? name(e.partner).c_str() : "", c ? c->name[1].c_str() : "?", name(e.target).c_str(),
-                        e.hit ? (std::to_string(e.damage) + " damage").c_str() : "missed", e.critical ? " (critical)" : e.weak ? " (weak)" : "",
-                        e.defeated ? ", down" : "");
+            const std::string what = e.failed ? "not done" : e.blocked ? "blocked" : e.hit ? std::to_string(e.damage) + " damage" : "missed";
+            std::printf("turn %2d: %s%s%s %s%s -> %s: %s%s%s%s\n", turn, name(e.actor).c_str(), e.partner >= 0 ? " + " : "",
+                        e.partner >= 0 ? name(e.partner).c_str() : "", c ? c->name[1].c_str() : "?", e.counter ? " (counter)" : "",
+                        name(e.target).c_str(), what.c_str(), e.critical ? " (critical)" : e.weak ? " (weak)" : "", e.defeated ? ", down" : "",
+                        e.regenerated ? (", back with " + std::to_string(e.regenHp) + " HP").c_str() : "");
         }
         std::printf("         charge %d, gauge %d%s; HP:", r.charge(), r.gauge(), r.breakState() == 1 ? " (the party's turn break)" : r.breakState() == 2 ? " (the monsters' turn break)" : r.breakState() == 3 ? " (a break coming)" : "");
         for (int i = 0; i < 5; ++i)

@@ -89,6 +89,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         m.hp = int(u32(d, o + 0x1c));
         m.exp = int(u32(d, o + 0x2c)), m.sp = int(u32(d, o + 0x30)), m.oz = int(u32(d, o + 0x34));
         m.sopia = s16(d, o + 0x18), m.sopiaLevel = d[o + 0x52];
+        m.counter = s16(d, o + 0x4c);
         for (int k = 0; k < 3; ++k) m.drops[k] = s16(d, o + 0xb4 + size_t(k) * 2), m.rareDrops[k] = s16(d, o + 0xba + size_t(k) * 2);
         m.size = int(int8_t(d[o + 0x53]));
         for (int k = 0; k < 5; ++k) m.param[k] = s16(d, o + 0x20 + size_t(k) * 2);
@@ -129,7 +130,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         c.magic = d[o + 0x49], c.spread = d[o + 0x4a], c.target = d[o + 0x4b], c.element = d[o + 0x4c];
         c.specials = uint16_t(s16(d, o + 0x4e));
         c.kind = d[o + 0x6f];
-        for (int k = 0; k < 5; ++k) c.bad[k] = d[o + 0x50 + size_t(k)];
+        for (int k = 0; k < 10; ++k) c.bad[k] = d[o + 0x50 + size_t(k)];
         for (int k = 0; k < 8; ++k) c.change[k] = d[o + 0x5c + size_t(k)];
         c.special = u32(d, o + 0x64), c.durationMode = d[o + 0x6c], c.turns = int8_t(d[o + 0x6d]), c.attach = d[o + 0x70];
         c.awaken = d[o + 0x48];

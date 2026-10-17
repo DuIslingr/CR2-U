@@ -126,6 +126,7 @@ public:
         int command = 0;
         int target = -1; // (a single target's fighter)
         int item = 0;    // (an item used: its number)
+        bool counter = false; // (a counter: CheckCounter's, put first in the turn)
     };
     // what happened: a command's result on one fighter
     struct Event {
@@ -134,6 +135,13 @@ public:
         int damage = 0;
         int heal = 0, healMp = 0; // (a restore's: BtlCalc::Restore)
         bool revived = false;
+        // downed but back (state 33, revived once - BtlActionCtrl::ActionDeadWaitDeadMotion, then
+        // ActionRevive*: a quarter of its most HP)
+        bool counter = false; // (its action a counter)
+        bool blocked = false; // (CheckAttackBlock / CheckMagicBlock: no damage, +0xf7b)
+        bool failed = false;  // (its action not done: sealed, or short of MP - ActionDontAction)
+        bool regenerated = false;
+        int regenHp = 0;
         // the announcements it makes (BtlAnnounce: announcebattle's numbers, each with the one
         // it names - BtlActionCtrl::CalcStatus's, the turn's end)
         std::vector<std::pair<int, int>> notes;
@@ -151,7 +159,8 @@ public:
     void endAction();
     void endTurn();
     // the turn's end's (BtlTurnEnd): the poison's damage (a tenth of the most HP, one left at
-    // least), as events with `damage` (hit set, no command)
+    // least) as `damage` (hit set, no command), the life pools' HP as `heal`, the mana pool's MP as
+    // `healMp`
     const std::vector<Event>& turnEndEvents() const { return turnEnd_; }
 
     // What the battle's script reads and sets (Cr3Battle: BtlWork)
@@ -247,6 +256,8 @@ private:
         int point;
     };
     std::vector<Order> turnOrder_;
+    std::vector<Order> counters_; // (CheckCounter's, put after the action that drew them)
+    void checkCounter(const Order& o, const BattleData::Command& c, int target);
     size_t next_ = 0;
     int current_[5] = {0, 0, 0, 0, 0};
     std::vector<int> downed_; // (this action's: Dead for each)

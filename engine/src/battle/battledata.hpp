@@ -45,6 +45,7 @@ public:
         int stateResist[5] = {0, 0, 0, 0, 0};  // +0x43
         uint32_t skills = 0; // +0x48 (SetupEnemySkill: bit 0 armour, 1 first, ...)
         int element = 0;    // +0x50
+        int counter = 0;    // +0x4c the command it counters with (BtlActionCtrl::CheckCounter)
         int size = 0;       // +0x53: 0 small, 1 medium, 2 large, 3 extra large, 4 human-sized
         // its choice (BtlEnemy): ten commands, each with a condition, a target rule, a weight, a
         // must-take flag and the condition's value
@@ -67,11 +68,12 @@ public:
         int kind = 0;        // +0x6f: 0 damage, 2 defend, ...
         // its states (BtlCalc::CheckBadStatus / CheckCureStatus / CheckParamStatus /
         // CheckSpecialStatus / CheckAttachTarget): +0x50 a byte each of poison, blind, seal, the
-        // action's cancel, the fifth (1 inflicts, 2 cures); +0x5c a byte each of Attack, Magic,
+        // action's cancel, its action cancelled the next turn (state 3), time stopped (21), attacks
+        // (22), sopia (23), items (25), defending (24) sealed (1 inflicts, 2 cures); +0x5c a byte each of Attack, Magic,
         // Defense, Speed, Luck and three more (1 lowers, 2 raises); +0x64 the special states' bits
         // (26 + the bit); +0x6c how long (1 one use, 2 one turn, 3 +0x6d turns, else for good);
         // +0x70 an element it lends the one hit (1..3; 4 none)
-        int bad[5] = {}, change[8] = {}, durationMode = 0, turns = 0, attach = 0;
+        int bad[10] = {}, change[8] = {}, durationMode = 0, turns = 0, attach = 0;
         uint32_t special = 0;
         int mp = 0;          // +0x42: its MP (BtlUtilStatus::CalcUseMp)
         int icon = 0;        // +0x72: its icon (mainIcon_id's frame)

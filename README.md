@@ -119,16 +119,18 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       defend"` gives the choices)
 - [x] Options in battle: the game's window - the volumes, language, orientation, quality,
       Title Screen and Manual shown, the volumes set by a tap or the keys, Back
-- [x] States: poison, blind, seal, the action cancelled, raised and lowered parameters, the
-      special ones - taken by the game's chances and resistances, their effects, their turns, the
-      poison at the turn's end, their signs on the party and the targets, their announcements
+- [x] States: poison, blind, seal, the action cancelled, raised and lowered parameters, time
+      stopped, the seals, the special ones - taken by the game's chances and resistances, their
+      effects (counters, the magic barrier turning a sopia back, revived once, strength doubled,
+      blocks, sure criticals, provoking, the result's doubling), their turns, the poison and the
+      life / mana pools at the turn's end, the sealed actions not done, their signs on the party
+      and the targets, their announcements
 - [x] A battle won: "Victory!", the party's victory motion and camera, the result window (the
       EXP and SP gained, the levels, HP, MP and NEXT, the EXP going in, the levels kept), its
       messages - levels gained, the sopia's SP and what they learn, the Oz, the items and sopia
       left (rolled as each monster falls) - as the reference video's first battle
-- [ ] Battles on screen: Options, the advents' list, the awakenings' own scenes, the
-      the special states' rarer effects, the actions' effects past the hits', the battles'
-      tutorials; the states that double a result's EXP / SP / Oz
+- [ ] Battles on screen: the advents' list, the awakenings' own scenes, the actions' effects
+      past the hits', the battles' tutorials
 - [ ] Treasure boxes, the other windows (announcements, tutorials, items), the HUD, the sounds
       between areas
 - [ ] Engine: events, battles, menus
@@ -156,7 +158,7 @@ and the APK) or `ipad/` (the `.app` or the unpacked `.ipa`).
 | `cr2view ... [--resolution WxH] [--upscaler off\|fsr3] [--quality native\|quality\|balanced\|performance\|ultra] [--sharpness 0..1] [--size WxH] [--fps n] [--run s]` | the output in any mode: 60 frames a second (`--fps`), frames of a resolution up to 3840 x 2160 (F1 steps through the window's size and 720p .. 2160p), FSR 3.1 (F2 steps through its modes), the window's size; a capture `--run`s that long first |
 | `cr2view --data <archive> --field <map> [--model c001] [--at point] [--binary file] [--walk sx,sy,s]` | a field: the arrow keys run the character (Shift walks) on the floors and against the walls; the maps' table comes from the executable beside the iPad's / Vita's archive or the APK beside Android's OBB, or `--binary` |
 | `cr2view --data <archive> --play [map] [--call function] [--tap] [--skip-battles] [--binary file]` | a new game (or from a map, `--call` one of its events in place of its entry - without what would call it, so no fade back in after): the field's scripts, events and vistas one after another as the game chains them; Return or a click turns a page or talks to what has a balloon (`--tap`: once, after `--walk`); the battles it reaches fought by the rules, the party attacking as a pair (`--skip-battles`: taken as won) |
-| `cr2view --data <archive> --battle <coupling> [--party a,b] [--fight solo\|pair] [--seed n] [--time s]` | a battle's stage: its map, the party (characters a and b: Darwin 1, Orlando 2, Marie 3, ...) and the monsters, through the commands' camera; `--fight`: played by its rules, the party attacking each turn |
+| `cr2view --data <archive> --battle <coupling> [--party a,b] [--fight solo\|pair] [--seed n] [--state f:s] [--time s]` | a battle's stage: its map, the party (characters a and b: Darwin 1, Orlando 2, Marie 3, ...) and the monsters, through the commands' camera; `--fight`: played by its rules, the party attacking each turn; `--state`: fighter f (0, 1 the party, 2.. the monsters) holding state s to begin with, one use (tests) |
 | `cr2tool check / scripts / run / images / models / compare-models / animations / pose / shaders / walk / exits / fieldscript / battle / fight` | checks on an archive: every file decodes, every script loads and runs its `main`, a script run with the natives stubbed, every texture / mesh decodes, two releases' meshes compared, the shader keys against their GLSL, the field player on every map, every map's exits, every map's entry script, every encounter's set-up, a battle played by its rules (an archive may be given as its folder; `walk` / `exits` / `fieldscript` take the executable, or `-` for the release's own beside the archive) |
 | `tools/mvgl.py` | `list` / `stats` / `check` / `extract` an MDB1 archive |
 | `tools/nut.py` | disassemble a compiled Squirrel script (a file, or out of an archive); `names`: the keys / calls the scripts use |

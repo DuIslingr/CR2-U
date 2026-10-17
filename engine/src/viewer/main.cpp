@@ -1518,6 +1518,7 @@ struct Viewer {
     }
     bool battleScriptRunning() const { return battleScript && battleScriptOk && battleScript->running(); }
 
+    std::vector<std::pair<int, int>> stateArg; // (--state fighter:state)
     void startFight(int mode, uint32_t seed) {
         battleFight = mode;
         battleRules = std::make_unique<cr2::BattleRules>(battleData, seed);
@@ -1538,6 +1539,8 @@ struct Viewer {
         if (!battleScriptOk) SDL_Log("battle script: %s", battleScript->error().c_str());
         else SDL_Log("battle script: %s%s", battleScript->name().c_str(), battleScript->own() ? " (its own)" : "");
         for (int id = 1; id < 300; ++id) battleRules->setItemCount(id, game.itemCount[id]); // (BtlWork +0x52)
+        for (const auto& [f, id] : stateArg) // (--state: one use of it, tests)
+            if (f >= 0 && f < 5) battleRules->fighter(f).states.push_back({id, 0, 1});
         battleRules->setSopiaOwned(game.sopiaOwned); // (the drops: a sopia not had yet)
         battleRules->script = [this](const std::string& f) {
             if (battleScript && battleScriptOk && battleScript->own() && !(battleScriptOk = battleScript->call(f)))
@@ -1670,9 +1673,11 @@ struct Viewer {
             if (!battleRules->actionsLeft()) {
                 battleRules->endTurn();
                 if (announceQueue.empty()) commandShown.clear(); // (BtlTurnEnd: ClearAnnounce)
-                for (const cr2::BattleRules::Event& e : battleRules->turnEndEvents()) { // (BtlTurnEnd: the poison's)
-                    showNumber(e.target, e.damage, 20);
-                    SDL_Log("    %s: %d poison", battleRules->fighter(e.target).name.c_str(), e.damage);
+                for (const cr2::BattleRules::Event& e : battleRules->turnEndEvents()) { // (BtlTurnEnd: the poison's, the pools')
+                    if (e.damage > 0) showNumber(e.target, e.damage, 20);
+                    if (e.heal > 0) showNumber(e.target, e.heal, 50);
+                    if (e.healMp > 0) showNumber(e.target, e.healMp, 60);
+                    SDL_Log("    %s: %d poison, %d HP back, %d MP back", battleRules->fighter(e.target).name.c_str(), e.damage, e.heal, e.healMp);
                 }
                 if (!battleRules->turnEndEvents().empty()) showEnd = battleClock + 1.2f;
                 SDL_Log("turn over; gauge %d, charge %d; MP %d %d", battleRules->gauge(), battleRules->charge(), battleRules->fighter(0).mp, battleRules->fighter(1).mp);
@@ -1692,6 +1697,7 @@ struct Viewer {
             for (const auto& e : events) {
                 if (showActions.empty()) showActions.push_back({e.actor, e.partner, e.command, {}});
                 showActions.back().hits.push_back(e);
+                if (e.regenerated) regenPending.push_back(e.target);
             }
             battleStep = BattleStep::ActionEnd;
             if (!showActions.empty()) beginShowAction(showActions[0]);
@@ -1699,6 +1705,10 @@ struct Viewer {
         }
         case BattleStep::ActionEnd:
             showIndex = showActions.size();
+            if (!regenPending.empty()) { // (the downed with state 33 back first)
+                showRegen();
+                break;
+            }
             battleRules->endAction();
             battleStep = BattleStep::ActionStart;
             break;
@@ -1713,7 +1723,53 @@ struct Viewer {
         int gauge = 0, charge = 0;
     } hudBefore;
     bool hudHeld() const { return showIndex < showActions.size() && !showHitDone && hudBefore.hp.size() == 5; }
-    int shownHp(int f) const { return hudHeld() ? hudBefore.hp[size_t(f)] : battleRules->fighter(f).hp; }
+    int shownHp(int f) const {
+        if (std::find(regenPending.begin(), regenPending.end(), f) != regenPending.end()) return 0; // (down until its revival shows)
+        return hudHeld() ? hudBefore.hp[size_t(f)] : battleRules->fighter(f).hp;
+    }
+    // state 33's revivals still to show, in turn (BtlActionCtrl: ActionReviveStandby - the
+    // announcement 0x5d, "Regenerate" -, ActionReviveCamera - Cam_Unit_PCrevival_00 at the one
+    // revived -, ActionReviveMain - its motion 8 (bh01), its HP back in green at DummyDP01, eff216 -,
+    // ActionReviveWait - the motion's end)
+    std::deque<int> regenPending;
+    bool regenStarted = false;
+    void showRegen() {
+        const int f = regenPending.front();
+        const int u = fighterUnit[f];
+        if (!regenStarted) {
+            regenStarted = true;
+            announceQueue.clear();
+            commandShown = announce(0x5d), commandShownStart = announceAt = battleClock;
+            SDL_Log("    announce: %s", commandShown.c_str());
+            const char* cam = "Cam_Unit_PCrevival_00";
+            bool found = false;
+            for (const CameraFigure& c : battleCameras)
+                for (const cr2::GeomCamera& gc : c.geom.cameras) found = found || gc.hash == cr2::nameHash(cam);
+            if (found && u >= 0) {
+                cr2::Mat34 at; // (SetPosition: the camera's frame moved there, not turned)
+                for (int r = 0; r < 3; ++r) at.m[r * 4 + 3] = battleUnits[size_t(u)].home.m[r * 4 + 3];
+                setBattleCamera(cam, at);
+            }
+            showEnd = battleClock + 0.2f; // (the camera's cut drawn before the number is placed by it)
+            return;
+        }
+        regenStarted = false;
+        regenPending.pop_front();
+        if (u < 0) return;
+        BattleUnit& bu = battleUnits[size_t(u)];
+        bu.hidden = false;
+        playMotion(bu, "bh01", battleClock);
+        showNumber(f, battleRules->fighter(f).hp, 50);
+        float at[3] = {bu.home.m[3], bu.home.m[7] + 0.15f, bu.home.m[11]};
+        const int dj = bu.fig.skeleton.joint(cr2::nameHash("DummyDP01"));
+        if (dj >= 0 && !bu.fig.posed.empty()) {
+            const std::vector<cr2::Mat34> w = bu.fig.skeleton.world(bu.fig.posed, bu.fig.place);
+            if (size_t(dj) < w.size()) at[0] = w[size_t(dj)].m[3], at[1] = w[size_t(dj)].m[7], at[2] = w[size_t(dj)].m[11];
+        }
+        spawnEffect("eff216", at);
+        SDL_Log("    %s revived: %d HP", battleRules->fighter(f).name.c_str(), battleRules->fighter(f).hp);
+        showEnd = battleClock + std::max(motionLength(bu, "bh01"), 1.0f) + 0.3f;
+    }
     int shownGauge() const { return hudHeld() ? hudBefore.gauge : battleRules->gauge(); }
     int shownCharge() const { return hudHeld() ? hudBefore.charge : battleRules->charge(); }
     // BtlResult, a battle won: a moment (Battle_End, the music fading: 1.2 s), then "Victory!"
@@ -1928,6 +1984,13 @@ struct Viewer {
     void beginShowAction(const ShowAction& a) {
         showStart = battleClock, showHitDone = false;
         const cr2::BattleData::Command* c = battleData.command(a.command);
+        if (!a.hits.empty() && a.hits.front().failed) { // (ActionDontAction*: its announcement alone, a moment)
+            for (Move& m : showMoves) m = Move();
+            showHitAt = 0, showCamera2 = -1;
+            showEnd = battleClock + 1.5f;
+            if (c) SDL_Log("  %s: %s - not done", battleRules->fighter(a.actor).name.c_str(), c->name[1].c_str());
+            return;
+        }
         std::string motion = c ? c->motion : "bb01";
         if (a.partner >= 0 && a.actor < 2) motion = "bp01"; // (the pair's command: +0x46, bp01)
         float length = 0;
@@ -1977,6 +2040,7 @@ struct Viewer {
         }
         if (c) SDL_Log("  %s: %s", battleRules->fighter(a.actor).name.c_str(), c->name[1].c_str());
         if (c) commandShown = c->name[1], commandShownStart = battleClock;
+        if (!a.hits.empty() && a.hits.front().counter) commandShown = announce(0x47), commandShownStart = battleClock; // ("Counter")
     }
 
     void poseBattleShow() {
@@ -2024,7 +2088,7 @@ struct Viewer {
                 BattleUnit& bu = battleUnits[size_t(u)];
                 const bool restore = e.heal > 0 || e.healMp > 0 || e.revived;
                 const cr2::BattleData::Command* sc = battleData.command(e.command);
-                const bool statusOnly = sc && (sc->kind == 1 || sc->kind == 3 || sc->kind == 26 || sc->kind == 28); // (no number, no blow)
+                const bool statusOnly = e.failed || (sc && (sc->kind == 1 || sc->kind == 3 || sc->kind == 26 || sc->kind == 28)); // (no number, no blow)
                 for (const auto& [id, who] : e.notes) // (the announcements: on the banner, in turn - BtlAnnounce)
                     announceQueue.push_back(formatAnnounce(announce(id), {battleRules->fighter(who).name}));
                 if (e.hit && !restore && !statusOnly) playMotion(bu, "bd01", battleClock);
@@ -3491,6 +3555,7 @@ int main(int argc, char** argv) {
     int fightMode = 0;
     std::string inputArg; // (--input: the commands chosen, as tokens)
     std::vector<int> flagsArg;
+    std::vector<std::pair<int, int>> stateArg;
     std::vector<std::pair<int, int>> sopiaArg;
     bool skipBattlesOpt = false;
     uint32_t fightSeed = 1;
@@ -3532,6 +3597,11 @@ int main(int argc, char** argv) {
             ++i;
         }
         else if (a == "--seed" && next) fightSeed = uint32_t(std::atoi(next)), ++i;
+        else if (a == "--state" && next) { // (a state a fighter has to begin with: fighter:state, tests)
+            int f = 0, id = 0;
+            if (std::sscanf(next, "%d:%d", &f, &id) == 2) stateArg.push_back({f, id});
+            ++i;
+        }
         else if (a == "--party" && next) std::sscanf(next, "%d,%d", &battleParty[0], &battleParty[1]), ++i;
         else if (a == "--vista" && next) vista = next, ++i;
         else if (a == "--page" && next) page = float(std::atof(next)), ++i;
@@ -3658,6 +3728,7 @@ int main(int argc, char** argv) {
         else SDL_Log("lights: %s has none (the engine's defaults)", lights.c_str());
     }
     v.load(start);
+    v.stateArg = stateArg;
     if (battleId > 0 && !v.startBattle(battleId, battleParty)) return 1;
     // the commands: chosen on the screen in a window (--fight manual, or --play), or given (--input)
     v.manualCommands = fightMode == 3 || !inputArg.empty() || (capture.empty() && !playFrom.empty());

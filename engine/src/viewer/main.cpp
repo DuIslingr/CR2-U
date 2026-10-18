@@ -8879,6 +8879,12 @@ struct Viewer {
         const float t = uiClock - party.at;
         auto keepLook = buttonLook;
         buttonLook = nullptr;
+        { // (PartySelectTitleMenu: `menu` on menuPty_io, in once - held after the first stage, as the shop's)
+            UiFig& title = uiFig("menu");
+            title.fig.place = cr2::Mat34();
+            poseUi(title, "menupty_io", t + (party.stage > 1 ? 10.0f : 0.0f));
+            drawFigure(title.fig, view.data());
+        }
         auto back = [&] {
             UiFig& bk = uiFig("btlback");
             bk.fig.place = cr2::Mat34();

@@ -264,4 +264,11 @@ void FieldMap::layerQuad(float* v, float shiftX) {
     std::memcpy(v, q, sizeof q);
 }
 
+Mat34 FieldMap::cameraPlace() const {
+    Mat34 r;
+    for (int row = 0; row < 3; ++row)
+        for (int c = 0; c < 4; ++c) r.m[row * 4 + c] = cameraWorld_[size_t(c * 4 + row)];
+    return r;
+}
+
 } // namespace cr2

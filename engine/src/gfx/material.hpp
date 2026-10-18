@@ -21,12 +21,20 @@ enum UnsupportedShading : uint32_t {
     kUnsupportedOverlay = 2,    // OverlayColorSampler (3)
     kUnsupportedDistortion = 4, // the normal map at uv1 offsets uv0 (16)
     kUnsupportedUv1 = 8,        // a second texture coordinate set, ScrollSpeedSet2 / OffsetSet2 (18)
-    kUnsupportedBillboard = 16, // ViewInverse turns the vertices to the camera (25)
+};
+
+// What a key's vertex shader does to the vertices' places (the figure's skinning on the CPU
+// does it: the viewer's pose)
+enum VertexPlacing : uint32_t {
+    kBillboard = 1, // turned by ViewInverse to the camera, then MatrixPalette[0]'s scale and
+                    // translation alone (25 shaders: nearly every effect)
+    kUpright = 2,   // ... by camPos: the camera's back flattened onto the ground, y kept up (6)
 };
 
 struct ShaderFeatures {
     uint32_t shade = 0;       // SHADE_* (0: a built-in Figure shader - the key is all 0)
     uint32_t unsupported = 0; // UnsupportedShading
+    uint32_t vertex = 0;      // VertexPlacing
 };
 
 // The key's words, as the shaders' names print them (word 0 first), in Android's and the Vita's
@@ -36,8 +44,8 @@ struct ShaderFeatures {
 // alpha, 0x4000 the vertex red shades the light, 0x8000 the vertex colour tints, 0x10000
 // ColorSampler, 0x20000 NormalSampler, 0x80000 overlay; word 1 - 0x4000 velvet, 0x10000 the
 // tint includes alpha, 0x01000000 alpha test, 0x02000000 ScrollSpeedSet1, 0x04000000
-// ScrollSpeedSet2, 0x10000000 OffsetSet1, 0x20000000 distortion; word 2 - 0x1 uv1, 0x4 billboard,
-// 0x10 fog, 0x700 LightSampler, 0x8000 skinned (0x10000: two weights a vertex)
+// ScrollSpeedSet2, 0x10000000 OffsetSet1, 0x20000000 distortion; word 2 - 0x1 uv1, 0x4 billboard
+// (0x8 upright), 0x10 fog, 0x700 LightSampler, 0x8000 skinned (0x10000: two weights a vertex)
 ShaderFeatures decodeShaderKey(const std::array<uint32_t, 4>& key);
 
 // What a shader pair's GLSL (the iPad's and Android's data: GLSL ES 1.00) does, read from its lines

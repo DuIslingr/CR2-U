@@ -173,6 +173,7 @@ struct ViewMesh {
     cr2::GeomMaterial baseMaterial;    // (as the file has it)
     std::vector<uint8_t> vertices;     // kVertexStride bytes each
     bool hidden = false;               // (PartsBase::SetVisible(joint, false): its joint's meshes)
+    uint32_t placing = 0;              // its shader's cr2::VertexPlacing (billboards)
 };
 
 // A figure on screen: its meshes, skeleton, animations and where it stands
@@ -1047,6 +1048,7 @@ struct Viewer {
                 const std::array<uint32_t, 4>& key = g.materials[m.material].shaderKey;
                 const bool builtIn = !key[0] && !key[1] && !key[2] && !key[3]; // (no shader of its own: its file's form says)
                 vm.source.resolveJoints(builtIn ? (g.version == 0x3c ? 3.0f : 1.0f) : shaders->jointScale(key));
+                if (!builtIn) vm.placing = shaders->features(key).vertex;
             }
             if (m.material < g.materials.size()) {
                 vm.material = vm.baseMaterial = g.materials[m.material];
@@ -1221,6 +1223,10 @@ struct Viewer {
             const cr2::GeomMesh& m = vm.source;
             std::vector<const cr2::Mat34*> pal;
             for (uint32_t j : m.palette) pal.push_back(j < skin.size() ? &skin[j] : nullptr);
+            if (vm.placing & cr2::kBillboard) {
+                billboard(vm, pal.empty() || !pal[0] ? f.place : *pal[0]);
+                continue;
+            }
             for (uint32_t i = 0; i < m.vertexCount; ++i) {
                 const float* sp = &m.position[size_t(i) * 3];
                 const float* sn = m.normal.empty() ? nullptr : &m.normal[size_t(i) * 3];
@@ -1265,7 +1271,86 @@ struct Viewer {
         }
     }
 
+    // The camera the figures are posed for (its place in the world): billboards turn to it
+    cr2::Mat34 poseView;
+
+    // the model viewer's camera: where it is (orbiting the figure by yaw / pitch / zoom), how far
+    float modelEye(float* eye) const {
+        const float yr = yaw * 3.14159265f / 180, pr = pitch * 3.14159265f / 180, d = fig.radius * 2.6f * zoom;
+        eye[0] = fig.centre[0] + d * std::cos(pr) * std::sin(yr);
+        eye[1] = fig.centre[1] + d * std::sin(pr);
+        eye[2] = fig.centre[2] + d * std::cos(pr) * std::cos(yr);
+        return d;
+    }
+
+    // A billboard mesh's vertices (the game's vertex shaders with ViewInverse): turned as the
+    // camera is - kUpright: by camPos, the view's third row flattened (y 0), then y x it and the
+    // two's cross - then scaled by MatrixPalette[0]'s columns' lengths and moved to its translation
+    // (its rotation and the vertices' joints left out)
+    void billboard(ViewMesh& vm, const cr2::Mat34& p0) {
+        const cr2::GeomMesh& m = vm.source;
+        float r[3][3]; // (the rows: vertex v -> r v)
+        for (int i = 0; i < 3; ++i)
+            for (int c = 0; c < 3; ++c) r[i][c] = poseView.m[i * 4 + c];
+        auto unit = [](float* v) {
+            const float l = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+            if (l > 0) v[0] /= l, v[1] /= l, v[2] /= l;
+        };
+        for (int c = 0; c < 3; ++c) { // (the camera's axes as unit columns)
+            float col[3] = {r[0][c], r[1][c], r[2][c]};
+            unit(col);
+            for (int i = 0; i < 3; ++i) r[i][c] = col[i];
+        }
+        if (vm.placing & cr2::kUpright) {
+            float z[3] = {r[2][0], 0, r[2][2]};
+            unit(z);
+            float x[3] = {z[2], 0, -z[0]}; // (0 1 0) x z
+            unit(x);
+            const float y[3] = {z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]};
+            for (int c = 0; c < 3; ++c) r[0][c] = x[c], r[1][c] = y[c], r[2][c] = z[c];
+        }
+        float scale[3], trans[3];
+        for (int c = 0; c < 3; ++c) {
+            scale[c] = std::sqrt(p0.m[c] * p0.m[c] + p0.m[4 + c] * p0.m[4 + c] + p0.m[8 + c] * p0.m[8 + c]);
+            trans[c] = p0.m[c * 4 + 3];
+        }
+        auto turn = [&](const std::vector<float>& from, uint32_t i, uint8_t* to, bool place) {
+            if (from.empty()) return;
+            const float* v = &from[size_t(i) * 3];
+            float o[3];
+            for (int k = 0; k < 3; ++k) o[k] = r[k][0] * v[0] + r[k][1] * v[1] + r[k][2] * v[2];
+            if (place)
+                for (int k = 0; k < 3; ++k) o[k] = o[k] * scale[k] + trans[k];
+            std::memcpy(to, o, 12);
+        };
+        for (uint32_t i = 0; i < m.vertexCount; ++i) {
+            uint8_t* o = &vm.vertices[size_t(i) * cr2::kVertexStride];
+            turn(m.position, i, o, true);
+            turn(m.normal, i, o + 24, false);
+            turn(m.tangent, i, o + 36, false);
+            turn(m.binormal, i, o + 48, false);
+        }
+        dev->updateVertices(vm.gpu, vm.vertices);
+    }
+
     void pose() {
+        { // (this frame's camera, for the billboards)
+            cr2::Mat34 cw;
+            float fov, zn, zf;
+            if (battleMode) {
+                if (battleView(cw, fov, zn, zf)) poseView = cw;
+            } else if (eventMode) {
+                if (event->sceneShown() && event->scene().camera(cw, fov, zn, zf, eventLead())) poseView = cw;
+            } else if (fieldMode) {
+                poseView = field.cameraPlace();
+            } else { // (lookAt's inverse)
+                float eye[3];
+                modelEye(eye);
+                const Mat4 v = cr2::mat4RigidInverse(lookAt(eye, fig.centre));
+                for (int row = 0; row < 3; ++row)
+                    for (int c = 0; c < 4; ++c) poseView.m[row * 4 + c] = v[size_t(c * 4 + row)];
+            }
+        }
         if (battleMode) {
             poseBattle();
             return;
@@ -1510,9 +1595,8 @@ struct Viewer {
             if (shown(1)) drawLayer(field.foregroundImage(), fr.foreground, field.info().foregroundShift == 1 ? -1152.0f : 0.0f);
             return;
         }
-        const float yr = yaw * 3.14159265f / 180, pr = pitch * 3.14159265f / 180, d = fig.radius * 2.6f * zoom;
-        const float eye[3] = {fig.centre[0] + d * std::cos(pr) * std::sin(yr), fig.centre[1] + d * std::sin(pr),
-                              fig.centre[2] + d * std::cos(pr) * std::cos(yr)};
+        float eye[3];
+        const float d = modelEye(eye);
         cr2::SceneLighting l = lighting;
         std::memcpy(l.camera, eye, sizeof l.camera);
         l.time = time;
@@ -3994,6 +4078,7 @@ struct Viewer {
         }
         if (fx.set->billboard) setRotation(place, camera);
         fx.fig->place = place;
+        poseView = camera;
         fx.fig->tint[3] = fx.alpha.at(battleClock);
         pose(*fx.fig, t, fx.set->loop);
         drawFigure(*fx.fig, vp.data());

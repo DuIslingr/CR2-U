@@ -59,7 +59,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       test, light-map masks, scrolling textures; the materials' wrap modes and filters; the
       animations' user channels (material colours: the UI's fades). `cr2tool shaders` checks the
       key decoder against every shader's source
-- [ ] Shading left out: point lights, overlays, distortion, billboards (effects)
+- [x] Billboards: the effects' sprites (and the few objects' and figures' parts) turned to the
+      camera, or upright about y, as their vertex shaders do
+- [ ] Shading left out: point lights, overlays, distortion, the second texture coordinates (effects)
 - [x] Fields: the maps' table (read from your copy's executable), the painted layers, the map's 3D
       figure, its camera, lights and points; the viewer walks a character around a map
       (`cr2view --field d0101`), scrolling as the game does, idle / walk motions

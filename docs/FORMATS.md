@@ -335,8 +335,12 @@ one, chosen by bits (`shade_flags.h`), the same formulas in the same order:
   texture's alpha < AlphaRef discarded (the material's alpha_func reference)
 - texture coordinates + OffsetSet1 + fract(ScrollSpeedSet1 x Time)
 
-Left out so far: point lights (2 keys), overlays (3), distortion (16), the second texture
-coordinate set (18) and billboards (25): effects. Android's / the Vita's key bits (word 0 first):
+Billboards (25 keys - nearly every effect, a few objects and figures): the vertices turned by
+ViewInverse's 3x3 (the camera's axes), or - word 2's 0x8, 5 keys - by camPos (the view's third
+row with y 0, normalised; y x it; their cross: upright, turning about y alone), then scaled by
+MatrixPalette[0]'s columns' lengths and moved to its translation - its rotation and the vertices'
+joints unused. Left out so far: point lights (2 keys), overlays (3), distortion (16) and the
+second texture coordinate set (18): effects. Android's / the Vita's key bits (word 0 first):
 word 0 - 0x1 DirLamp01, 0x4 PointLamp01, 0x20 hemisphere, 0x40 flat ambient, 0x80 CLUT, 0x100
 specular, 0xe00 its strength from the vertex alpha, 0x4000 obscure, 0x8000 the vertex colour
 tints, 0x10000 ColorSampler, 0x20000 NormalSampler, 0x80000 overlay; word 1 - 0x4000 velvet,

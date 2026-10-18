@@ -54,6 +54,8 @@ public:
     // the 3D figure's name ("" none)
     const std::string& figureName() const { return figure_; }
     const SceneLighting& lighting() const { return lighting_; }
+    // the 3D camera's place in the world
+    Mat34 cameraPlace() const;
 
     // A named point (a joint of <map>c or <map>p: "defaultPos", "d0101_p1", ...): false if none
     bool point(const std::string& name, float* pos) const;

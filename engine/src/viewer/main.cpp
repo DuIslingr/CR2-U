@@ -5145,14 +5145,27 @@ struct Viewer {
         if (!fontPath.empty() && !font.load(fontPath, &err)) SDL_Log("font: %s", err.c_str());
         else if (fontPath.empty() && !fontBytes.empty() && !font.loadMemory(std::move(fontBytes), fontName, &err)) SDL_Log("font: %s", err.c_str());
         // (the code points the game's font lacks - Hangul, simplified Chinese - from the system's, as
-        // Android's: CR2_FONT_FALLBACK, else a Noto CJK where the distributions put it)
+        // Android's: CR2_FONT_FALLBACK, else a Noto CJK where the distributions put it, else Windows'
+        // or macOS's own - one for each script there)
         const char* fb = std::getenv("CR2_FONT_FALLBACK");
-        const std::string fallback = cr2::TextRasterizer::firstFont({fb ? fb : "", "/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc",
-                                                                     "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-                                                                     "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Bold.ttc",
-                                                                     "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-                                                                     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"});
-        if (font.loaded() && !fallback.empty() && !font.addFallback(fallback, &err)) SDL_Log("font: %s", err.c_str());
+        const char* windir = std::getenv("WINDIR");
+        const std::string winFonts = std::string(windir ? windir : "C:/Windows") + "/Fonts/";
+        std::vector<std::string> fallbacks{cr2::TextRasterizer::firstFont({fb ? fb : "", "/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc",
+                                                                           "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+                                                                           "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Bold.ttc",
+                                                                           "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+                                                                           "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"})};
+        if (fallbacks[0].empty())
+            fallbacks = {cr2::TextRasterizer::firstFont({winFonts + "malgunbd.ttf", winFonts + "malgun.ttf",
+                                                         "/System/Library/Fonts/AppleSDGothicNeo.ttc"}),
+                         cr2::TextRasterizer::firstFont({winFonts + "msyhbd.ttc", winFonts + "msyh.ttc",
+                                                         "/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc"})};
+        std::string fallback;
+        for (const std::string& f : fallbacks) {
+            if (f.empty() || !font.loaded()) continue;
+            if (!font.addFallback(f, &err)) SDL_Log("font: %s", err.c_str());
+            else fallback += (fallback.empty() ? "" : ", ") + f;
+        }
         SDL_Log("message windows: vista %zu meshes, narration %zu joints; font %s%s%s", vistaWindow.fig.meshes.size(),
                 narrationWindow.joints.size(), font.loaded() ? font.path().c_str() : "none (no text)", fallback.empty() ? "" : ", then ",
                 fallback.c_str());
@@ -9676,9 +9689,14 @@ int main(int argc, char** argv) {
         std::string fp = cr2::TextRasterizer::firstFont({fontPath, envFont ? envFont : "", dataDir + "font/TBGoPro-Bold.otf"});
         std::vector<uint8_t> apkFont;
         std::string apkFontFrom;
-        if (fp.empty() && !cr2::androidFile(data, "assets/00001", apkFont, &apkFontFrom))
+        if (fp.empty() && !cr2::androidFile(data, "assets/00001", apkFont, &apkFontFrom)) {
+            const char* windir = SDL_getenv("WINDIR");
+            const std::string winFonts = std::string(windir ? windir : "C:/Windows") + "/Fonts/";
             fp = cr2::TextRasterizer::firstFont({"/usr/share/fonts/noto/NotoSans-Regular.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
-                                                 "/usr/share/fonts/liberation/LiberationSans-Regular.ttf"});
+                                                 "/usr/share/fonts/liberation/LiberationSans-Regular.ttf", winFonts + "segoeui.ttf",
+                                                 winFonts + "arial.ttf", "/System/Library/Fonts/Supplemental/Arial.ttf",
+                                                 "/System/Library/Fonts/Helvetica.ttc"});
+        }
         v.loadMessageWindow(fp, std::move(apkFont), apkFontFrom);
         v.initEventDrawing();
         v.pageSeconds = page;

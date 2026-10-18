@@ -241,20 +241,36 @@ double-click, Android's launcher) it starts the game at its title screen.
 ## Platforms
 
 Every push is built for Linux, Windows, macOS and Android by `.github/workflows/build.yml`; the
-binaries are that run's artifacts (nothing of the game is in them). Windows, macOS and Android are
-built in CI but not yet played on a real machine.
+binaries are that run's artifacts (nothing of the game is in them): an AppImage, a Windows folder,
+a universal macOS `.app` and an APK. The Windows build is checked under Wine (Vulkan and OpenGL, the
+same frames as Linux's); macOS and Android are built in CI but not yet played on a real machine -
+MetalFX, in particular, is compiled but untested.
 
 | Platform | Build | Renderer | The data (besides `--data` and `CR2_DATA`) |
 |---|---|---|---|
-| Linux | `cmake -S engine -B build -G Ninja && ninja -C build` | Vulkan, OpenGL 3.3 | `vita/`, `android/` or `ipad/` beside `cr2view` |
-| Windows 10+ (x64) | MSVC and Ninja from a Developer prompt; the [Vulkan SDK](https://vulkan.lunarg.com/) for Vulkan. SDL3, zlib and FreeType are built by CMake | Vulkan, OpenGL 3.3 | the same, beside `cr2view.exe` |
-| macOS 11+ (Apple silicon and Intel) | Xcode's command-line tools and Ninja; add `"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"` for both | OpenGL 3.3 (Vulkan needs MoltenVK, not yet bundled) | the same, beside `cr2view.app` or in its `Contents/Resources/` |
+| Linux | `cmake -S engine -B build -G Ninja && ninja -C build` | Vulkan, OpenGL 3.3; FSR 3.1, DLSS (with the SDK) | `vita/`, `android/` or `ipad/` beside `cr2view` |
+| Windows 10+ (x64) | MSVC and Ninja from a Developer prompt, the [Vulkan SDK](https://vulkan.lunarg.com/) for Vulkan - or from Linux with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw): `-DCMAKE_TOOLCHAIN_FILE=engine/cmake/llvm-mingw-x86_64.cmake` (runs under Wine). SDL3, zlib and FreeType are built by CMake | Vulkan, OpenGL 3.3; FSR 3.1, DLSS (MSVC, with the SDK) | the same, beside `cr2view.exe` |
+| macOS 11+ (Apple silicon and Intel) | Xcode's command-line tools, Ninja and the [Vulkan SDK](https://vulkan.lunarg.com/) (MoltenVK, copied into the `.app`); add `"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"` for both | Vulkan (MoltenVK), OpenGL 3.3; FSR 3.1, MetalFX (macOS 13+) | the same, beside `cr2view.app` or in its `Contents/Resources/` |
 | Android 7+ (arm64, x86-64) | the Android SDK and NDK: `git clone -b release-3.2.0 https://github.com/libsdl-org/SDL android/SDL`, then `gradle assembleRelease` in `android/` | OpenGL ES 3.0 | `vita/`, `android/` or `ipad/` in `Android/data/local.preservation.chaosrings2/files/` on the shared storage (copy it there over USB) |
 
 The text falls back on the system's fonts where the release's own is missing: Noto CJK on Linux,
 Malgun Gothic and Microsoft YaHei on Windows, Apple SD Gothic Neo and PingFang on macOS.
 `-DCR2_GLES=ON` builds the desktop viewer on OpenGL ES 3.0, as Android runs it (Mesa has it): a
 way to test that path without a device. Saves go to SDL's profile folder (`DuIslingr/CR2-U/`).
+
+DLSS: the NGX headers and library from NVIDIA's [DLSS SDK](https://github.com/NVIDIA/DLSS)
+(`-DCR_DLSS_SDK=<its checkout>`, or `engine/third_party/dlss/`), its runtime copied next to the
+game. CI builds and links it on Linux and Windows to prove it, but never uploads those builds: NGX
+is proprietary and the port is GPL, so a DLSS build is for your own use (THIRD_PARTY.md).
+
+The options' **Graphics** button (or G / Tab there) opens CR2-U's own Display & Graphics list, in
+the game's list style: display mode, resolution, VSync, frame rate, renderer, upscaler (FSR 3.1,
+DLSS, MetalFX) and its mode, sharpness, MSAA, anisotropic filtering, texture filtering and HD
+textures - kept in `settings.ini` in the profile folder, the command line's flags over it.
+HD textures as CR1:U's: `cr2view --export-textures <folder>`, then `tools/hd_textures.py` (waifu2x
+or Real-ESRGAN) into `hd-textures/` in the profile folder (or beside the executable, or
+`CR2_HD_TEXTURES`); each replacement is found by the original's pixels, so every release can have
+its own in the same folder.
 
 ## Tools
 

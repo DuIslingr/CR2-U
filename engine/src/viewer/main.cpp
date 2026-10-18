@@ -10316,7 +10316,8 @@ int main(int argc, char** argv) {
             while (SDL_PollEvent(&e)) {
                 if (e.type == SDL_EVENT_QUIT) running = false;
                 else if (e.type == SDL_EVENT_KEY_DOWN) {
-                    const SDL_Keycode k = e.key.key;
+                    // (Android's Back: the menus' back, as Backspace)
+                    const SDL_Keycode k = e.key.key == SDLK_AC_BACK ? SDLK_BACKSPACE : e.key.key;
                     if (k == SDLK_ESCAPE) running = false;
                     if (k == SDLK_SPACE) v.paused = !v.paused;
                     // F1: the next resolution; F2: the upscaler's next mode (off, FSR 3.1 native

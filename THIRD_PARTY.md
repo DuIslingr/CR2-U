@@ -13,9 +13,27 @@ them in `engine/third_party/`:
 | `hevag/` | The HE-VAG prediction filter table from vgmstream (the copy CR1:U vendors) - the Vita release's sound effects | ISC (`COPYING`) |
 | `squirrel2/` | Squirrel 2.2.4 stable by Alberto Demichelis (the VM and its standard library, unmodified; `squirrel_2.2.4_stable.tar.gz` from the Squirrel project on SourceForge) - the version the game embeds, which runs its compiled scripts | zlib (`COPYRIGHT`) |
 
-Not included: the **NVIDIA DLSS SDK** (proprietary). Its support builds only when you place the
-SDK's `include/` and `lib/libnvsdk_ngx.a` in `engine/third_party/dlss/` yourself; a build with it
-links proprietary code into a GPL program, so it is for your own use, not for redistribution.
+Built from source by CMake when the system has none (fetched at build time, not in the
+repository; in the CI artifacts):
+
+| What | Licence |
+|---|---|
+| [SDL 3.2.0](https://github.com/libsdl-org/SDL) (linked in statically) | zlib |
+| [zlib 1.3.1](https://github.com/madler/zlib) (Windows, Android) | zlib |
+| [FreeType 2.13.3](https://gitlab.freedesktop.org/freetype/freetype) (Windows, macOS, Android: the text) | FreeType License or GPL-2.0 - used here under the GPL |
+
+Carried by the macOS `.app` (Contents/Frameworks, from the LunarG Vulkan SDK; their licence texts in
+Contents/Resources/licenses): the [Vulkan loader](https://github.com/KhronosGroup/Vulkan-Loader) and
+[MoltenVK](https://github.com/KhronosGroup/MoltenVK), both Apache-2.0. Apache-2.0 meets the GPL in
+its version 3, which "or any later version" allows: a `.app` with them is under GPL-3.0.
+
+Not included: the **NVIDIA DLSS SDK** (proprietary, NVIDIA RTX SDKs licence). DLSS support
+builds only with the SDK's headers and NGX library: `-DCR_DLSS_SDK=<a checkout of
+github.com/NVIDIA/DLSS>` (Linux x86-64, Windows x64 with MSVC), or its `include/` and
+`lib/libnvsdk_ngx.a` in `engine/third_party/dlss/`; without it the build has FSR 3.1 only
+(and MetalFX on macOS). A build with DLSS links proprietary code into a GPL program, so it is for
+your own use, not for redistribution - CI builds it to prove it, and uploads only the builds
+without it.
 
 No game data is included or distributed: *Chaos Rings II* and its assets are the property of
 Square Enix and Media.Vision. The port loads them at runtime from a copy you own.

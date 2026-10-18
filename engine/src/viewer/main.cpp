@@ -1977,6 +1977,8 @@ struct Viewer {
         audio.setVolumes(float(optionVolume[0]) / 100.0f, float(optionVolume[1]) / 100.0f, float(optionVolume[2]) / 100.0f);
         audio.update(dt);
         updateVistaSlash();
+        if (optionsWasOpen && !optionsOpen && scriptSaves) writeSystem(); // (OptionMenu's end: Cr3Util_Save_SystemData)
+        optionsWasOpen = optionsOpen;
         if (credits.stage) return updateCredits(dt);
         if (titleMenu.stage) return updateTitle(dt);
         if (playMode && (fieldMode || eventMode || battleMode) && !paused) playSeconds += dt; // (the save's play time)
@@ -2381,7 +2383,61 @@ struct Viewer {
 
     // a new game's party state (Cr3InitWorkFromBattleData): the sopia's levels, the items, the
     // equipment - before the scripts change them
+    // The system data (Cr3Util_Commit / Save / Load_SystemData: system.dat - the flags 0..991,
+    // cr3_flag_system_work, and the options - kept across games: a new game's Cr3UtilResetWork
+    // leaves them): CR2-U's system.txt beside the saves, written as the game saves (SaveConfirmationMenu)
+    // and as the options close (OptionMenu's end), laid over every game begun or loaded
+    static constexpr int kSystemFlags = 992;
+    bool systemRead = false, systemFound = false;
+    std::vector<int> systemFlags;
+    int systemOptions[5] = {-1, -1, -1, -1, -1};
+    void readSystem() {
+        systemRead = true;
+        std::FILE* f = std::fopen(savePath("system.txt").c_str(), "rb");
+        if (!f) return;
+        std::string text;
+        char buf[4096];
+        for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) text.append(buf, n);
+        std::fclose(f);
+        std::istringstream in(text);
+        std::string line;
+        if (!std::getline(in, line) || line != "CR2-U system 1") return;
+        systemFound = true;
+        while (std::getline(in, line)) {
+            std::istringstream l(line);
+            std::string key;
+            l >> key;
+            if (key == "flags")
+                for (int n; l >> n;) systemFlags.push_back(n);
+            else if (key == "options")
+                for (int& o : systemOptions) l >> o;
+        }
+    }
+    void applySystem() {
+        if (!systemRead) readSystem();
+        if (!systemFound) return; // (none yet: the save's own as they were)
+        for (int n = 0; n < kSystemFlags; ++n) game.setFlag(n, false);
+        for (int n : systemFlags) game.setFlag(n, true);
+        if (systemOptions[0] >= 0)
+            optionLanguage = systemOptions[0], optionQuality = systemOptions[1], optionVolume[0] = systemOptions[2],
+            optionVolume[1] = systemOptions[3], optionVolume[2] = systemOptions[4];
+    }
+    void writeSystem() {
+        systemRead = systemFound = true;
+        systemFlags.clear();
+        for (int n = 0; n < kSystemFlags; ++n)
+            if (game.flag(n)) systemFlags.push_back(n);
+        const int o[5] = {optionLanguage, optionQuality, optionVolume[0], optionVolume[1], optionVolume[2]};
+        std::memcpy(systemOptions, o, sizeof o);
+        std::string text = "CR2-U system 1\nflags";
+        for (int n : systemFlags) text += " " + std::to_string(n);
+        text += "\noptions";
+        for (int v : o) text += " " + std::to_string(v);
+        text += "\n";
+        if (std::FILE* f = std::fopen(savePath("system.txt").c_str(), "wb")) std::fwrite(text.data(), 1, text.size(), f), std::fclose(f);
+    }
     void newGame() {
+        applySystem();
         std::vector<uint8_t> d;
         if (!archive.read("data\\battledata.dat", d) || !battleData.parse(d)) return;
         game.initSopia(battleData, cr2::sopiaExp), game.initItems(battleData), game.initEquip(battleData, cr2::levelExpTable());
@@ -6164,7 +6220,7 @@ struct Viewer {
     int optionLanguage = 1, optionQuality = 0;
     // the Title Screen's question (BattleOptionMenu::Update 3, 5, 6: the window closed, a system
     // window with announcebattle 0x6d, choice_io's Yes / No - yes to the title, no back)
-    bool optionsAsk = false, toTitle = false;
+    bool optionsAsk = false, toTitle = false, optionsWasOpen = false;
     float optionsAskStart = 0;
     // OptionMenu::TouchSimpleRelease: the seat's tap areas 1 Title Screen, 2 Manual, 3 / 4 the
     // quality back / on (circle 98 on), 5 / 6 the language back / on (circle 99 on); the question's
@@ -6855,6 +6911,7 @@ struct Viewer {
         const bool ok = f && std::fwrite(text.data(), 1, text.size(), f) == text.size();
         if (f) std::fclose(f);
         SDL_Log("save: %s %s", path.c_str(), ok ? "written" : "not written");
+        if (ok && std::strcmp(file, "save1.txt") == 0) writeSystem(); // (SaveConfirmationMenu: Cr3Util_Save_SystemData too)
         return ok;
     }
     // --continue: the save read back, its map entered there
@@ -6878,6 +6935,7 @@ struct Viewer {
         int o[5] = {optionLanguage, optionQuality, optionVolume[0], optionVolume[1], optionVolume[2]};
         if (std::sscanf(extra["options"].c_str(), "%d %d %d %d %d", &o[0], &o[1], &o[2], &o[3], &o[4]) == 5)
             optionLanguage = o[0], optionQuality = o[1], optionVolume[0] = o[2], optionVolume[1] = o[3], optionVolume[2] = o[4];
+        applySystem(); // (the system data's flags and options over the save's)
         const std::string map = extra["map"].empty() ? "d1020" : extra["map"];
         playSeconds = double(std::atol(extra["playtime"].c_str())) / 20.0;
         if (!loadField(map, "", binary, dataPath)) return false;

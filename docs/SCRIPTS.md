@@ -419,6 +419,29 @@ Cr3FadeOut(0, 20) and the game. The panel and its buttons go while a question is
 (the sites, Game Center) are left out. CR2-U's save keeps the calendar's time (`saved`) and play time
 (`playtime`).
 
+The game's saves (MVGL's internal files, CRC-16/CCITT - init 0xffff, inverted - over all but the
+first two bytes, version 0x3f6 at +2):
+- `game.dat` / `cont.dat` (0x910 bytes, Cr3Util_Commit_GameData): +0x10 cr3_game_data (+0 the
+  play time in frames of 0.05 s, at most 100 hours); +0x34 cr3_common_data (0x30c: +0 the
+  difficulty, +1 / +2 the battle's pair, +3 / +4 the party, +5..+10 the pairs, +0xc the items'
+  counts - 300 s16 -, +0x264 the Oz, +0x268 the sopia had, +0x26c their levels, +0x28c their EXP);
+  +0x340 cr3_player_data (nine of 0x4c: +0 level, +4 EXP, +8 / +0xc HP and its most, +0x10 /
+  +0x12 MP and its most, +0x14 the five parameters, +0x1e the seeds, +0x3c the equipment, +0x42
+  the five sopia); +0x5f0 cr3_field_data (+0 the dungeon, +4 the area - the map by a table of 48
+  a dungeon, 0x53a254 -, +8 the leader, +0xc how the field is entered, +0x10 the place, +0x20 the
+  turn, +0x30..+0x33 the encounters' switches, the change and the tab); +0x630 the flags past 1000
+  (cr3_flag_work, 500 bytes, flag n bit n & 31 of word n >> 5); +0x824 the global work (32 s32);
+  +0x8a4 cr3_treasureBox (+0 the table, then a set / opened byte pair each box: ten, three,
+  three); +0x8c8 the stats, +0x8e8 the achievements. The calendar's date is the file's own.
+- `system.dat` (0xb8 bytes, Cr3Util_Commit_SystemData): +4 the flags 0..991 (cr3_flag_system_work,
+  0x7c bytes: the tutorials seen, the chapters open, ...), +0x80 cr3_system_data (the options),
+  +0x98 the achievements. It is kept across games (a new game's Cr3UtilResetWork leaves it;
+  Cr3UtilInitWork clears it, keeping flags 201 and 202) and written as the game saves and as the
+  options close.
+
+CR2-U keeps the same split: `system.txt` beside its saves holds the flags 0..991 and the options,
+laid over every game begun or loaded.
+
 ## The game's flow
 
 What comes after a field's or an event's script is what it reserved, in `cr3_script_work`

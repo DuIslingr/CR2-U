@@ -192,6 +192,12 @@ std::string FieldMap::exitTouched(const Vec3& centre, float radius) const {
     return "";
 }
 
+bool FieldMap::exitBounds(const std::string& pop, Vec3& lo, Vec3& hi) const {
+    for (const Exit& e : exits_)
+        if (e.pop == pop) return e.volume.bounds(lo, hi);
+    return false;
+}
+
 void FieldMap::groundAxes(Vec3& right, Vec3& forward) const {
     auto flat = [](float x, float z) {
         const float l = std::sqrt(x * x + z * z);

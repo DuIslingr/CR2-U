@@ -327,4 +327,18 @@ std::string CollisionWorld::surfaceBelow(const Vec3& p, float depth) const {
     return out;
 }
 
+bool CollisionWorld::bounds(Vec3& lo, Vec3& hi) const {
+    bool any = false;
+    auto take = [&](const Vec3& p, float r) {
+        for (int c = 0; c < 3; ++c) {
+            lo[c] = any ? std::min(lo[c], p[c] - r) : p[c] - r;
+            hi[c] = any ? std::max(hi[c], p[c] + r) : p[c] + r;
+        }
+        any = true;
+    };
+    for (const Tri& t : tris_) take(t.a, 0), take(t.b, 0), take(t.c, 0);
+    for (const Capsule& c : capsules_) take(c.a, c.radius), take(c.b, c.radius);
+    return any;
+}
+
 } // namespace cr2

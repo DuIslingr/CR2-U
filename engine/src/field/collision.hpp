@@ -72,6 +72,8 @@ public:
 
     // The surface name under a point (a ray straight down, within `depth`): "" none
     std::string surfaceBelow(const Vec3& p, float depth) const;
+    // What it holds spans (its triangles' and capsules' corners): false, nothing
+    bool bounds(Vec3& lo, Vec3& hi) const;
 
 private:
     struct Tri {

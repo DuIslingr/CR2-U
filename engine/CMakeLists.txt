@@ -37,6 +37,7 @@ add_library(cr2core STATIC
     src/assets/text.cpp
     src/field/fieldmap.cpp
     src/field/collision.cpp
+    src/field/navigation.cpp
     src/field/character.cpp
     src/field/gimmicks.cpp
     src/field/fieldscript.cpp

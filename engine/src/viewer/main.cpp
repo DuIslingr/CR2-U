@@ -66,6 +66,7 @@
 
 #include "assets/geom.hpp"
 #include "assets/hd_texture.hpp"
+#include "field/navigation.hpp"
 #include "assets/image.hpp"
 #include "assets/maptable.hpp"
 #include "assets/release.hpp"
@@ -8609,6 +8610,441 @@ struct Viewer {
         SDL_Log("input %s", t.c_str());
         return true;
     }
+    // ---- The explorer (`--explore <folder>`): the game played by itself from its title, as a player
+    // would - so a whole playthrough can be checked against a reference. Where the game waits on
+    // the player it chooses: on the field, the event boxes and the things to tap the story has on
+    // and it hasn't tried in this state of the story (its flags and work values), then the exits to
+    // the maps it hasn't been on since the story last moved; it walks there over a grid of where the
+    // leader fits (field/navigation.hpp), the touch actions done as they're asked. The questions
+    // take `--choices` (yes / no, in turn - then yes), the world select its newest dungeon at its
+    // highest level, the shops and the like are left; battles are fought by their rules. A timeline
+    // (timeline.txt: each map, event, battle, the credits, with the game's clock) and a picture at
+    // each go to the folder.
+    struct Explorer {
+        bool on = false;
+        std::string dir;
+        std::FILE* log = nullptr;
+        double clock = 0;                // (the game's seconds played)
+        std::string phase;               // (what the timeline last wrote)
+        uint64_t key = 0;                // (the story's state: flags and work)
+        double movedAt = 0;              // (the story last moved)
+        std::set<std::pair<uint64_t, std::string>> tried;
+        std::set<std::string> visited;   // (maps since the story moved)
+        std::deque<std::string> choices; // (--choices)
+        std::string gridMap;
+        cr2::NavGrid grid;
+        std::string target;              // (a gimmick's name, or "exit:<pop>")
+        cr2::Vec3 goal{};
+        float reach = 0.02f;
+        bool tapIt = false;
+        std::vector<cr2::Vec3> path;
+        size_t at = 0;
+        double since = 0, stillSince = 0;
+        cr2::Vec3 last{};
+        int shots = 0, stuck = 0;
+        std::set<std::string> dungeonsSeen; // (the world select's: its newest the one taken)
+        std::string cameFrom;               // (the map before: its way back the last to try)
+        std::string visitedMap;
+        std::map<std::string, int> taps; // (this visit to the map: a target's taps - two at most, whatever the flags do)
+        std::vector<bool> flagsBefore;      // (the timeline's flag changes)
+        std::map<size_t, int> flips;        // (a flag's changes: three or more, a passing one - out of the story's state)
+        // the maps as the explorer knows them: each one's ways out (an exit's or a door's target ->
+        // the map it leads to) and whether it had things left to try when last there, in this state
+        std::map<std::string, std::map<std::string, std::string>> links;
+        std::map<std::string, bool> leftOn;
+        std::set<std::string> everVisited; // (maps been on at all: one never seen first)
+        double outUntil = -1;              // (stepping out of an event box, to walk in again)
+        double touchingSince = -1;
+        float reachPlan = 0.02f;
+        std::map<std::string, double> sprintUsed; // (a sprint spot: when the explorer last took it)
+        std::map<std::string, std::string> doors; // ("map:box" -> the map it led to: an event box that changes the map, ranked as an exit)
+        std::string lastBox;                       // (the event box last touched, "map:box")
+        cr2::Vec3 outFrom{};
+        double nextTap = 0;
+        bool done = false;
+    } ex;
+    uint64_t storyKey() const {
+        uint64_t h = 1469598103934665603ull;
+        auto mix = [&](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
+        for (size_t i = 0; i < game.flags.size(); ++i) { // (the flags alone: the work values count taps and the like)
+            const auto f = ex.flips.find(i);
+            if (game.flags[i] && (f == ex.flips.end() || f->second < 3)) mix(i + 1);
+        }
+        return h;
+    }
+    void exploreLog(const std::string& line) {
+        if (!ex.log) return;
+        const int s = int(ex.clock);
+        std::fprintf(ex.log, "%02d:%02d:%02d  %s\n", s / 3600, s / 60 % 60, s % 60, line.c_str());
+        std::fflush(ex.log);
+        SDL_Log("explore %s", line.c_str());
+    }
+    std::string explorePhase() const {
+        if (titleMenu.stage) return "title";
+        if (credits.stage) return "credits";
+        if (battleMode) return "battle " + std::to_string(battle.coupling);
+        if (eventMode) return "vista " + status;
+        if (fieldMode) return "field " + field.info().name;
+        return "";
+    }
+    // the explorer's grid of this map (built on arriving, grown where the leader lands off it - a
+    // sprint's or a jump's landing), its exits marked as zones
+    void exploreGrid() {
+        const cr2::Vec3 p = controller->position();
+        const std::vector<std::string> exits = field.exitNames();
+        bool changed = false;
+        if (ex.gridMap != field.info().name) {
+            ex.grid.build(field.collision(), p, controller->radius, controller->stepHeight);
+            ex.gridMap = field.info().name, changed = true;
+        } else if (!ex.grid.reaches(p)) {
+            changed = ex.grid.grow(field.collision(), p, controller->radius, controller->stepHeight);
+        }
+        if (changed)
+            ex.grid.markZones([&](const cr2::Vec3& c) { // (the exits: walked into only when taken)
+                for (size_t k = 0; k < exits.size(); ++k)
+                    if (field.exitTouched({c[0], c[1] + controller->radius + 0.01f, c[2]}, controller->radius) == exits[k]) return int(k);
+                return -1;
+            });
+    }
+    // a way from where the leader stands to `goal` (`target` an exit: its zone allowed), ending within
+    // `reach` of it across the ground - false: none from here
+    bool explorePath(const std::string& target, const cr2::Vec3& goal, float reach, std::vector<cr2::Vec3>& out) {
+        const std::vector<std::string> exits = field.exitNames();
+        int allow = -1;
+        if (target.rfind("exit:", 0) == 0)
+            for (size_t k = 0; k < exits.size(); ++k)
+                if ("exit:" + exits[k] == target) allow = int(k);
+        if (!ex.grid.path(controller->position(), goal, out, allow) || out.empty()) return false;
+        const cr2::Vec3& e = out.back();
+        return std::hypot(e[0] - goal[0], e[2] - goal[2]) <= reach + 0.06f;
+    }
+    bool explorePlan() {
+        if (!controller) return false;
+        exploreGrid();
+        ex.at = 0;
+        return explorePath(ex.target, ex.goal, ex.reachPlan, ex.path);
+    }
+    // the next thing to do on the field (false: nothing left in this state of the story)
+    bool explorePick() {
+        if (!script || !controller) return false;
+        exploreGrid();
+        struct Cand {
+            int rank; // 0 an event box, 1 a thing to tap, 2 a treasure box; 3 .. 5 a way out (new, been, back)
+            float length = 0;
+            std::string name;
+            cr2::Vec3 at;
+            float reach; // (arriving: a tap's distance; planning: the path's end from it)
+            bool tap;
+            float planReach;
+            bool reachable = false;
+            std::vector<cr2::Vec3> path;
+        };
+        std::vector<Cand> c;
+        const bool debug = SDL_getenv("CR2_EXPLORE_DEBUG") != nullptr;
+        ex.lastBox.clear(); // (what the last touch or tap began is over, here: not a door)
+        const std::string here = field.info().name;
+        auto wayRank = [&](const std::string& to) { return to == ex.cameFrom ? 5 : ex.visited.count(to) ? 4 : 3; };
+        std::vector<const cr2::Gimmick*> sprints;
+        for (const cr2::Gimmick& g : field.gimmicks()) {
+            const auto door = ex.doors.find(here + ":" + g.name);
+            const bool isDoor = door != ex.doors.end();
+            const auto st = script->gimmicks().find(g.id);
+            const bool enabled = st == script->gimmicks().end() || st->second.event;
+            const bool shown = script->visible(g);
+            if (debug && (g.check || g.kind == cr2::Gimmick::Event))
+                SDL_Log("EXDEBUG %s: tried %d taps %d enabled %d shown %d door %d", g.name.c_str(), int(ex.tried.count({ex.key, g.name})),
+                        ex.taps[g.name], int(enabled), int(shown), int(isDoor));
+            const cr2::Vec3 at{g.position[0], g.position[1], g.position[2]};
+            if (g.kind == cr2::Gimmick::Ability && g.name.rfind("sprint", 0) == 0) sprints.push_back(&g);
+            if ((!isDoor && ex.tried.count({ex.key, g.name})) || ex.taps[g.name] >= 2 || !enabled) continue;
+            if (g.kind == cr2::Gimmick::Event && !g.check) {
+                const float half = std::max(g.jointScale[0], g.jointScale[2]) / 100.0f;
+                c.push_back({isDoor ? wayRank(door->second) : 0, 0, g.name, at, half * 0.5f, false, half});
+            } else if (g.check && g.checkLength() > 0 && shown) {
+                if (g.kind == cr2::Gimmick::Box && (boxOpening.count(g.name) || game.boxes.isOpen(g.boxKind, g.boxNumber))) continue;
+                c.push_back({isDoor ? wayRank(door->second) : g.kind == cr2::Gimmick::Box ? 2 : 1, 0, g.name, at, g.checkLength() * 0.7f, true,
+                             g.checkLength() * 0.8f});
+            }
+        }
+        for (const std::string& e : field.exitNames()) {
+            cr2::Vec3 lo, hi;
+            if (!field.exitBounds(e, lo, hi)) continue;
+            const cr2::Vec3 at{(lo[0] + hi[0]) * 0.5f, lo[1], (lo[2] + hi[2]) * 0.5f};
+            c.push_back({wayRank(e.substr(0, 5)), 0, "exit:" + e, at, 0.0f, false, std::max(hi[0] - lo[0], hi[2] - lo[2]) * 0.5f});
+        }
+        for (Cand& k : c) {
+            k.reachable = explorePath(k.name, k.at, k.planReach, k.path);
+            float len = 0;
+            for (size_t i = 1; i < k.path.size(); ++i) len += std::hypot(k.path[i][0] - k.path[i - 1][0], k.path[i][2] - k.path[i - 1][2]);
+            k.length = len;
+        }
+        // (this map's ways out, as learned; something reachable to do here, or none)
+        for (const std::string& e : field.exitNames()) ex.links[here]["exit:" + e] = e.substr(0, 5);
+        for (const auto& [box, to] : ex.doors)
+            if (box.rfind(here + ":", 0) == 0) ex.links[here][box.substr(here.size() + 1)] = to;
+        bool local = false, cutOff = false;
+        for (const Cand& k : c) {
+            if (k.rank <= 2 && k.reachable) local = true;
+            if (!k.reachable) cutOff = true;
+        }
+        ex.leftOn[here] = local;
+        auto take = [&](const Cand& k) {
+            ex.target = k.name, ex.goal = k.at, ex.reach = k.reach, ex.tapIt = k.tap, ex.reachPlan = k.planReach;
+            ex.path = k.path, ex.at = 0;
+            ex.since = ex.clock, ex.stillSince = ex.clock, ex.last = controller->position();
+            exploreLog("  -> " + k.name + (k.tap ? " (to tap)" : ""));
+            return true;
+        };
+        std::sort(c.begin(), c.end(), [](const Cand& a, const Cand& b) { return a.rank != b.rank ? a.rank < b.rank : a.length < b.length; });
+        if (local)
+            for (const Cand& k : c)
+                if (k.rank <= 2 && k.reachable) return take(k);
+        // (something cut off: a sprint not used lately, to go over to it)
+        if (cutOff) {
+            const Cand* best = nullptr;
+            Cand s;
+            float bestLen = 1e9f;
+            for (const cr2::Gimmick* g : sprints) {
+                const auto used = ex.sprintUsed.find(g->name);
+                if (used != ex.sprintUsed.end() && ex.clock - used->second < 30) continue;
+                Cand k{6, 0, "sprint:" + g->name, {g->position[0], g->position[1], g->position[2]}, 0.01f, false, 0.03f};
+                if (!explorePath(k.name, k.at, k.planReach, k.path)) continue;
+                float len = 0;
+                for (size_t i = 1; i < k.path.size(); ++i) len += std::hypot(k.path[i][0] - k.path[i - 1][0], k.path[i][2] - k.path[i - 1][2]);
+                if (len < bestLen) bestLen = len, s = k, best = &s;
+            }
+            if (best) {
+                bool wayReachable = false; // (only when no way out, or what's wanted lies over there)
+                for (const Cand& k : c)
+                    if (k.rank >= 3 && k.reachable && !ex.leftOn.count(ex.links[here][k.name])) wayReachable = true;
+                if (!wayReachable || !local) return take(*best);
+            }
+        }
+        // (nothing here: the way to the nearest map never been on, else one unseen in this state or with things left)
+        std::map<std::string, std::string> firstStep;
+        std::deque<std::string> open;
+        for (const Cand& k : c)
+            if (k.rank >= 3 && k.reachable) {
+                const std::string to = ex.links[here].count(k.name) ? ex.links[here][k.name] : "";
+                if (!to.empty() && to != here && !firstStep.count(to)) firstStep[to] = k.name, open.push_back(to);
+            }
+        std::string go;
+        for (int pass = 0; pass < 2 && go.empty(); ++pass) {
+            std::map<std::string, std::string> step = firstStep;
+            std::deque<std::string> queue = open;
+            while (!queue.empty() && go.empty()) {
+                const std::string m = queue.front();
+                queue.pop_front();
+                const auto lo = ex.leftOn.find(m);
+                if (pass == 0 ? !ex.everVisited.count(m) : (lo == ex.leftOn.end() || lo->second)) { go = step[m]; break; }
+                for (const auto& [way, to] : ex.links[m])
+                    if (!step.count(to) && to != here) step[to] = step[m], queue.push_back(to);
+            }
+        }
+        if (debug) {
+            std::string known, ways;
+            for (const auto& [m, l] : ex.leftOn) known += " " + m + (l ? "+" : "-");
+            for (const Cand& k : c) ways += " " + k.name + (k.reachable ? "" : "(cut off)");
+            SDL_Log("EXDEBUG %s: nothing here; known%s; candidates%s; going %s", here.c_str(), known.c_str(), ways.c_str(), go.c_str());
+        }
+        for (const Cand& k : c)
+            if (k.name == go) return take(k);
+        return false;
+    }
+    // one update's input: the field's direction, the rest done here
+    void exploreStep(float& sx, float& sy) {
+        sx = sy = 0;
+        ex.clock += 1.0 / 60.0;
+        const std::string ph = explorePhase();
+        if (ph != ex.phase && !ph.empty()) {
+            ex.phase = ph;
+            exploreLog(ph);
+            exploreShotDue = ex.clock + (ph.rfind("battle", 0) == 0 ? 3.0 : ph.rfind("field", 0) == 0 ? 0.6 : 1.5);
+            exploreShotName = ph;
+            if (fieldMode && !eventMode && ex.visitedMap != field.info().name) { // (another map - not back from a battle or a vista)
+                if (!ex.lastBox.empty() && ex.lastBox.rfind(ex.visitedMap + ":", 0) == 0) ex.doors[ex.lastBox] = field.info().name;
+                ex.lastBox.clear();
+                if (!ex.target.empty()) ex.tried.insert({ex.key, ex.target}), ex.target.clear(); // (taken - or what lay past an exit)
+                if (!ex.visitedMap.empty() && ex.visitedMap != field.info().name) ex.cameFrom = ex.visitedMap;
+                if (ex.visitedMap != field.info().name) ex.taps.clear();
+                ex.visitedMap = field.info().name;
+                ex.visited.insert(field.info().name);
+                ex.everVisited.insert(field.info().name);
+            } else if (fieldMode && !eventMode) {
+                ex.target.clear(); // (back on the same map: the way planned again)
+            }
+        }
+        const uint64_t k = storyKey();
+        if (k != ex.key) {
+            ex.key = k, ex.movedAt = ex.clock, ex.visited.clear(), ex.stuck = 0, ex.target.clear(), ex.leftOn.clear(), ex.taps.clear();
+            std::string on, off;
+            for (size_t i = 0; i < std::max(game.flags.size(), ex.flagsBefore.size()); ++i) {
+                const bool a = i < ex.flagsBefore.size() && ex.flagsBefore[i], b = game.flag(int(i));
+                if (a != b) (b ? on : off) += " " + std::to_string(i), ++ex.flips[i];
+            }
+            if (!on.empty() || !off.empty()) exploreLog("  flags" + (on.empty() ? "" : " +" + on) + (off.empty() ? "" : " -" + off));
+            ex.flagsBefore = game.flags;
+        }
+        if (credits.stage == 0 && ex.phase == "credits") {} // (the staff roll's end: the field again, or the title)
+        if (yesNoShown() && activeEvents()->yesNoAge() > 0.6f) {
+            const bool yes = ex.choices.empty() || ex.choices.front() != "no";
+            if (!ex.choices.empty()) ex.choices.pop_front();
+            exploreLog(std::string("  a question: ") + (yes ? "yes" : "no"));
+            return answerYesNo(yes);
+        }
+        if (titleMenu.stage) {
+            if (inputScript.empty() && titleMenu.stage == 3) inputScript = {"tap", "start", "new", "yes"};
+            return;
+        }
+        if (world.stage) { // (the newest dungeon open, its highest level)
+            if (ex.clock < ex.nextTap) return;
+            ex.nextTap = ex.clock + 0.5;
+            const std::vector<ListRow> rows = worldRows();
+            if (world.stage == 1 && !world.chapters) {
+                int pick = int(rows.size()) - 1;
+                for (size_t i = 0; i < rows.size(); ++i)
+                    if (!ex.dungeonsSeen.count(rows[i].name)) pick = int(i);
+                for (const ListRow& r : rows) ex.dungeonsSeen.insert(r.name);
+                world.focus = std::max(pick, 0);
+                exploreLog("  the world select: " + (rows.empty() ? std::string("none") : rows[size_t(world.focus)].name));
+            } else if (world.stage == 2 || (world.stage == 1 && world.chapters)) {
+                world.focus = int(rows.size()) - 1;
+            }
+            return worldKey(SDLK_RETURN);
+        }
+        if (shop.stage || pub.stage || library.stage || party.stage || campOpen || mapOpen || saveStage) {
+            if (ex.clock < ex.nextTap) return;
+            ex.nextTap = ex.clock + 0.5;
+            if (saveStage == 1) return saveAnswer(true);
+            if (campOpen) return campPress(100);
+            if (mapOpen) return void(mapOpen = false);
+            if (shop.stage) return shopKey(SDLK_BACKSPACE);
+            if (pub.stage) return pubKey(SDLK_BACKSPACE);
+            if (library.stage) return libraryKey(SDLK_BACKSPACE);
+            if (party.stage) return partyKey(SDLK_BACKSPACE);
+            return;
+        }
+        if (battleMode || eventMode || credits.stage || (script && script->running())) { // (pages, results: tapped now and then)
+            if (ex.clock >= ex.nextTap) ex.nextTap = ex.clock + 1.0, tap();
+            return;
+        }
+        if (actionRunning() || keyLock.stage) { // (a touch action begun: its success)
+            if (inputScript.empty() && ex.clock >= ex.nextTap) {
+                ex.nextTap = ex.clock + 0.8;
+                if (iai.stage || vslash.stage) inputScript.push_back("slash");
+                else if (aim.stage) inputScript.push_back("aim");
+                else if (hakkei.stage) inputScript.push_back("punch");
+                else if (mystic.stage) inputScript.push_back("tapspot");
+                else if (keyLock.stage) inputScript.push_back("unlock");
+            }
+            return;
+        }
+        if (!fieldTabShown()) return;
+        if (actionMark.gimmick >= 0 && actionMark.startedAt < 0 && actionMark.able && ex.clock >= ex.nextTap) { // (a touch action offered)
+            ex.nextTap = ex.clock + 1.0;
+            exploreLog("  a touch action: " + field.gimmicks()[size_t(actionMark.gimmick)].name);
+            return actionTapped();
+        }
+        if (sprintAt() >= 0 && ex.clock >= ex.nextTap) {
+            ex.nextTap = ex.clock + 1.0;
+            ex.sprintUsed[field.gimmicks()[size_t(sprintAt())].name] = ex.clock;
+            if (ex.target.rfind("sprint:", 0) == 0) ex.target.clear();
+            return startSprint(sprintAt());
+        }
+        if (ex.target.empty() && !explorePick()) {
+            if (ex.clock - ex.movedAt > exploreStuckSeconds) { // (that long with nothing new: stuck)
+                std::string on;
+                for (size_t i = 1000; i < game.flags.size(); ++i)
+                    if (game.flags[i]) on += " " + std::to_string(i);
+                char work[160];
+                std::snprintf(work, sizeof work, " - work 0..3: %d %d %d %d", game.globalWork[0], game.globalWork[1], game.globalWork[2], game.globalWork[3]);
+                exploreLog("stuck: nothing left to try on " + field.info().name + work);
+                exploreLog("  the flags set (1000 up):" + on);
+                ex.done = true;
+            }
+            return;
+        }
+        if (ex.target.empty()) return;
+        const cr2::Vec3 p = controller->position();
+        // there: tapped (the balloon's), touched (walked through), or the exit taken
+        const float left = std::hypot(ex.goal[0] - p[0], ex.goal[2] - p[2]);
+        if (ex.tapIt && nearestBalloon >= 0 && field.gimmicks()[size_t(nearestBalloon)].name == ex.target) {
+            ex.tried.insert({ex.key, ex.target});
+            ++ex.taps[ex.target];
+            ex.lastBox = field.info().name + ":" + ex.target; // (a tap that leads off the map: a door too)
+            char work[64];
+            std::snprintf(work, sizeof work, " (work %d %d %d %d)", game.globalWork[0], game.globalWork[1], game.globalWork[2], game.globalWork[3]);
+            exploreLog("  tapped " + field.gimmicks()[size_t(nearestBalloon)].name + work);
+            ex.target.clear();
+            return tap();
+        }
+        if (ex.clock < ex.outUntil) { // (out of the box: away from its middle)
+            float ox = p[0] - ex.outFrom[0], oz = p[2] - ex.outFrom[2];
+            const float ol = std::hypot(ox, oz);
+            if (ol < 1e-4f) ox = 1, oz = 0;
+            else ox /= ol, oz /= ol;
+            cr2::Vec3 right, forward;
+            field.groundAxes(right, forward);
+            sx = ox * right[0] + oz * right[2], sy = ox * forward[0] + oz * forward[2];
+            return;
+        }
+        if (!ex.tapIt && ex.target.rfind("exit:", 0) != 0 && insideEvents.count(ex.target) && ex.clock - ex.since > 0.2 && ex.outUntil < ex.since) {
+            ex.outUntil = ex.clock + 0.6, ex.outFrom = ex.goal; // (in it already, so its touch won't come: out, then in again)
+            return;
+        }
+        if (!ex.tapIt && ex.target.rfind("exit:", 0) != 0) { // (an event box: touched as the game touches it)
+            const float at[3] = {p[0], p[1], p[2]};
+            for (const cr2::Gimmick& g : field.gimmicks())
+                if (g.name == ex.target && g.touches(at, controller->radius)) {
+                    if (!insideEvents.count(g.name)) { // (the field looks once an update: in until it has seen it)
+                        if (ex.touchingSince < 0) ex.touchingSince = ex.clock;
+                        if (ex.clock - ex.touchingSince < 0.5) break;
+                    }
+                    ex.touchingSince = -1;
+                    exploreLog("  touched " + g.name + (insideEvents.count(g.name) ? "" : " (its event didn't run)"));
+                    if (!insideEvents.count(g.name) && SDL_getenv("CR2_EXPLORE_DEBUG"))
+                        for (const cr2::Gimmick& o : field.gimmicks()) {
+                            if (o.kind != cr2::Gimmick::Event) continue;
+                            const auto st = script->gimmicks().find(o.id);
+                            SDL_Log("DEBUG %s id %s check %d touches %d enabled %d inside %d running %d", o.name.c_str(), o.id.c_str(), int(o.check),
+                                    int(o.touches(at, controller->radius)), int(st == script->gimmicks().end() || st->second.event),
+                                    int(insideEvents.count(o.name)), int(script->running()));
+                        }
+                    ex.lastBox = field.info().name + ":" + g.name;
+                    ex.tried.insert({ex.key, ex.target});
+                    ex.target.clear();
+                    return;
+                }
+        }
+        if (ex.clock - ex.since > 40) { // (too long: given up)
+            char why[96];
+            std::snprintf(why, sizeof why, " (%.3f from it, the balloon %s)", left,
+                          nearestBalloon >= 0 ? field.gimmicks()[size_t(nearestBalloon)].name.c_str() : "none");
+            exploreLog("  gave up on " + ex.target + why);
+            ex.tried.insert({ex.key, ex.target}), ex.target.clear();
+            return;
+        }
+        if (std::hypot(p[0] - ex.last[0], p[2] - ex.last[2]) > 0.01f) ex.last = p, ex.stillSince = ex.clock;
+        else if (ex.clock - ex.stillSince > 2.0) { // (held up: the way again)
+            ex.stillSince = ex.clock;
+            if (!explorePlan()) exploreLog("  (no way to " + ex.target + " from here)"), ex.tried.insert({ex.key, ex.target}), ex.target.clear();
+            return;
+        }
+        // along the way: the next point not yet passed
+        while (ex.at + 1 < ex.path.size() && std::hypot(ex.path[ex.at][0] - p[0], ex.path[ex.at][2] - p[2]) < 0.025f) ++ex.at;
+        cr2::Vec3 to = ex.at < ex.path.size() ? ex.path[ex.at] : ex.goal;
+        if (ex.at + 1 >= ex.path.size()) to = ex.goal; // (the last stretch: straight in)
+        float dx = to[0] - p[0], dz = to[2] - p[2];
+        const float l = std::hypot(dx, dz);
+        if (l < 1e-4f) return;
+        dx /= l, dz /= l;
+        cr2::Vec3 right, forward;
+        field.groundAxes(right, forward);
+        sx = dx * right[0] + dz * right[2], sy = dx * forward[0] + dz * forward[2];
+    }
+    double exploreShotDue = -1;
+    double exploreStuckSeconds = 900; // (CR2_EXPLORE_STUCK: seconds)
+    std::string exploreShotName;
     // The leader's figure (FldPlayer::CreatePlayer: c + its character's 001..007), the field's
     // character the script has leading - unless --model gave one
     bool leaderFollows = false;
@@ -9960,6 +10396,8 @@ int main(int argc, char** argv) {
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
     bool tapAfter = false, mute = false, forceAudio = false;
     int hdArg = -1;        // --hd-textures / --no-hd-textures (-1: the settings')
+    std::string exploreDir, choicesArg; // --explore <folder> [--choices yes,no,...] [--hours h]: the game played by itself
+    float exploreHours = 12;
     std::string exportDir; // --export-textures <dir>: every image as <hash>.crraw, for tools/hd_textures.py
     std::string eventName, vista = "null", fontPath, playFrom, callEntry = "evt000";
     int creditsArg = -1;
@@ -10047,6 +10485,9 @@ int main(int argc, char** argv) {
         else if (a == "--hd-textures") hdArg = 1;
         else if (a == "--no-hd-textures") hdArg = 0;
         else if (a == "--export-textures" && next) exportDir = next, ++i;
+        else if (a == "--explore" && next) exploreDir = next, ++i;
+        else if (a == "--choices" && next) choicesArg = next, ++i;
+        else if (a == "--hours" && next) exploreHours = float(std::atof(next)), ++i;
         else if (a == "--audio") forceAudio = true; // (the device even under --capture: tests, SDL_AUDIO_DRIVER=dummy)
         else if (a == "--call" && next) callEntry = argv[++i]; // (--play: the map's event function, not its evt000)
         else if (a == "--credits" && next) creditsArg = std::atoi(argv[++i]); // (the staff roll n at once: --play's, for tests)
@@ -10108,7 +10549,11 @@ int main(int argc, char** argv) {
             return false;
         };
         Viewer::Settings& s = v.settings;
-        if (capture.empty() && exportDir.empty()) {
+        if (!exploreDir.empty()) { // (from the title, as a player: in frames of the reference's 20:9)
+            titleScreen = true;
+            if (resW == 0) resW = 1280, resH = 576;
+        }
+        if (capture.empty() && exportDir.empty() && exploreDir.empty()) {
             v.settingsPersist = true;
             v.loadSettings();
             if (!given("--renderer")) renderer = s.renderer ? "opengl" : "vulkan";
@@ -10169,7 +10614,7 @@ int main(int argc, char** argv) {
         return failed ? 1 : 0;
     }
     // the sound: played unless captured (or --mute) - then silent, its state kept all the same
-    const bool device = (capture.empty() || forceAudio) && !mute;
+    const bool device = ((capture.empty() && exploreDir.empty()) || forceAudio) && !mute;
     if (!v.audio.open(data, device, &err)) SDL_Log("sound: %s", err.c_str());
     else SDL_Log("sound: on%s%s", device ? "" : " (silent)", err.empty() ? "" : (" - " + err).c_str());
     for (const auto& e : v.archive.entries())
@@ -10202,7 +10647,7 @@ int main(int argc, char** argv) {
     cr2::useBundledVulkan(); // (macOS: the .app's own loader)
     std::unique_ptr<cr2::RenderDevice> dev;
     SDL_Window* win = nullptr;
-    const SDL_WindowFlags shown = capture.empty() ? SDL_WINDOW_RESIZABLE : SDL_WINDOW_HIDDEN;
+    const SDL_WindowFlags shown = capture.empty() && exploreDir.empty() ? SDL_WINDOW_RESIZABLE : SDL_WINDOW_HIDDEN;
     for (const cr2::Backend b : {cr2::Backend::Vulkan, cr2::Backend::OpenGL}) {
         if (b == cr2::Backend::Vulkan && renderer != "vulkan") continue;
         std::unique_ptr<cr2::RenderDevice> d = b == cr2::Backend::Vulkan ? cr2::makeVkDevice() : cr2::makeGlDevice();
@@ -10376,7 +10821,51 @@ int main(int argc, char** argv) {
     SDL_Log("output: %s", describe().c_str());
 
     int code = 0;
-    if (!capture.empty()) { // one frame to a file
+    if (!exploreDir.empty()) { // the game played by itself (Viewer::exploreStep), its timeline and pictures to the folder
+        SDL_CreateDirectory(exploreDir.c_str());
+        if (exploreDir.back() != '/') exploreDir += '/';
+        v.ex.on = true, v.ex.dir = exploreDir;
+        if (const char* st = SDL_getenv("CR2_EXPLORE_STUCK")) v.exploreStuckSeconds = std::atof(st);
+        v.ex.log = std::fopen((exploreDir + "timeline.txt").c_str(), "wb");
+        for (size_t p = 0; p < choicesArg.size();) {
+            const size_t c = std::min(choicesArg.find(',', p), choicesArg.size());
+            v.ex.choices.push_back(choicesArg.substr(p, c - p));
+            p = c + 1;
+        }
+        v.manualCommands = false; // (the battles by their rules)
+        bool pageGiven = false;
+        for (int i = 1; i < argc; ++i) pageGiven |= std::strcmp(argv[i], "--page") == 0;
+        v.pageSeconds = pageGiven ? page : 1.0f;
+        int w = 0, h = 0;
+        frameSize(w, h);
+        for (long n = 0; !v.ex.done && v.ex.clock < double(exploreHours) * 3600.0; ++n) {
+            float sx, sy;
+            v.exploreStep(sx, sy);
+            v.advance(1.0f / 60.0f, sx, sy, true);
+            v.pose();
+            catchGlass();
+            if (!takeTitle()) break;
+            if (v.exploreShotDue >= 0 && v.ex.clock >= v.exploreShotDue) { // (the milestone's picture)
+                v.draw(w, h);
+                dev->endFrame(false);
+                std::vector<uint8_t> px;
+                int pw = w, ph = h;
+                std::string name = v.exploreShotName;
+                for (char& c : name)
+                    if (!std::isalnum(static_cast<unsigned char>(c))) c = '_';
+                char file[64];
+                std::snprintf(file, sizeof file, "%04d_", ++v.ex.shots);
+                if (dev->readPixels(px, pw, ph)) saveBmp((exploreDir + file + name.substr(0, 48) + ".bmp").c_str(), px, pw, ph);
+                v.exploreShotDue = -1;
+            } else if (n % 6 == 0) { // (the menus' tap areas as drawn: kept up)
+                v.draw(w, h);
+                dev->endFrame(false);
+            }
+        }
+        v.exploreLog(v.ex.done ? "explore: stopped" : "explore: the time's up");
+        if (v.ex.log) std::fclose(v.ex.log);
+        code = 0;
+    } else if (!capture.empty()) { // one frame to a file
         int w = 0, h = 0;
         frameSize(w, h);
         // (a temporal upscaler first gathers a still frame's history: its jitter's phases)

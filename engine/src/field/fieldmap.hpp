@@ -74,6 +74,10 @@ public:
     std::vector<std::string> exitNames() const;
     // The exit a sphere at `centre` touches ("" none): touching one changes the area
     std::string exitTouched(const Vec3& centre, float radius) const;
+    // An exit's volume's span (by its pop point's name; false: no such exit) - and the walls' and
+    // floors' (false: none)
+    bool exitBounds(const std::string& pop, Vec3& lo, Vec3& hi) const;
+    bool floorBounds(Vec3& lo, Vec3& hi) const { return static_.bounds(lo, hi); }
     // The camera's right and forward directions along the ground (unit, y 0): the player's
     // input turns into a direction with them (FldPlayer::Update)
     void groundAxes(Vec3& right, Vec3& forward) const;

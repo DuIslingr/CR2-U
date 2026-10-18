@@ -60,6 +60,7 @@
 #include "battle/script.hpp"
 #include "field/character.hpp"
 #include "field/fieldmap.hpp"
+#include "field/navigation.hpp"
 #include "event/runtime.hpp"
 #include "field/fieldscript.hpp"
 #include "gfx/material.hpp"
@@ -636,6 +637,92 @@ int exits(const char* path, const char* binary) {
     return 0;
 }
 
+// Where the explorer can walk (field/navigation.hpp): on every map, from each arrival point, the
+// grid's reach, and the exits and event boxes beyond it (none of them within the leader's touch)
+int nav(const char* path, const char* binary, const char* only) {
+    cr2::MvglArchive a;
+    if (!openArchive(a, path)) return 1;
+    std::vector<cr2::MapInfo> table;
+    if (!readTable(path, binary, table)) return 1;
+    size_t maps = 0, exits = 0, exitsFar = 0, events = 0, eventsFar = 0, empty = 0;
+    for (const cr2::MapInfo& info : table) {
+        if (only && info.name != only) continue;
+        cr2::FieldMap field;
+        float start[3];
+        if (!field.load(a, info) || !field.point("defaultPos", start) || !field.collision().triangles()) continue;
+        ++maps;
+        std::vector<cr2::Vec3> starts;
+        for (const cr2::Gimmick& g : field.gimmicks())
+            if (g.kind == cr2::Gimmick::PopPoint) starts.push_back({g.position[0], g.position[1], g.position[2]});
+        if (starts.empty()) starts.push_back({start[0], start[1], start[2]});
+        // the union of what each arrival reaches: the nearest any grid gets to a target
+        std::vector<cr2::NavGrid> grids(starts.size());
+        size_t most = 0;
+        for (size_t k = 0; k < starts.size(); ++k) {
+            grids[k].build(field.collision(), starts[k], 0.02f, 0.01f);
+            most = std::max(most, grids[k].reached());
+        }
+        if (most == 0) {
+            ++empty;
+            std::printf("  %s: no floor reached from its arrival points\n", info.name.c_str());
+            continue;
+        }
+        auto closest = [&](const cr2::Vec3& p) {
+            float best = 1e9f;
+            for (const cr2::NavGrid& g : grids) {
+                cr2::Vec3 at;
+                float d;
+                if (g.nearest(p, at, d)) best = std::min(best, d);
+            }
+            return best;
+        };
+        for (const std::string& e : field.exitNames()) {
+            cr2::Vec3 lo, hi;
+            if (!field.exitBounds(e, lo, hi)) continue;
+            ++exits;
+            const cr2::Vec3 c{(lo[0] + hi[0]) * 0.5f, (lo[1] + hi[1]) * 0.5f, (lo[2] + hi[2]) * 0.5f};
+            const float reach = std::max(hi[0] - lo[0], hi[2] - lo[2]) * 0.5f + 0.04f;
+            const float d = closest(c);
+            if (d > reach) ++exitsFar, std::printf("  %s: exit to %s out of reach (%.3f, its volume %.3f)\n", info.name.c_str(), e.c_str(), d, reach);
+        }
+        for (const cr2::Gimmick& g : field.gimmicks()) {
+            if (g.kind != cr2::Gimmick::Event) continue;
+            ++events;
+            const float reach = std::max(g.jointScale[0], g.jointScale[2]) / 100.0f + (g.check ? 0.15f : 0.02f);
+            const float d = closest({g.position[0], g.position[1], g.position[2]});
+            if (d > reach) ++eventsFar, std::printf("  %s: %s out of reach (%.3f, %.3f)\n", info.name.c_str(), g.name.c_str(), d, reach);
+        }
+        if (only) std::printf("  %s: %zu cells reached at most, from %zu arrival points\n", info.name.c_str(), most, starts.size());
+        if (only)
+            for (const std::string& e : field.exitNames()) {
+                cr2::Vec3 lo, hi;
+                if (field.exitBounds(e, lo, hi))
+                    std::printf("    exit %-12s (%.3f %.3f %.3f) .. (%.3f %.3f %.3f)\n", e.c_str(), lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
+            }
+        if (only) // (the things to tap: how near the leader's centre - on the floor, its radius up - gets, in 3D as the balloons count it)
+            for (const cr2::Gimmick& g : field.gimmicks()) {
+                if (g.kind == cr2::Gimmick::Event && !g.check)
+                    std::printf("    %-32s box   at (%.3f %.3f %.3f) scale (%.0f %.0f %.0f) shape %d\n", g.name.c_str(), g.position[0], g.position[1],
+                                g.position[2], g.jointScale[0], g.jointScale[1], g.jointScale[2], int(g.shape));
+                if (g.kind == cr2::Gimmick::Ability || g.kind == cr2::Gimmick::Object || g.kind == cr2::Gimmick::Spot)
+                    std::printf("    %-32s %-6s at (%.3f %.3f %.3f)\n", g.name.c_str(), g.kindName(), g.position[0], g.position[1], g.position[2]);
+                if (!g.check || g.checkLength() <= 0) continue;
+                float best = 1e9f;
+                for (const cr2::NavGrid& gr : grids) {
+                    cr2::Vec3 at;
+                    float d;
+                    if (gr.nearest({g.position[0], g.position[1], g.position[2]}, at, d))
+                        best = std::min(best, std::hypot(d, g.position[1] - (at[1] + 0.02f - 0.02f)));
+                }
+                std::printf("    %-32s %-6s at (%.3f %.3f %.3f) reach %.3f, nearest %.3f%s\n", g.name.c_str(), g.kindName(), g.position[0],
+                            g.position[1], g.position[2], g.checkLength(), best, best > g.checkLength() ? "  OUT" : "");
+            }
+    }
+    std::printf("nav: %zu maps (%zu with no floor reached), %zu exits (%zu out of reach), %zu event boxes (%zu out of reach)\n", maps, empty,
+                exits, exitsFar, events, eventsFar);
+    return 0;
+}
+
 int walk(const char* path, const char* binary, const char* only) {
     cr2::MvglArchive a;
     if (!openArchive(a, path)) return 1;
@@ -1166,6 +1253,7 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[1], "event") && argc > 3) return traceEvent(argv[2], argv[3], argc > 4 ? argv[4] : nullptr, 20 * 60 * 30);
     if (!std::strcmp(argv[1], "play") && argc > 3) return play(argv[2], argv[3]);
     if (!std::strcmp(argv[1], "exits") && argc > 3) return exits(argv[2], argv[3]);
+    if (!std::strcmp(argv[1], "nav") && argc > 2) return nav(argv[2], argc > 3 ? argv[3] : "-", argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "fieldscript") && argc > 3) return fieldScripts(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "walk") && argc > 3) return walk(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "images")) return images(argv[2], argc > 3 ? argv[3] : nullptr, argc > 4 ? argv[4] : nullptr);

@@ -152,6 +152,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       EXP and SP gained, the levels, HP, MP and NEXT, the EXP going in, the levels kept), its
       messages - levels gained, the sopia's SP and what they learn, the Oz, the items and sopia
       left (rolled as each monster falls) - as the reference video's first battle
+- [x] A battle lost: the lose camera, "... was defeated", the game over's figure and music, then
+      "Would you like to try again?" - the continue data or the save loaded, else the title; before
+      the story makes it a game over, back to the field (`--input tap`, `yes` / `no`)
 - [x] Tutorials: the manual (the options' Manual - its list, each tutorial's pictures and
       pages), the battles' first-time ones (armour, the sopia / items lists, defend, elements,
       states, the options) and the encounters' own, the field's pictures - tutorialPic, the

@@ -676,6 +676,27 @@ it is at +0x52's level. The reference video's first result: "Obtained 30 OZ!", "
 of the party double them first, once whether one or both has it. After it the HP is back to the most and the MP kept as it is (cr3_player_data
 +0x10; the most with RestoreMp, 3, 5, standing - and after the scripts' MPFullRecovery).
 
+## A battle lost (BtlGameover; BtlMainCtrl::StepBattleOut)
+
+1. The announcements and the effects are cleared. Cam_Lose_SoloPair_00 runs looping, and the
+   music fades over 20 updates.
+2. In an event battle (the coupling's +0x18), or any once flag 0x7f9 (2041) is set, it is a game
+   over: BattleGameOverMenu's figure `dead`.
+3. The banner reads "%s was defeated..." for one fighting alone (announce 0x5c, BtlWork +0x1c 1),
+   else "%s's team was defeated..." (7).
+4. 1.1 s on, track 18 plays, and a tap is waited for.
+5. With no game over, or no continue data and no save, that is the end.
+6. Otherwise the screen fades out over 20 updates. The HUD, the figure and the party go, it fades
+   back in, and 0.5 s on the System window asks "Would you like to try again?" (0x87), yes / no.
+   - Yes: the continue data is loaded, else the save (Cr3Util_Load_ContData / GameData; BtlWork
+     +0x1a 1).
+   - No: on to the end.
+7. StepBattleOut on the loss:
+   - no game over: battle_post[8] 0, flag 0x7f8 (2040) set, back to the field;
+   - else battle_post[8] 2, then the field with the data loaded (+0x1a 1), else the title.
+
+The viewer takes `--input tap`, then `yes` / `no`.
+
 ## The battle's script (BtlEvent)
 
 Every battle runs `script\battle.nut` (BtlEvent::Initialize; the same VM and helper library as

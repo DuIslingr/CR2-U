@@ -323,6 +323,7 @@ struct Viewer {
             if (battleScript && battleScript->running()) battleScript->events().advance();
             else if (analyze.stage == 1 || analyze.stage == 2) analyze.tapped = true;
             else if (result.stage > 0) result.tapped = true;
+            else if (gameOver.stage > 0) gameOver.tapped = true;
             return;
         }
         if (eventMode) {
@@ -1990,10 +1991,11 @@ struct Viewer {
             updateBattleShow();
             updateResult();
             // a fight of the flow over: its last action shown, a moment after (a win: its result)
+            updateGameOver();
             if (fightingInFlow && battleStep == BattleStep::Over && !battleScriptRunning() && battleClock > showEnd + 1.5f &&
-                (result.stage == 0 || result.stage >= 4)) {
+                (result.stage == 0 || result.stage >= 4) && gameOver.stage == 0) {
                 fightingInFlow = false;
-                SDL_Log("play: battle %s", battleRules->exited() ? "ended by its script" : battleRules->escaped() ? "escaped" : battleRules->outcome() == 1 ? "won" : "lost (taken as won: no game over yet)");
+                SDL_Log("play: battle %s", battleRules->exited() ? "ended by its script" : battleRules->escaped() ? "escaped" : battleRules->outcome() == 1 ? "won" : "lost (back to the field: no game over yet in the story)");
                 ++battlesSkipped;
                 afterBattle();
             }
@@ -2366,10 +2368,11 @@ struct Viewer {
     int targetCameraFighter = -1; // (whose target camera it is; -1 another)
     void setBattleCamera(const std::string& name, const cr2::Mat34& place = cr2::Mat34(), bool still = false) {
         if (name.empty() || (name == battleCamera && std::equal(place.m, place.m + 12, battleCameraPlace.m))) return;
-        battleCamera = name, battleCameraStart = battleClock, battleCameraPlace = place, battleCameraStill = still;
+        battleCamera = name, battleCameraStart = battleClock, battleCameraPlace = place, battleCameraStill = still, battleCameraLoop = false;
         battleCameraMoveStart = -1, targetCameraFighter = -1;
         dev->resetHistory(); // (a cut)
     }
+    bool battleCameraLoop = false; // (BtlCameraCtrl::SetLooping)
     void setBattleCamera(int number) {
         if (const char* n = cr2::battleCameraName(number)) setBattleCamera(std::string(n));
     }
@@ -2486,7 +2489,7 @@ struct Viewer {
                 if (c.animated) {
                     const float frames = float(std::max(c.anim.frames() - 1, 1));
                     const float at = battleCameraStill ? 0.0f : (battleClock - battleCameraStart) * c.anim.sampleRate();
-                    p = c.anim.poseAbsolute(c.skel.basePose, std::clamp(at, 0.0f, frames));
+                    p = c.anim.poseAbsolute(c.skel.basePose, battleCameraLoop ? std::fmod(std::max(at, 0.0f), frames) : std::clamp(at, 0.0f, frames));
                 }
                 const std::vector<cr2::Mat34> w = c.skel.world(p);
                 if (size_t(j) >= w.size()) continue;
@@ -2915,6 +2918,11 @@ struct Viewer {
         return false;
     }
     void battleKey(SDL_Keycode k) {
+        if (gameOver.stage == 8) { // (the question: Y / Return yes, N / Backspace no)
+            if (k == SDLK_Y || k == SDLK_RETURN || k == SDLK_KP_ENTER) gameOverAnswer(true);
+            else if (k == SDLK_N || k == SDLK_BACKSPACE) gameOverAnswer(false);
+            return;
+        }
         if (!choosing) return;
         keysUsed = true;
         const std::vector<int> c = menuChoices();
@@ -2929,6 +2937,15 @@ struct Viewer {
     }
     // a click at the screen's (fx, fy) - 0..1 across, down: a button's tap area (UI units)
     void battleClick(float fx, float fy) {
+        if (gameOver.stage == 8) { // (the question's Yes / No)
+            const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+            const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+            for (const TapRect& r : tapRects)
+                if ((r.id == 7701 || r.id == 7702) && x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) &&
+                    y <= std::max(r.y0, r.y1))
+                    return gameOverAnswer(r.id == 7701);
+            return;
+        }
         if (!choosing) return;
         if (manualStage == 2) { // (a tap: the tutorial's page)
             if (manualEvents) manualEvents->advance();
@@ -3074,6 +3091,7 @@ struct Viewer {
                     }
             } else if (!battleRules->exited() && battleRules->outcome() == 2) { // (BtlGameover: 18)
                 audio.stopBgm(20), pendingBgm = 18, pendingBgmAt = battleClock + 1.1f;
+                beginGameOver();
             }
             for (int id = 1; id < 300; ++id) game.itemCount[id] = static_cast<short>(battleRules->itemCount(id)); // (the items used)
             for (int k = 0; k < 2; ++k) { // (the MP kept - the most with RestoreMp, skill 3, 5, standing; the HP back: Cr3RestorePlayerHP)
@@ -3574,6 +3592,93 @@ struct Viewer {
         n.percent = n.level >= 200 || hi <= lo ? 0 : (n.exp - lo) * 100 / (hi - lo);
         n.hp = r.hp0 + int(float(r.hpMax - r.hp0) * p);
         return n;
+    }
+    // A battle lost (BtlGameover::Update; BtlMainCtrl::StepBattleOut): the announcements and
+    // effects cleared, Cam_Lose_SoloPair_00 looping, the music faded over 20 updates and 18 1.1 s
+    // on; the game over's figure (`dead`: BattleGameOverMenu) where it is one - an event battle
+    // (+0x18), else once flag 0x7f9 is set - and the banner ("%s was defeated..." alone, 0x5c, else
+    // "%s's team was defeated...", 7). A tap: no game over, or no continue data nor save - the end
+    // (StepBattleOut: no game over - flag 0x7f8 set, back to the field -, else the title); else
+    // faded out over 20 updates, the HUD and the party gone, faded in, 0.5 s on "Would you like to
+    // try again?" (0x87) yes / no - yes the continue data, else the save, loaded (+0x1a 1: the
+    // field); no the title
+    struct GameOverState {
+        int stage = 0; // 0 none, 1 the banner (a tap ends it), 5 the fade, 7 the wait, 8 the question
+        float start = 0;
+        bool over = false, tapped = false, hidden = false;
+    } gameOver;
+    void beginGameOver() {
+        gameOver = GameOverState();
+        gameOver.stage = 1, gameOver.start = battleClock;
+        const cr2::BattleData::Coupling* cp = battleData.coupling(battle.coupling);
+        gameOver.over = (cp && cp->flag) || game.flag(0x7f9);
+        announceQueue.clear();
+        for (SceneEffect& fx : commandEffects) unload(*fx.fig);
+        commandEffects.clear();
+        for (BattleEffect& fx : battleEffects) unload(*fx.fig);
+        battleEffects.clear();
+        for (int f = 0; f < 2; ++f) dropGuardObject(f);
+        setBattleCamera("Cam_Lose_SoloPair_00");
+        battleCameraLoop = true;
+        const bool alone = !battleRules->fighter(1).present;
+        commandShown = formatAnnounce(announce(alone ? 0x5c : 7), {battleRules->fighter(0).name});
+        commandShownStart = battleClock, announceHeld = true;
+        SDL_Log("game over%s", gameOver.over ? "" : " (none yet: back to the field)");
+    }
+    void endGameOver(bool title) {
+        gameOver.stage = 0, announceHeld = false, commandShown.clear();
+        battleFade = BattleFade();
+        if (title) {
+            SDL_Log("game over: the title");
+            toTitle = true;
+            return;
+        }
+        game.setFlag(0x7f8, true); // (StepBattleOut: lost with no game over)
+    }
+    void updateGameOver() {
+        if (gameOver.stage == 0) return;
+        const bool tapped = gameOver.tapped;
+        gameOver.tapped = false;
+        const float t = battleClock - gameOver.start;
+        if (gameOver.stage == 1 && t > 1.1f) {
+            bool tap = tapped;
+            if (!inputScript.empty() && (inputScript.front() == "tap" || inputScript.front() == "pick")) inputScript.pop_front(), tap = true;
+            if (!tap) return;
+            if (!gameOver.over || (!saveExists("cont.txt") && !saveExists("save1.txt"))) return endGameOver(gameOver.over);
+            gameOver.stage = 5, gameOver.start = battleClock;
+            SDL_Log("game over: faded out, then the question");
+            battleFade.colour = 0, battleFade.alpha.begin(battleClock, 0, 1, 1.0f); // (FadeOut 20 updates)
+        } else if (gameOver.stage == 5 && t >= 1.0f) { // (HideBattleStatus, HideBattleGameOver, the party hidden; FadeIn at once)
+            gameOver.hidden = true, gameOver.stage = 7, gameOver.start = battleClock;
+            for (int k = 0; k < 2; ++k)
+                if (BattleUnit* u = unitOf(k)) u->hidden = true;
+            battleFade = BattleFade();
+            announceHeld = false, commandShown.clear();
+        } else if (gameOver.stage == 7 && t > 0.5f) {
+            gameOver.stage = 8, gameOver.start = battleClock;
+        } else if (gameOver.stage == 8 && !inputScript.empty() && (inputScript.front() == "yes" || inputScript.front() == "no") && t > 0.5f) {
+            const bool yes = inputScript.front() == "yes";
+            inputScript.pop_front();
+            gameOverAnswer(yes);
+        }
+    }
+    void gameOverAnswer(bool yes) {
+        if (gameOver.stage != 8) return;
+        audio.playSe(yes ? 0xb4 : 0xb5, false);
+        if (!yes) return endGameOver(true);
+        gameOver = GameOverState();
+        battleFade = BattleFade();
+        leaveBattle();
+        titleMenu.action = saveExists("cont.txt") ? 3 : 2; // (Cr3Util_Load_ContData, else Cr3Util_Load_GameData: the main loop loads it)
+        SDL_Log("game over: try again (%s)", titleMenu.action == 3 ? "the continue data" : "the save");
+    }
+    void drawGameOver(const Mat4& view, int w, int h) {
+        if (gameOver.stage == 8) return drawAsk(announce(0x87), battleClock - gameOver.start, view, w, h, 7701, 7702);
+        if (!gameOver.over || gameOver.hidden) return;
+        UiFig& d = uiFig("dead"); // (BattleGameOverMenu: `dead` on its animation)
+        d.fig.place = cr2::Mat34();
+        poseUi(d, "dead", battleClock - gameOver.start);
+        drawFigure(d.fig, view.data());
     }
     void updateResult() {
         if (result.stage == 0 || result.stage >= 4) return;
@@ -6460,6 +6565,16 @@ struct Viewer {
         if (uiJoint(sys, "typeM_L01", x, y)) drawUiText(text, 24, x, y, w, h, true);
     }
     void drawBattleHud(int w, int h) {
+        if (!(gameOver.stage > 0 && gameOver.hidden)) drawBattleHudParts(w, h);
+        if (gameOver.stage == 0 || !battleMode || !battleRules) return;
+        const Mat4 proj = uiProjection(w, h);
+        Mat4 camera = cr2::mat4Identity();
+        camera[14] = -0.881f;
+        const Mat4 view = cr2::mat4Multiply(proj, camera);
+        tapRects.clear();
+        drawGameOver(view, w, h);
+    }
+    void drawBattleHudParts(int w, int h) {
         if (!battleMode || !battleRules) return;
         if (battleScript && !battleScript->statusShown()) return; // (its talk on)
         const Mat4 proj = uiProjection(w, h);
@@ -6472,6 +6587,7 @@ struct Viewer {
             drawResult(view, proj, w, h);
             return;
         }
+
         if (choosing && manualStage == 1) {
             drawManualList(view, w, h);
             return;
@@ -9409,6 +9525,7 @@ int main(int argc, char** argv) {
             for (float t = 0; t + 0.5f / 60.0f < startTime; t += 1.0f / 60.0f) {
                 v.advance(1.0f / 60.0f, 0, 0, false), v.pose();
                 catchGlass(); // (the screen caught as it breaks)
+                if (!takeTitle()) return 1; // (a game over's "try again": its save loaded)
             }
         }
         for (int k = 0; k < int(runSeconds * 60.0f + 0.5f); ++k) {

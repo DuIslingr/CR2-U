@@ -289,6 +289,10 @@ same (its sign turned for such a monster's), 29 the map back; offsets in hundred
 (Rule's, m302): the party paired (BtlWork +0x523, the formation chosen): the camera's place and
 the effect in slot 4 at `dPos_pSoloC`.
 
+The map's own effect (BtlMainCtrl::LoadResources: couplings 221, 271, 272 and 317 - in 271
+a glow over the lava): BtlMap::LoadSpecialEffect, eff284 at the map's place, drawn with it (BtlMap::Draw: +0x140
+when +0x145, under the map's own visibility).
+
 Analyze (command 107, kind 26 - sopia 12's second level, 30's fifth): its effect over
 (ActionSopiaWaitEffect jumps to step 43, ActionSopiaAnalyze), the banner "HP: %d / %d" of the one
 struck (a literal of the code's), a tap, then its `message\monsterhelp.dat` line (by the monster's

@@ -172,8 +172,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] The few scenes' own steps: Darwin's third awakening's space (d1154b in the map's place) and
       offsets (BtlActionTable's, `tools/gen_darwin_table.py`), Lesica's partner hidden, Rule's
       paired camera
+- [x] The map's own effect: eff284 with it in battles 221, 271, 272, 317
 - [ ] The screen breaking away (BtlPostEffectGlassFragment) before Darwin's third awakening's
-      space; the map's eff284 in battles 221, 271, 272, 317
+      space
 - [x] Treasure boxes: drawn as a dungeon is entered (the difficulty's tables), opened with their
       item and its window ("Obtained ...", the item's icon), the key boxes for Orlando alone - their
       mark and lock (two fingers spread on it: the mouse dragged from it) - the System window's

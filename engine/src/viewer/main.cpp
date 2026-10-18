@@ -2295,6 +2295,7 @@ struct Viewer {
     ViewFigure battleMap;
     ViewFigure specialMap;        // (BtlMap +0x13c: d1154b, Darwin's third awakening's)
     bool specialMapShown = false; // (+0x144)
+    ViewFigure mapEffect;         // (+0x140: eff284, drawn with the map - +0x145)
     float specialMapStart = 0;
     struct Ramp { // (a value from `from` to `to` over `time` s from `start`: StartAlphaAnimation's)
         float from = 1, to = 1, start = 0, time = 0;
@@ -2377,6 +2378,10 @@ struct Viewer {
         unload(battleMap);
         battleMap = ViewFigure();
         if (!loadFigure(battle.map + ".geom", battleMap, &err)) SDL_Log("battle map %s: %s", battle.map.c_str(), err.c_str());
+        // (BtlMainCtrl::LoadResources: couplings 221, 271, 272, 317 - the map's eff284 too, drawn with it)
+        unload(mapEffect), mapEffect = ViewFigure();
+        if (id == 221 || id == 271 || id == 272 || id == 317)
+            if (!loadFigure("eff284.geom", mapEffect, &err)) SDL_Log("eff284: %s", err.c_str());
         battleMap.absolute = true;
         cr2::Geom mg;
         cr2::Skeleton ms;
@@ -2495,6 +2500,7 @@ struct Viewer {
     void poseBattle() {
         pose(battleMap, battleClock);
         if (!specialMap.meshes.empty()) pose(specialMap, battleClock - specialMapStart); // (its animation from its making)
+        if (!mapEffect.meshes.empty()) pose(mapEffect, battleClock);
         poseBattleShow();
         const float mc = mapColour.at(battleClock);
         for (int c = 0; c < 3; ++c) battleMap.tint[c] = mc;
@@ -4314,6 +4320,7 @@ struct Viewer {
                 if (!battleUi(d.at, d.x, d.y)) d.start = -100; // (behind it: not shown)
             }
         if (!battleMapHidden) drawFigure(specialMapShown ? specialMap : battleMap, vp.data()); // (BtlMap::Draw: d1154b in its place)
+        if (!battleMapHidden && !mapEffect.meshes.empty()) drawFigure(mapEffect, vp.data());
         for (const BattleUnit& u : battleUnits)
             if (!u.hidden && !u.sceneHidden) drawFigure(u.fig, vp.data());
         drawEffects(cw, vp);

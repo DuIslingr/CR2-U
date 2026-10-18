@@ -440,7 +440,11 @@ first two bytes, version 0x3f6 at +2):
   options close.
 
 CR2-U keeps the same split: `system.txt` beside its saves holds the flags 0..991 and the options,
-laid over every game begun or loaded.
+laid over every game begun or loaded. The iPad's are the same files (its Documents: `./game.dat`,
+`./system.dat` - 0x910 and 0xb8 bytes, version 0x3f6), its load refusing one whose CRC doesn't
+hold. `script/gamesave.cpp` reads and writes them (`cr2view --game-save`, `cr2tool save-import` /
+`save-export`): the HP, MP and parameters written at their most, the stats, the achievements and
+the player records' +0x28..+0x3b as zeros.
 
 ## The game's flow
 

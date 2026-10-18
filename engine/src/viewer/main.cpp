@@ -3512,20 +3512,34 @@ struct Viewer {
         for (Move& m : showMoves) m = Move();
         const int target = a.hits.empty() ? -1 : a.hits.front().target;
         int slot = 0;
+        // (ActionAttackPairWaitDelayTime: the pair's second after GetPairAttackDelayTime - by the two
+        // characters, the first's row, in frames of 0.05 s; the shadows' pair by their numbers 205 ..)
+        static const unsigned char kPairDelay[9][9] = {{0, 6, 5, 4, 3, 6, 0, 0, 0},       {8, 0, 8, 6, 4, 10, 4, 0, 0},
+                                                       {10, 8, 0, 7, 6, 10, 2, 0, 0},     {13, 12, 13, 0, 7, 14, 7, 0, 0},
+                                                       {12, 11, 11, 11, 0, 13, 7, 0, 0},  {11, 10, 10, 8, 7, 0, 5, 0, 0},
+                                                       {23, 20, 20, 20, 15, 21, 0, 0, 0}, {24, 24, 24, 24, 0, 24, 24, 0, 0},
+                                                       {24, 24, 24, 24, 0, 24, 24, 0, 0}};
+        auto pairDelay = [&](int first, int second) {
+            const cr2::Fighter &x = battleRules->fighter(first), &y = battleRules->fighter(second);
+            int i = x.id - 1, j = y.id - 1; // (cr3_common_data's: from 0)
+            if (first >= 2) i = x.id - 205, j = y.id - 205;
+            return i >= 0 && i < 9 && j >= 0 && j < 9 ? float(kPairDelay[i][j]) / 20.0f : 0.0f;
+        };
         for (int f : {a.actor, a.partner}) {
             const int u = f >= 0 ? fighterUnit[f] : -1;
             if (u < 0) continue;
             BattleUnit& bu = battleUnits[size_t(u)];
-            playMotion(bu, motion, battleClock);
-            length = std::max(length, motionLength(bu, motion));
+            const float delay = f == a.partner && a.partner >= 0 ? pairDelay(a.actor, a.partner) : 0.0f;
+            playMotion(bu, motion, battleClock + delay);
+            length = std::max(length, motionLength(bu, motion) + delay);
             cr2::MotionTimes t;
             cr2::motionTimes(bu.figure, cr2::motionIndex(motion), t);
             Move& m = showMoves[slot++];
             m.unit = u;
             if (target >= 0 && t.moveStart >= 0 && t.moveEnd >= t.moveStart && aposPlace(aposName(f, target), m.to)) {
                 m.active = true;
-                m.start = t.moveStart, m.end = t.moveEnd;
-                m.back = t.move2Start, m.backEnd = t.move2End;
+                m.start = t.moveStart + delay, m.end = t.moveEnd + delay;
+                m.back = t.move2Start + delay, m.backEnd = t.move2End + delay;
             }
             if (f == a.actor) showHitAt = t.hit[0] >= 0 ? t.hit[0] : length * 0.5f;
         }

@@ -74,6 +74,8 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           mkdir -p dist
+          lipo -info build/cr2view.app/Contents/MacOS/cr2view
+          ! otool -L build/cr2view.app/Contents/MacOS/cr2view | grep -e /opt/homebrew -e /usr/local  # (nothing of Homebrew's)
           cp -R build/cr2view.app dist/
           cp build/cr2tool dist/
           cp README.md LICENSE THIRD_PARTY.md dist/

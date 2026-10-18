@@ -235,7 +235,26 @@ One or more of:
 
 Any one of them is the whole game by itself. Without `--data` the viewer takes `CR2_DATA`, else a
 copy the build carries beside its executable: `vita/` (the PCSG00498 folder), `android/` (the OBB
-and the APK) or `ipad/` (the `.app` or the unpacked `.ipa`).
+and the APK) or `ipad/` (the `.app` or the unpacked `.ipa`). With no arguments at all (a
+double-click, Android's launcher) it starts the game at its title screen.
+
+## Platforms
+
+Every push is built for Linux, Windows, macOS and Android by `.github/workflows/build.yml`; the
+binaries are that run's artifacts (nothing of the game is in them). Windows, macOS and Android are
+built in CI but not yet played on a real machine.
+
+| Platform | Build | Renderer | The data (besides `--data` and `CR2_DATA`) |
+|---|---|---|---|
+| Linux | `cmake -S engine -B build -G Ninja && ninja -C build` | Vulkan, OpenGL 3.3 | `vita/`, `android/` or `ipad/` beside `cr2view` |
+| Windows 10+ (x64) | MSVC and Ninja from a Developer prompt; the [Vulkan SDK](https://vulkan.lunarg.com/) for Vulkan. SDL3, zlib and FreeType are built by CMake | Vulkan, OpenGL 3.3 | the same, beside `cr2view.exe` |
+| macOS 11+ (Apple silicon and Intel) | Xcode's command-line tools and Ninja; add `"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"` for both | OpenGL 3.3 (Vulkan needs MoltenVK, not yet bundled) | the same, beside `cr2view.app` or in its `Contents/Resources/` |
+| Android 7+ (arm64, x86-64) | the Android SDK and NDK: `git clone -b release-3.2.0 https://github.com/libsdl-org/SDL android/SDL`, then `gradle assembleRelease` in `android/` | OpenGL ES 3.0 | `vita/`, `android/` or `ipad/` in `Android/data/local.preservation.chaosrings2/files/` on the shared storage (copy it there over USB) |
+
+The text falls back on the system's fonts where the release's own is missing: Noto CJK on Linux,
+Malgun Gothic and Microsoft YaHei on Windows, Apple SD Gothic Neo and PingFang on macOS.
+`-DCR2_GLES=ON` builds the desktop viewer on OpenGL ES 3.0, as Android runs it (Mesa has it): a
+way to test that path without a device. Saves go to SDL's profile folder (`DuIslingr/CR2-U/`).
 
 ## Tools
 

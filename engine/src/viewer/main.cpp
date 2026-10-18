@@ -9609,6 +9609,11 @@ int main(int argc, char** argv) {
         const char* base = SDL_GetBasePath();
 #endif
         data = cr2::defaultArchive(base ? base : "");
+#ifdef SDL_PLATFORM_MACOS
+        // (a .app: its base path is its Contents/Resources/ - then beside it)
+        if (const std::string b = base ? base : ""; data.empty() && b.rfind(".app/") != std::string::npos)
+            data = cr2::defaultArchive(b.substr(0, b.rfind('/', b.rfind(".app/")) + 1));
+#endif
     }
     data = cr2::resolveArchive(data); // (a folder: the OBB or the CRDB.*.mvgl in it, a Vita copy's PCSG00498 ...)
     if (data.empty()) {

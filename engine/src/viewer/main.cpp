@@ -9609,6 +9609,11 @@ int main(int argc, char** argv) {
         const char* base = SDL_GetBasePath();
 #endif
         data = cr2::defaultArchive(base ? base : "");
+#ifdef SDL_PLATFORM_LINUX
+        // (an AppImage: beside the .AppImage file - its base path is its read-only mount)
+        if (const char* image = SDL_getenv("APPIMAGE"); data.empty() && image)
+            data = cr2::defaultArchive(std::string(image).substr(0, std::string(image).rfind('/') + 1));
+#endif
 #ifdef SDL_PLATFORM_MACOS
         // (a .app: its base path is its Contents/Resources/ - then beside it)
         if (const std::string b = base ? base : ""; data.empty() && b.rfind(".app/") != std::string::npos)

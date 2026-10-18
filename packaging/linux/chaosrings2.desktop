@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Chaos Rings II
+Comment=A reimplementation of the game (needs your own copy of its data)
+Exec=cr2view
+Icon=chaosrings2
+Terminal=false
+Categories=Game;RolePlaying;

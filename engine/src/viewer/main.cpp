@@ -65,6 +65,7 @@
 #include <vector>
 
 #include "assets/geom.hpp"
+#include "assets/hd_texture.hpp"
 #include "assets/image.hpp"
 #include "assets/maptable.hpp"
 #include "assets/release.hpp"
@@ -219,6 +220,17 @@ void packVertex(uint8_t* o, const float* p, const float* n, const float* uv, con
     std::memcpy(o + 48, b, 12);
 }
 
+// The output resolutions F1 steps through: the window's own size, then 16:9 up to 3840 x 2160
+const int kResolutions[][2] = {{0, 0}, {1280, 720}, {1600, 900}, {1920, 1080}, {2560, 1440}, {3200, 1800}, {3840, 2160}};
+constexpr int kMaxResW = 3840, kMaxResH = 2160;
+
+// FSR 3.1's quality modes (the output / render ratio per axis; native AA renders at full size)
+struct Quality {
+    const char* name;
+    float ratio;
+};
+const Quality kQualities[] = {{"native", 1.0f}, {"quality", 1.5f}, {"balanced", 1.7f}, {"performance", 2.0f}, {"ultra", 3.0f}};
+
 struct Viewer {
     cr2::RenderDevice* dev = nullptr;
     cr2::MvglArchive archive;
@@ -227,6 +239,273 @@ struct Viewer {
     size_t current = 0;
     ViewFigure fig;                  // the model (fields: the character)
     std::map<std::string, cr2::Texture> textures; // by name
+    // HD textures (tools/hd_textures.py's): replacements found by the original's pixels' hash in
+    // hdDir - CR2_HD_TEXTURES, else hd-textures/ beside the executable, else the profile folder's
+    bool hdTextures = false;
+    std::string hdDir;
+    int hdLoaded = 0, hdMissing = 0;
+    std::map<std::string, bool> textureMips; // (each cached texture's mip chain: a reload's)
+
+    // CR2-U's own settings - the options' Display & Graphics list (settingsOpen), kept in
+    // settings.ini in the profile folder: read at the start, written on each change (a capture
+    // neither reads nor writes it); the command line's flags over them
+    struct Settings {
+        int display = 0;          // 0 a window, 1 fullscreen (the display's own mode), 2 borderless (the desktop)
+        int resolution = 0;       // kResolutions: 0 the window's own size
+        bool vsync = true;
+        int fps = 60;             // frames drawn a second at most (0: as many as the display takes)
+        int renderer = 0;         // 0 Vulkan, 1 OpenGL - from the next start
+        int upscaler = 0;         // cr2::Upscaler: 0 off, 1 FSR 3.1, 2 DLSS, 3 MetalFX
+        int quality = 1;          // kQualities
+        int sharpness = 30;       // % (FSR's sharpening pass, RCAS)
+        int msaa = 1;             // 1, 2, 4, 8 (Vulkan; none while an upscaler is on)
+        int anisotropy = 16;      // samples (1: off)
+        bool sharpTextures = false;
+        bool hdTextures = false;
+    } settings;
+    bool settingsPersist = false;
+    int rendererInUse = 0;        // (the device that started: the Renderer row's "next start")
+    SDL_Window* window = nullptr;
+    int appliedDisplay = -1, appliedMsaa = -1;
+    bool appliedVsync = true, vsyncApplied = false;
+
+    static const char* settingsFile() { return "settings.ini"; }
+    void loadSettings() {
+        std::FILE* f = std::fopen(savePath(settingsFile()).c_str(), "rb");
+        if (!f) return;
+        char line[256];
+        Settings& s = settings;
+        while (std::fgets(line, sizeof line, f)) {
+            char key[64];
+            int v = 0;
+            if (std::sscanf(line, " %63[a-z_] = %d", key, &v) != 2) continue;
+            const std::string k = key;
+            if (k == "display") s.display = std::clamp(v, 0, 2);
+            else if (k == "resolution") s.resolution = std::clamp(v, 0, int(std::size(kResolutions)) - 1);
+            else if (k == "vsync") s.vsync = v != 0;
+            else if (k == "fps") s.fps = std::clamp(v, 0, 1000);
+            else if (k == "renderer") s.renderer = std::clamp(v, 0, 1);
+            else if (k == "upscaler") s.upscaler = std::clamp(v, 0, 3);
+            else if (k == "quality") s.quality = std::clamp(v, 0, int(std::size(kQualities)) - 1);
+            else if (k == "sharpness") s.sharpness = std::clamp(v, 0, 100);
+            else if (k == "msaa") s.msaa = v >= 8 ? 8 : v >= 4 ? 4 : v >= 2 ? 2 : 1;
+            else if (k == "anisotropy") s.anisotropy = v >= 16 ? 16 : v >= 8 ? 8 : v >= 4 ? 4 : v >= 2 ? 2 : 1;
+            else if (k == "sharp_textures") s.sharpTextures = v != 0;
+            else if (k == "hd_textures") s.hdTextures = v != 0;
+        }
+        std::fclose(f);
+    }
+    void saveSettings() const {
+        if (!settingsPersist) return;
+        std::FILE* f = std::fopen(savePath(settingsFile()).c_str(), "wb");
+        if (!f) return;
+        const Settings& s = settings;
+        std::fprintf(f, "# CR2-U: the options' Display & Graphics (the command line's flags go over these)\n"
+                        "display=%d\nresolution=%d\nvsync=%d\nfps=%d\nrenderer=%d\nupscaler=%d\nquality=%d\nsharpness=%d\n"
+                        "msaa=%d\nanisotropy=%d\nsharp_textures=%d\nhd_textures=%d\n",
+                     s.display, s.resolution, s.vsync ? 1 : 0, s.fps, s.renderer, s.upscaler, s.quality, s.sharpness, s.msaa,
+                     s.anisotropy, s.sharpTextures ? 1 : 0, s.hdTextures ? 1 : 0);
+        std::fclose(f);
+    }
+    // The settings onto the device, the window and the textures (each only as it changes)
+    void applySettings() {
+        if (!dev) return;
+        Settings& s = settings;
+        if (!vsyncApplied || appliedVsync != s.vsync) dev->setVSync(s.vsync), appliedVsync = s.vsync, vsyncApplied = true;
+        const int r = std::clamp(s.resolution, 0, int(std::size(kResolutions)) - 1);
+        if (s.resolution >= 0 && (resW != kResolutions[r][0] || resH != kResolutions[r][1])) {
+            resW = kResolutions[r][0], resH = kResolutions[r][1];
+            dev->resetHistory();
+        }
+        cr2::UpscaleSettings u;
+        u.mode = cr2::Upscaler(std::clamp(s.upscaler, 0, 3));
+        u.ratio = kQualities[std::clamp(s.quality, 0, int(std::size(kQualities)) - 1)].ratio;
+        u.sharpness = float(s.sharpness) / 100.0f;
+        if (u.mode != cr2::Upscaler::Off && !dev->upscalerProblem(u.mode).empty()) u.mode = cr2::Upscaler::Off;
+        if (u.mode != upscale.mode || u.ratio != upscale.ratio || u.sharpness != upscale.sharpness) upscale = u, dev->setUpscaler(u);
+        const int samples = upscale.mode == cr2::Upscaler::Off ? s.msaa : 1;
+        if (samples != appliedMsaa) dev->setSamples(samples), appliedMsaa = samples;
+        cr2::TextureFiltering tf;
+        tf.anisotropy = s.anisotropy;
+        tf.sharp = s.sharpTextures;
+        // (an upscaler's scene is smaller: the mips its output would take - DLSS's and FSR's advice)
+        tf.lodBias = upscale.mode != cr2::Upscaler::Off ? -std::log2(upscale.ratio) : 0.0f;
+        dev->setFiltering(tf);
+        if (window && s.display != appliedDisplay) {
+            if (s.display == 1) SDL_SetWindowFullscreenMode(window, SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(window)));
+            else SDL_SetWindowFullscreenMode(window, nullptr);
+            SDL_SetWindowFullscreen(window, s.display != 0);
+            appliedDisplay = s.display;
+        }
+        if (s.hdTextures != hdTextures) hdTextures = s.hdTextures, reloadTextures();
+    }
+    // Every cached texture again (HD Textures turned on or off): in place, so what holds one sees the new
+    void reloadTextures() {
+        hdLoaded = hdMissing = 0;
+        for (auto& [name, t] : textures) {
+            if (!t.id) continue;
+            cr2::Image img;
+            if (!decode(name, img)) continue;
+            if (hdTextures && !hdDir.empty()) {
+                cr2::Image hd;
+                if (cr2::loadHdImage(hdDir, img, hd)) hd.logicalW = img.width, hd.logicalH = img.height, img = std::move(hd), ++hdLoaded;
+                else ++hdMissing;
+            }
+            img.mipmaps = textureMips.count(name) ? textureMips[name] : true;
+            cr2::Texture old = t;
+            t = dev->upload(img);
+            dev->destroy(old);
+        }
+        SDL_Log("hd textures %s: %d replaced, %d without one", hdTextures ? "on" : "off", hdLoaded, hdMissing);
+    }
+
+    // The list's rows: its label and value, its help (the list's window), what Left / Right / a
+    // tap does (+1 / -1)
+    struct SettingRow {
+        std::string label, value, help;
+        bool enabled = true;
+        std::function<void(int)> change;
+    };
+    bool settingsOpen = false;
+    int settingsCursor = 0;
+    float settingsStart = 0;
+    std::vector<SettingRow> settingRows() {
+        Settings& s = settings;
+        std::vector<SettingRow> rows;
+        auto step = [](int& v, const std::vector<int>& values, int dir) {
+            size_t i = 0;
+            while (i < values.size() && values[i] != v) ++i;
+            const int n = int(values.size());
+            v = values[size_t(((i < values.size() ? int(i) : 0) + dir + n) % n)];
+        };
+        auto onOff = [](bool b) { return std::string(b ? "On" : "Off"); };
+        static const char* const kDisplay[] = {"Window", "Fullscreen", "Borderless"};
+        rows.push_back({"Display", kDisplay[std::clamp(s.display, 0, 2)], "A window, fullscreen at the display's own mode, or borderless over the desktop",
+                        true, [&s](int d) { s.display = (s.display + d + 3) % 3; }});
+        {
+            const int r = std::clamp(s.resolution, 0, int(std::size(kResolutions)) - 1);
+            const std::string v = s.resolution < 0 ? std::to_string(resW) + " x " + std::to_string(resH) // (--resolution's own)
+                                  : r == 0          ? "Window"
+                                                    : std::to_string(kResolutions[r][0]) + " x " + std::to_string(kResolutions[r][1]);
+            rows.push_back({"Resolution", v, "The frames' size (Window: the window's own), scaled to the window",
+                            true, [&s](int d) { const int n = int(std::size(kResolutions)); s.resolution = s.resolution < 0 ? 0 : (s.resolution + d + n) % n; }});
+        }
+        rows.push_back({"VSync", onOff(s.vsync), "Each frame waits for the display's refresh: no tearing", true, [&s](int) { s.vsync = !s.vsync; }});
+        rows.push_back({"Frame Rate", s.fps ? std::to_string(s.fps) : std::string("Unlimited"),
+                        "Frames drawn a second at most; the game itself runs at 20 a second, shown moving between them",
+                        true, [&s, step](int d) { step(s.fps, {30, 60, 120, 144, 165, 240, 0}, d); }});
+        {
+            static const char* const kRenderer[] = {"Vulkan", "OpenGL"};
+            std::string v = kRenderer[std::clamp(s.renderer, 0, 1)];
+            if (s.renderer != rendererInUse) v += " (next start)";
+            rows.push_back({"Renderer", v, "Vulkan: the upscalers, MSAA and the faster path; OpenGL where Vulkan won't start",
+                            true, [&s](int) { s.renderer = 1 - s.renderer; }});
+        }
+        const bool vk = dev && dev->offscreen(); // (the Vulkan device renders offscreen: the upscalers', MSAA's)
+        static const char* const kUpscaler[] = {"Off", "FSR 3.1", "DLSS", "MetalFX"};
+        {
+            std::string v = kUpscaler[std::clamp(s.upscaler, 0, 3)];
+            std::string why = s.upscaler && dev ? dev->upscalerProblem(cr2::Upscaler(s.upscaler)) : std::string();
+            if (!why.empty()) v += " (n/a)";
+            rows.push_back({"Upscaler", v, why.empty() ? "The scene renders smaller and is rebuilt at full size; the menus stay sharp" : kUpscaler[s.upscaler] + std::string(": ") + why,
+                            vk, [this, &s](int d) {
+                                // (the ones this device can run, Off always)
+                                for (int k = 1; k <= 4; ++k) {
+                                    const int u = ((s.upscaler + d * k) % 4 + 4) % 4;
+                                    if (u == 0 || (dev && dev->upscalerProblem(cr2::Upscaler(u)).empty())) {
+                                        s.upscaler = u;
+                                        return;
+                                    }
+                                }
+                            }});
+        }
+        {
+            static const char* const kModes[] = {"Native AA", "Quality", "Balanced", "Performance", "Ultra Performance"};
+            const int q = std::clamp(s.quality, 0, int(std::size(kQualities)) - 1);
+            char h[96];
+            std::snprintf(h, sizeof h, "The scene at %d%% of the frame per side%s", int(100.0f / kQualities[q].ratio + 0.5f),
+                          q == 0 ? " (DLSS: DLAA)" : "");
+            rows.push_back({"Upscale Mode", q == 0 && s.upscaler == 2 ? "DLAA" : kModes[q], h, vk && s.upscaler != 0,
+                            [&s](int d) { const int n = int(std::size(kQualities)); s.quality = (s.quality + d + n) % n; }});
+        }
+        rows.push_back({"Sharpness", std::to_string(s.sharpness) + "%", "FSR's sharpening pass (RCAS); DLSS and MetalFX have none",
+                        vk && s.upscaler == 1, [&s](int d) { s.sharpness = std::clamp(s.sharpness + d * 5, 0, 100); }});
+        {
+            const int most = dev ? dev->maxSamples() : 1;
+            rows.push_back({"Anti-aliasing", s.msaa > 1 ? "MSAA " + std::to_string(s.msaa) + "x" : std::string("Off"),
+                            s.upscaler ? "Off while an upscaler is on (its own anti-aliasing)" : "Multisampling: smoother edges",
+                            vk && most > 1 && s.upscaler == 0, [&s, step, most](int d) {
+                                std::vector<int> v{1};
+                                for (int k = 2; k <= std::min(most, 8); k *= 2) v.push_back(k);
+                                step(s.msaa, v, d);
+                            }});
+        }
+        {
+            const int most = dev ? dev->maxAnisotropy() : 1;
+            rows.push_back({"Anisotropic Filtering", s.anisotropy > 1 ? std::to_string(std::min(s.anisotropy, std::max(most, 1))) + "x" : std::string("Off"),
+                            most > 1 ? "Textures stay sharp on floors and walls seen at an angle" : "Not on this GPU",
+                            most > 1, [&s, step](int d) { step(s.anisotropy, {1, 2, 4, 8, 16}, d); }});
+        }
+        rows.push_back({"Texture Filtering", s.sharpTextures ? "Sharp" : "Smooth",
+                        "Sharp: the world's textures magnified by the nearest texel (square pixels up close); Smooth: blended",
+                        true, [&s](int) { s.sharpTextures = !s.sharpTextures; }});
+        {
+            SDL_PathInfo info;
+            const bool have = !hdDir.empty() && SDL_GetPathInfo(hdDir.c_str(), &info) && info.type == SDL_PATHTYPE_DIRECTORY;
+            rows.push_back({"HD Textures", onOff(s.hdTextures),
+                            have ? "Upscaled textures (waifu2x / Real-ESRGAN: tools/hd_textures.py) from " + hdDir
+                                 : "None made yet: cr2view --export-textures, then tools/hd_textures.py into " + hdDir,
+                            true, [&s](int) { s.hdTextures = !s.hdTextures; }});
+        }
+        rows.push_back({"Defaults", "", "Every setting here back to its default", true, [&s](int) { s = Settings(); }});
+        return rows;
+    }
+    void settingChange(int row, int dir) {
+        std::vector<SettingRow> rows = settingRows();
+        if (row < 0 || row >= int(rows.size()) || !rows[size_t(row)].enabled || !rows[size_t(row)].change) return;
+        rows[size_t(row)].change(dir);
+        applySettings();
+        saveSettings();
+        const std::vector<SettingRow> now = settingRows();
+        SDL_Log("settings: %s %s", now[size_t(row)].label.c_str(), now[size_t(row)].value.c_str());
+        audio.playSe(0xb4, false);
+    }
+    // (over the options, which stay open beneath: what waits for them closing waits on)
+    void openSettings() { settingsOpen = true, settingsStart = uiClock, settingsCursor = 0; }
+    void closeSettings() { settingsOpen = false, optionsStart = uiClock; }
+    void drawSettings(const Mat4& view, int w, int h) {
+        tapRects.clear();
+        const std::vector<SettingRow> rows = settingRows();
+        std::vector<ListRow> list;
+        for (size_t k = 0; k < rows.size(); ++k) {
+            ListRow r;
+            r.id = 6000 + int(k);
+            r.name = rows[k].value.empty() ? rows[k].label : rows[k].label + ":  " + rows[k].value;
+            r.number = -1;
+            r.selectable = rows[k].enabled;
+            r.help = rows[k].help;
+            list.push_back(r);
+        }
+        listRows = list;
+        drawSkillList(list, 6000 + std::clamp(settingsCursor, 0, int(rows.size()) - 1), uiClock - settingsStart, view, w, h, -1, -1);
+    }
+    bool settingsKey(SDL_Keycode k) {
+        if (!settingsOpen) return false;
+        const int n = int(settingRows().size());
+        if (k == SDLK_UP) settingsCursor = (settingsCursor + n - 1) % n;
+        else if (k == SDLK_DOWN) settingsCursor = (settingsCursor + 1) % n;
+        else if (k == SDLK_LEFT) settingChange(settingsCursor, -1);
+        else if (k == SDLK_RIGHT || k == SDLK_RETURN || k == SDLK_KP_ENTER) settingChange(settingsCursor, 1);
+        else if (k == SDLK_BACKSPACE) closeSettings();
+        return true;
+    }
+    bool settingsTapped(int id) { // (a tap's TapRect id)
+        if (!settingsOpen) return false;
+        if (id == 100) closeSettings();
+        else if (id >= 6000) settingChange(id - 6000, 1);
+        else if (id >= 1000) settingsCursor = id - 1000;
+        return true;
+    }
     cr2::SceneLighting lighting;                  // the light figure's (--lights)
     std::unique_ptr<cr2::ShaderLibrary> shaders;  // the archive's (its GLSL, or the keys decoded)
     float yaw = 30, pitch = 15, zoom = 1;
@@ -1005,7 +1284,18 @@ struct Viewer {
         cr2::Image img;
         cr2::Texture& t = textures[name];
         if (!decode(name, img)) return nullptr;
+        if (hdTextures && !hdDir.empty()) { // (drawn at the original's size, sharper)
+            cr2::Image hd;
+            if (cr2::loadHdImage(hdDir, img, hd)) {
+                hd.logicalW = img.width, hd.logicalH = img.height;
+                img = std::move(hd);
+                ++hdLoaded;
+            } else {
+                ++hdMissing;
+            }
+        }
         img.mipmaps = mipmaps;
+        textureMips[name] = mipmaps;
         t = dev->upload(img);
         return t.id ? &t : nullptr;
     }
@@ -2784,14 +3074,16 @@ struct Viewer {
         // (the options' own: the Title Screen button, its question's answers, the language's and the
         // quality's arrows)
         static const std::pair<const char*, int> kOptionTaps[] = {{"title", 3101}, {"manual", 3102}, {"quality-", 3103}, {"quality+", 3104},
-                                                                  {"language-", 3105}, {"language+", 3106}, {"yes", 3201}, {"no", 3202}};
+                                                                  {"language-", 3105}, {"language+", 3106}, {"yes", 3201}, {"no", 3202},
+                                                                  {"graphics", 3110}};
         for (const auto& [n, id] : kOptionTaps)
             if (t == n && (optionsOpen || optionsAsk)) {
                 optionTap(id);
                 SDL_Log("input %s", t.c_str());
                 return;
             }
-        if (t == "back" && manualStage == 1) closeManual(), ok = true;
+        if (t == "back" && settingsOpen) closeSettings(), ok = true;
+        else if (t == "back" && manualStage == 1) closeManual(), ok = true;
         else if (t == "back" && optionsOpen) optionsOpen = false, ok = true;
         else if (t == "back") commandInput.back(), audio.playSe(0xb5, false), ok = true;
         else if (t.size() > 1 && t[0] == 'a' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickAwakening(std::atoi(t.c_str() + 1));
@@ -2924,6 +3216,7 @@ struct Viewer {
     // the options' window, its question and the manual (in a battle or the camp) taking a key:
     // false - none of them open
     bool optionsKey(SDL_Keycode k) {
+        if (settingsKey(k)) return true;
         if (manualStage == 2) { // (the tutorial: Return a page)
             if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && manualEvents) manualEvents->advance();
             return true;
@@ -2941,8 +3234,10 @@ struct Viewer {
             else if (k == SDLK_BACKSPACE || k == SDLK_N) optionTap(3202);
             return true;
         }
-        if (optionsOpen) { // (the options: Backspace / Return back, Left / Right the focused bar)
-            if (k == SDLK_BACKSPACE || k == SDLK_RETURN || k == SDLK_KP_ENTER) optionsOpen = false;
+        if (optionsOpen) { // (the options: Backspace / Return back, Left / Right the focused bar; G / Tab
+                           // CR2-U's Display & Graphics)
+            if (k == SDLK_G || k == SDLK_TAB) openSettings();
+            else if (k == SDLK_BACKSPACE || k == SDLK_RETURN || k == SDLK_KP_ENTER) optionsOpen = false;
             else if (k == SDLK_UP) optionFocus = (optionFocus + 2) % 3;
             else if (k == SDLK_DOWN) optionFocus = (optionFocus + 1) % 3;
             else if (k == SDLK_LEFT) optionVolume[optionFocus] = std::max(optionVolume[optionFocus] - 5, 0), volumeSet(optionFocus);
@@ -2960,6 +3255,7 @@ struct Viewer {
     // a tap on the options' window, its question or the manual (`x`: across, UI units): false -
     // none of them open
     bool optionsTapped(const TapRect& r, float x) {
+        if (settingsTapped(r.id)) return true;
         if (manualStage == 1) {
             if (r.id == 100) closeManual();
             else if (r.id >= 5000) playManual(r.id - 5000);
@@ -2972,6 +3268,7 @@ struct Viewer {
         }
         if (optionsOpen) { // (Back; a bar's slide area: its volume by the point across it)
             if (r.id == 100) optionsOpen = false;
+            else if (r.id == 3110) openSettings();
             else if ((r.id >= 3100 && r.id < 3300) || r.id == 4098 || r.id == 4099) optionTap(r.id);
             else if (r.id >= 2000 && r.id < 2003) {
                 const float a = std::min(r.x0, r.x1), b = std::max(r.x0, r.x1);
@@ -5956,8 +6253,20 @@ struct Viewer {
     std::map<std::string, TextQuad> uiTexts;
     // `left`: from x (typeS_L: the text's left), else centred on it; `shade` its colour's
     // `maxWidth` (UI units, 0 none): narrowed to fit it (MenuText's width limit)
-    void drawUiText(const std::string& text, float size, float x, float y, int w, int h, bool left = false, float shade = 1, float maxWidth = 0) {
-        if (text.empty() || !font.loaded()) return;
+    // A text's width as drawUiText draws it (UI units: 0 none)
+    float uiTextWidth(const std::string& text, float size, int w, int h) {
+        if (text.empty() || !font.loaded()) return 0;
+        const float k = std::min(float(w) / 0.96f, float(h) / 0.64f);
+        const int px = std::max(1, int(size / 1000.0f * k + 0.5f));
+        int tw = 0, th = 0;
+        const std::string key = text + "\n" + std::to_string(px);
+        if (auto it = uiTexts.find(key); it != uiTexts.end()) return it->second.w;
+        font.render(text, px, tw, th);
+        return float(tw) * (size / 1000.0f / float(px));
+    }
+    // (its width, UI units: 0 none drawn)
+    float drawUiText(const std::string& text, float size, float x, float y, int w, int h, bool left = false, float shade = 1, float maxWidth = 0) {
+        if (text.empty() || !font.loaded()) return 0;
         const float k = std::min(float(w) / 0.96f, float(h) / 0.64f);
         const int px = std::max(1, int(size / 1000.0f * k + 0.5f));
         const std::string key = text + "\n" + std::to_string(px);
@@ -5966,7 +6275,7 @@ struct Viewer {
             TextQuad q;
             int tw = 0, th = 0;
             cr2::Image img = font.render(text, px, tw, th);
-            if (img.rgba.empty()) return;
+            if (img.rgba.empty()) return 0;
             q.tex = dev->upload(img);
             const float unitsPerPx = size / 1000.0f / float(px);
             q.w = float(tw) * unitsPerPx, q.h = float(th) * unitsPerPx;
@@ -5978,6 +6287,7 @@ struct Viewer {
         const float v[24] = {x0, y0, 0, 1, x1, y0, 1, 1, x1, y1, 1, 0, x0, y0, 0, 1, x1, y1, 1, 0, x0, y1, 0, 0};
         const float rgba[4] = {shade, shade, shade, 1};
         dev->drawQuad(q.tex, v, uiProjection(w, h).data(), rgba);
+        return qw;
     }
 
     // The battle's HUD: the party's windows (BattleStatusMenu: pc01win / pc02win, their HP and MP
@@ -6250,6 +6560,7 @@ struct Viewer {
             optionsOpen = false;
             openManual();
             break;
+        case 3110: openSettings(); break; // (CR2-U's Display & Graphics)
         case 3103: optionQuality = (optionQuality + 2) % 3; break;
         case 3104: case 4098: optionQuality = (optionQuality + 1) % 3; break;
         case 3105: optionLanguage = (optionLanguage + 7) % 8; break;
@@ -6426,12 +6737,31 @@ struct Viewer {
             }
         }
         if (uiJoint(seat, "typeM_C01", x, y)) drawUiText(messageText("announcemenuname", 143 + optionQuality), 26, x, y, w, h); // (the quality: over its button)
+
         for (int k = 1; k <= 6; ++k) { // (the seat's own tap areas)
             char sa[16], ea[16];
             std::snprintf(sa, sizeof sa, "tapAreaS%02d", k), std::snprintf(ea, sizeof ea, "tapAreaE%02d", k);
             float sx, sy, ex, ey;
             if (uiJoint(seat, sa, sx, sy) && uiJoint(seat, ea, ex, ey)) tapRects.push_back({3100 + k, sx, sy, ex, ey});
         }
+        // CR2-U's own: Display & Graphics - one of the game's oval buttons (circleBtn_fr's frame 0, as the
+        // quality's) in the top band, before the quality's back arrow, at its height (G / Tab, or a tap)
+        for (const TapRect& q : std::vector<TapRect>(tapRects))
+            if (q.id == 3103) {
+                UiFig& c = uiFig("circlebtn_fr");
+                c.fig.place = cr2::Mat34();
+                poseUi(c, "circlebtn_fr", 0);
+                float sx, sy, ex, ey;
+                if (!uiJoint(c, "tapAreaS01", sx, sy) || !uiJoint(c, "tapAreaE01", ex, ey)) break;
+                const float bw = std::abs(ex - sx), cx = std::min(q.x0, q.x1) - 0.015f - bw * 0.5f, cy = (q.y0 + q.y1) * 0.5f;
+                const float ox = cx - (sx + ex) * 0.5f, oy = cy - (sy + ey) * 0.5f;
+                c.fig.place.m[3] = ox, c.fig.place.m[7] = oy;
+                poseUi(c, "circlebtn_fr", 0);
+                drawFigure(c.fig, view.data());
+                drawUiText("Graphics", 26, cx, cy, w, h, false, 1.0f, bw * 0.9f);
+                tapRects.push_back({3110, sx + ox, sy + oy, ex + ox, ey + oy});
+                break;
+            }
         UiFig& bk = uiFig("btlback");
         bk.fig.place = cr2::Mat34();
         poseUi(bk, "btlback_in", t);
@@ -6697,6 +7027,10 @@ struct Viewer {
             return;
         }
         if (choosing && manualStage == 2) return; // (the tutorial's picture and window alone)
+        if (choosing && settingsOpen) {
+            drawSettings(view, w, h);
+            return;
+        }
         if (choosing && optionsOpen) { // (StepOption: SetBattleStatusDisplay off)
             drawOptions(view, proj, w, h);
             return;
@@ -7169,6 +7503,7 @@ struct Viewer {
         if (manualStage == 1) return drawManualList(view, w, h);
         if (manualStage == 2) return; // (the tutorial's picture and windows alone)
         if (optionsAsk) return drawOptionsAsk(view, w, h);
+        if (settingsOpen) return drawSettings(view, w, h);
         if (optionsOpen) return drawOptions(view, proj, w, h);
         if (campUse) return drawItemUse(view, proj, w, h);
         if (campLink == 201) return drawScenarios(view, proj, w, h);
@@ -8126,6 +8461,9 @@ struct Viewer {
         else if (t == "close" && mapOpen) audio.playSe(0xb5, false), mapOpen = false;
         else if (saveStage == 1 && (t == "yes" || t == "no")) saveAnswer(t == "yes");
         else if (!campOpen) return false;
+        else if (settingsOpen && (t == "up" || t == "down" || t == "left" || t == "right" || t == "enter"))
+            settingsKey(t == "up" ? SDLK_UP : t == "down" ? SDLK_DOWN : t == "left" ? SDLK_LEFT : t == "right" ? SDLK_RIGHT : SDLK_RETURN);
+        else if (t == "back" && settingsOpen) closeSettings();
         else if (t == "back") manualStage == 1 ? closeManual() : optionsAsk ? optionTap(3202) : optionsOpen ? void(optionsOpen = false) : campPress(100);
         else if (t == "items") campPress(16);
         else if (t == "scenarios") campPress(201);
@@ -8144,7 +8482,8 @@ struct Viewer {
         else if (t == "enter") campKey(SDLK_RETURN);
         else {
             static const std::pair<const char*, int> kOptionTaps[] = {{"title", 3101}, {"manual", 3102}, {"quality-", 3103}, {"quality+", 3104},
-                                                                      {"language-", 3105}, {"language+", 3106}, {"yes", 3201}, {"no", 3202}};
+                                                                      {"language-", 3105}, {"language+", 3106}, {"yes", 3201}, {"no", 3202},
+                                                                  {"graphics", 3110}};
             for (const auto& [n, id] : kOptionTaps)
                 if (t == n && (optionsOpen || optionsAsk)) {
                     optionTap(id);
@@ -9464,17 +9803,6 @@ bool saveBmp(const char* path, const std::vector<uint8_t>& rgba, int w, int h) {
     return ok;
 }
 
-// The output resolutions F1 steps through: the window's own size, then 16:9 up to 3840 x 2160
-const int kResolutions[][2] = {{0, 0}, {1280, 720}, {1600, 900}, {1920, 1080}, {2560, 1440}, {3200, 1800}, {3840, 2160}};
-constexpr int kMaxResW = 3840, kMaxResH = 2160;
-
-// FSR 3.1's quality modes (the output / render ratio per axis; native AA renders at full size)
-struct Quality {
-    const char* name;
-    float ratio;
-};
-const Quality kQualities[] = {{"native", 1.0f}, {"quality", 1.5f}, {"balanced", 1.7f}, {"performance", 2.0f}, {"ultra", 3.0f}};
-
 std::string upscaleName(const cr2::UpscaleSettings& u) {
     if (u.mode == cr2::Upscaler::Off) return "off";
     std::string q = "x" + std::to_string(u.ratio);
@@ -9485,10 +9813,39 @@ std::string upscaleName(const cr2::UpscaleSettings& u) {
 
 } // namespace
 
+// Where a copy of the game is looked for without --data: beside the executable (Android: the app's
+// folder on the shared storage, reachable over USB - Android/data/local.preservation.chaosrings2/
+// files/), beside an AppImage or a macOS .app (their base paths are inside them), the working directory
+std::vector<std::string> dataPlaces() {
+    std::vector<std::string> out;
+    auto add = [&](std::string p) {
+        if (p.empty()) return;
+        if (p.back() != '/' && p.back() != '\\') p += '/';
+        if (std::find(out.begin(), out.end(), p) == out.end()) out.push_back(p);
+    };
+#ifdef SDL_PLATFORM_ANDROID
+    if (const char* ext = SDL_GetAndroidExternalStoragePath()) add(ext);
+#else
+    const char* basePath = SDL_GetBasePath();
+    const std::string base = basePath ? basePath : "";
+#ifdef SDL_PLATFORM_LINUX
+    if (const char* image = SDL_getenv("APPIMAGE")) add(std::string(image).substr(0, std::string(image).rfind('/') + 1));
+#endif
+#ifdef SDL_PLATFORM_MACOS
+    if (const size_t app = base.rfind(".app/"); app != std::string::npos) add(base.substr(0, base.rfind('/', app) + 1));
+#endif
+    add(base);
+    if (char* cwd = SDL_GetCurrentDirectory()) add(cwd), SDL_free(cwd);
+#endif
+    return out;
+}
+
 int main(int argc, char** argv) {
     std::string data, model, capture, animName, renderer = "vulkan", lights = "d0101c", fieldName, at = "defaultPos", binary;
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
     bool tapAfter = false, mute = false, forceAudio = false;
+    int hdArg = -1;        // --hd-textures / --no-hd-textures (-1: the settings')
+    std::string exportDir; // --export-textures <dir>: every image as <hash>.crraw, for tools/hd_textures.py
     std::string eventName, vista = "null", fontPath, playFrom, callEntry = "evt000";
     int creditsArg = -1;
     int fightMode = 0;
@@ -9572,6 +9929,9 @@ int main(int argc, char** argv) {
         else if (a == "--font" && next) fontPath = next, ++i;
         else if (a == "--tap") tapAfter = true;
         else if (a == "--mute") mute = true;
+        else if (a == "--hd-textures") hdArg = 1;
+        else if (a == "--no-hd-textures") hdArg = 0;
+        else if (a == "--export-textures" && next) exportDir = next, ++i;
         else if (a == "--audio") forceAudio = true; // (the device even under --capture: tests, SDL_AUDIO_DRIVER=dummy)
         else if (a == "--call" && next) callEntry = argv[++i]; // (--play: the map's event function, not its evt000)
         else if (a == "--credits" && next) creditsArg = std::atoi(argv[++i]); // (the staff roll n at once: --play's, for tests)
@@ -9600,27 +9960,22 @@ int main(int argc, char** argv) {
         if (q == std::end(kQualities)) return std::fprintf(stderr, "--quality: native, quality, balanced, performance or ultra\n"), 2;
         upscale.ratio = q->ratio;
     }
-    if (data.empty()) { // (CR2_DATA, else a copy beside the executable: vita/, android/, ipad/)
-#ifdef SDL_PLATFORM_ANDROID
-        // (the app's own folder on the shared storage, reachable over USB:
-        // Android/data/local.preservation.chaosrings2/files/ - vita/, android/ or ipad/ in it)
-        const char* base = SDL_GetAndroidExternalStoragePath();
-#else
-        const char* base = SDL_GetBasePath();
-#endif
-        data = cr2::defaultArchive(base ? base : "");
-#ifdef SDL_PLATFORM_LINUX
-        // (an AppImage: beside the .AppImage file - its base path is its read-only mount)
-        if (const char* image = SDL_getenv("APPIMAGE"); data.empty() && image)
-            data = cr2::defaultArchive(std::string(image).substr(0, std::string(image).rfind('/') + 1));
-#endif
-#ifdef SDL_PLATFORM_MACOS
-        // (a .app: its base path is its Contents/Resources/ - then beside it)
-        if (const std::string b = base ? base : ""; data.empty() && b.rfind(".app/") != std::string::npos)
-            data = cr2::defaultArchive(b.substr(0, b.rfind('/', b.rfind(".app/")) + 1));
-#endif
+    std::vector<std::string> searched; // (where a copy was looked for: the message if none)
+    if (data.empty()) { // (CR2_DATA, else a copy in one of the platform's places: vita/, android/, ipad/ ...)
+        searched = dataPlaces();
+        data = cr2::defaultArchive(searched);
     }
     data = cr2::resolveArchive(data); // (a folder: the OBB or the CRDB.*.mvgl in it, a Vita copy's PCSG00498 ...)
+    if (data.empty() && argc <= 1) { // (opened with nothing: a window, not the terminal's usage)
+        std::string msg = "Could not find the game's data.\n\nPut one of these in a folder named vita, android or ipad here:\n";
+        msg += searched.empty() ? std::string("(no folder)") : searched.front();
+        msg += "\n\n - the Vita's PCSG00498 folder\n - the Android release's main.212.com.square_enix.chaosrings2gp.obb and its APK"
+               "\n - the iPad's ChaosRings2enHD.app (or the unpacked .ipa)\n\nAlso looked in:";
+        for (size_t k = 1; k < searched.size(); ++k) msg += "\n" + searched[k];
+        msg += "\n\nOr run with --data <that folder>, or set CR2_DATA.";
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Chaos Rings II", msg.c_str(), nullptr);
+        return 2;
+    }
     if (data.empty()) {
         std::fprintf(stderr, "cr2view --data <archive> [--model name] [--anim name] [--time s] [--size WxH] [--yaw deg] "
                              "[--pitch deg] [--lights figure|none] [--field map [--at point] [--binary file]] "
@@ -9630,10 +9985,72 @@ int main(int argc, char** argv) {
         return 2;
     }
     Viewer v;
+    { // CR2-U's settings (settings.ini; not for captures and exports), the command line's flags over them
+        auto given = [&](const char* flag) {
+            for (int i = 1; i < argc; ++i)
+                if (std::strcmp(argv[i], flag) == 0) return true;
+            return false;
+        };
+        Viewer::Settings& s = v.settings;
+        if (capture.empty() && exportDir.empty()) {
+            v.settingsPersist = true;
+            v.loadSettings();
+            if (!given("--renderer")) renderer = s.renderer ? "opengl" : "vulkan";
+            if (!given("--fps")) fps = s.fps;
+            if (!given("--resolution")) resW = kResolutions[s.resolution][0], resH = kResolutions[s.resolution][1];
+            if (!given("--upscaler")) upscale.mode = cr2::Upscaler(s.upscaler);
+            if (!given("--quality")) upscale.ratio = kQualities[s.quality].ratio;
+            if (!given("--sharpness")) upscale.sharpness = float(s.sharpness) / 100.0f;
+            if (hdArg < 0) hdArg = s.hdTextures ? 1 : 0;
+        }
+        // (what runs, as the list shows it)
+        s.renderer = renderer == "opengl" ? 1 : 0;
+        s.fps = fps;
+        s.resolution = -1;
+        for (size_t k = 0; k < std::size(kResolutions); ++k)
+            if (kResolutions[k][0] == resW && kResolutions[k][1] == resH) s.resolution = int(k);
+        s.upscaler = int(upscale.mode);
+        for (size_t k = 0; k < std::size(kQualities); ++k)
+            if (kQualities[k].ratio == upscale.ratio) s.quality = int(k);
+        s.sharpness = int(std::lround(upscale.sharpness * 100.0f));
+        s.hdTextures = hdArg == 1;
+    }
     std::string err;
     if (!v.archive.open(data, &err)) {
         std::fprintf(stderr, "%s\n", err.c_str());
         return 1;
+    }
+    {
+        const char* env = SDL_getenv("CR2_HD_TEXTURES");
+        const char* base = SDL_GetBasePath();
+        const std::string beside = base ? std::string(base) + "hd-textures" : std::string();
+        SDL_PathInfo info;
+        v.hdDir = env && *env ? env
+                  : !beside.empty() && SDL_GetPathInfo(beside.c_str(), &info) && info.type == SDL_PATHTYPE_DIRECTORY ? beside
+                                                                                                                 : Viewer::savePath("hd-textures");
+        if (!v.hdDir.empty() && v.hdDir.back() != '/' && v.hdDir.back() != '\\') v.hdDir += '/';
+        if (hdArg >= 0) v.hdTextures = hdArg == 1;
+    }
+    if (!exportDir.empty()) { // (the archive's every image, once each by its pixels: tools/hd_textures.py's input)
+        if (exportDir.back() != '/' && exportDir.back() != '\\') exportDir += '/';
+        SDL_CreateDirectory(exportDir.c_str());
+        std::set<uint64_t> seen;
+        int written = 0, failed = 0, dupes = 0, kinds[4] = {0, 0, 0, 0};
+        for (const auto& e : v.archive.entries()) {
+            if (e.name.rfind("images\\", 0) != 0 || e.name.size() < 12 || e.name.compare(e.name.size() - 4, 4, ".img") != 0) continue;
+            std::vector<uint8_t> file;
+            cr2::Image img;
+            if (!v.archive.read(e.name, file) || !cr2::decodeImg(file, img)) { ++failed; continue; }
+            const uint64_t h = cr2::imageHash(img);
+            if (!seen.insert(h).second) { ++dupes; continue; }
+            const std::string path = exportDir + cr2::hashName(h) + ".crraw";
+            if (SDL_GetPathInfo(path.c_str(), nullptr)) continue; // (already there)
+            if (cr2::saveRawImage(path, img)) ++written, ++kinds[cr2::imageStorage(img)];
+            else ++failed;
+        }
+        std::printf("exported %d pictures to %s (%d lossless, %d block-compressed, %d 16-bit, %d unknown); %d alike, %d failed\n",
+                    written, exportDir.c_str(), kinds[1], kinds[2], kinds[3], kinds[0], dupes, failed);
+        return failed ? 1 : 0;
     }
     // the sound: played unless captured (or --mute) - then silent, its state kept all the same
     const bool device = (capture.empty() || forceAudio) && !mute;
@@ -9693,6 +10110,10 @@ int main(int argc, char** argv) {
     }
     v.upscale = upscale;
     dev->setUpscaler(upscale);
+    v.window = capture.empty() ? win : nullptr; // (a capture's hidden window stays as it is)
+    v.rendererInUse = dev->offscreen() ? 0 : 1;
+    v.settings.upscaler = int(upscale.mode); // (one that can't run here: off)
+    v.applySettings();
     v.shaders = std::make_unique<cr2::ShaderLibrary>(v.archive);
     if (titleScreen && playFrom.empty()) playFrom = "d1020"; // (the title's New Game: --play's start)
     if (!playFrom.empty()) fieldName = playFrom, v.playMode = true;
@@ -9882,8 +10303,8 @@ int main(int argc, char** argv) {
             fx = (px - ox) / (sw * k), fy = (py - oy) / (sh * k);
         };
         Uint64 last = SDL_GetTicksNS();
-        // --fps: each frame starts no sooner than its slot (the display's vsync may hold it longer)
-        const Uint64 period = fps > 0 ? Uint64(1000000000) / Uint64(fps) : 0;
+        // --fps (the settings' Frame Rate): each frame starts no sooner than its slot (the display's
+        // vsync may hold it longer)
         Uint64 nextFrame = last, fpsSince = last;
         int fpsFrames = 0, totalFrames = 0;
         float measured = 0;
@@ -9903,6 +10324,8 @@ int main(int argc, char** argv) {
                         while (i < std::size(kResolutions) && (kResolutions[i][0] != v.resW || kResolutions[i][1] != v.resH)) ++i;
                         i = (i + 1) % std::size(kResolutions);
                         v.resW = kResolutions[i][0], v.resH = kResolutions[i][1];
+                        v.settings.resolution = int(i);
+                        v.saveSettings();
                         dev->resetHistory();
                         SDL_Log("output: %s", describe().c_str());
                         continue;
@@ -9916,8 +10339,11 @@ int main(int argc, char** argv) {
                         else u.mode = cr2::Upscaler::Off;
                         const std::string why = dev->upscalerProblem(u.mode);
                         if (!why.empty()) SDL_Log("upscaler: %s", why.c_str()), u.mode = cr2::Upscaler::Off;
-                        v.upscale = u;
-                        dev->setUpscaler(u);
+                        v.settings.upscaler = int(u.mode);
+                        for (size_t k = 0; k < std::size(kQualities); ++k)
+                            if (kQualities[k].ratio == u.ratio) v.settings.quality = int(k);
+                        v.applySettings(); // (the upscaler, MSAA and the textures' LOD bias with it)
+                        v.saveSettings();
                         SDL_Log("output: %s", describe().c_str());
                         continue;
                     }
@@ -10050,7 +10476,7 @@ int main(int argc, char** argv) {
                     if (!v.loadField(fieldName, at, binary, data, callEntry)) running = false;
                 } else running = false;
             }
-            if (period) {
+            if (const Uint64 period = v.settings.fps > 0 ? Uint64(1000000000) / Uint64(v.settings.fps) : 0) {
                 const Uint64 t = SDL_GetTicksNS();
                 if (t < nextFrame) SDL_DelayPrecise(nextFrame - t);
                 nextFrame = std::max(nextFrame + period, SDL_GetTicksNS() - period); // (no catching up after a stall)

@@ -80,18 +80,21 @@ std::string resolveArchive(const std::string& path) {
     return path;
 }
 
-std::string defaultArchive(const std::string& baseDir) {
+std::string defaultArchive(const std::vector<std::string>& places) {
     std::error_code ec;
     if (const char* env = std::getenv("CR2_DATA"); env && *env) return resolveArchive(env);
-    if (baseDir.empty()) return {};
-    std::string base = baseDir;
-    if (base.back() != '/' && base.back() != '\\') base += '/';
-    for (const char* sub : {"vita", "android", "ipad", ""}) {
-        const std::string a = resolveArchive(*sub ? base + sub : base);
-        if (fs::is_regular_file(a, ec)) return a;
+    for (std::string base : places) {
+        if (base.empty()) continue;
+        if (base.back() != '/' && base.back() != '\\') base += '/';
+        for (const char* sub : {"vita", "android", "ipad", "PCSG00498", "CR2", "ChaosRings2enHD.app", "Payload", "data", ""}) {
+            const std::string a = resolveArchive(*sub ? base + sub : base);
+            if (fs::is_regular_file(a, ec)) return a;
+        }
     }
     return {};
 }
+
+std::string defaultArchive(const std::string& baseDir) { return defaultArchive(std::vector<std::string>{baseDir}); }
 
 bool readZipEntry(const std::string& zip, const std::string& name, std::vector<uint8_t>& out, std::string* error) {
     std::FILE* f = std::fopen(zip.c_str(), "rb");

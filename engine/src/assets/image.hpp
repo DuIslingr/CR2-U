@@ -21,6 +21,7 @@ struct Image {
     bool bottomUp = false;     // the first row is the picture's bottom (PVR's flip flag / orientation)
     std::string format;        // for tools: "PVR2 PVRTC4", "PVR3 ETC1", "GXT UBC2", ...
     bool mipmaps = false;      // upload with a mip chain
+    int logicalW = 0, logicalH = 0; // an HD replacement's: the original's size (the texture reports it)
 };
 
 bool decodeImg(const std::vector<uint8_t>& file, Image& out, std::string* error = nullptr);

@@ -50,6 +50,7 @@
 
 #include "assets/geom.hpp"
 #include "battle/battledata.hpp"
+#include "battle/glass.hpp"
 #include "battle/rules.hpp"
 #include "assets/image.hpp"
 #include "assets/skeleton.hpp"
@@ -119,7 +120,8 @@ int usage() {
                  "cr2tool play <archive> <event | all>\n"
                  "cr2tool battle <archive> <coupling | all>\n"
                  "cr2tool fight <archive> <coupling> [solo | pair] [seed] [a,b]\n"
-                 "cr2tool sound <archive>\n");
+                 "cr2tool sound <archive>\n"
+                 "cr2tool glass <seeds>\n");
     return 2;
 }
 
@@ -1007,6 +1009,76 @@ int fight(const char* path, int coupling, bool pair, uint32_t seed, const int pa
     return 0;
 }
 
+// The screen breaking away (battle/glass.hpp), for seeds 1..n: its shards within the points' hull,
+// none over another (their areas' sum at most its area - the game's tight super triangle takes the
+// hull's thinnest), each triangle's circle holding no other point (Delaunay), how much of the
+// screen they cover, and how many are still on it as it ends
+int glass(int seeds) {
+    int bad = 0;
+    double cover = 0, tiles = 0, left = 0;
+    size_t shards = 0;
+    for (int seed = 1; seed <= seeds; ++seed) {
+        cr2::Rand48 rng;
+        rng.seed(uint32_t(seed));
+        cr2::GlassFragments g;
+        g.build(512, 320, rng);
+        std::vector<std::pair<double, double>> pts;
+        double area = 0;
+        for (const cr2::GlassShard& s : g.shards) {
+            area += std::fabs((s.x[1] - s.x[0]) * (s.y[2] - s.y[0]) - (s.x[2] - s.x[0]) * (s.y[1] - s.y[0])) / 2;
+            for (int c = 0; c < 3; ++c) pts.push_back({s.x[c], s.y[c]});
+        }
+        std::sort(pts.begin(), pts.end());
+        pts.erase(std::unique(pts.begin(), pts.end()), pts.end());
+        std::vector<std::pair<double, double>> hull(pts.size() * 2); // (Andrew's monotone chain)
+        size_t k = 0;
+        auto cross = [](auto& o, auto& a, auto& b) { return (a.first - o.first) * (b.second - o.second) - (a.second - o.second) * (b.first - o.first); };
+        for (size_t i = 0; i < pts.size(); hull[k++] = pts[i++])
+            while (k >= 2 && cross(hull[k - 2], hull[k - 1], pts[i]) <= 0) --k;
+        for (size_t i = pts.size() - 1, t = k + 1; i > 0; hull[k++] = pts[--i])
+            while (k >= t && cross(hull[k - 2], hull[k - 1], pts[i - 1]) <= 0) --k;
+        hull.resize(k - 1);
+        double hullArea = 0;
+        for (size_t i = 0; i < hull.size(); ++i) {
+            const auto& a = hull[i];
+            const auto& b = hull[(i + 1) % hull.size()];
+            hullArea += a.first * b.second - b.first * a.second;
+        }
+        hullArea = std::fabs(hullArea) / 2;
+        int empty = 0;
+        for (const cr2::GlassShard& s : g.shards) {
+            const double ax = s.x[0], ay = s.y[0], bx = s.x[1], by = s.y[1], cx = s.x[2], cy = s.y[2];
+            const double d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+            const double a2 = ax * ax + ay * ay, b2 = bx * bx + by * by, c2 = cx * cx + cy * cy;
+            const double ox = (a2 * (by - cy) + b2 * (cy - ay) + c2 * (ay - by)) / d, oy = (a2 * (cx - bx) + b2 * (ax - cx) + c2 * (bx - ax)) / d;
+            const double r2 = (ax - ox) * (ax - ox) + (ay - oy) * (ay - oy);
+            for (const auto& q : pts)
+                if ((q.first - ox) * (q.first - ox) + (q.second - oy) * (q.second - oy) < r2 * (1 - 1e-6)) {
+                    ++empty;
+                    break;
+                }
+        }
+        const bool tiled = area <= hullArea * (1 + 1e-6) && area >= hullArea * 0.9; // (none over another; the hull's thinnest lost)
+        g.advanceTo(cr2::GlassFragments::kLength);
+        int shown = 0;
+        for (const cr2::GlassShard& s : g.shards)
+            for (int c = 0; c < 3; ++c)
+                if (std::fabs(s.x[c]) < 512 && std::fabs(s.y[c]) < 320) {
+                    ++shown;
+                    break;
+                }
+        if (!tiled || empty || pts.size() != size_t(cr2::GlassFragments::kPoints + 4)) {
+            ++bad;
+            std::printf("seed %d: %zu points, %zu shards, area %.1f of the hull's %.1f, %d with a point in their circle\n", seed,
+                        pts.size(), g.shards.size(), area, hullArea, empty);
+        }
+        cover += area / (1024.0 * 640.0), tiles += area / hullArea, left += shown, shards += g.shards.size();
+    }
+    std::printf("%d seeds: %.1f shards each, covering %.2f%% of the screen (%.2f%% of their hull); %.2f on it at the end; %d bad\n",
+                seeds, double(shards) / seeds, cover * 100 / seeds, tiles * 100 / seeds, left / seeds, bad);
+    return bad ? 1 : 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1032,5 +1104,6 @@ int main(int argc, char** argv) {
     }
     if (!std::strcmp(argv[1], "run") && argc > 3) return run(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "sound")) return sound(argv[2]);
+    if (!std::strcmp(argv[1], "glass")) return glass(std::max(std::atoi(argv[2]), 1));
     return usage();
 }

@@ -43,6 +43,7 @@ add_library(cr2core STATIC
     src/battle/script.cpp
     src/battle/command.cpp
     src/battle/special.cpp
+    src/battle/glass.cpp
     src/field/treasure.cpp
     src/audio/sounddata.cpp
     third_party/stb/stb_vorbis.c

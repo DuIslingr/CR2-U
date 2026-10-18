@@ -278,8 +278,8 @@ it - at its side's middle were its locator 7 - and the sound 0x92.
 
 The few scenes' own steps (BtlActionCtrl's handlers 25 .. 33, no arguments): Darwin's third
 awakening (command 123) - 25 BtlMap::LoadSpecialMap (`d1154b`, a dome of radius 15 at the origin,
-its animation from then), 33 the screen breaking away (BtlMain::PostEffectGlassFragments: the frame
-drawn so far shattered - left out) and d1154b drawn in the map's place (BtlMap::Draw: one or the
+its animation from then), 33 the screen breaking away (BtlMain::PostEffectGlassFragments: the map
+alone shattered over the rest - docs/BATTLE.md, "The screen breaking away") and d1154b drawn in the map's place (BtlMap::Draw: one or the
 other), 28 the camera's place the size pattern's offset (BtlActionTable +0x5d60f0: by BtlWork +0x51,
 13 / 14 one of the party solo / paired; x and z negated) and Darwin moved from his place by it, 26
 Darwin at the one struck's place (its dpos, the pair's if paired) + its figure's offset (+0x5d53a0:

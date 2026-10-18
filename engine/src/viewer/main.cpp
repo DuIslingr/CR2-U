@@ -75,6 +75,7 @@
 #include "battle/rules.hpp"
 #include "battle/script.hpp"
 #include "battle/special.hpp"
+#include "battle/glass.hpp"
 #include "event/runtime.hpp"
 #include "viewer/audio.hpp"
 #include "field/character.hpp"
@@ -1530,17 +1531,9 @@ struct Viewer {
     // window (GL) - the resolution's shape letterboxed in it. The scene (smaller while an
     // upscaler is on), then the UI over the resolved frame at full size.
     void draw(int fw, int fh) {
+        if (battleMode && glassPending) grabGlass(fw, fh);
         dev->beginFrame(fw, fh);
-        screenX = screenY = 0, screenW = fw, screenH = fh;
-        if (!dev->offscreen() && resW > 0 && resH > 0) {
-            if (int64_t(resW) * fh > int64_t(fw) * resH) screenH = std::max(int(int64_t(fw) * resH / resW), 1);
-            else screenW = std::max(int(int64_t(fh) * resW / resH), 1);
-            screenX = (fw - screenW) / 2, screenY = (fh - screenH) / 2;
-        }
-        int rw = fw, rh = fh;
-        dev->sceneSize(fw, fh, rw, rh);
-        const float kx = float(rw) / float(fw), ky = float(rh) / float(fh);
-        dev->setViewport(screenX * kx, screenY * ky, screenW * kx, screenH * ky);
+        placeScreen(fw, fh);
         if ((game.bgColor[0] > 0 || game.bgColor[1] > 0 || game.bgColor[2] > 0) && white.id) { // (SetBGColor: GameMain::Draw's clear colour)
             static const float kScreen[24] = {-1, -1, 0, 0, 1, -1, 1, 0, 1, 1, 1, 1, -1, -1, 0, 0, 1, 1, 1, 1, -1, 1, 0, 1};
             const Mat4 id = cr2::mat4Identity();
@@ -1552,6 +1545,19 @@ struct Viewer {
         dev->endScene();
         dev->setViewport(float(screenX), float(screenY), float(screenW), float(screenH));
         drawEventUi(); // (the vista's, or the field's events')
+    }
+    // The game's screen in a frame of fw x fh (screenX ...), the scene's viewport on it
+    void placeScreen(int fw, int fh) {
+        screenX = screenY = 0, screenW = fw, screenH = fh;
+        if (!dev->offscreen() && resW > 0 && resH > 0) {
+            if (int64_t(resW) * fh > int64_t(fw) * resH) screenH = std::max(int(int64_t(fw) * resH / resW), 1);
+            else screenW = std::max(int(int64_t(fh) * resW / resH), 1);
+            screenX = (fw - screenW) / 2, screenY = (fh - screenH) / 2;
+        }
+        int rw = fw, rh = fh;
+        dev->sceneSize(fw, fh, rw, rh);
+        const float kx = float(rw) / float(fw), ky = float(rh) / float(fh);
+        dev->setViewport(screenX * kx, screenY * ky, screenW * kx, screenH * ky);
     }
 
     void drawScene(int w, int h) {
@@ -1973,6 +1979,7 @@ struct Viewer {
         if (playMode && (fieldMode || eventMode || battleMode) && !paused) playSeconds += dt; // (the save's play time)
         if (battleMode) {
             battleClock += dt;
+            if (glass.running()) glass.advanceTo(battleClock - glassStart); // (its task: a frame each update)
             if (!inputScript.empty() && inputScript.front() == "skip" && scene.active && battleClock > scene.start + 1.0f) { // (--input: a tap on the scene)
                 inputScript.pop_front();
                 SDL_Log("input skip%s", skipScene() ? "" : " (not now)");
@@ -2302,6 +2309,13 @@ struct Viewer {
     bool specialMapShown = false; // (+0x144)
     ViewFigure mapEffect;         // (+0x140: eff284, drawn with the map - +0x145)
     float specialMapStart = 0;
+    // the screen breaking away (BtlPostEffectGlassFragment: scene op 33): the map alone drawn
+    // into a texture at the next frame (BtlMain::PostEffectGlassFragments), its shards over the scene
+    cr2::GlassFragments glass;
+    bool glassPending = false;
+    float glassStart = 0;
+    cr2::Texture glassTexture;
+    cr2::Rand48 glassRng;
     struct Ramp { // (a value from `from` to `to` over `time` s from `start`: StartAlphaAnimation's)
         float from = 1, to = 1, start = 0, time = 0;
         float at(float t) const {
@@ -2404,6 +2418,7 @@ struct Viewer {
         for (auto& [id, fx] : scene.effects)
             if (fx.fig) unload(*fx.fig);
         scene = SceneState(), sceneCameras.clear(), battleFade = BattleFade(), battleMapHidden = false, mapColour = Ramp();
+        glass = cr2::GlassFragments(), glassPending = false;
         std::string log;
         auto add = [&](const cr2::BattleSetup::Unit& su) {
             BattleUnit u;
@@ -2934,6 +2949,7 @@ struct Viewer {
     int chargeArg = -1;                        // (--charge: the gauge to begin with)
     void startFight(int mode, uint32_t seed) {
         battleFight = mode;
+        glassRng.seed(seed); // (the game's lrand48: seeded by the clock)
         battleRules = std::make_unique<cr2::BattleRules>(battleData, seed);
         std::string err;
         int party[2] = {0, 0};
@@ -4202,7 +4218,8 @@ struct Viewer {
             }
             specialMapStart = battleClock;
             break;
-        case kSpecialGlassFragment: // (the screen's breaking left out; then d1154b drawn)
+        case kSpecialGlassFragment: // (the map alone caught at the next frame, broken away over d1154b)
+            glassPending = true;
             specialMapShown = !specialMap.meshes.empty();
             break;
         case kSpecialDarwin3ResetMap:
@@ -4408,7 +4425,7 @@ struct Viewer {
         commandEffects.push_back(std::move(fx));
     }
 
-    void drawBattle(int w, int h) {
+    void drawBattle(int w, int h, bool mapOnly = false) {
         cr2::Mat34 cw;
         float fov = 45, zn = 0.1f, zf = 100;
         if (!battleView(cw, fov, zn, zf)) return;
@@ -4430,12 +4447,72 @@ struct Viewer {
                 d.placed = true;
                 if (!battleUi(d.at, d.x, d.y)) d.start = -100; // (behind it: not shown)
             }
+        if (mapOnly) { // (PostEffectGlassFragments: BtlMap's passes alone, before d1154b replaces it)
+            drawFigure(battleMap, vp.data());
+            if (!mapEffect.meshes.empty()) drawFigure(mapEffect, vp.data());
+            return;
+        }
         if (!battleMapHidden) drawFigure(specialMapShown ? specialMap : battleMap, vp.data()); // (BtlMap::Draw: d1154b in its place)
         if (!battleMapHidden && !mapEffect.meshes.empty()) drawFigure(mapEffect, vp.data());
         for (const BattleUnit& u : battleUnits)
             if (!u.hidden && !u.sceneHidden) drawFigure(u.fig, vp.data());
         drawEffects(cw, vp);
         drawSceneEffects(cw, vp);
+        drawGlass();
+    }
+
+    // The screen's half size in the game's pixels (RenderContext's screen: its height taken as
+    // the iPhone's 640 - the shards' speeds are in its pixels)
+    void glassSize(int& hw, int& hh) const {
+        hh = 320;
+        hw = std::max(int(320.0f * float(screenW) / float(std::max(screenH, 1)) + 0.5f), 1);
+    }
+    // BtlMain::PostEffectGlassFragments: the map alone (passes 2, 4, 8) drawn into render target
+    // 5, its texture the shards' (BtlPostEffectGlassFragment::Setup)
+    void grabGlass(int fw, int fh) {
+        glassPending = false;
+        dev->beginFrame(fw, fh);
+        placeScreen(fw, fh);
+        drawBattle(screenW, screenH, true);
+        dev->endScene();
+        dev->endFrame(false);
+        std::vector<uint8_t> px;
+        int w = 0, h = 0;
+        if (!dev->readPixels(px, w, h) || screenW <= 0 || screenH <= 0 || screenX + screenW > w || screenY + screenH > h) {
+            SDL_Log("the screen breaks away: not caught (%dx%d of %dx%d)", screenW, screenH, w, h);
+            return;
+        }
+        cr2::Image img;
+        img.width = screenW, img.height = screenH;
+        img.rgba.resize(size_t(screenW) * screenH * 4);
+        for (int y = 0; y < screenH; ++y) { // (bottom-up: a render target's v = 0 its bottom)
+            const uint8_t* row = &px[(size_t(screenY + screenH - 1 - y) * w + screenX) * 4];
+            std::memcpy(&img.rgba[size_t(y) * screenW * 4], row, size_t(screenW) * 4);
+        }
+        for (size_t k = 3; k < img.rgba.size(); k += 4) img.rgba[k] = 255;
+        if (glassTexture.id) dev->destroy(glassTexture);
+        glassTexture = dev->upload(img);
+        dev->resetHistory();
+        int hw = 0, hh = 0;
+        glassSize(hw, hh);
+        glass.build(hw, hh, glassRng);
+        glassStart = battleClock;
+        SDL_Log("the screen breaks away: %zu shards (%d x %d)", glass.shards.size(), hw * 2, hh * 2);
+    }
+    // BtlPostEffectGlassFragment::Draw: the shards (src alpha, one minus), the whole's alpha falling
+    void drawGlass() {
+        if (!glass.running() || !glassTexture.id) return;
+        Mat4 proj = cr2::mat4Identity();
+        proj[0] = 1.0f / float(glass.w), proj[5] = 1.0f / float(glass.h);
+        const float rgba[4] = {1, 1, 1, glass.alpha()};
+        for (const cr2::GlassShard& s : glass.shards) {
+            float v[24];
+            for (int k = 0; k < 6; ++k) { // (the triangle, then its last corner thrice: nothing)
+                const int c = k < 3 ? k : 2;
+                v[k * 4 + 0] = s.x[c], v[k * 4 + 1] = s.y[c], v[k * 4 + 2] = s.u[c], v[k * 4 + 3] = s.v[c];
+            }
+            dev->drawQuad(glassTexture, v, proj.data(), rgba);
+        }
     }
 
     // The battle's effects (BtlEffectCtrl / BtlEffect: an effNNN figure playing its animation once,
@@ -9126,14 +9203,26 @@ int main(int argc, char** argv) {
         SDL_Log("title: %s", act == 1 ? "a new game" : act == 4 ? "a new game with the clear data" : act == 2 ? "the save loaded" : "the continue data");
         return ok;
     };
+    auto frameSize = [&](int& w, int& h) {
+        SDL_GetWindowSizeInPixels(win, &w, &h);
+        if (dev->offscreen() && v.resW > 0 && v.resH > 0) w = v.resW, h = v.resH;
+    };
+    auto catchGlass = [&]() { // (frames not drawn: drawn as the screen breaks, to catch it)
+        if (!v.glassPending) return;
+        int w = 0, h = 0;
+        frameSize(w, h);
+        v.draw(w, h);
+        dev->endFrame(false);
+    };
     if (v.playMode) { // --time: the game played that long first (60 frames a second), then --walk
         for (float t = 0; t + 0.5f / 60.0f < startTime; t += 1.0f / 60.0f) {
             v.advance(1.0f / 60.0f, 0, 0, false);
+            catchGlass();
             if (!takeTitle()) return 1;
         }
         for (float t = 0; t < walkSeconds; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, walkX, walkY, true);
         if (tapAfter) v.tap(); // (--tap: then a tap, before --run)
-        for (float t = 0; t < runSeconds; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, 0, 0, false); // (--run: on after the walk)
+        for (float t = 0; t < runSeconds; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, 0, 0, false), catchGlass(); // (--run: on after the walk)
         runSeconds = 0;
         SDL_Log("play: after %.2f s (+ %.2f s walking) %s, %d battles skipped", startTime, walkSeconds,
                 v.eventMode ? ("in the vista " + v.status).c_str() : ("on " + v.field.info().name).c_str(), v.battlesSkipped);
@@ -9147,10 +9236,6 @@ int main(int argc, char** argv) {
     SDL_Log("%s%s", v.status.c_str(), v.animStatus().c_str());
 
     // a frame's size: the resolution where the device draws offscreen, else the window's
-    auto frameSize = [&](int& w, int& h) {
-        SDL_GetWindowSizeInPixels(win, &w, &h);
-        if (dev->offscreen() && v.resW > 0 && v.resH > 0) w = v.resW, h = v.resH;
-    };
     auto describe = [&]() {
         int w = 0, h = 0;
         frameSize(w, h);
@@ -9175,7 +9260,10 @@ int main(int argc, char** argv) {
         }
         // --run: frames as the window would show them, the event and animations going on
         if (v.battleMode && !v.playMode) { // (--time: that far into the battle, played at 60 a second)
-            for (float t = 0; t + 0.5f / 60.0f < startTime; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, 0, 0, false), v.pose();
+            for (float t = 0; t + 0.5f / 60.0f < startTime; t += 1.0f / 60.0f) {
+                v.advance(1.0f / 60.0f, 0, 0, false), v.pose();
+                catchGlass(); // (the screen caught as it breaks)
+            }
         }
         for (int k = 0; k < int(runSeconds * 60.0f + 0.5f); ++k) {
             v.time += 1.0f / 60.0f;

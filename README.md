@@ -177,8 +177,8 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       boss icons, the save's calendar (its date, the play time) -, the questions, then the game;
       the options' Title Screen and a script's ReserveTitle back to it
 - [x] The map's own effect: eff284 with it in battles 221, 271, 272, 317
-- [ ] The screen breaking away (BtlPostEffectGlassFragment) before Darwin's third awakening's
-      space
+- [x] The screen breaking away (BtlPostEffectGlassFragment) before Darwin's third awakening's
+      space: the map alone cut into 230 points' Delaunay shards, flying out, turning, growing
 - [x] Treasure boxes: drawn as a dungeon is entered (the difficulty's tables), opened with their
       item and its window ("Obtained ...", the item's icon), the key boxes for Orlando alone - their
       mark and lock (two fingers spread on it: the mouse dragged from it) - the System window's

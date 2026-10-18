@@ -265,6 +265,56 @@ pair out over 1 s and hides them, ActionAdventStandby (the status windows off, t
 scene, ActionAdventCleanup (its effects gone, the pair shown at full opacity, the windows back).
 A tap skips a scene while its skip is on (SetSkipEnable; BtlMain::IsEnabled(0x104)): not here.
 
+## The screen breaking away (BtlPostEffectGlassFragment)
+
+Darwin's third awakening's step 33 sets BtlPostEffectGlassFragment +0x2c. At the frame's render
+(BtlMain::Render pass 1, PostEffectGlassFragments), while the effect isn't running (its clock
++0x28 at 0 or past 1.5), BtlMap alone - its passes 2, 4 and 8, the fighters and effects left out -
+is drawn into the post-effect buffer's render target 5. BtlPostEffectGlassFragment::Setup cuts
+that texture into shards, and BtlMap::SetRenderSpecialMap(true) puts d1154b in the map's place.
+So the forest breaks away over the dome, with the fighters drawn as ever.
+
+**GlassFragmentEffect(w, h, 230)**, where w and h are half the screen's size (RenderContext
++0x428's +0xc / +0x10):
+
+- The points, with y down and each random value lrand48 × 2⁻³¹: (0, 0), (w·r, 0), (0, h·r),
+  (w·r, h·r), then 230 × (w·r, h·r).
+- delaunay::DelaunayTriangles::triangulate is Bowyer-Watson. Its super triangle (getSuperTriangle)
+  is equilateral about a circle whose radius is 1.2 × the distance from the least corner to "the
+  middle", taken as half the points' extent. That is so tight that the hull's thinnest triangles
+  go with it: about 98% of the hull is covered, and the screen's edges are ragged.
+- fixEdge walks the hull's edges (getEdgeList: the edges of one triangle only) to a corner each
+  way. Between corners 0 and 1 it sets their y to corner 0's; between 0 and 2, their x. Those
+  points are already there. The cases meant for corner 3 test for a smaller corner after a larger
+  one, which is never true, so it changes nothing.
+
+**Each triangle a shard** (GlassFragment, 0xa0 bytes):
+
+- Its middle less (w/2, h/2) gives a direction and a distance d.
+- +0x40, a frame's shift: (d·0.06 + 8.7) × the direction, with y negated (up).
+- +0x50, what that shift gains each frame: (d·0.02 + 0.55) × the direction.
+- +0x60, a frame's turn about x, y and z: (d·0.0003 + 0.18) × r each. Its gain +0x70 is 0 × r,
+  which still draws three lrand48 values.
+- +0x80, a frame's growth: (0.004·r + 1) on x and y, 1 on z. Its gain +0x90 is (0.004, 0.004, 0).
+
+Setup puts the corners on the screen, centred and y up: (2x − w, h − 2y). Their texture
+coordinates are ((w + x′) / 2w, (h + y′) / 2h), each shard's own three vertices, drawn as a
+CustomFigure of triangles blended src alpha / one minus src alpha (0x302 / 0x303).
+
+**Update, each frame while the clock is ≤ 1.5**: each shard's corners are taken through
+translate(middle + shift) · scale(growth) · rotationZYX(turn) · translate(−middle), in place. The
+shift, turn and growth then add their gains. The figure's alpha (+0x11c) is 1 − clock / 1.5, then
+the clock gains the frame's time. Past 1.5, Cleanup.
+
+Shards that keep growing and speeding up are mostly off the screen within 0.3 s. Over 200 seeds
+there are 444 shards on average, covering 94% of the screen, and none is left on it at the end
+(`cr2tool glass 200`).
+
+The port (battle/glass.cpp, the viewer's grabGlass / drawGlass) reads the map-only frame back as
+the texture. It takes the screen's height as the iPhone's 640 (h = 320, w by the aspect), since
+the shards' speeds are in its pixels. It seeds lrand48 with the fight's seed (the game seeds it
+with the clock) and steps 60 times a second.
+
 ## The downed (BtlActionCtrl's dead actions)
 
 After the command (ActionDeadStandby .. ActionDeadWaitDeadMotion), each downed: one of the party

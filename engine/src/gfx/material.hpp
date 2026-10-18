@@ -18,9 +18,6 @@ namespace cr2 {
 // What a key's shaders do that shading.glsl leaves out
 enum UnsupportedShading : uint32_t {
     kUnsupportedPointLight = 1, // PointLamp01 (2 shaders)
-    kUnsupportedOverlay = 2,    // OverlayColorSampler (3)
-    kUnsupportedDistortion = 4, // the normal map at uv1 offsets uv0 (16)
-    kUnsupportedUv1 = 8,        // a second texture coordinate set, ScrollSpeedSet2 / OffsetSet2 (18)
 };
 
 // What a key's vertex shader does to the vertices' places (the figure's skinning on the CPU
@@ -44,7 +41,7 @@ struct ShaderFeatures {
 // alpha, 0x4000 the vertex red shades the light, 0x8000 the vertex colour tints, 0x10000
 // ColorSampler, 0x20000 NormalSampler, 0x80000 overlay; word 1 - 0x4000 velvet, 0x10000 the
 // tint includes alpha, 0x01000000 alpha test, 0x02000000 ScrollSpeedSet1, 0x04000000
-// ScrollSpeedSet2, 0x10000000 OffsetSet1, 0x20000000 distortion; word 2 - 0x1 uv1, 0x4 billboard
+// ScrollSpeedSet2, 0x10000000 OffsetSet1, 0x20000000 distortion; word 2 - 0x1 OffsetSet2, 0x4 billboard
 // (0x8 upright), 0x10 fog, 0x700 LightSampler, 0x8000 skinned (0x10000: two weights a vertex)
 ShaderFeatures decodeShaderKey(const std::array<uint32_t, 4>& key);
 

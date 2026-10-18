@@ -1218,17 +1218,18 @@ private:
                                                              {1, uint32_t(kVertexStride), VK_VERTEX_INPUT_RATE_VERTEX}};
         const VkVertexInputAttributeDescription quadAttrs[2] = {{0, 0, VK_FORMAT_R32G32_SFLOAT, 0},
                                                                 {1, 0, VK_FORMAT_R32G32_SFLOAT, 8}};
-        const VkVertexInputAttributeDescription meshAttrs[7] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
+        const VkVertexInputAttributeDescription meshAttrs[8] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
                                                                 {1, 0, VK_FORMAT_R32G32_SFLOAT, 12},
                                                                 {2, 0, VK_FORMAT_R8G8B8A8_UNORM, 20},
                                                                 {4, 0, VK_FORMAT_R32G32B32_SFLOAT, 24},
                                                                 {5, 0, VK_FORMAT_R32G32B32_SFLOAT, 36},
                                                                 {6, 0, VK_FORMAT_R32G32B32_SFLOAT, 48},
+                                                                {7, 0, VK_FORMAT_R32G32_SFLOAT, 60},
                                                                 {3, 1, VK_FORMAT_R32G32B32_SFLOAT, 0}};
         VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         vi.vertexBindingDescriptionCount = scene && !quad ? 2 : 1;
         vi.pVertexBindingDescriptions = bindings;
-        vi.vertexAttributeDescriptionCount = quad ? 2 : scene ? 7 : 6;
+        vi.vertexAttributeDescriptionCount = quad ? 2 : scene ? 8 : 7;
         vi.pVertexAttributeDescriptions = quad ? quadAttrs : meshAttrs;
         VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
         ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;

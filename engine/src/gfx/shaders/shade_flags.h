@@ -25,5 +25,10 @@
 #define SHADE_SCROLL 0x40000        // uv += fract(ScrollSpeedSet1 x Time)
 #define SHADE_OFFSET 0x80000        // uv += OffsetSet1
 #define SHADE_SPEC_MAP_ALPHA 0x100000 // the normal map's alpha is the specular strength (the iPad's)
+#define SHADE_UV1 0x200000          // a second texture coordinate set (Texcoord1): the overlay's, the normal map's
+#define SHADE_SCROLL2 0x400000      // uv1 += fract(ScrollSpeedSet2 x Time)
+#define SHADE_OFFSET2 0x800000      // uv1 += OffsetSet2
+#define SHADE_DISTORTION 0x1000000  // the colour's uv + (the normal map at uv1 - 1/2) x DistortionStrength
+#define SHADE_OVERLAY 0x2000000     // OverlayColorSampler over the colour by OverlayStrength x its alpha
 
 #endif

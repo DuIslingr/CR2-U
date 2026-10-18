@@ -3,7 +3,7 @@
 // (shade_flags.h, which comes first). Shared by the Vulkan shaders (#include) and the GL device
 // (the text, after its version line); SHADING_FRAGMENT adds the samplers and shade().
 //
-// The block is ShadingBlock in render_device.hpp (std140, 256 bytes). Lights, the camera and
+// The block is ShadingBlock in render_device.hpp (std140, 288 bytes). Lights, the camera and
 // positions are in one space: the mesh's vertices as drawn.
 #ifdef GL_ES
 #define SHADE_HIGHP highp // (the flags need more than mediump's 16 bits)
@@ -31,6 +31,8 @@ layout(std140) uniform Material {
     vec4 fogParams;        // FogParams: far / (far - near), -1 / (far - near), alpha
     vec4 fogColor;         // FogColor
     vec4 camera;           // CameraPosition
+    vec4 uvAnim2;          // ScrollSpeedSet2, OffsetSet2
+    vec4 strengths;        // OverlayStrength, DistortionStrength, -, -
 } mat;
 
 // ---- the vertex programs' parts ----
@@ -39,6 +41,14 @@ vec2 shadeUV(vec2 uv) {
     int f = mat.flags.x;
     if ((f & SHADE_OFFSET) != 0) uv = uv + mat.uvAnim.zw;
     if ((f & SHADE_SCROLL) != 0) uv += fract(mat.uvAnim.xy * mat.velvet.z);
+    return uv;
+}
+
+// (uv1: as the game's vertex programs, OffsetSet2 or the scroll - no key has both)
+vec2 shadeUV1(vec2 uv) {
+    int f = mat.flags.x;
+    if ((f & SHADE_OFFSET2) != 0) uv = uv + mat.uvAnim2.zw;
+    if ((f & SHADE_SCROLL2) != 0) uv += fract(mat.uvAnim2.xy * mat.velvet.z);
     return uv;
 }
 
@@ -54,19 +64,21 @@ vec3 shadeView(vec3 pos) { return normalize(mat.camera.xyz - pos); }
 #ifdef VULKAN
 layout(set = 0, binding = 0) uniform sampler2D uTex;    // ColorSampler
 layout(set = 2, binding = 0) uniform sampler2D uNormal; // NormalSampler
-layout(set = 3, binding = 0) uniform sampler2D uExtra;  // CLUTSampler or LightSampler
+layout(set = 3, binding = 0) uniform sampler2D uExtra;  // CLUTSampler, LightSampler or OverlayColorSampler
 #else
 uniform sampler2D uTex;
 uniform sampler2D uNormal;
 uniform sampler2D uExtra;
 #endif
 
-vec4 shade(vec2 uv, vec4 vColor, vec3 vNormal, vec3 vTangent, vec3 vBinormal, vec3 vView, float ff) {
+vec4 shade(vec2 uv, vec2 uv1, vec4 vColor, vec3 vNormal, vec3 vTangent, vec3 vBinormal, vec3 vView, float ff) {
     int f = mat.flags.x;
     vec3 Nn = vNormal;
     vec4 normalRGBA = vec4(0.5, 0.5, 0.5, 1.0);
+    vec2 colorUV = uv;
     if ((f & SHADE_NORMAL_MAP) != 0) {
-        normalRGBA = texture(uNormal, uv);
+        normalRGBA = texture(uNormal, (f & SHADE_DISTORTION) != 0 ? uv1 : uv); // (the distortion's at uv1)
+        if ((f & SHADE_DISTORTION) != 0) colorUV = uv + (normalRGBA.rgb - vec3(0.5, 0.5, 0.5)).xy * mat.strengths.y;
         vec3 bump = (normalRGBA.rgb - vec3(0.5, 0.5, 0.5)) * mat.params.x;
         Nn = Nn + bump.x * vTangent + bump.y * vBinormal;
     }
@@ -74,9 +86,14 @@ vec4 shade(vec2 uv, vec4 vColor, vec3 vNormal, vec3 vTangent, vec3 vBinormal, ve
     vec4 colorRGBA = vec4(1.0);
     vec4 diffuseColor = mat.diffuse;
     if ((f & SHADE_TEXTURE) != 0) {
-        colorRGBA = texture(uTex, uv);
+        colorRGBA = texture(uTex, colorUV);
         diffuseColor = colorRGBA;
         if ((f & SHADE_LIGHT_MAP) != 0) diffuseColor.a = texture(uExtra, uv).a;
+        if ((f & SHADE_OVERLAY) != 0) {
+            vec4 overlayColorRGBA = texture(uExtra, (f & SHADE_UV1) != 0 ? uv1 : uv);
+            float overlayStlength = mat.strengths.x * overlayColorRGBA.a;
+            diffuseColor.rgb = diffuseColor.rgb * (1.0 - overlayStlength) + overlayColorRGBA.rgb * overlayStlength;
+        }
         diffuseColor *= mat.diffuse;
     } else if ((f & SHADE_LIGHT_MAP) != 0) {
         diffuseColor.a = texture(uExtra, uv).a;

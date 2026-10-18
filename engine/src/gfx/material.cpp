@@ -31,11 +31,12 @@ ShaderFeatures decodeShaderKey(const std::array<uint32_t, 4>& key) {
     if (w1 & 0x10000000) s |= SHADE_OFFSET;
     if (w2 & 0x10) s |= SHADE_FOG;
     if (w2 & 0x700) s |= SHADE_LIGHT_MAP;
+    if (w1 & 0x04000000) s |= SHADE_UV1 | SHADE_SCROLL2;
+    if (w2 & 0x1) s |= SHADE_UV1 | SHADE_OFFSET2;
+    if (w1 & 0x20000000) s |= SHADE_DISTORTION;
+    if (w0 & 0x80000) s |= SHADE_OVERLAY;
     out.shade = s;
     if (w0 & 0x4) out.unsupported |= kUnsupportedPointLight;
-    if (w0 & 0x80000) out.unsupported |= kUnsupportedOverlay;
-    if (w1 & 0x20000000) out.unsupported |= kUnsupportedDistortion;
-    if ((w1 & 0x04000000) || (w2 & 0x1)) out.unsupported |= kUnsupportedUv1;
     if (w2 & 0x4) out.vertex |= (w2 & 0x8) ? kBillboard | kUpright : kBillboard;
     return out;
 }
@@ -69,10 +70,12 @@ ShaderFeatures featuresFromGlsl(const std::string& vp, const std::string& fp) {
         {SHADE_LIGHT_MAP, 0, 0, "LightSampler", nullptr},
         {SHADE_SCROLL, 0, 0, nullptr, "ScrollSpeedSet1"},
         {SHADE_OFFSET, 0, 0, nullptr, "OffsetSet1"},
+        {SHADE_UV1, 0, 0, nullptr, "vTexcoord1"},
+        {SHADE_SCROLL2, 0, 0, nullptr, "ScrollSpeedSet2"},
+        {SHADE_OFFSET2, 0, 0, nullptr, "OffsetSet2"},
+        {SHADE_DISTORTION, 0, 0, "DistortionStrength", nullptr},
+        {SHADE_OVERLAY, 0, 0, "OverlayColorSampler", nullptr},
         {0, kUnsupportedPointLight, 0, "PointLamp01", nullptr},
-        {0, kUnsupportedOverlay, 0, "OverlayColorSampler", nullptr},
-        {0, kUnsupportedDistortion, 0, "DistortionStrength", nullptr},
-        {0, kUnsupportedUv1, 0, nullptr, "vTexcoord1"},
         {0, 0, kBillboard, nullptr, "ViewInverse"},
         {0, 0, kUpright, nullptr, "camPos"},
     };
@@ -139,6 +142,10 @@ void applyMaterial(const GeomMaterial& m, const ShaderFeatures& f, MeshShading& 
     m.param(0x42, &sh.velvetStrength, 1);
     m.param(0x55, sh.scrollSpeed, 2);
     m.param(0x5e, sh.offset, 2);
+    m.param(0x58, sh.scrollSpeed2, 2);
+    m.param(0x61, sh.offset2, 2);
+    m.param(0x47, &sh.overlayStrength, 1);
+    m.param(0x64, &sh.distortionStrength, 1);
     if (sh.shade & SHADE_ALPHA_TEST) {
         sh.alphaRef = 0.5f;
         uint32_t bits = 0;

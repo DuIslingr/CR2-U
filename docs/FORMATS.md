@@ -339,13 +339,18 @@ Billboards (25 keys - nearly every effect, a few objects and figures): the verti
 ViewInverse's 3x3 (the camera's axes), or - word 2's 0x8, 5 keys - by camPos (the view's third
 row with y 0, normalised; y x it; their cross: upright, turning about y alone), then scaled by
 MatrixPalette[0]'s columns' lengths and moved to its translation - its rotation and the vertices'
-joints unused. Left out so far: point lights (2 keys), overlays (3), distortion (16) and the
-second texture coordinate set (18): effects. Android's / the Vita's key bits (word 0 first):
+joints unused. The second texture coordinate set (18 keys: Texcoord1 / 1024, + OffsetSet2 or +
+fract(ScrollSpeedSet2 x Time)) is the distortion's (16) - NormalSampler read there, the colour's
+coordinates + (its rgb - 1/2).xy x DistortionStrength, the bump from the same texel - or an
+overlay's (2; the third reads it at the first set): the colour's rgb mixed toward
+OverlayColorSampler's by OverlayStrength x its alpha, before DiffuseColor. d0252b's overlay names
+no texture: its sampler, never set, reads unit 0 - the colour's own, over itself. Left out so far:
+point lights (2 keys). Android's / the Vita's key bits (word 0 first):
 word 0 - 0x1 DirLamp01, 0x4 PointLamp01, 0x20 hemisphere, 0x40 flat ambient, 0x80 CLUT, 0x100
 specular, 0xe00 its strength from the vertex alpha, 0x4000 obscure, 0x8000 the vertex colour
 tints, 0x10000 ColorSampler, 0x20000 NormalSampler, 0x80000 overlay; word 1 - 0x4000 velvet,
 0x10000 the tint includes alpha, 0x01000000 alpha test, 0x02000000 ScrollSpeedSet1,
-0x04000000 ScrollSpeedSet2, 0x10000000 OffsetSet1, 0x20000000 distortion; word 2 - 0x1 uv1, 0x4
+0x04000000 ScrollSpeedSet2, 0x10000000 OffsetSet1, 0x20000000 distortion; word 2 - 0x1 OffsetSet2, 0x4
 billboard, 0x10 fog, 0x700 LightSampler, 0x8000 skinned (0x10000 two weights). Combinations:
 obscure on the specular = 0x100 and 0x4000, the rim = 0x100 and word 1's 0x4000. `cr2tool
 shaders`: on Android the decoder agrees with every key's GLSL, bit for bit. The iPad's older

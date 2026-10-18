@@ -203,9 +203,11 @@ struct ViewFigure {
     float tint[4] = {1, 1, 1, 1};
 };
 
-void packVertex(uint8_t* o, const float* p, const float* n, const float* uv, const float* c, const float* t, const float* b) {
+void packVertex(uint8_t* o, const float* p, const float* n, const float* uv, const float* c, const float* t, const float* b,
+                const float* uv1) {
     std::memcpy(o, p, 12);
     std::memcpy(o + 12, uv, 8);
+    std::memcpy(o + 60, uv1, 8);
     for (int k = 0; k < 4; ++k) o[20 + k] = uint8_t(std::clamp(c[k], 0.0f, 1.0f) * 255.0f + 0.5f);
     std::memcpy(o + 24, n, 12);
     std::memcpy(o + 36, t, 12);
@@ -1038,7 +1040,7 @@ struct Viewer {
                 auto at3 = [&](const std::vector<float>& v) { return v.empty() ? kZero : &v[size_t(i) * 3]; };
                 packVertex(&vm.vertices[size_t(i) * cr2::kVertexStride], &m.position[size_t(i) * 3], at3(m.normal),
                            m.uv.empty() ? kNoUv : &m.uv[size_t(i) * 2], m.colour.empty() ? kWhite : &m.colour[size_t(i) * 4],
-                           at3(m.tangent), at3(m.binormal));
+                           at3(m.tangent), at3(m.binormal), m.uv1.empty() ? kNoUv : &m.uv1[size_t(i) * 2]);
             }
             const std::vector<uint32_t> idx = m.triangles();
             vm.gpu = dev->upload(vm.vertices, idx, -1);
@@ -1062,8 +1064,13 @@ struct Viewer {
                 }
                 vm.texture = texture(vm.material.diffuse());
                 vm.normalMap = texture(vm.material.texture(0x35));
-                vm.extraMap = vm.material.textures.count(0x48) ? texture(vm.material.texture(0x48), false)
-                                                               : texture(vm.material.texture(0x43));
+                vm.extraMap = vm.material.textures.count(0x48)   ? texture(vm.material.texture(0x48), false)
+                              : vm.material.textures.count(0x44) ? texture(vm.material.texture(0x44)) // (OverlayColorSampler)
+                                                                 : texture(vm.material.texture(0x43));
+                // an overlay without its texture (d0252b's): the sampler never set, so unit 0's -
+                // the colour's own, laid over itself
+                if (!vm.material.textures.count(0x44) && (shaders->features(vm.material.shaderKey).shade & SHADE_OVERLAY))
+                    vm.extraMap = vm.texture;
             }
             f.meshes.push_back(std::move(vm));
             f.vertices += m.vertexCount;
@@ -1492,7 +1499,10 @@ struct Viewer {
             sh.normalMap = m.normalMap;
             sh.normalSampling = cr2::sampling(m.material.sampler(0x35));
             sh.extraMap = m.extraMap;
-            sh.extraSampling = cr2::sampling(m.material.sampler(m.material.textures.count(0x48) ? 0x48 : 0x43));
+            sh.extraSampling = cr2::sampling(m.material.sampler(m.material.textures.count(0x48)   ? 0x48
+                                                                : m.material.textures.count(0x44) ? 0x44
+                                                                : (sh.shade & SHADE_OVERLAY)     ? 0x32
+                                                                                                  : 0x43));
             dev->drawMesh(m.gpu, m.texture, mvp, sh, st);
         }
     }

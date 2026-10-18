@@ -423,9 +423,10 @@ int shaders(const char* path) {
     if (!openArchive(a, path)) return 1;
     static const char* kShade[] = {"on", "texture", "normal map", "lit", "DirLamp01", "hemisphere", "CLUT", "specular",
                                    "spec vertex alpha", "obscure", "obscure spec", "tint", "tint alpha", "velvet", "fuzzy",
-                                   "alpha test", "fog", "light map", "scroll", "offset", "spec map alpha"};
-    static const char* kUnsupported[] = {"(point light)", "(overlay)", "(distortion)", "(uv1)", "billboard", "upright"};
-    constexpr int kShadeBits = int(sizeof kShade / sizeof kShade[0]), kUnsupportedBits = 6; // (and the 2 VertexPlacing bits)
+                                   "alpha test", "fog", "light map", "scroll", "offset", "spec map alpha", "uv1",
+                                   "scroll2", "offset2", "distortion", "overlay"};
+    static const char* kUnsupported[] = {"(point light)", "billboard", "upright"};
+    constexpr int kShadeBits = int(sizeof kShade / sizeof kShade[0]), kUnsupportedBits = 3; // (and the 2 VertexPlacing bits)
     std::map<std::array<uint32_t, 4>, int> keys;
     size_t materials = 0, builtIn = 0, alphaNoRef = 0, extraClash = 0;
     std::vector<uint8_t> data;
@@ -464,7 +465,7 @@ int shaders(const char* path) {
         bool bad = false;
         for (int k = 0; k < kShadeBits + kUnsupportedBits; ++k) {
             auto bit = [&](const cr2::ShaderFeatures& f) {
-                const uint32_t other = f.unsupported | f.vertex << 4;
+                const uint32_t other = f.unsupported | f.vertex << 1;
                 return k < kShadeBits ? (f.shade >> k & 1) : (other >> (k - kShadeBits) & 1);
             };
             const bool s = bit(src), d = bit(dec);

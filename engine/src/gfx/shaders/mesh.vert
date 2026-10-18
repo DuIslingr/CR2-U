@@ -9,7 +9,9 @@ layout(location = 2) in vec4 aColor;
 layout(location = 4) in vec3 aNormal;
 layout(location = 5) in vec3 aTangent;
 layout(location = 6) in vec3 aBinormal;
+layout(location = 7) in vec2 aUV1;
 layout(location = 0) out vec2 vUV;
+layout(location = 9) out vec2 vUV1;
 layout(location = 1) out vec4 vColor;
 layout(location = 4) out vec3 vNormal;
 layout(location = 5) out vec3 vTangent;
@@ -23,11 +25,13 @@ layout(location = 3) out vec4 vPrev;
 #endif
 void main() {
     vUV = aUV;
+    vUV1 = aUV1;
     vColor = aColor;
     vNormal = aNormal;
     gl_Position = pc.matrix * vec4(aPos, 1.0);
     if ((mat.flags.x & SHADE_ON) != 0) {
         vUV = shadeUV(aUV);
+        vUV1 = shadeUV1(aUV1);
         vTangent = aTangent;
         vBinormal = aBinormal;
         vView = shadeView(aPos);

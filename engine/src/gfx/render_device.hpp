@@ -24,13 +24,13 @@ struct Texture {
 
 // A mesh uploaded to the GPU: interleaved vertices (kVertexStride bytes: position 3 f32 at 0,
 // uv 2 f32 at 12, colour 4 u8 at 20, normal 3 f32 at 24, tangent 3 f32 at 36, binormal 3 f32 at
-// 48) plus a triangle index buffer
+// 48, uv1 2 f32 at 60) plus a triangle index buffer
 struct GpuMesh {
     unsigned vao = 0, vbo = 0, ebo = 0; // GL objects; Vulkan keeps its handle in vao (0 = none)
     int indexCount = 0;
     int texture = -1;
 };
-constexpr size_t kVertexStride = 60;
+constexpr size_t kVertexStride = 68;
 
 enum class Backend { OpenGL, Vulkan };
 const char* backendName(Backend b);
@@ -69,9 +69,11 @@ struct MeshShading {
     float bumpiness = 1, specularStrength = 0, specularPower = 1, rollOff = 0, velvetStrength = 0;
     float surfaceColor[3] = {1, 1, 1}, fuzzySpecColor[3] = {0, 0, 0}, subColor[3] = {0, 0, 0};
     float scrollSpeed[2] = {0, 0}, offset[2] = {0, 0};
+    float scrollSpeed2[2] = {0, 0}, offset2[2] = {0, 0}; // (uv1's)
+    float overlayStrength = 0, distortionStrength = 0;
     const Texture* normalMap = nullptr; // SHADE_NORMAL_MAP
     Sampling normalSampling;
-    const Texture* extraMap = nullptr;  // SHADE_CLUT's CLUT or SHADE_LIGHT_MAP's light map
+    const Texture* extraMap = nullptr;  // SHADE_CLUT's CLUT, SHADE_LIGHT_MAP's light map or SHADE_OVERLAY's overlay
     Sampling extraSampling;
 };
 
@@ -98,8 +100,10 @@ struct ShadingBlock {
     float surface[4], fuzzy[4], sub[4];
     float uvAnim[4]; // ScrollSpeedSet1, OffsetSet1
     float lightDir[4], lightColor[4], ambient[4], ground[4], skyDir[4], fogParams[4], fogColor[4], camera[4];
+    float uvAnim2[4]; // ScrollSpeedSet2, OffsetSet2
+    float strengths[4]; // OverlayStrength, DistortionStrength, -, -
 };
-static_assert(sizeof(ShadingBlock) == 256, "Material block layout");
+static_assert(sizeof(ShadingBlock) == 288, "Material block layout");
 ShadingBlock shadingBlock(const MeshShading& sh, const SceneLighting& scene);
 
 // A GL blend factor enum as a DrawState code (source, or destination with `dst`)

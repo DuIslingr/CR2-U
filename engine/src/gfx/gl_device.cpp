@@ -52,8 +52,10 @@ layout(location = 2) in vec4 aColor;
 layout(location = 4) in vec3 aNormal;
 layout(location = 5) in vec3 aTangent;
 layout(location = 6) in vec3 aBinormal;
+layout(location = 7) in vec2 aUV1;
 uniform mat4 uMvp;
 out vec2 vUV;
+out vec2 vUV1;
 out vec4 vColor;
 out vec3 vNormal;
 out vec3 vTangent;
@@ -62,11 +64,13 @@ out vec3 vView;
 out float vFog;
 void main() {
     vUV = aUV;
+    vUV1 = aUV1;
     vColor = aColor;
     vNormal = aNormal;
     gl_Position = uMvp * vec4(aPos, 1.0);
     if ((mat.flags.x & SHADE_ON) != 0) {
         vUV = shadeUV(aUV);
+        vUV1 = shadeUV1(aUV1);
         vTangent = aTangent;
         vBinormal = aBinormal;
         vView = shadeView(aPos);
@@ -80,6 +84,7 @@ void main() {
 
 const char* kMeshFragment = R"(
 in vec2 vUV;
+in vec2 vUV1;
 in vec4 vColor;
 in vec3 vNormal;
 in vec3 vTangent;
@@ -94,7 +99,7 @@ uniform float uAlphaRef;
 out vec4 fragColor;
 void main() {
     if ((mat.flags.x & SHADE_ON) != 0) {
-        fragColor = shade(vUV, vColor, vNormal, vTangent, vBinormal, vView, vFog);
+        fragColor = shade(vUV, vUV1, vColor, vNormal, vTangent, vBinormal, vView, vFog);
         return;
     }
     vec4 base = uColor * vColor;
@@ -291,7 +296,8 @@ public:
         gl::VertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(24));
         gl::VertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(36));
         gl::VertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(48));
-        for (unsigned a : {0u, 1u, 2u, 4u, 5u, 6u}) gl::EnableVertexAttribArray(a);
+        gl::VertexAttribPointer(7, 2, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(60));
+        for (unsigned a : {0u, 1u, 2u, 4u, 5u, 6u, 7u}) gl::EnableVertexAttribArray(a);
         gl::BindVertexArray(0);
         return g;
     }
@@ -488,6 +494,10 @@ ShadingBlock shadingBlock(const MeshShading& sh, const SceneLighting& l) {
     put(b.fogParams, l.fogParams, 3);
     put(b.fogColor, l.fogColor, 3);
     put(b.camera, l.camera, 3, 1);
+    put(b.uvAnim2, sh.scrollSpeed2, 2);
+    put(b.uvAnim2 + 2, sh.offset2, 2);
+    b.strengths[0] = sh.overlayStrength;
+    b.strengths[1] = sh.distortionStrength;
     return b;
 }
 

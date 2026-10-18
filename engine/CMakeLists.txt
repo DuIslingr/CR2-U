@@ -252,8 +252,11 @@ set(VIEWER_SOURCES src/viewer/main.cpp src/viewer/audio.cpp src/gfx/gl.cpp src/g
 if(CR_VULKAN)
     list(APPEND VIEWER_SOURCES src/gfx/vk_fsr3.cpp src/gfx/vk_dlss.cpp)
 endif()
-add_executable(cr2view ${VIEWER_SOURCES})
+add_executable(cr2view WIN32 MACOSX_BUNDLE ${VIEWER_SOURCES})
 target_link_libraries(cr2view PRIVATE cr2core SDL3::SDL3)
+set_target_properties(cr2view PROPERTIES
+    MACOSX_BUNDLE_BUNDLE_NAME "Chaos Rings II"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "local.preservation.chaosrings2")
 add_dependencies(cr2view cr_glsl)
 target_include_directories(cr2view PRIVATE ${GLSL_OUT})
 if(CR_VULKAN)

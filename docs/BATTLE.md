@@ -268,17 +268,45 @@ A tap skips a scene while its skip is on (SetSkipEnable; BtlMain::IsEnabled(0x10
 ## The monsters' choice (BtlEnemy)
 
 A monster record holds ten commands (+0x58 s16), each with a condition (+0x6c u8), a target rule
-(+0x76), a weight (+0x80) and a "must" flag (+0x8a), and per-condition values (+0x94 s16 ...).
-SetActionCommand: of the usable commands (not kind 4, not special bit 7 of +0x4e's 0x80, not used
-already where it may be once, ...) whose condition holds, the last with "must" set; else one by
-weight (BtlRand over the weights' sum). Conditions: 0 always, 11 the turn (+0x10, from 0) + 1
-equals its value, ... (Cond0..Cond16). Targets by the command's +0x4b; a single one by the rule
-(Target0: one of the party at random; 2 a monster; 7 anyone), then CheckProvoke (a provoking
-fighter draws it). The Mantis: Lockjaw, always, at one of the party. The prologue's boss (m310):
-three commands on turns given by its +0x94 values.
+(+0x76), a weight (+0x80 s8) and a "must" flag (+0x8a), and per-slot values (+0x94 s16), and its
+actions a turn (+0x4e u16: 245 monsters 1, 28 two, one three).
+
+When the turn is set (BtlActionCtrl::StepSetAction -> SetPreEnemyAction, not in the first turn of
+a battle the party starts - BtlWork +0x14 1 - nor for one whose time stopped, state 21): of the
+commands first or last in the turn (kind 4, +0x4e bit 7), the first whose condition holds - a
+sopia none under state 2 - that is a "must", or that BtlRand(100) puts under its weight (command
+410 weightless but for the monster pair). That is its first action's command; its others (the
+queue: straight after the first, SetActionQueue) and a first without one are chosen as each comes
+(SetActive -> SetEnemyAction -> SetActionCommand): of the rest - not one taken this turn (+0xfc0,
+cleared each turn by ClearEnemyAction), no sopia under state 2, a `bx01` motion's only as its last
+action - those whose condition holds, the last "must"; else by weight (BtlRand over their sum).
+Choosing clears state 37 on it. Conditions (Cond0..16; v the slot's value; party = fighters 0 ..
+BtlWork +0x1c - 1, monsters 2 .. +0x1d + 1): 0 always; 1 a monster standing at v% of its HP or
+less; 2 no monster with a raised parameter (states 5..12); 3 none of the party with a lowered one
+(0..2, 13..20); 4 a monster with a lowered; 5 one of the party with a raised; 6 itself with state
+35; 7 one monster left; 8 the party's mean level and the monsters' levels added up v or more apart;
+9 the turn (from 0) v or later; 10 each v-th turn; 11 turn v; 12 itself at v% or less; 13 no monster
+standing with an element lent (+0xfba), 14 none of the party; 15 itself with state 37 (War's
+Executioner's Pose, then Decapitation); 16 the monsters' turn break. Of the slots with a command:
+1039 always, 83 its own HP, 72 a turn, 48 every few turns, 35 from a turn, 21 alone, 19 state 37,
+15 a monster's HP, 7 the turn break, 5 state 35, 3 the party's lowered.
+
+Targets by the command's +0x4b (SetCommandTarget): 1 itself; 2 and 7 by the slot's rule, 4 by it
+then CheckProvoke (kept on a pair standing together, else the one of the two provoking - state 30 -
+if only one is); 3 / 6 the groups. Rules (Target0..14), of those that qualify BtlRand(n - 1) when
+several (never the last of them), the one, else any of that side at random: 0 at random (+0x4b 4 the
+party, 2 a monster, 7 either - BtlRand(both counts) under the party's: the party); 1 itself; 2 / 4
+the party's most / least HP (the first of equals); 3 the monsters' most; 5 the monster most hurt
+(the least HP, passing over one down, if short of its most; else the first short of its most); 6 of
+the party raised, 7 not lowered; 8 a monster lowered, 9 not raised; 10 of the party with no element
+lent, 11 a monster with none, 12 .. 14 of the party with element 1 .. 3. The Mantis: Lockjaw,
+always, at one of the party. Conquest (two actions): its seals, one each, then Divine Shackles.
+Left out: the monster pair (BtlWork +0x51 11: monsters 2 and 3 together, command 410), and command
+363 taking motion `bg01` and shot 6 once a monster chooses it.
 
 The turn order (OrderPoint): Speed (a pair: the two's mean), +10000 a command with special 7,
-+5000 with the skill "ahead", -5000 for kind 4.
++5000 with the skill "ahead", -5000 for kind 4. SetActionOrder sorts each against those after it, swapped for a
+greater: equals may change places.
 
 ## Showing an attack (BtlActionCtrl)
 

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <functional>
 
 namespace cr2 {
 
@@ -420,51 +422,250 @@ int BattleRules::liveTarget(int side, int wanted) {
     return -1;
 }
 
-// BtlEnemy::SetActionCommand / SetCommandTarget
+bool BattleRules::buffed(int f) const {
+    const Fighter& x = fighters_[size_t(f)];
+    if (!x.present || !x.alive) return false;
+    for (int s = 5; s <= 12; ++s)
+        if (x.hasState(s)) return true;
+    return false;
+}
+
+bool BattleRules::debuffed(int f) const {
+    const Fighter& x = fighters_[size_t(f)];
+    if (!x.present || !x.alive) return false;
+    for (int s : {0, 1, 2, 13, 14, 15, 16, 17, 18, 19, 20})
+        if (x.hasState(s)) return true;
+    return false;
+}
+
+void BattleRules::levels(int& mean, int& monsters) const {
+    int sum = 0, count = 0;
+    monsters = 0;
+    for (int k = 0; k < 5; ++k) {
+        const Fighter& f = fighters_[size_t(k)];
+        if (!f.present) continue;
+        if (k < 2) sum += f.level, ++count;
+        else monsters += f.level;
+    }
+    mean = count ? sum / count : 0;
+}
+
+// BtlEnemy::Cond0..16 - the slot's condition, its value the slot's (monster +0x94); the party
+// is fighters 0 .. its count - 1 (BtlWork +0x1c), the monsters 2 .. (+0x1d)
+bool BattleRules::enemyCondition(int mi, int k) const {
+    const Fighter& self = fighters_[size_t(mi)];
+    const BattleData::Monster& m = *self.monster;
+    const int v = m.conditionValue[k];
+    int party = 0, monsters = 0;
+    for (int i = 0; i < 2; ++i) party += fighters_[size_t(i)].present;
+    for (int i = 2; i < 5; ++i) monsters += fighters_[size_t(i)].present;
+    auto alive = [&](int f) { return fighters_[size_t(f)].present && fighters_[size_t(f)].alive; };
+    switch (m.condition[k]) {
+    case 0: return true;
+    case 1: // a monster standing at this share of its HP or less
+        for (int i = 0; i < monsters; ++i)
+            if (alive(2 + i) && hpRate(2 + i) <= v) return true;
+        return false;
+    case 2: // no monster with a raised parameter
+        for (int i = 0; i < monsters; ++i)
+            if (buffed(2 + i)) return false;
+        return true;
+    case 3: // none of the party with a lowered one (or poison, blindness, a seal)
+        for (int i = 0; i < party; ++i)
+            if (debuffed(i)) return false;
+        return true;
+    case 4:
+        for (int i = 0; i < monsters; ++i)
+            if (debuffed(2 + i)) return true;
+        return false;
+    case 5:
+        for (int i = 0; i < party; ++i)
+            if (buffed(i)) return true;
+        return false;
+    case 6: return self.hasState(35);
+    case 7: { // the one monster left
+        int n = 0;
+        for (int i = 0; i < monsters; ++i) n += alive(2 + i);
+        return n == 1;
+    }
+    case 8: { // the levels apart by this or more: the party's mean, the monsters' added up
+        int mean = 0, sum = 0;
+        levels(mean, sum);
+        return v <= std::abs(mean - sum);
+    }
+    case 9: return v <= turn_;
+    case 10: return v != 0 && (turn_ + 1) % v == 0; // (each v-th turn)
+    case 11: return turn_ + 1 == v;
+    case 12: return hpRate(mi) <= v;
+    case 13: // no monster standing with an element lent (+0xfba)
+        for (int i = 0; i < monsters; ++i)
+            if (alive(2 + i) && fighters_[size_t(2 + i)].element != 0) return false;
+        return true;
+    case 14:
+        for (int i = 0; i < party; ++i)
+            if (alive(i) && fighters_[size_t(i)].element != 0) return false;
+        return true;
+    case 15: return self.hasState(37);
+    case 16: return break_ == 2; // (BtlUtilSituation::IsTurnBreakEnemy: the monsters' turn break)
+    }
+    return false;
+}
+
+// BtlEnemy::Target0..14 by the slot's rule (monster +0x76); `type` the command's +0x4b
+int BattleRules::enemyTarget(int mi, int k, int type) {
+    const BattleData::Monster& m = *fighters_[size_t(mi)].monster;
+    int party = 0, monsters = 0;
+    for (int i = 0; i < 2; ++i) party += fighters_[size_t(i)].present;
+    for (int i = 2; i < 5; ++i) monsters += fighters_[size_t(i)].present;
+    auto hp = [&](int f) { return fighters_[size_t(f)].hp; };
+    // of those that qualify: BtlRand(n - 1) when there are several - never the last -, the one,
+    // else any of the side's at random
+    auto pick = [&](const std::vector<int>& c, int base, int count) {
+        if (c.size() > 1) return c[size_t(rand_.below(int(c.size()) - 1))];
+        if (c.size() == 1) return c[0];
+        return base + rand_.below(count);
+    };
+    std::vector<int> c;
+    auto party_if = [&](auto test) {
+        for (int i = 0; i < party; ++i)
+            if (test(i)) c.push_back(i);
+        return pick(c, 0, party);
+    };
+    auto monsters_if = [&](auto test) {
+        for (int i = 0; i < monsters; ++i)
+            if (test(2 + i)) c.push_back(2 + i);
+        return pick(c, 2, monsters);
+    };
+    switch (m.targetRule[k]) {
+    case 0: // at random, of the side its type says
+        if (type == 4) return rand_.below(party);
+        if (type == 7 && rand_.below(party + monsters) < party) return rand_.below(party);
+        if (type == 7 || type == 2) return 2 + rand_.below(monsters);
+        return 0;
+    case 1: return mi;
+    case 2: case 4: { // the party's most HP (2), least (4); the first of equals
+        int best = 0;
+        if (party >= 2)
+            for (int i = 1; i < party; ++i)
+                if (m.targetRule[k] == 2 ? hp(i) > hp(best) : hp(i) < hp(best)) best = i;
+        return best;
+    }
+    case 3: { // the monsters' most HP
+        int best = 2;
+        if (monsters >= 2)
+            for (int i = 3; i < 2 + monsters; ++i)
+                if (hp(i) > hp(best)) best = i;
+        return best;
+    }
+    case 5: { // the monster most hurt: the least HP (one down passed over) if short of its most,
+              // else the first short of its most, else that one
+        int best = 2;
+        if (monsters >= 2)
+            for (int i = 3; i < 2 + monsters; ++i)
+                if (hp(best) <= 0 || hp(i) < hp(best)) best = i;
+        if (hp(best) < fighters_[size_t(best)].maxHp || monsters <= 0) return best;
+        for (int i = 2; i < 2 + monsters; ++i)
+            if (hp(i) < fighters_[size_t(i)].maxHp) return i;
+        return best;
+    }
+    case 6: return party_if([&](int f) { return buffed(f); });
+    case 7: return party_if([&](int f) { return !debuffed(f); });
+    case 8: return monsters_if([&](int f) { return debuffed(f); });
+    case 9: return monsters_if([&](int f) { return !buffed(f); });
+    case 10: return party_if([&](int f) { return fighters_[size_t(f)].element == 0; });
+    case 11: return monsters_if([&](int f) { return fighters_[size_t(f)].element == 0; });
+    case 12: case 13: case 14: {
+        const int want = m.targetRule[k] - 11; // (an element lent: 1 .. 3)
+        return party_if([&](int f) { return fighters_[size_t(f)].element == want; });
+    }
+    }
+    return 0;
+}
+
+// BtlEnemy::SetCommandTarget (+0x4b: 1 itself, 2 / 7 by the rule, 4 by the rule then provoked,
+// the groups none) and SetCommand (kind 2 guards at once)
+static void enemyTargetAndGuard(BattleRules::Order& o, const BattleData::Command& c, int k, Fighter* fighters,
+                                const std::function<int(int)>& rule) {
+    o.target = -1;
+    if (c.target == 1) o.target = o.actor;
+    else if (c.target == 2 || c.target == 7) o.target = rule(k);
+    else if (c.target == 4) {
+        o.target = rule(k);
+        // CheckProvoke: kept on a pair standing together, else the one of the two standing
+        // provoking (state 30), if only one is
+        const bool paired = o.target >= 0 && o.target < 2 && fighters[o.target].partner >= 0 && fighters[fighters[o.target].partner].alive;
+        if (!paired) {
+            const bool p0 = fighters[0].alive && fighters[0].hasState(30), p1 = fighters[1].alive && fighters[1].hasState(30);
+            if (p0 != p1) o.target = p0 ? 0 : 1;
+        }
+    }
+    if (c.kind == 2) fighters[o.actor].guarding = true;
+}
+
+// SetPreActionCommand: of the commands first or last in the turn, the first whose condition holds
+// that it must take, or that its weight in 100 gives (command 410 none - the monster pair's alone)
+BattleRules::Order BattleRules::enemyPreChoice(int mi) {
+    Order o;
+    o.actor = mi;
+    Fighter& f = fighters_[size_t(mi)];
+    const BattleData::Monster* m = f.monster;
+    if (!m) return o;
+    for (int k = 0; k < 10; ++k) {
+        const BattleData::Command* c = data_.command(m->commands[k]);
+        if (m->commands[k] <= 0 || !c || !(c->kind == 4 || (c->specials & 0x80))) continue;
+        if ((f.hasState(2) && c->magic == 1) || !enemyCondition(mi, k)) continue; // (a sopia sealed)
+        bool take = m->must[k] == 1;
+        if (!take) {
+            const int weight = m->commands[k] == 0x19a ? 0 : m->weight[k];
+            take = rand_.below(100) < weight;
+        }
+        if (take) {
+            o.command = m->commands[k];
+            f.usedSlots |= 1u << k;
+            enemyTargetAndGuard(o, *c, k, fighters_, [&](int s) { return enemyTarget(mi, s, c->target); });
+            return o;
+        }
+    }
+    return o;
+}
+
+// SetActionCommand: of the rest - not taken this turn, a sopia none while sealed, a `bx01` one
+// only as its last action of the turn - those whose condition holds; the last that must, else one
+// by weight; state 37 cleared on the one choosing
 BattleRules::Order BattleRules::enemyChoice(int mi) {
     Order o;
     o.actor = mi;
-    const Fighter& f = fighters_[size_t(mi)];
+    Fighter& f = fighters_[size_t(mi)];
     const BattleData::Monster* m = f.monster;
     if (!m) return o;
+    int used = 0;
+    for (int k = 0; k < 32; ++k) used += f.usedSlots >> k & 1;
     bool ok[10] = {};
     int chosen = -1;
     for (int k = 0; k < 10; ++k) {
         const BattleData::Command* c = data_.command(m->commands[k]);
-        if (!c || c->kind == 4 || (c->specials & 0x80)) continue;
-        bool cond = false;
-        switch (m->condition[k]) {
-        case 0: cond = true; break;
-        case 11: cond = turn_ + 1 == m->conditionValue[k]; break;
-        default: cond = false; break; // (Cond1..16: not read yet)
-        }
-        ok[k] = cond;
-        if (cond && m->must[k] == 1) chosen = k;
+        if (m->commands[k] <= 0 || !c || c->kind == 4 || (c->specials & 0x80)) continue;
+        if ((f.hasState(2) && c->magic == 1) || (f.usedSlots >> k & 1)) continue;
+        if (c->motion == "bx01" && m->actions > used + 1) continue;
+        ok[k] = enemyCondition(mi, k);
+        if (ok[k] && m->must[k] == 1) chosen = k;
     }
     if (chosen < 0) {
         int sum = 0;
         for (int k = 0; k < 10; ++k)
             if (ok[k]) sum += m->weight[k];
-        if (sum > 0) {
-            const int r = rand_.below(sum);
-            int acc = 0;
-            for (int k = 0; k < 10 && chosen < 0; ++k)
-                if (ok[k] && r < (acc += m->weight[k])) chosen = k;
-        }
+        if (sum == 0) return o;
+        const int r = rand_.below(sum);
+        int acc = 0;
+        for (int k = 0; k < 10 && chosen < 0; ++k)
+            if (ok[k] && r < (acc += m->weight[k])) chosen = k;
     }
     if (chosen < 0) return o;
     o.command = m->commands[chosen];
+    f.clearState(37);
+    f.usedSlots |= 1u << chosen;
     const BattleData::Command* c = data_.command(o.command);
-    int partyCount = 0;
-    for (int i = 0; i < 2; ++i) partyCount += fighters_[size_t(i)].present;
-    if (c->target == 4 || c->target == 7) o.target = m->targetRule[chosen] == 1 ? mi : rand_.below(std::max(partyCount, 1)); // (Target0 / Target1)
-    // CheckProvoke: a single target of the party - the one of the two standing provoking (state
-    // 30), if only one is; a pair struck as one
-    if (o.target >= 0 && o.target < 2 && fighters_[size_t(o.target)].partner < 0) {
-        const bool p0 = fighters_[0].alive && fighters_[0].hasState(30), p1 = fighters_[1].alive && fighters_[1].hasState(30);
-        if (p0 != p1) o.target = p0 ? 0 : 1;
-    }
-    if (c->kind == 2) fighters_[size_t(mi)].guarding = true; // (SetCommand: kind 2 guards at once)
+    enemyTargetAndGuard(o, *c, chosen, fighters_, [&](int s) { return enemyTarget(mi, s, c->target); });
     return o;
 }
 
@@ -503,7 +704,9 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
         for (int i = 0; i < 5; ++i)
             if (fighters_[size_t(i)].alive && fighters_[size_t(i)].side == foes) targets.push_back(i);
     } else if (c->target == 4 || c->target == 7) {
-        const int t = liveTarget(foes, o.target);
+        // (7 anyone: a monster's rule may name its own side - Target0, Target1)
+        const bool any = c->target == 7 && o.target >= 0 && o.target < 5 && fighters_[size_t(o.target)].alive;
+        const int t = any ? o.target : liveTarget(foes, o.target);
         if (t >= 0) {
             targets.push_back(t);
             // a pair struck: both (CalcCommandAction: the target and its partner)
@@ -670,7 +873,7 @@ void BattleRules::moveGauge(const Event& e, const BattleData::Command& c) {
 }
 
 void BattleRules::beginTurn() {
-    for (Fighter& f : fighters_) f.guarding = false, f.canceled = false;
+    for (Fighter& f : fighters_) f.guarding = false, f.canceled = false, f.usedSlots = 0; // (ClearEnemyAction)
     scripted_ = Scripted(); // (BtlCommand::StepInit: none given yet)
     callScript("Turn_Start");
 }
@@ -700,11 +903,15 @@ void BattleRules::chooseTurn(bool pair, const std::vector<Order>& party) {
         turns.push_back({o, point});
         current_[o.actor] = o.command;
     }
+    // the monsters (BtlActionCtrl::StepSetAction): their commands first or last in the turn
+    // (BtlEnemy::SetPreEnemyAction - none in the first turn of one the party starts, nor for one
+    // whose time stopped), the rest chosen as their actions come (SetActive: SetEnemyAction)
     for (int m = 2; m < 5; ++m) {
-        if (!fighters_[size_t(m)].alive) continue;
-        Order o = enemyChoice(m);
+        Fighter& f = fighters_[size_t(m)];
+        if (!f.alive || (turn_ == 0 && advantage_ == 1)) continue; // (CheckActionable)
+        Order o{m, 0, -1};
         if (scripted_.reserved && scripted_.command[m] > 0) o = {m, scripted_.command[m], scripted_.target[m]};
-        if (o.command <= 0) continue;
+        else if (!f.hasState(21) && !(turn_ == 0 && advantage_ == 1)) o = enemyPreChoice(m);
         const BattleData::Command* c = data_.command(o.command);
         int point = orderPoint(m, -1);
         if (c && (c->specials >> 7 & 1)) point += 10000;
@@ -712,13 +919,31 @@ void BattleRules::chooseTurn(bool pair, const std::vector<Order>& party) {
         turns.push_back({o, point});
         current_[m] = o.command;
     }
-    std::stable_sort(turns.begin(), turns.end(), [](const Turn& x, const Turn& y) { return x.point > y.point; });
+    // SetActionOrder's sort: each against those after it, swapped for a greater (equals may change
+    // places); SetActionQueue: a monster's further actions (+0x4e) straight after its first
+    for (size_t i = 0; i + 1 < turns.size(); ++i)
+        for (size_t j = i + 1; j < turns.size(); ++j)
+            if (turns[i].point < turns[j].point) std::swap(turns[i], turns[j]);
     turnOrder_.clear();
-    for (const Turn& t : turns) turnOrder_.push_back(t.o);
+    for (const Turn& t : turns) {
+        turnOrder_.push_back(t.o);
+        if (const BattleData::Monster* m = t.o.actor >= 2 ? fighters_[size_t(t.o.actor)].monster : nullptr)
+            for (int k = 1; k < m->actions; ++k) turnOrder_.push_back({t.o.actor, 0, -1});
+    }
     next_ = 0;
 }
 
 void BattleRules::startAction() {
+    // a monster's action without its command yet: chosen now, as things stand (SetActive)
+    Order& o = turnOrder_[next_];
+    if (o.actor >= 2 && o.command <= 0 && !o.counter) {
+        const Fighter& f = fighters_[size_t(o.actor)];
+        if (f.alive && !f.hasState(21)) {
+            const Order chosen = enemyChoice(o.actor);
+            o.command = chosen.command, o.target = chosen.target;
+            current_[o.actor] = o.command;
+        }
+    }
     commandActor_ = nextAction().actor;
     callScript("Command_Start");
 }

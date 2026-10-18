@@ -62,6 +62,7 @@ struct Fighter {
     };
     mutable std::vector<State> states;
     bool canceled = false; // (+0xf7a: its action this turn cancelled)
+    unsigned usedSlots = 0; // (+0xfc0: a monster's choices taken this turn - BtlUtilSituation::ClearEnemyAction)
     bool hasState(int id) const {
         for (const State& s : states)
             if (s.id == id) return true;
@@ -263,7 +264,19 @@ private:
     int lastBurst_ = 0;
     std::vector<int> mirrors_; // (the action's barrier holders) // (damage()'s: the element that beat the target's)
     bool isPairAction(int f) const;
+    // A monster's choice (BtlEnemy): SetPreActionCommand's - the commands first or last in the
+    // turn (kind 4, +0x4e bit 7), each its must or its weight in 100 - as the turn is set, else
+    // SetActionCommand's as its action comes (Cond0..16, then the musts, else by weight), its
+    // target by the slot's rule (Target0..14, SetCommandTarget)
+    Order enemyPreChoice(int m);
     Order enemyChoice(int m);
+    bool enemyCondition(int m, int slot) const;
+    int enemyTarget(int m, int slot, int type);
+    bool buffed(int f) const;  // (BtlUtilStatus::CheckPlusStatus: standing, with one of 5..12)
+    bool debuffed(int f) const; // (CheckMinusStatus: 0..2, 13..20)
+    int hpRate(int f) const { const Fighter& x = fighters_[size_t(f)]; return x.maxHp > 0 ? x.hp * 100 / x.maxHp : 0; }
+    void levels(int& mean, int& monsters) const; // (BtlWork +0x24 / +0x26)
+    int advantage_ = 0; // (BtlWork +0x14: 1 the party strikes first, 2 the monsters - none yet)
     int orderPoint(int f, int partner) const;
     void act(const Order& o, std::vector<Event>& out);
     int liveTarget(int side, int wanted);

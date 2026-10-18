@@ -33,6 +33,8 @@ public:
     bool path(const Vec3& from, const Vec3& to, std::vector<Vec3>& out, int allowZone = -1) const;
     // The reached cell nearest `to` across the ground, and how far it lies from it
     bool nearest(const Vec3& to, Vec3& at, float& distance) const;
+    // The `n`-th reached cell (n taken modulo how many there are; its floor) - false: none
+    bool reachedCell(size_t n, Vec3& at) const;
 
 private:
     float x0_ = 0, z0_ = 0, cell_ = 0.02f;

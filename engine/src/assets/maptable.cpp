@@ -1,6 +1,7 @@
 #include "assets/maptable.hpp"
 
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 
 namespace cr2 {
@@ -35,6 +36,29 @@ bool findMapTable(const std::vector<uint8_t>& d, std::vector<MapInfo>& out) {
         out.push_back(std::move(m));
     }
     return !out.empty();
+}
+
+const EncountCell* EncountTable::at(const std::string& map) const {
+    if (map.size() < 5 || (map[0] != 't' && map[0] != 'd')) return nullptr;
+    const int row = map[0] == 't' ? 0 : std::atoi(map.substr(1, 2).c_str()), area = std::atoi(map.substr(3, 2).c_str()) - 1;
+    const size_t i = size_t(row) * 48 + size_t(area);
+    if (row < 0 || row >= 14 || area < 0 || area >= 48 || i >= cells.size() || cells[i].area <= 0) return nullptr;
+    return &cells[i];
+}
+
+bool findEncountTable(const std::vector<uint8_t>& d, EncountTable& out) {
+    out.cells.clear();
+    constexpr size_t kTable = 14 * 48 * 4; // (each table's bytes)
+    auto i32 = [&](size_t p) { int32_t v; std::memcpy(&v, &d[p], 4); return v; };
+    for (size_t at = 0; at + 3 * kTable <= d.size(); at += 4) {
+        bool town = true;
+        for (size_t k = 0; k < 16 && town; ++k)
+            town = i32(at + k * 4) == -1 && i32(at + 2 * kTable + k * 4) == 20 && i32(at + kTable + k * 4) == 0;
+        if (!town || i32(at + 16 * 4) != 0 || i32(at + 48 * 4) == 0) continue; // (the row's end; d01's first area)
+        for (size_t k = 0; k < 14 * 48; ++k) out.cells.push_back({i32(at + k * 4), i32(at + kTable + k * 4), i32(at + 2 * kTable + k * 4)});
+        return true;
+    }
+    return false;
 }
 
 std::vector<std::string> mapTableCandidates(const std::string& archivePath) {

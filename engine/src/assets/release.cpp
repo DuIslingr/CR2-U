@@ -220,6 +220,17 @@ bool releaseStaffRoll(const std::string& archivePath, const std::string& binary,
     return androidFile(archive, kAndroidLibrary, bytes) && findStaffRoll(bytes, lines, figures);
 }
 
+bool releaseEncountTable(const std::string& archivePath, const std::string& binary, EncountTable& table) {
+    const std::string archive = resolveArchive(archivePath);
+    std::vector<std::string> candidates;
+    if (!binary.empty()) candidates.push_back(binary);
+    for (const std::string& c : mapTableCandidates(archive)) candidates.push_back(c);
+    std::vector<uint8_t> bytes;
+    for (const std::string& c : candidates)
+        if (readWhole(c, bytes) && findEncountTable(bytes, table)) return true;
+    return androidFile(archive, kAndroidLibrary, bytes) && findEncountTable(bytes, table);
+}
+
 bool releaseMapTable(const std::string& archivePath, const std::string& binary, std::vector<MapInfo>& table, std::string* from) {
     const std::string archive = resolveArchive(archivePath);
     std::vector<std::string> candidates;

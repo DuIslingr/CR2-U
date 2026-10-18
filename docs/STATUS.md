@@ -91,6 +91,13 @@ Vita's builds - `tools/re_setup.sh`), the game's own scripts and a reference pla
       put back where the scene ends
 - [x] Talking: the balloons over what the leader can tap, a tap (Return, a click) calling the
       nearest one's script (`cr2tool fieldscript`: all 136 a new game can tap play to their end)
+- [x] Random encounters (FldEncount): each field map's area, steps and chance from the release's
+      binary (three tables of 14 dungeons x 48 areas, found in the iPad's, Android's or Vita's
+      executable), the walk counted in steps of 0.17, a draw every area's steps, the chance 5 more
+      after each miss, the coupling picked by the area's weights (`battledata.dat`'s areas); SE
+      0xc9, the fade, the battle on the area's map and music, back to the field where it began;
+      the field menu's switch (flags 0x40e, 0x40f) and SetEncountEnable (`cr2tool encounters`:
+      181 maps with them, every area and coupling there)
 - [x] Battles' stage: the encounters' tables (`data\battledata.dat`), the map, the party and the
       monsters on their places for the monsters' size pattern, the commands' camera (`cr2view
       --battle 222`; `cr2tool battle all`: all 340 encounters' figures, places and cameras there)

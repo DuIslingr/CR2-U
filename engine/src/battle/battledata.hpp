@@ -148,6 +148,16 @@ public:
         int monsters[3] = {0, 0, 0}; // +0x08 (0: none)
     };
 
+    // a field's encounters (GetAreaDataPointer, from 1; FldEncount::SetData / MakeCouplingID): the
+    // couplings it draws from by weight
+    struct Area {
+        int id = 0;
+        int music = 0;          // +0x02 (cr3_battle_post +2)
+        int map = 0;            // +0x04 the battle map, from 1
+        int couplings[10] = {}; // +0x06
+        int rates[10] = {};     // +0x1a (a coupling's weight)
+    };
+    const Area* area(int id) const { return id >= 1 && id <= int(areas_.size()) ? &areas_[size_t(id - 1)] : nullptr; }
     const Character* character(int id) const;
     const Monster* monster(int id) const;
     const Coupling* coupling(int id) const;
@@ -167,6 +177,7 @@ private:
     std::vector<Character> characters_;
     std::vector<Monster> monsters_;
     std::vector<Coupling> couplings_;
+    std::vector<Area> areas_;
     std::vector<Command> commands_;
     std::vector<Item> items_;
     std::vector<std::array<int, 3>> voices_;
@@ -179,6 +190,7 @@ private:
 // pattern (BtlWork::SetSizePattern, BtlCouplingTable) and so where each stands (a battledpos
 // joint: BtlModel::SetPosRot), the party's places, the camera the commands are chosen under
 struct BattleSetup {
+    int music = 0; // (the coupling's, or the encounter area's)
     int coupling = 0;
     std::string map;     // BtlMapTable: "d0151b", ...
     int pattern = -1;    // 0 S, 1 SS, 2 SSS, 3 M, 4 MS, 5 MSS, 6 MM, 7 L, 8 XL, 9 XLXL, 10 Hsolo,
@@ -204,6 +216,8 @@ int levelExp(int level);    // (level 1..200; past 200 the last's)
 int sopiaExp(bool monsters, int level);
 
 // `party`: the characters fighting (cr3_common_data 1, 2; 0 none)
-bool setupBattle(const BattleData& data, int coupling, const int party[2], BattleSetup& out, std::string* error = nullptr);
+// (`area`: a field's encounter - its map and music, not the coupling's: FldEncount::SetBattle(-1))
+bool setupBattle(const BattleData& data, int coupling, const int party[2], BattleSetup& out, std::string* error = nullptr,
+                 const BattleData::Area* area = nullptr);
 
 } // namespace cr2

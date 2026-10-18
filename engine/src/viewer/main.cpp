@@ -60,6 +60,7 @@
 #include <filesystem>
 #include <sstream>
 #include <memory>
+#include <random>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -1236,6 +1237,85 @@ struct Viewer {
         }
     }
 
+    // The field's encounters (FldEncount; the map's area, steps and chance from the release's
+    // binary: cr2::findEncountTable). Set as each area starts (FldMain::Init / ChangeAreaExecute:
+    // Reset, SetData, SetPosition); each update the leader's walk across the ground adds up, each
+    // 0.17 of it a step, and every area's steps a draw (Pickout): a roll of 100 at most the
+    // chance a hit - else 5 more to the chance. A hit picks one of the area's ten couplings by
+    // weight (MakeCouplingID); the field then (step 0x1c) SE 0xc9, black over 20 updates with the
+    // music stopped (unless flag 0x7f7), the battle - on the area's map and music, the pair now
+    // fighting (SetBattle(-1)). Drawn only with the encounters on (Cr3UtilSetEncountEnable) and,
+    // once the field menu has their switch (flags 0x40e and 0x40f), it on; none while an event
+    // runs (the walk still followed)
+    cr2::EncountTable encountTable;
+    struct Encount {
+        bool on = false; // (SetData: the map has an area)
+        int area = -1, steps = 2, chance = 0, count = 0;
+        float x = 0, z = 0, walked = 0;
+        int coupling = 0;  // (a hit's)
+        float fadeAt = -1; // (the hit's fade begun: uiClock)
+    } encount;
+    std::mt19937 encountRandom{std::random_device{}()};
+    void encountSet(const float* p) {
+        encount = Encount();
+        if (const cr2::EncountCell* e = encountTable.at(field.info().name)) encount.on = true, encount.area = e->area, encount.steps = e->steps, encount.chance = e->chance;
+        encount.x = p[0], encount.z = p[2];
+    }
+    void encountUpdate(const cr2::Vec3& p, bool paused) {
+        if (!encount.on || encount.coupling || !game.encountEnable) return;
+        if (game.flag(0x40e) && game.flag(0x40f) && encountersOff) return; // (the field menu's switch off)
+        const float dx = p[0] - encount.x, dz = p[2] - encount.z;
+        encount.x = p[0], encount.z = p[2];
+        if (paused) return;
+        encount.walked += std::sqrt(dx * dx + dz * dz);
+        if (encount.walked < 0.17f) return;
+        encount.walked = 0;
+        if (++encount.count < encount.steps) return;
+        encount.count = 0;
+        const int roll = int(encountRandom() % 100u);
+        if (roll > encount.chance) {
+            encount.chance += 5;
+            return;
+        }
+        if (battleData.couplings() == 0) { // (the battle data, before the first battle)
+            std::vector<uint8_t> d;
+            if (!archive.read("data\\battledata.dat", d) || !battleData.parse(d)) return;
+        }
+        const cr2::BattleData::Area* a = battleData.area(encount.area);
+        int sum = 0;
+        for (int k = 0; a && k < 10; ++k) sum += a->rates[k];
+        if (!a || sum <= 0) return;
+        const int r = int(encountRandom() % unsigned(sum));
+        int at = 0, pick = -1;
+        for (int k = 0; k < 10 && pick < 0; ++k)
+            if (r <= (at += a->rates[k])) pick = k;
+        if (pick < 0 || !battleData.coupling(a->couplings[pick])) return;
+        encount.coupling = a->couplings[pick];
+        SDL_Log("%s: an encounter (area %d, roll %d of %d%%): coupling %d", field.info().name.c_str(), encount.area, roll, encount.chance, encount.coupling);
+    }
+    // the hit: the field held, SE 0xc9 and the fade, then the battle (FldMain steps 0x1c .. 0x20)
+    void encountStep() {
+        if (encount.fadeAt < 0) {
+            encount.fadeAt = uiClock;
+            audio.playSe(0xc9, false);
+            if (!game.flag(0x7f7)) audio.stopBgm(20);
+            return;
+        }
+        if (uiClock - encount.fadeAt < 1.0f + 0.15f) return; // (the fade's 20 updates, then the field's three)
+        int party[2];
+        for (int k = 0; k < 2; ++k) party[k] = game.party[k] >= 0 ? game.party[k] + 1 : 0;
+        const int id = encount.coupling, area = encount.area;
+        encount.coupling = 0, encount.fadeAt = -1;
+        returnMap = field.info().name, std::memcpy(returnPlayer, player, sizeof player), returnHeading = heading; // (SaveWorkBeforeBattle)
+        SDL_Log("play: battle %d - an encounter (characters %d, %d)", id, party[0], party[1]);
+        if (ex.on) exploreLog("  an encounter: coupling " + std::to_string(id) + (ex.grind > 0 ? " (" + std::to_string(ex.grind - 1) + " more to fight first)" : "")),
+                    ex.grind = std::max(ex.grind - 1, 0);
+        if (startBattle(id, party, area)) {
+            startFight(2, 1u + uint32_t(battlesSkipped));
+            fightingInFlow = true;
+        }
+    }
+
     void walk(float dt, float sx, float sy, bool run) {
         if (!controller) return;
         cr2::Vec3 right, forward;
@@ -1261,6 +1341,7 @@ struct Viewer {
             else if (exitsArmed && exit.size() >= 5) exitTo = exit;
             touchEvents(p);
             checkBalloons();
+            encountUpdate(p, fieldScriptRunning() || actionRunning() || changeStage != 0 || keyLock.stage != 0);
         }
         if (script && script->playerState().motionSerial != leaderMotionSerial) // (Cr3FieldMapCharacter.SetMotion)
             leaderMotionSerial = script->playerState().motionSerial, leaderMotion = script->playerState().motion,
@@ -1941,7 +2022,10 @@ struct Viewer {
     std::string dataArg, binaryArg; // (the release's: the staff roll's table from its executable too)
     bool loadTable(const std::string& binary, const std::string& dataPath) {
         dataArg = dataPath, binaryArg = binary;
-        if (cr2::releaseMapTable(dataPath, binary, table, &tableFrom)) return true;
+        if (cr2::releaseMapTable(dataPath, binary, table, &tableFrom)) {
+            if (!cr2::releaseEncountTable(dataPath, binary, encountTable)) SDL_Log("the encounters' table: not found in %s", tableFrom.c_str());
+            return true;
+        }
         SDL_Log("the maps' table: not found beside %s (the iPad's executable, the Vita's eboot.bin, the Android "
                 "release's APK) - give the game's executable with --binary", dataPath.c_str());
         return false;
@@ -2036,6 +2120,7 @@ struct Viewer {
 
     // A map: its table row, layers and figures, the character dropped at the point `at` (empty:
     // where it stood, the field re-entered after a vista or a battle), the area's `entry` started
+    std::string fieldArrival; // (the point the leader last came onto this map at: its pop point, or the map's name)
     bool enterMap(const std::string& map, const std::string& at, const std::string& entry = "evt000") {
         const auto row = std::find_if(table.begin(), table.end(), [&](const cr2::MapInfo& m) { return m.name == map; });
         if (row == table.end()) {
@@ -2084,6 +2169,8 @@ struct Viewer {
         });
         shownGimmicks.clear();
         refreshGimmicks();
+        if (!at.empty() && at.rfind(map, 0) == 0) fieldArrival = at;
+        else if (fieldArrival.rfind(map, 0) != 0) fieldArrival = map;
         if (at.empty()) {
             // (where the leader stood)
         } else if (!field.point(at, player)) {
@@ -2107,6 +2194,7 @@ struct Viewer {
                 if (g.kind == cr2::Gimmick::Event && !g.check && g.touches(player, 0.02f)) insideEvents.insert(g.name);
         }
         checkBalloons();
+        encountSet(player);
         std::string exits;
         for (const std::string& e : field.exitNames()) exits += " " + e;
         SDL_Log("%zu gimmicks, %zu with figures; layers bg [%s] fg [%s]", field.gimmicks().size(), gimmicks.size(), field.backgroundImage().c_str(), field.foregroundImage().c_str());
@@ -2130,10 +2218,13 @@ struct Viewer {
     // --input's tokens the field takes (fieldToken: the tab, the camp), one a 0.4 s while it is idle
     void fieldInput() {
         if (!inputScript.empty() && mystic.stage && uiClock - actionMark.startedAt > 1.0f && uiClock >= inputNext &&
-            (inputScript.front() == "tapspot" || inputScript.front() == "tapspotfail")) { // (a mystic's: the first other spot, or none)
+            inputScript.front().rfind("tapspot", 0) == 0) { // (a mystic's: the first other spot, the n-th (tapspotN), or none)
             const cr2::FieldScript::TouchAction* a = script->touchAction(field.gimmicks()[size_t(actionMark.gimmick)].name);
-            const int other = a && a->spots.size() > 1 ? (a->markSpot() == 0 ? 1 : 0) : -1;
-            mysticTap(inputScript.front() == "tapspot" ? other : -1);
+            int other = a && a->spots.size() > 1 ? (a->markSpot() == 0 ? 1 : 0) : -1;
+            const std::string& t = inputScript.front();
+            if (t.size() > 7 && std::isdigit(static_cast<unsigned char>(t[7])) && a && size_t(std::atoi(t.c_str() + 7)) < a->spots.size())
+                other = std::atoi(t.c_str() + 7);
+            mysticTap(t == "tapspotfail" ? -1 : other);
             inputScript.pop_front();
             inputNext = uiClock + 0.4f;
             return;
@@ -2319,7 +2410,8 @@ struct Viewer {
             updateSprint(dt);
             updateIai();
             fieldInput();
-            if (fieldMode && !eventMode) {
+            if (fieldMode && !eventMode && encount.coupling && !fieldScriptRunning() && !actionRunning()) encountStep();
+            else if (fieldMode && !eventMode) {
                 const bool held = fieldScriptRunning() || keyLock.stage != 0 || changeStage != 0 || actionRunning();
                 walk(dt, held ? 0 : sx, held ? 0 : sy, run);
             }
@@ -2742,10 +2834,11 @@ struct Viewer {
         if (!archive.read("data\\battledata.dat", d) || !battleData.parse(d)) return;
         game.initSopia(battleData, cr2::sopiaExp), game.initItems(battleData), game.initEquip(battleData, cr2::levelExpTable());
     }
-    bool startBattle(int id, const int party[2]) {
+    bool startBattle(int id, const int party[2], int area = 0) {
         std::vector<uint8_t> d;
         std::string err;
-        if (!archive.read("data\\battledata.dat", d, &err) || !battleData.parse(d, &err) || !cr2::setupBattle(battleData, id, party, battle, &err)) {
+        if (!archive.read("data\\battledata.dat", d, &err) || !battleData.parse(d, &err) ||
+            !cr2::setupBattle(battleData, id, party, battle, &err, area > 0 ? battleData.area(area) : nullptr)) {
             SDL_Log("battle %d: %s", id, err.c_str());
             return false;
         }
@@ -3433,6 +3526,96 @@ struct Viewer {
             }
     }
     BattleStep battleStep = BattleStep::Over;
+    // The explorer's turn (--explore), through the menus as a player goes: a pair while both stand
+    // above half their HP, else solo; for each, one of them down revived (a sopia, else an item),
+    // one under 40% healed, else an awakening the charge covers, else the sopia that strikes
+    // hardest for its MP (keeping a third back for healing) where it beats the attack - on the
+    // weakest foe
+    bool exploreOrders(bool& pair, std::vector<cr2::BattleRules::Order>& out) {
+        const cr2::BattleRules& r = *battleRules;
+        cr2::CommandInput in;
+        const cr2::BattleData::Coupling* cp = battleData.coupling(battle.coupling);
+        in.begin(r, cp && cp->flag, [this](int f) { return game.flag(f); },
+                 [this](int s) { return s >= 0 && s < 32 ? int(game.sopiaLevel[s]) : 0; });
+        if (in.menu() != cr2::CommandInput::Menu::First) return false;
+        auto share = [](const cr2::Fighter& f) { return f.maxHp > 0 ? float(f.hp) / float(f.maxHp) : 0.0f; };
+        pair = r.fighter(0).alive && r.fighter(1).alive && share(r.fighter(0)) > 0.5f && share(r.fighter(1)) > 0.5f;
+        if (!in.press(pair ? cr2::CommandInput::Pair : cr2::CommandInput::Solo)) {
+            pair = !pair;
+            if (!in.press(pair ? cr2::CommandInput::Pair : cr2::CommandInput::Solo)) return false;
+        }
+        int weakest = -1;
+        for (int m = 2; m < 5; ++m)
+            if (r.fighter(m).alive && (weakest < 0 || r.fighter(m).hp < r.fighter(weakest).hp)) weakest = m;
+        int foes = 0;
+        for (int m = 2; m < 5; ++m) foes += r.fighter(m).alive;
+        for (int guard = 0; guard < 12 && in.menu() != cr2::CommandInput::Menu::Done; ++guard) {
+            if (in.menu() == cr2::CommandInput::Menu::Target) {
+                const std::vector<int>& t = in.targets();
+                if (t.empty()) return false;
+                int pick = t[0];
+                for (int f : t) {
+                    const cr2::Fighter& tf = r.fighter(f);
+                    if (tf.side == 1 && f == weakest) pick = f;
+                    if (tf.side == 0 && share(tf) < share(r.fighter(pick))) pick = f;
+                }
+                if (!in.pick(pick)) return false;
+                continue;
+            }
+            if (in.menu() != cr2::CommandInput::Menu::Command) return false;
+            const cr2::Fighter& me = r.fighter(in.actor());
+            int low = -1;
+            for (int k = 0; k < 2; ++k)
+                if (r.fighter(k).present && (low < 0 || !r.fighter(k).alive || share(r.fighter(k)) < share(r.fighter(low))) && (low < 0 || r.fighter(low).alive)) low = k;
+            const bool down = low >= 0 && !r.fighter(low).alive, hurt = low >= 0 && r.fighter(low).alive && share(r.fighter(low)) < 0.4f;
+            auto kindOf = [&](int command) { const cr2::BattleData::Command* c = battleData.command(command); return c ? c->kind : -1; };
+            bool done = false;
+            if (down || hurt) { // (a sopia, else an item)
+                for (const cr2::CommandInput::SopiaCommand& sc : in.sopiaCommands()) {
+                    const int k = kindOf(sc.command);
+                    if (sc.selectable && (down ? (k == 24 || k == 25) : (k >= 18 && k <= 23)) && in.press(cr2::CommandInput::Sopia) && in.pickSopia(sc.command)) {
+                        done = true;
+                        break;
+                    }
+                    if (in.menu() == cr2::CommandInput::Menu::Sopia) in.back();
+                }
+                if (!done)
+                    for (const cr2::CommandInput::ItemEntry& it : in.items()) {
+                        const int k = kindOf(it.command);
+                        const cr2::BattleData::Item* item = battleData.item(it.item);
+                        if (it.selectable && (down ? (k == 24 || k == 25) : (item && item->hp > 0 && k != 24 && k != 25)) && in.press(cr2::CommandInput::Items) && in.pickItem(it.item)) {
+                            done = true;
+                            break;
+                        }
+                        if (in.menu() == cr2::CommandInput::Menu::Items) in.back();
+                    }
+            }
+            if (!done)
+                for (const cr2::CommandInput::Awakening& aw : in.awakenings())
+                    if (aw.selectable && in.press(cr2::CommandInput::Awake) && in.pickAwakening(aw.command)) {
+                        done = true;
+                        break;
+                    } else if (in.menu() == cr2::CommandInput::Menu::Awake) in.back();
+            if (!done) { // (the hardest sopia strike, against the attack)
+                auto strength = [&](int command) {
+                    const cr2::BattleData::Command* c = battleData.command(command);
+                    if (!c || !(c->kind == 0 || (c->kind >= 4 && c->kind <= 17) || c->kind == 27 || c->kind == 29 || c->kind == 32) || c->target < 4) return 0.0f;
+                    return float(c->power) * float(c->target == 6 ? foes : 1) * float(c->magic ? me.param[1] : me.param[0]);
+                };
+                const float attack = strength(me.attack);
+                int best = 0;
+                float bestStrength = attack * 1.2f;
+                for (const cr2::CommandInput::SopiaCommand& sc : in.sopiaCommands())
+                    if (sc.selectable && me.mp - sc.mp >= me.maxMp / 3 && strength(sc.command) > bestStrength) best = sc.command, bestStrength = strength(sc.command);
+                if (best && in.press(cr2::CommandInput::Sopia) && in.pickSopia(best)) done = true;
+                else if (in.menu() == cr2::CommandInput::Menu::Sopia) in.back();
+            }
+            if (!done && !in.press(cr2::CommandInput::Attack)) return false;
+        }
+        if (in.menu() != cr2::CommandInput::Menu::Done || in.escape()) return false;
+        out = in.orders();
+        return !out.empty();
+    }
     std::unique_ptr<cr2::BattleScript> battleScript;
     float battleScriptClock = 0;
     bool battleScriptOk = true;
@@ -3476,7 +3659,7 @@ struct Viewer {
         // the music (BtlMainCtrl::StepBattleIn: the encounter's +0 - but with story flag 0x7f7, the
         // script's own)
         voiceJobs.clear(), seJobs.clear(), pendingBgm = 0;
-        if (const cr2::BattleData::Coupling* cp = battleData.coupling(battle.coupling); cp && !game.flag(0x7f7)) audio.playBgm(cp->music, 0);
+        if (!game.flag(0x7f7)) audio.playBgm(battle.music, 0);
         for (const auto& [f, id] : stateArg) // (--state: one use of it, tests)
             if (f >= 0 && f < 5) battleRules->fighter(f).states.push_back({id, 0, 1});
         if (chargeArg >= 0) battleRules->setCharge(chargeArg); // (--charge, tests)
@@ -3642,8 +3825,16 @@ struct Viewer {
                 battleStep = BattleStep::ActionStart;
                 break;
             }
-            const bool pair = battleFight == 2;
+            bool pair = battleFight == 2;
             std::vector<cr2::BattleRules::Order> orders;
+            if (ex.on && exploreOrders(pair, orders)) { // (the explorer's: as a careful player chooses)
+                battleRules->chooseTurn(pair, orders);
+                placeParty(battleRules->fighter(0).partner >= 0);
+                SDL_Log("turn %d (%s)", battleRules->turn() + 1, pair ? "pair" : "solo");
+                battleStep = BattleStep::ActionStart;
+                break;
+            }
+            pair = battleFight == 2, orders.clear();
             for (int k = 0; k < 2; ++k) {
                 const cr2::Fighter& f = battleRules->fighter(k);
                 if (!f.alive) continue;
@@ -8210,6 +8401,53 @@ struct Viewer {
         SDL_Log("camp: %d equips %d in mode %d", campEquipChar + 1, id, campEquipMode);
         campEquipMode = 0, campEquipCursor = 0, campStart = uiClock;
     }
+    // The explorer's camp (--explore), as a player keeps the pair fitted: for each of the two, the
+    // best weapon, armour and accessory it can wear and has spare (by what they add, all told),
+    // Darwin's human sopia if his place is empty, and the monster sopia had that nobody in the pair
+    // wears in its empty places, the highest level first
+    void exploreOutfit() {
+        if (battleData.couplings() == 0) return;
+        for (int ch : game.party) {
+            if (ch < 0 || ch >= 9) continue;
+            short* eq = game.equip[ch];
+            for (int slot = 0; slot < 3; ++slot) {
+                auto worth = [&](int id) {
+                    const cr2::BattleData::Item* it = id > 0 ? battleData.item(id) : nullptr;
+                    if (!it) return -1;
+                    int w = it->hp / 10 + it->mp / 5;
+                    for (int k = 0; k < 5; ++k) w += it->param[k];
+                    return w;
+                };
+                int best = eq[slot], bestWorth = worth(eq[slot]);
+                for (int id = 1; id < 300; ++id) {
+                    const cr2::BattleData::Item* it = game.itemCount[id] > 0 ? battleData.item(id) : nullptr;
+                    if (!it || it->type != slot + 1 || !(it->wearers >> ch & 1) || id == eq[slot]) continue;
+                    int free = game.itemCount[id];
+                    for (int c : validChars())
+                        for (int e = 0; e < 3; ++e) free -= game.equip[c][e] == id;
+                    if (free > 0 && worth(id) > bestWorth) best = id, bestWorth = worth(id);
+                }
+                if (best != eq[slot]) exploreLog("  camp: character " + std::to_string(ch + 1) + " wears item " + std::to_string(best)), eq[slot] = short(best);
+            }
+            if (ch == 0 && eq[4] <= 0 && !humanSopia().empty()) eq[4] = short(humanSopia().front()), exploreLog("  camp: Darwin's sopia " + std::to_string(eq[4]));
+            for (int k = 5; k < 8; ++k) {
+                if (eq[k] > 0) continue;
+                int best = 0;
+                for (int sp = 1; sp < 32; ++sp) {
+                    const cr2::BattleData::Sopia* so = game.sopiaOwned >> sp & 1u ? battleData.sopia(sp) : nullptr;
+                    if (!so || so->growth != 1) continue;
+                    bool worn = false;
+                    for (int c : game.party)
+                        for (int e = 5; c >= 0 && c < 9 && e < 8; ++e) worn |= game.equip[c][e] == sp;
+                    if (!worn && (!best || game.sopiaLevel[sp] > game.sopiaLevel[best])) best = sp;
+                }
+                if (!best) break;
+                eq[k] = short(best);
+                exploreLog("  camp: character " + std::to_string(ch + 1) + " wears sopia " + std::to_string(best));
+            }
+            clampMp(ch);
+        }
+    }
     void clampMp(int ch) { // (Cr3UtilAdjustment: the MP within the most)
         if (game.mp[ch] >= 0) game.mp[ch] = std::min(game.mp[ch], statsOf(ch).maxMp);
     }
@@ -8648,10 +8886,16 @@ struct Viewer {
         std::map<std::string, int> taps; // (this visit to the map: a target's taps - two at most, whatever the flags do)
         std::vector<bool> flagsBefore;      // (the timeline's flag changes)
         std::map<size_t, int> flips;        // (a flag's changes: three or more, a passing one - out of the story's state)
-        // the maps as the explorer knows them: each one's ways out (an exit's or a door's target ->
-        // the map it leads to) and whether it had things left to try when last there, in this state
+        // the maps as the explorer knows them, by where the leader comes onto them (a pop point - a
+        // balcony an exit leads to is apart from the floor below it - or the map): each one's ways out
+        // (an exit's or a door's target -> where it leads) and whether it had things left to try when
+        // last there, in this state
         std::map<std::string, std::map<std::string, std::string>> links;
         std::map<std::string, bool> leftOn;
+        uint64_t rawKey = 0; // (all the flags')
+        std::set<uint64_t> retried;
+        std::set<std::pair<uint64_t, std::string>> blocked; // ("map:target" given up on in this state: not picked again) // (the story's states where everything was tried again)
+        std::map<std::string, std::set<std::string>> cutOff; // (a map's ways out the leader didn't reach when last there)
         std::set<std::string> everVisited; // (maps been on at all: one never seen first)
         double outUntil = -1;              // (stepping out of an event box, to walk in again)
         double touchingSince = -1;
@@ -8661,6 +8905,9 @@ struct Viewer {
         std::string lastBox;                       // (the event box last touched, "map:box")
         cr2::Vec3 outFrom{};
         double nextTap = 0;
+        std::string changedFor; // (the target the leader was last changed for)
+        int grind = 0; // (after a game over: encounters to fight, walking about, before the story again)
+        std::map<std::string, int> mysticTurn; // (a mystic's uses: the next spot in turn)
         bool done = false;
     } ex;
     uint64_t storyKey() const {
@@ -8728,6 +8975,18 @@ struct Viewer {
     bool explorePick() {
         if (!script || !controller) return false;
         exploreGrid();
+        if (ex.grind > 0 && encount.on && game.encountEnable && !(game.flag(0x40e) && game.flag(0x40f) && encountersOff)) { // (walking about where encounters are, till they're fought)
+            cr2::Vec3 at;
+            for (int k = 0; k < 8; ++k) {
+                std::vector<cr2::Vec3> path;
+                if (!ex.grid.reachedCell(size_t(encountRandom()), at) || std::hypot(at[0] - controller->position()[0], at[2] - controller->position()[2]) < 0.4f ||
+                    !explorePath("wander", at, 0.02f, path))
+                    continue;
+                ex.target = "wander", ex.goal = at, ex.reach = 0.03f, ex.tapIt = false, ex.reachPlan = 0.02f, ex.path = path, ex.at = 0;
+                ex.since = ex.clock, ex.stillSince = ex.clock, ex.last = controller->position();
+                return true;
+            }
+        }
         struct Cand {
             int rank; // 0 an event box, 1 a thing to tap, 2 a treasure box; 3 .. 5 a way out (new, been, back)
             float length = 0;
@@ -8742,7 +9001,7 @@ struct Viewer {
         std::vector<Cand> c;
         const bool debug = SDL_getenv("CR2_EXPLORE_DEBUG") != nullptr;
         ex.lastBox.clear(); // (what the last touch or tap began is over, here: not a door)
-        const std::string here = field.info().name;
+        const std::string here = field.info().name, node = fieldArrival;
         auto wayRank = [&](const std::string& to) { return to == ex.cameFrom ? 5 : ex.visited.count(to) ? 4 : 3; };
         std::vector<const cr2::Gimmick*> sprints;
         for (const cr2::Gimmick& g : field.gimmicks()) {
@@ -8755,20 +9014,30 @@ struct Viewer {
                 SDL_Log("EXDEBUG %s: tried %d taps %d enabled %d shown %d door %d", g.name.c_str(), int(ex.tried.count({ex.key, g.name})),
                         ex.taps[g.name], int(enabled), int(shown), int(isDoor));
             const cr2::Vec3 at{g.position[0], g.position[1], g.position[2]};
-            if (g.kind == cr2::Gimmick::Ability && g.name.rfind("sprint", 0) == 0) sprints.push_back(&g);
-            if ((!isDoor && ex.tried.count({ex.key, g.name})) || ex.taps[g.name] >= 2 || !enabled) continue;
+            const cr2::FieldScript::TouchAction* act = g.kind == cr2::Gimmick::Ability ? script->touchAction(g.name) : nullptr;
+            const bool acting = act && act->enabled && !act->spots.empty() && shown;
+            if (acting && (g.name.rfind("sprint", 0) == 0 || actionKind(g.name) == 1)) sprints.push_back(&g); // (the ways over: a sprint, a high jump)
+            if (acting && actionKind(g.name) > 1 && !ex.blocked.count({ex.key, here + ":" + g.name})) {
+                // (the other touch actions: done as taps are - a mystic again and again, its pieces
+                // moved in turn, after the ways over have been tried)
+                const float half = std::max(std::max(g.jointScale[0], g.jointScale[2]) / 100.0f, 0.04f);
+                if (actionKind(g.name) == 3 ? ex.taps[g.name] < 3 * int(act->spots.size()) : !ex.tried.count({ex.key, g.name}))
+                    c.push_back({actionKind(g.name) == 3 && ex.taps[g.name] > 0 ? 7 : 1, 0, g.name, at, half * 0.5f, false, half * 0.8f});
+                continue;
+            }
+            if ((!isDoor && ex.tried.count({ex.key, g.name})) || ex.taps[g.name] >= 2 || !enabled || ex.blocked.count({ex.key, here + ":" + g.name})) continue;
             if (g.kind == cr2::Gimmick::Event && !g.check) {
                 const float half = std::max(g.jointScale[0], g.jointScale[2]) / 100.0f;
-                c.push_back({isDoor ? wayRank(door->second) : 0, 0, g.name, at, half * 0.5f, false, half});
+                c.push_back({isDoor ? wayRank(door->second.substr(0, 5)) : 0, 0, g.name, at, half * 0.5f, false, half});
             } else if (g.check && g.checkLength() > 0 && shown) {
                 if (g.kind == cr2::Gimmick::Box && (boxOpening.count(g.name) || game.boxes.isOpen(g.boxKind, g.boxNumber))) continue;
-                c.push_back({isDoor ? wayRank(door->second) : g.kind == cr2::Gimmick::Box ? 2 : 1, 0, g.name, at, g.checkLength() * 0.7f, true,
+                c.push_back({isDoor ? wayRank(door->second.substr(0, 5)) : g.kind == cr2::Gimmick::Box ? 2 : 1, 0, g.name, at, g.checkLength() * 0.7f, true,
                              g.checkLength() * 0.8f});
             }
         }
         for (const std::string& e : field.exitNames()) {
             cr2::Vec3 lo, hi;
-            if (!field.exitBounds(e, lo, hi)) continue;
+            if (!field.exitBounds(e, lo, hi) || ex.blocked.count({ex.key, here + ":exit:" + e})) continue;
             const cr2::Vec3 at{(lo[0] + hi[0]) * 0.5f, lo[1], (lo[2] + hi[2]) * 0.5f};
             c.push_back({wayRank(e.substr(0, 5)), 0, "exit:" + e, at, 0.0f, false, std::max(hi[0] - lo[0], hi[2] - lo[2]) * 0.5f});
         }
@@ -8779,15 +9048,21 @@ struct Viewer {
             k.length = len;
         }
         // (this map's ways out, as learned; something reachable to do here, or none)
-        for (const std::string& e : field.exitNames()) ex.links[here]["exit:" + e] = e.substr(0, 5);
+        // (its ways out; one cut off from where the leader stood isn't a way on from there)
+        std::map<std::string, std::string> leadsTo;
+        for (const std::string& e : field.exitNames()) leadsTo["exit:" + e] = e;
         for (const auto& [box, to] : ex.doors)
-            if (box.rfind(here + ":", 0) == 0) ex.links[here][box.substr(here.size() + 1)] = to;
+            if (box.rfind(here + ":", 0) == 0) leadsTo[box.substr(here.size() + 1)] = to;
+        ex.links[node] = leadsTo;
+        ex.cutOff[node].clear();
+        for (const Cand& k : c)
+            if (!k.reachable) ex.cutOff[node].insert(k.name);
         bool local = false, cutOff = false;
         for (const Cand& k : c) {
             if (k.rank <= 2 && k.reachable) local = true;
             if (!k.reachable) cutOff = true;
         }
-        ex.leftOn[here] = local;
+        ex.leftOn[node] = local;
         auto take = [&](const Cand& k) {
             ex.target = k.name, ex.goal = k.at, ex.reach = k.reach, ex.tapIt = k.tap, ex.reachPlan = k.planReach;
             ex.path = k.path, ex.at = 0;
@@ -8807,26 +9082,36 @@ struct Viewer {
             for (const cr2::Gimmick* g : sprints) {
                 const auto used = ex.sprintUsed.find(g->name);
                 if (used != ex.sprintUsed.end() && ex.clock - used->second < 30) continue;
-                Cand k{6, 0, "sprint:" + g->name, {g->position[0], g->position[1], g->position[2]}, 0.01f, false, 0.03f};
-                if (!explorePath(k.name, k.at, k.planReach, k.path)) continue;
+                // (its marker often over the gap it crosses: near enough is sprintAt's 0.15)
+                Cand k{6, 0, "sprint:" + g->name, {g->position[0], g->position[1], g->position[2]}, 0.01f, false, g->name.rfind("sprint", 0) == 0 ? 0.07f : 0.03f};
+                const bool ok = explorePath(k.name, k.at, k.planReach, k.path);
+                if (debug)
+                    SDL_Log("EXDEBUG sprint %s: path %d (%zu points, end %.3f %.3f)", g->name.c_str(), int(ok), k.path.size(),
+                            k.path.empty() ? 0.0f : k.path.back()[0], k.path.empty() ? 0.0f : k.path.back()[2]);
+                if (!ok) continue;
                 float len = 0;
                 for (size_t i = 1; i < k.path.size(); ++i) len += std::hypot(k.path[i][0] - k.path[i - 1][0], k.path[i][2] - k.path[i - 1][2]);
                 if (len < bestLen) bestLen = len, s = k, best = &s;
             }
-            if (best) {
-                bool wayReachable = false; // (only when no way out, or what's wanted lies over there)
-                for (const Cand& k : c)
-                    if (k.rank >= 3 && k.reachable && !ex.leftOn.count(ex.links[here][k.name])) wayReachable = true;
-                if (!wayReachable || !local) return take(*best);
+            if (best) { // (taken when what's wanted lies over there - a thing to do, a map never been on - and no way here leads anywhere new)
+                bool wanted = false, newHere = false;
+                for (const Cand& k : c) {
+                    const bool fresh = k.rank >= 3 && leadsTo.count(k.name) && !ex.everVisited.count(leadsTo[k.name].substr(0, 5));
+                    if (!k.reachable && (k.rank <= 2 || fresh)) wanted = true;
+                    if (k.reachable && fresh) newHere = true;
+                }
+                if (wanted && !newHere) return take(*best);
             }
         }
+        for (const Cand& k : c) // (a mystic used before: again, its pieces elsewhere)
+            if (k.rank == 7 && k.reachable) return ex.leftOn[node] = true, take(k);
         // (nothing here: the way to the nearest map never been on, else one unseen in this state or with things left)
         std::map<std::string, std::string> firstStep;
         std::deque<std::string> open;
         for (const Cand& k : c)
             if (k.rank >= 3 && k.reachable) {
-                const std::string to = ex.links[here].count(k.name) ? ex.links[here][k.name] : "";
-                if (!to.empty() && to != here && !firstStep.count(to)) firstStep[to] = k.name, open.push_back(to);
+                const std::string to = leadsTo.count(k.name) ? leadsTo[k.name] : "";
+                if (!to.empty() && to != node && !firstStep.count(to)) firstStep[to] = k.name, open.push_back(to);
             }
         std::string go;
         for (int pass = 0; pass < 2 && go.empty(); ++pass) {
@@ -8836,19 +9121,33 @@ struct Viewer {
                 const std::string m = queue.front();
                 queue.pop_front();
                 const auto lo = ex.leftOn.find(m);
-                if (pass == 0 ? !ex.everVisited.count(m) : (lo == ex.leftOn.end() || lo->second)) { go = step[m]; break; }
+                if (pass == 0 ? !ex.everVisited.count(m.substr(0, 5)) : (lo == ex.leftOn.end() || lo->second)) { go = step[m]; break; }
                 for (const auto& [way, to] : ex.links[m])
-                    if (!step.count(to) && to != here) step[to] = step[m], queue.push_back(to);
+                    if (!step.count(to) && to != node && !ex.cutOff[m].count(way)) step[to] = step[m], queue.push_back(to);
             }
         }
         if (debug) {
             std::string known, ways;
             for (const auto& [m, l] : ex.leftOn) known += " " + m + (l ? "+" : "-");
             for (const Cand& k : c) ways += " " + k.name + (k.reachable ? "" : "(cut off)");
-            SDL_Log("EXDEBUG %s: nothing here; known%s; candidates%s; going %s", here.c_str(), known.c_str(), ways.c_str(), go.c_str());
+            for (const auto& [m, l] : ex.links) {
+                std::string w;
+                for (const auto& [way, to] : l) w += " " + way + ">" + to + (ex.cutOff[m].count(way) ? "(x)" : "");
+                SDL_Log("EXDEBUG   links %s:%s", m.c_str(), w.c_str());
+            }
+            SDL_Log("EXDEBUG %s: nothing here; known%s; candidates%s; going %s", node.c_str(), known.c_str(), ways.c_str(), go.c_str());
         }
         for (const Cand& k : c)
             if (k.name == go) return take(k);
+        // (nowhere: once in this state, everything tried again - an event box tried before may be
+        // the door the graph is missing, as t0102's back to t0101 is)
+        if (ex.retried.insert(ex.key).second) {
+            for (auto it = ex.tried.begin(); it != ex.tried.end();) it = it->first == ex.key ? ex.tried.erase(it) : std::next(it);
+            for (auto it = ex.blocked.begin(); it != ex.blocked.end();) it = it->first == ex.key ? ex.blocked.erase(it) : std::next(it);
+            ex.taps.clear(), ex.leftOn.clear(), ex.visited.clear();
+            exploreLog("  (nothing left: all tried again)");
+            return explorePick();
+        }
         return false;
     }
     // one update's input: the field's direction, the rest done here
@@ -8861,8 +9160,11 @@ struct Viewer {
             exploreLog(ph);
             exploreShotDue = ex.clock + (ph.rfind("battle", 0) == 0 ? 3.0 : ph.rfind("field", 0) == 0 ? 0.6 : 1.5);
             exploreShotName = ph;
+            if (fieldMode && !eventMode) exploreOutfit(); // (what was found, worn)
             if (fieldMode && !eventMode && ex.visitedMap != field.info().name) { // (another map - not back from a battle or a vista)
-                if (!ex.lastBox.empty() && ex.lastBox.rfind(ex.visitedMap + ":", 0) == 0) ex.doors[ex.lastBox] = field.info().name;
+                if (ex.lastBox.empty() && !ex.target.empty() && ex.target.rfind("exit:", 0) != 0 && ex.target.rfind("sprint:", 0) != 0)
+                    ex.lastBox = ex.visitedMap + ":" + ex.target; // (its event ran at once, the map changed before the touch was seen)
+                if (!ex.lastBox.empty() && ex.lastBox.rfind(ex.visitedMap + ":", 0) == 0) ex.doors[ex.lastBox] = fieldArrival;
                 ex.lastBox.clear();
                 if (!ex.target.empty()) ex.tried.insert({ex.key, ex.target}), ex.target.clear(); // (taken - or what lay past an exit)
                 if (!ex.visitedMap.empty() && ex.visitedMap != field.info().name) ex.cameFrom = ex.visitedMap;
@@ -8873,6 +9175,13 @@ struct Viewer {
             } else if (fieldMode && !eventMode) {
                 ex.target.clear(); // (back on the same map: the way planned again)
             }
+        }
+        uint64_t raw = 1469598103934665603ull; // (every flag: a puzzle's passing ones too)
+        for (size_t i = 0; i < game.flags.size(); ++i)
+            if (game.flags[i]) raw = (raw ^ (i + 1)) * 1099511628211ull;
+        if (raw != ex.rawKey) { // (something moved - a piece of a puzzle: the maps' state seen again, a retry allowed)
+            ex.rawKey = raw;
+            ex.leftOn.clear(), ex.cutOff.clear(), ex.visited.clear(), ex.retried.erase(ex.key);
         }
         const uint64_t k = storyKey();
         if (k != ex.key) {
@@ -8924,6 +9233,18 @@ struct Viewer {
             if (party.stage) return partyKey(SDLK_BACKSPACE);
             return;
         }
+        if (battleMode && gameOver.stage == 1 && battleClock - gameOver.start > 1.2f && ex.clock >= ex.nextTap) { // (lost: on)
+            ex.nextTap = ex.clock + 1.0;
+            if (!gameOver.over) ex.grind += 5, ex.target.clear(), exploreLog("  lost (no game over yet): 5 encounters fought first");
+            gameOver.tapped = true;
+            return;
+        }
+        if (battleMode && gameOver.stage == 8 && ex.clock >= ex.nextTap) { // (a game over: tried again from the continue data - stronger first)
+            ex.nextTap = ex.clock + 1.0;
+            ex.grind += 5, ex.target.clear();
+            exploreLog("  game over: tried again, then 5 encounters fought first");
+            return gameOverAnswer(true);
+        }
         if (battleMode || eventMode || credits.stage || (script && script->running())) { // (pages, results: tapped now and then)
             if (ex.clock >= ex.nextTap) ex.nextTap = ex.clock + 1.0, tap();
             return;
@@ -8934,16 +9255,39 @@ struct Viewer {
                 if (iai.stage || vslash.stage) inputScript.push_back("slash");
                 else if (aim.stage) inputScript.push_back("aim");
                 else if (hakkei.stage) inputScript.push_back("punch");
-                else if (mystic.stage) inputScript.push_back("tapspot");
+                else if (mystic.stage) { // (the spots in turn, the one it is on left out)
+                    const std::string& n = field.gimmicks()[size_t(actionMark.gimmick)].name;
+                    const cr2::FieldScript::TouchAction* a = script->touchAction(n);
+                    std::vector<size_t> others;
+                    for (size_t i = 0; a && i < a->spots.size(); ++i)
+                        if (i != a->markSpot()) others.push_back(i);
+                    inputScript.push_back(others.empty() ? std::string("tapspot") : "tapspot" + std::to_string(others[size_t(ex.mysticTurn[n]++) % others.size()]));
+                }
                 else if (keyLock.stage) inputScript.push_back("unlock");
             }
             return;
         }
         if (!fieldTabShown()) return;
-        if (actionMark.gimmick >= 0 && actionMark.startedAt < 0 && actionMark.able && ex.clock >= ex.nextTap) { // (a touch action offered)
-            ex.nextTap = ex.clock + 1.0;
-            exploreLog("  a touch action: " + field.gimmicks()[size_t(actionMark.gimmick)].name);
-            return actionTapped();
+        if (actionMark.gimmick >= 0 && actionMark.startedAt < 0 && ex.clock >= ex.nextTap) { // (a touch action offered)
+            const std::string& name = field.gimmicks()[size_t(actionMark.gimmick)].name;
+            const bool aimed = ex.target == name || ex.target == "sprint:" + name;
+            if (actionMark.able && (aimed || actionMark.kind != 1)) { // (a high jump only where the explorer meant to go over)
+                ex.nextTap = ex.clock + 1.0;
+                exploreLog("  a touch action: " + name);
+                if (aimed) {
+                    if (actionMark.kind == 1) ex.sprintUsed[name] = ex.clock;
+                    else if (actionMark.kind == 3) ++ex.taps[name];
+                    else ex.tried.insert({ex.key, name});
+                    ex.target.clear();
+                }
+                return actionTapped();
+            }
+            if (!actionMark.able && aimed && changeButtonShown() && ex.changedFor != ex.target) { // (its character not leading: the other)
+                ex.nextTap = ex.clock + 1.0;
+                ex.changedFor = ex.target;
+                exploreLog("  the leader changed, for " + name);
+                return startChange();
+            }
         }
         if (sprintAt() >= 0 && ex.clock >= ex.nextTap) {
             ex.nextTap = ex.clock + 1.0;
@@ -8978,6 +9322,7 @@ struct Viewer {
             ex.target.clear();
             return tap();
         }
+        if (ex.target == "wander" && left < 0.04f) return ex.target.clear(); // (there: somewhere else next)
         if (ex.clock < ex.outUntil) { // (out of the box: away from its middle)
             float ox = p[0] - ex.outFrom[0], oz = p[2] - ex.outFrom[2];
             const float ol = std::hypot(ox, oz);
@@ -9021,13 +9366,15 @@ struct Viewer {
             std::snprintf(why, sizeof why, " (%.3f from it, the balloon %s)", left,
                           nearestBalloon >= 0 ? field.gimmicks()[size_t(nearestBalloon)].name.c_str() : "none");
             exploreLog("  gave up on " + ex.target + why);
-            ex.tried.insert({ex.key, ex.target}), ex.target.clear();
+            ex.tried.insert({ex.key, ex.target}), ex.blocked.insert({ex.key, field.info().name + ":" + ex.target}), ex.target.clear();
             return;
         }
         if (std::hypot(p[0] - ex.last[0], p[2] - ex.last[2]) > 0.01f) ex.last = p, ex.stillSince = ex.clock;
         else if (ex.clock - ex.stillSince > 2.0) { // (held up: the way again)
             ex.stillSince = ex.clock;
-            if (!explorePlan()) exploreLog("  (no way to " + ex.target + " from here)"), ex.tried.insert({ex.key, ex.target}), ex.target.clear();
+            if (!explorePlan())
+                exploreLog("  (no way to " + ex.target + " from here)"), ex.tried.insert({ex.key, ex.target}),
+                    ex.blocked.insert({ex.key, field.info().name + ":" + ex.target}), ex.target.clear();
             return;
         }
         // along the way: the next point not yet passed
@@ -10258,6 +10605,12 @@ struct Viewer {
                 const float rgba[4] = {c[0], c[1], c[2], alpha};
                 dev->drawQuad(white, kScreen, id.data(), rgba);
             }
+        }
+        if (fieldMode && !battleMode && encount.fadeAt >= 0 && white.id) { // (an encounter's: Cr3FadeOut(3, 20) to black)
+            static const float kScreen[24] = {-1, -1, 0, 0, 1, -1, 1, 0, 1, 1, 1, 1, -1, -1, 0, 0, 1, 1, 1, 1, -1, 1, 0, 1};
+            const Mat4 id = cr2::mat4Identity();
+            const float rgba[4] = {0, 0, 0, std::clamp((uiClock - encount.fadeAt) / 1.0f, 0.0f, 1.0f)};
+            dev->drawQuad(white, kScreen, id.data(), rgba);
         }
         cr2::EventRuntime* ev = activeEvents();
         if (!ev || !eventDrawingReady) return;

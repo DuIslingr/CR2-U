@@ -130,6 +130,7 @@ int usage() {
                  "cr2tool event <archive> <script> [function]\n"
                  "cr2tool play <archive> <event | all>\n"
                  "cr2tool battle <archive> <coupling | all>\n"
+                 "cr2tool encounters <archive> [executable]\n"
                  "cr2tool fight <archive> <coupling> [solo | pair] [seed] [a,b]\n"
                  "cr2tool sound <archive>\n"
                  "cr2tool glass <seeds>\n"
@@ -659,8 +660,10 @@ int nav(const char* path, const char* binary, const char* only) {
         std::vector<cr2::NavGrid> grids(starts.size());
         size_t most = 0;
         for (size_t k = 0; k < starts.size(); ++k) {
-            grids[k].build(field.collision(), starts[k], 0.02f, 0.01f);
+            grids[k].build(field.collision(), starts[k], 0.02f, std::getenv("CR2_NAV_STEP") ? float(std::atof(std::getenv("CR2_NAV_STEP"))) : 0.01f);
             most = std::max(most, grids[k].reached());
+            if (only)
+                std::printf("    from (%.3f %.3f %.3f): %zu cells\n", starts[k][0], starts[k][1], starts[k][2], grids[k].reached());
         }
         if (most == 0) {
             ++empty;
@@ -977,6 +980,40 @@ int pose(const char* path, const std::string& figure, const std::string& animNam
 
 // The battles: each coupling's set-up (battle/battledata.cpp) against the archive - its map, its
 // figures and their first motions, the battledpos joints they stand on, the commands' camera
+// The field maps' encounters (FldEncount): each map's area, steps and chance from the release's
+// binary, and what the area draws (its couplings by weight)
+int encounters(const char* path, const char* binary) {
+    cr2::MvglArchive a;
+    if (!openArchive(a, path)) return 1;
+    std::vector<uint8_t> d;
+    std::string err;
+    cr2::BattleData data;
+    if (!a.read("data\\battledata.dat", d, &err) || !data.parse(d, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
+    cr2::EncountTable table;
+    if (!cr2::releaseEncountTable(path, binary && std::strcmp(binary, "-") ? binary : "", table))
+        return std::fprintf(stderr, "the encounters' table: not found in the release's binary\n"), 1;
+    std::vector<cr2::MapInfo> maps;
+    if (!readTable(path, binary, maps)) return 1;
+    int with = 0, bad = 0;
+    for (const cr2::MapInfo& m : maps) {
+        const cr2::EncountCell* e = table.at(m.name);
+        if (!e) continue;
+        ++with;
+        const cr2::BattleData::Area* ar = data.area(e->area);
+        std::string draws;
+        for (int k = 0; ar && k < 10; ++k)
+            if (ar->rates[k]) {
+                if (!data.coupling(ar->couplings[k])) ++bad;
+                draws += " " + std::to_string(ar->couplings[k]) + "x" + std::to_string(ar->rates[k]);
+            }
+        if (!ar) ++bad;
+        std::printf("  %s: area %d, every %d steps, %d%% -%s (music %d, map %d)\n", m.name.c_str(), e->area, e->steps, e->chance,
+                    draws.c_str(), ar ? ar->music : -1, ar ? ar->map : -1);
+    }
+    std::printf("encounters: %d maps with them, %d areas or couplings missing\n", with, bad);
+    return bad != 0;
+}
+
 int battles(const char* path, const char* which) {
     cr2::MvglArchive a;
     if (!openArchive(a, path)) return 1;
@@ -1258,6 +1295,7 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[1], "walk") && argc > 3) return walk(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "images")) return images(argv[2], argc > 3 ? argv[3] : nullptr, argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "battle") && argc > 3) return battles(argv[2], argv[3]);
+    if (!std::strcmp(argv[1], "encounters") && argc > 2) return encounters(argv[2], argc > 3 ? argv[3] : "-");
     if (!std::strcmp(argv[1], "fight") && argc > 3) {
         int party[2] = {1, 2};
         if (argc > 6) std::sscanf(argv[6], "%d,%d", &party[0], &party[1]);

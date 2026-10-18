@@ -56,7 +56,7 @@ bool fail(std::string* error, const std::string& why) {
 } // namespace
 
 bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
-    characters_.clear(), monsters_.clear(), couplings_.clear(), commands_.clear(), items_.clear(), autoSkills_.clear(), sopias_.clear();
+    characters_.clear(), monsters_.clear(), couplings_.clear(), areas_.clear(), commands_.clear(), items_.clear(), autoSkills_.clear(), sopias_.clear();
     if (d.size() < 0x40) {
         if (error) *error = "battledata: too short";
         return false;
@@ -120,6 +120,15 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         c.resultKind = d[o + 0x15];
         for (int k = 0; k < 3; ++k) c.monsters[k] = s16(d, o + 8 + size_t(k) * 2);
         couplings_.push_back(c);
+    }
+    for (int i = 0, n = s16(d, 0x3a); i < n; ++i) {
+        const size_t o = u32(d, 0x10) + size_t(i) * 0x24;
+        if (o + 0x24 > d.size()) break;
+        Area a;
+        a.id = i + 1;
+        a.music = s16(d, o + 2), a.map = s16(d, o + 4);
+        for (int k = 0; k < 10; ++k) a.couplings[k] = s16(d, o + 6 + size_t(k) * 2), a.rates[k] = d[o + 0x1a + size_t(k)];
+        areas_.push_back(a);
     }
     const uint32_t commands = u32(d, 0x14), autoSkills = u32(d, 0x18), items = u32(d, 0x24);
     for (int i = 0, n = s16(d, 0x3c); i < n; ++i) {
@@ -229,14 +238,15 @@ const int* levelExpTable() { return kLevelExp; }
 int levelExp(int level) { return kLevelExp[std::clamp(level, 1, 200) - 1]; }
 int sopiaExp(bool monsters, int level) { return (monsters ? kMonsterSopiaExp : kCharaSopiaExp)[std::clamp(level, 1, 5) - 1]; }
 
-bool setupBattle(const BattleData& data, int id, const int party[2], BattleSetup& out, std::string* error) {
+bool setupBattle(const BattleData& data, int id, const int party[2], BattleSetup& out, std::string* error, const BattleData::Area* area) {
     out = BattleSetup();
     out.coupling = id;
     const BattleData::Coupling* c = data.coupling(id);
     if (!c) return fail(error, "no coupling " + std::to_string(id));
-    if (c->map < 0 || c->map >= int(sizeof kMaps / sizeof kMaps[0]))
-        return fail(error, "coupling " + std::to_string(id) + ": map " + std::to_string(c->map));
-    out.map = kMaps[c->map];
+    const int map = area ? area->map : c->map;
+    if (map < 0 || map >= int(sizeof kMaps / sizeof kMaps[0])) return fail(error, "coupling " + std::to_string(id) + ": map " + std::to_string(map));
+    out.map = kMaps[map];
+    out.music = area ? area->music : c->music;
     // the monsters in their slots (BtlWork::InitializeEnemy: up to three, the first absent one ends them)
     const BattleData::Monster* mons[3] = {nullptr, nullptr, nullptr};
     int sizes[3] = {-1, -1, -1};

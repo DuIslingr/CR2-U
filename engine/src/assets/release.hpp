@@ -38,6 +38,9 @@ bool androidFile(const std::string& archivePath, const std::string& name, std::v
 bool releaseMapTable(const std::string& archivePath, const std::string& binary, std::vector<MapInfo>& table,
                      std::string* from = nullptr);
 
+// The field maps' encounters (findEncountTable) from the release's binary, as releaseMapTable finds it
+bool releaseEncountTable(const std::string& archivePath, const std::string& binary, EncountTable& table);
+
 // The staff roll's lines (StaffrollMenu::AllTextTextureGeneration's table: 544 strings, then the
 // four endings' figure names end2_BG, end1_BG, end3_BG, end4_BG) from the release's executable -
 // found by those four names' pointers, whatever the executable's layout; false: not found

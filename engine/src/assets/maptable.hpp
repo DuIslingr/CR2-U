@@ -31,6 +31,20 @@ struct MapInfo {
 // False: not there.
 bool findMapTable(const std::vector<uint8_t>& binary, std::vector<MapInfo>& out);
 
+// A field map's encounters (FldEncount::SetData: three tables of 14 rows - the town, then d01 ..
+// d13 - by 48 areas, a map's row and area its name's: t0101 0 / 0, d0903 9 / 2): the battle data's
+// area its couplings are drawn from (-1 none), the steps (0.17 of walking each) between draws, the
+// chance of one in 100 (5 more after each miss)
+struct EncountCell {
+    int area = -1, steps = 0, chance = 0;
+};
+struct EncountTable {
+    std::vector<EncountCell> cells; // (row * 48 + area)
+    const EncountCell* at(const std::string& map) const; // (null: none for that map)
+};
+// The tables in an executable: found by the town's row (16 areas of -1, their chance 20)
+bool findEncountTable(const std::vector<uint8_t>& binary, EncountTable& out);
+
 // The binaries an archive's release keeps the table in, looked for beside it: the iPad's
 // executable (ChaosRings2enHD in the .app), the Vita's eboot.bin (two folders up)
 std::vector<std::string> mapTableCandidates(const std::string& archivePath);

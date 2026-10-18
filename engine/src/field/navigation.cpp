@@ -117,6 +117,19 @@ bool NavGrid::nearest(const Vec3& to, Vec3& at, float& distance) const {
     return any;
 }
 
+bool NavGrid::reachedCell(size_t n, Vec3& at) const {
+    if (reached_ == 0) return false;
+    n %= reached_;
+    for (int z = 0; z < h_; ++z)
+        for (int x = 0; x < w_; ++x) {
+            const float y = floor_[size_t(index(x, z))];
+            if (std::isnan(y) || n-- > 0) continue;
+            at = {x0_ + (float(x) + 0.5f) * cell_, y, z0_ + (float(z) + 0.5f) * cell_};
+            return true;
+        }
+    return false;
+}
+
 bool NavGrid::path(const Vec3& from, const Vec3& to, std::vector<Vec3>& out, int allowZone) const {
     out.clear();
     int fx, fz;

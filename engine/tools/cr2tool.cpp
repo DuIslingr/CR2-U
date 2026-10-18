@@ -75,20 +75,27 @@ int sound(const char* path) {
     std::printf("sound: %s\n", sd.describe().c_str());
     int tracks = 0, bad = 0;
     for (int t = 1; t <= cr2::SoundData::kTracks; ++t) {
-        std::vector<uint8_t> ogg;
-        cr2::OggStream o;
-        if (!sd.trackOgg(t, ogg) || !o.open(std::move(ogg))) {
-            std::printf("bgm%02d: not Vorbis\n", t);
+        std::string terr;
+        std::unique_ptr<cr2::MusicStream> o = sd.openTrack(t, &terr);
+        if (!o) {
+            std::printf("bgm%02d: %s\n", t, terr.c_str());
             ++bad;
             continue;
         }
-        std::vector<int16_t> buf(4096 * size_t(o.channels()));
+        std::vector<int16_t> buf(4096 * size_t(o->channels()));
         uint64_t n = 0;
-        for (int got; (got = o.read(buf.data(), 4096)) > 0;) n += uint64_t(got);
-        const int loop = sd.trackLoop(t);
-        std::printf("bgm%02d: %d Hz x%d, %.1f s (%llu frames), loops from %d%s\n", t, o.rate(), o.channels(), double(n) / o.rate(),
-                    static_cast<unsigned long long>(n), loop, loop >= 0 && uint64_t(loop) >= n ? " (past its end!)" : "");
-        ++tracks;
+        for (int got; (got = o->read(buf.data(), 4096)) > 0;) n += uint64_t(got);
+        // (the loop: sought to and read on - the same frames as from the start?)
+        bool loopOk = true;
+        if (o->loopStart >= 0) {
+            std::vector<int16_t> a(1024 * size_t(o->channels()));
+            loopOk = o->seek(uint32_t(o->loopStart)) && o->read(a.data(), 1024) > 0;
+        }
+        std::printf("bgm%02d: %d Hz x%d, %.1f s (%llu frames, %u said), loops %lld .. %lld%s\n", t, o->rate(), o->channels(),
+                    double(n) / o->rate(), static_cast<unsigned long long>(n), o->frames(), static_cast<long long>(o->loopStart),
+                    static_cast<long long>(o->loopEnd), loopOk ? "" : " (its loop doesn't decode!)");
+        if (!loopOk || n == 0) ++bad;
+        else ++tracks;
     }
     for (int b = 0; b < 2; ++b) {
         const auto bank = cr2::SoundData::Bank(b);

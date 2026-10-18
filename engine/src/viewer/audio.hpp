@@ -1,6 +1,6 @@
 #pragma once
 // The game's sound played (MVGL::Sound's nodes over SDL3 audio streams): the music - one track at
-// a time, streamed (Ogg Vorbis), looping back to its repeat frame, faded in / out - and the
+// a time, streamed (the release's: Ogg Vorbis, AAC, ATRAC9), looping back to its repeat frame, faded in / out - and the
 // effects' and voices' clips, 16 at a time each kind (the original's slots), an effect looping
 // when PlaySE_Repeat asked. Volumes per kind (the options' BGM / Sound Effects / Voiceovers:
 // cr3_system_data +0, +4, +8). Fades count the game's updates (CSndNode::_FadeVolumeProc, once an
@@ -57,9 +57,10 @@ private:
     SoundData data_;
     unsigned device_ = 0;
     // the music
-    std::unique_ptr<OggStream> ogg_;
+    std::unique_ptr<MusicStream> music_;
     SDL_AudioStream* bgm_ = nullptr;
-    int track_ = 0, loop_ = -1;
+    int track_ = 0;
+    int64_t bgmPos_ = 0; // (the music's next frame)
     bool bgmPlaying_ = false;
     float bgmFade_ = 1, bgmFadeStep_ = 0; // (gain, its change a second)
     void feedBgm();

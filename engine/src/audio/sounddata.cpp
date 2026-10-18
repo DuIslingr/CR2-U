@@ -117,7 +117,8 @@ bool SoundData::open(const std::string& archivePath, std::string* error) {
         if (!loadBank(bank_[Effects], archive, pos(0x26), size(0x26)) || !loadBank(bank_[Voices], archive, pos(0x27), size(0x27)))
             return fail(error, "the OBB's sound banks don't read");
         from_ = archive + " (the OBB's table from the APK's library)";
-        return true;
+        kind_ = Kind::Android;
+        return opened_ = true;
     }
     // the iPad's: Sound.ios/sound beside its archive
     const fs::path snd = dir / "Sound.ios" / "sound";
@@ -131,8 +132,25 @@ bool SoundData::open(const std::string& archivePath, std::string* error) {
             std::snprintf(n, sizeof n, "bgm%02d.caf", t + 1);
             if (fs::exists(snd / n, ec)) tracks_[t] = Piece{(snd / n).string(), 0, fileSize(snd / n)};
         }
-        from_ = snd.string() + " (the music AAC: not played)";
-        return true;
+#ifdef CR2_HAVE_FAAD2
+        from_ = snd.string();
+#else
+        from_ = snd.string() + " (the music AAC: built without FAAD2)";
+#endif
+        kind_ = Kind::Ipad;
+        return opened_ = true;
+    }
+    // the Vita's: Sound.psp2/sound beside its archive - the music (bgmNN.sxd); its banks not read
+    const fs::path vita = dir / "Sound.psp2" / "sound";
+    if (fs::exists(vita / "bgm01.sxd", ec)) {
+        for (int t = 0; t < kTracks; ++t) {
+            char n[16];
+            std::snprintf(n, sizeof n, "bgm%02d.sxd", t + 1);
+            if (fs::exists(vita / n, ec)) tracks_[t] = Piece{(vita / n).string(), 0, uint64_t(fs::file_size(vita / n, ec))};
+        }
+        from_ = vita.string() + " (the music; the effects and voices - sndeff.sxd, voice.sxd1 / .sxd2 - not read)";
+        kind_ = Kind::Vita;
+        return opened_ = true;
     }
     return fail(error, "no sound beside " + archive);
 }
@@ -148,6 +166,32 @@ bool SoundData::trackOgg(int track, std::vector<uint8_t>& out) const {
 }
 
 int SoundData::trackLoop(int track) { return track >= 1 && track <= kTracks ? kBgmLoop[track - 1] : -1; }
+
+std::unique_ptr<MusicStream> SoundData::openTrack(int track, std::string* error) const {
+    std::vector<uint8_t> d;
+    if (track < 1 || track > kTracks || !readPiece(tracks_[track - 1], d)) {
+        if (error) *error = "no such track";
+        return nullptr;
+    }
+    if (kind_ == Kind::Ipad) { // (its own table: an AAC packet, the priming counted)
+        CafAac caf;
+        if (!parseCafAac(d, caf, error)) return nullptr;
+        std::unique_ptr<MusicStream> s = openAac(std::move(d), error);
+        const int packet = kBgmLoopIpad[track - 1];
+        const int64_t at = int64_t(packet) * caf.framesPerPacket - caf.priming;
+        if (s && packet >= 0 && at >= 0 && at < int64_t(s->frames())) s->loopStart = at;
+        return s;
+    }
+    if (kind_ == Kind::Vita) return openSxdAt9(std::move(d), error); // (its WAVE entry's loop)
+    auto o = std::make_unique<OggStream>();
+    if (d.size() < 0x404 || std::memcmp(&d[0x400], "OggS", 4) != 0 || !o->open(std::vector<uint8_t>(d.begin() + 0x400, d.end()))) {
+        if (error) *error = "not Ogg Vorbis";
+        return nullptr;
+    }
+    const int loop = kBgmLoop[track - 1];
+    if (loop >= 0 && uint32_t(loop) < o->frames()) o->loopStart = loop; // (bgm27..29's: past their ends - once)
+    return o;
+}
 
 int SoundData::battleSe(int n) { return n >= 1 && n < int(sizeof kBattleSe / sizeof kBattleSe[0]) ? kBattleSe[n] : -1; }
 

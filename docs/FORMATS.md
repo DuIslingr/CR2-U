@@ -604,6 +604,24 @@ the effects (`Sound/sndeff`) and the voices (`Sound/voice`).
   46 s .. 5 min. It loops back to its repeat frame at its end (Cr3UtilSoundPlayBGM:
   Cr3SoundSetRepeatFrame from the library's table, a sample; bgm27..29's lie past their ends:
   once). `cr2tool sound` decodes them all.
+- **The iPad's tracks**: AAC-LC in CAF, 48 kHz stereo. The chunks are `desc`, `kuki` (an ESDS
+  holding the AudioSpecificConfig), `pakt` (the packets' sizes, 7-bit big-endian runs, after the
+  valid frames, the priming of 2112 and the remainder) and `data` (after a u32 edit count).
+  - The iPad executable has its own repeat table (its Cr3UtilSoundPlayBGM's, `kBgmLoopIpad`). It
+    counts AAC packets of 1024 samples, -1 for bgm27..29.
+  - Packet p is p x 1024 less the priming in the decoded stream. Its 2000832 for bgm01 is the
+    Vita's 2003653: the Vita's content runs some 2,400..3,000 frames later than the iPad's.
+- **The Vita's** (`Sound.psp2/sound/`): SXD files (MVGL::Sound's PSP2 build) - `bgmNN.sxd` the
+  music; `sndeff.sxd`, `voice.sxd1` (its headers) / `voice.sxd2` (its data, "SXDS") the banks,
+  not read yet.
+  - An SXD is "SXDF", a 0x60-byte header (+0x20 its name), then chunks {char[4] id, u32 size,
+    body}: REQD, NAME, WAVE, DATA.
+  - WAVE: +4 its entries' count, then a u32 each from +8, the entry that far from it.
+  - An entry: +4 u8 the codec (0x42 ATRAC9) and +5 the channels; +8 the rate; +0x14 the frames;
+    +0x18 / +0x1c the loop's start and end, both inclusive (Android's repeat frame at 48 kHz);
+    +0x20 the stream's size; +0x24 its offset from there; +0x2c the ATRAC9 config as a
+    little-endian word (0xFE7409F0: 48 kHz stereo, superframes of 1024 samples).
+  - The music's tracks run on past their loop's end.
 - **A bank** (CPackage): a table of {u32 offset, u32 size} - its length the first offset (394
   effects, 3250 voices) - over headerless signed 16-bit mono PCM at 22050 Hz
   (COpenSLESAudioPlayer::initialize(2, 1, 22050000 mHz)). Cr3UtilSoundPlaySE(n) /

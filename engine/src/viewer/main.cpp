@@ -2635,8 +2635,8 @@ struct Viewer {
     };
     std::vector<TapRect> tapRects;
     // a step of the choosing begun: its camera (StepGetset: Cam_Getset; SetCommandCamera: 0x1a the
-    // first's, 0x1b the second's, 0x1d the pair's command, 0x1c the one alone's - the target's camera, BtlCommand::
-    // SetCommandTargetCamera's, not yet: the command's stays)
+    // first's, 0x1b the second's, 0x1d the pair's command, 0x1c the one alone's - the target's camera
+    // BtlCommand::SetCommandTargetCamera's - setTargetCamera)
     void menuChanged() {
         menuStart = battleClock, menuCursor = 0;
         using CI = cr2::CommandInput;

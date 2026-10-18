@@ -46,7 +46,7 @@ void AudioPlayer::close() {
     for (Voice& v : slots_) endVoice(v);
     slots_.clear();
     if (bgm_) SDL_DestroyAudioStream(bgm_), bgm_ = nullptr;
-    ogg_.reset();
+    music_.reset();
     if (device_) SDL_CloseAudioDevice(device_), device_ = 0;
 }
 
@@ -65,16 +65,14 @@ void AudioPlayer::applyGains() {
 void AudioPlayer::playBgm(int track, int fadeFrames) {
     log.push_back("bgm " + std::to_string(track));
     releaseBgm();
-    std::vector<uint8_t> ogg;
-    auto o = std::make_unique<OggStream>();
-    if (!data_.trackOgg(track, ogg) || !o->open(std::move(ogg))) {
-        SDL_Log("sound: bgm%02d - none to play", track);
+    std::string err;
+    std::unique_ptr<MusicStream> o = data_.openTrack(track, &err);
+    if (!o) {
+        SDL_Log("sound: bgm%02d - none to play (%s)", track, err.c_str());
         return;
     }
-    track_ = track, bgmPlaying_ = true;
+    track_ = track, bgmPlaying_ = true, bgmPos_ = 0;
     SDL_Log("sound: bgm%02d%s", track, device_ ? "" : " (silent)");
-    loop_ = data_.trackLoop(track);
-    if (loop_ >= int(o->frames())) loop_ = -1; // (bgm27..29's: past their ends - once)
     bgmFade_ = fadeFrames > 0 ? 0.0f : 1.0f;
     bgmFadeStep_ = fadeFrames > 0 ? kUpdates / float(fadeFrames) : 0.0f;
     if (device_) {
@@ -83,26 +81,31 @@ void AudioPlayer::playBgm(int track, int fadeFrames) {
         bgm_ = SDL_CreateAudioStream(&spec, nullptr);
         if (bgm_ && !SDL_BindAudioStream(device_, bgm_)) SDL_DestroyAudioStream(bgm_), bgm_ = nullptr;
     }
-    ogg_ = std::move(o);
+    music_ = std::move(o);
     applyGains();
     feedBgm();
 }
 
 void AudioPlayer::feedBgm() {
-    if (!ogg_ || !bgm_ || !bgmPlaying_) return;
-    const int ch = ogg_->channels(), rate = ogg_->rate();
+    if (!music_ || !bgm_ || !bgmPlaying_) return;
+    MusicStream& m = *music_;
+    const int ch = m.channels(), rate = m.rate();
     const int want = int(kBgmAhead * float(rate)) * ch * 2;
     std::vector<int16_t> buf(4096 * size_t(ch));
     while (SDL_GetAudioStreamQueued(bgm_) < want) {
-        int got = ogg_->read(buf.data(), 4096);
-        if (got <= 0) { // (its end: back to the repeat frame, else over)
-            if (loop_ < 0 || !ogg_->seek(uint32_t(loop_))) {
+        int n = 4096;
+        if (m.loopStart >= 0 && m.loopEnd >= 0) n = int(std::clamp<int64_t>(m.loopEnd + 1 - bgmPos_, 0, 4096)); // (up to the loop's end)
+        int got = n > 0 ? m.read(buf.data(), n) : 0;
+        if (got <= 0) { // (its end, or its loop's: back to the repeat frame, else over)
+            if (m.loopStart < 0 || !m.seek(uint32_t(m.loopStart))) {
                 SDL_FlushAudioStream(bgm_);
                 bgmPlaying_ = false;
                 return;
             }
+            bgmPos_ = m.loopStart;
             continue;
         }
+        bgmPos_ += got;
         SDL_PutAudioStreamData(bgm_, buf.data(), got * ch * 2);
     }
 }
@@ -120,7 +123,7 @@ void AudioPlayer::stopBgm(int fadeFrames) {
 
 void AudioPlayer::releaseBgm() {
     if (bgm_) SDL_DestroyAudioStream(bgm_), bgm_ = nullptr;
-    ogg_.reset();
+    music_.reset();
     bgmPlaying_ = false, track_ = 0;
 }
 

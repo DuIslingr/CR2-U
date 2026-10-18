@@ -5333,7 +5333,6 @@ struct Viewer {
             t.stage = 5, t.start = uiClock;
         }
         if (t.stage == 9) updateManual(dt);
-        if (titleEvents == nullptr && t.stage == 0 && t.action == 0) {}
     }
     void drawCalendar(const SaveInfo& s, const Mat4& view, const Mat4& proj, float t) {
         UiFig& cal = uiFig("calendar_io");

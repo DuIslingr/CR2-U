@@ -400,7 +400,10 @@ glyph - hud_dotnum's 1 .. 12 -, id03 the day, id04 glyph 166, id08 the year, id1
 glyph 163, id13 the minute, zero-padded, set 90; id14 sign 22, id16 / id19 the play time's hours and
 minutes - cr3_savedata +0x10, frames of 0.05 s, / 72000, / 1200, 99 at most), and btlBack (100: back,
 CreateTitleMenu(true) - title_wait again). New Game: "Begin a new game?" (101; with the game data's
-flag 5 102, "... with your clear data?", a no then 103, the plain one - the carrying over left out);
+flag 5 102, "... with your clear data?" - Cr3UtilResetWork(true): the items, the Oz, the sopia's
+levels and EXP, each one's weapon and armour (cr3_player_data +0x3c, +0x3e) and seeds, the flags
+past 3000 and the global work kept, the levels, the rest of the equipment and the flags 0 .. 3000 a
+new game's -, a no then 103, the plain one);
 Load: menuLoad_io's "Load", "Load data?" (107), "Load complete." (108) a second; each then
 Cr3FadeOut(0, 20) and the game. The panel and its buttons go while a question is asked. The links
 (the sites, Game Center) are left out. CR2-U's save keeps the calendar's time (`saved`) and play time

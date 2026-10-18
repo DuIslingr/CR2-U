@@ -5200,6 +5200,31 @@ struct Viewer {
         poseUi(u, anim, 0);
         return u.fig.animLoaded ? u.fig.anim.duration() : 0.0f;
     }
+    // Cr3UtilResetWork(true) / Cr3InitWorkFromBattleData(.., true) - a new game with the clear data:
+    // the common data kept (the items, the Oz, the sopia's levels and EXP), each character's weapon
+    // and armour (cr3_player_data +0x3c, +0x3e) and seeds, the flags past 3000 and the global work;
+    // the levels, the rest of the equipment and the story's flags (0 .. 3000) a new game's
+    void carryOver() {
+        std::FILE* f = std::fopen(savePath("save1.txt").c_str(), "rb");
+        if (!f) return;
+        std::string text;
+        char buf[4096];
+        for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) text.append(buf, n);
+        std::fclose(f);
+        cr2::GameState old;
+        if (!old.load(text)) return;
+        std::memcpy(game.itemCount, old.itemCount, sizeof game.itemCount);
+        game.oz = old.oz;
+        std::memcpy(game.sopiaLevel, old.sopiaLevel, sizeof game.sopiaLevel);
+        std::memcpy(game.sopiaExp, old.sopiaExp, sizeof game.sopiaExp);
+        for (int c = 0; c < 9; ++c) {
+            game.equip[c][0] = old.equip[c][0], game.equip[c][1] = old.equip[c][1];
+            std::memcpy(game.seed[c], old.seed[c], sizeof game.seed[c]);
+        }
+        for (size_t k = 3001; k < old.flags.size(); ++k) game.setFlag(int(k), old.flags[k]);
+        std::memcpy(game.globalWork, old.globalWork, sizeof game.globalWork);
+        SDL_Log("title: the clear data carried over");
+    }
     void titleAsk(int id) {
         titleMenu.ask = id, titleMenu.stage = 7, titleMenu.start = uiClock;
         SDL_Log("title: ask %d", id);
@@ -5250,8 +5275,8 @@ struct Viewer {
         } else if (ask == 101 || ask == 103) {
             if (yes) t.action = 1, t.stage = 8, t.ask = 0, t.doneAt = uiClock + 1.0f;
             else t.stage = 6, t.start = uiClock;
-        } else if (ask == 102) { // (with the clear data: its carrying over left out - a new game)
-            if (yes) t.action = 1, t.stage = 8, t.ask = 0, t.doneAt = uiClock + 1.0f;
+        } else if (ask == 102) { // (with the clear data: Cr3UtilResetWork(true) - what it carries over)
+            if (yes) t.action = 4, t.stage = 8, t.ask = 0, t.doneAt = uiClock + 1.0f;
             else titleAsk(103);
         } else if (ask == 107) {
             if (yes) t.action = 2, t.stage = 8, t.ask = 108, t.doneAt = uiClock + 2.0f; // ("Load complete." a second, then the fade)
@@ -9089,10 +9114,13 @@ int main(int argc, char** argv) {
         if (v.titleMenu.stage != 0 || !v.titleMenu.action) return true;
         const int act = v.titleMenu.action;
         v.titleMenu.action = 0;
+        v.game = cr2::GameState(); // (Cr3UtilResetWork)
+        v.playSeconds = 0;
         v.newGame();
-        const bool ok = act == 1 ? v.loadField(fieldName, at, binary, data, callEntry)
-                                 : v.continueSave(binary, data, act == 2 ? "save1.txt" : "cont.txt");
-        SDL_Log("title: %s", act == 1 ? "a new game" : act == 2 ? "the save loaded" : "the continue data");
+        if (act == 4) v.carryOver();
+        const bool ok = act == 1 || act == 4 ? v.loadField(fieldName, at, binary, data, callEntry)
+                                             : v.continueSave(binary, data, act == 2 ? "save1.txt" : "cont.txt");
+        SDL_Log("title: %s", act == 1 ? "a new game" : act == 4 ? "a new game with the clear data" : act == 2 ? "the save loaded" : "the continue data");
         return ok;
     };
     if (v.playMode) { // --time: the game played that long first (60 frames a second), then --walk

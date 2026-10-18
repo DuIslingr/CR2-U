@@ -304,6 +304,15 @@ always, at one of the party. Conquest (two actions): its seals, one each, then D
 Left out: the monster pair (BtlWork +0x51 11: monsters 2 and 3 together, command 410), and command
 363 taking motion `bg01` and shot 6 once a monster chooses it.
 
+The battle's start (BtlCalc::StartState, at StepBattleIn's set-up, BtlWork +0x14): 1 the party
+first - BtlRand(100) under 10 with the party's mean level less the monsters' levels added up under
+-4, 20 under 5, else 30, +10 with skill (4, 1) on either -, else 2 the monsters' assault -
+BtlRand(100) under 10, none with skill (4, 2) on either -, else 0; drawn always, then 0 in a
+coupling with its +4 flag (BtlWork +0x18: the scripted ones). The announcement after 0.5 s: 1
+"%s's team attacks first!" (91 "%s attacks first!" for a party of one; the leader's name), 2
+"Monster assault!!". In the first turn (BtlActionCtrl::CheckActionable) 1 leaves the monsters out,
+2 the party - no menus (StepBattleIn's step 2). Coupling 5 over 200 seeds: 28 first, 17 assaults.
+
 The turn order (OrderPoint): Speed (a pair: the two's mean), +10000 a command with special 7,
 +5000 with the skill "ahead", -5000 for kind 4. SetActionOrder sorts each against those after it, swapped for a
 greater: equals may change places.

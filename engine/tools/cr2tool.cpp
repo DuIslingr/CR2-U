@@ -958,6 +958,7 @@ int fight(const char* path, int coupling, bool pair, uint32_t seed, const int pa
     if (script.own() && scriptOk) scriptOk = script.call("Battle_Start") && script.runToEnd();
     if (!scriptOk) std::printf("script: %s\n", script.error().c_str());
     std::printf("script: %s%s; charge %d\n", script.name().c_str(), script.own() ? " (its own)" : "", r.charge());
+    if (r.advantage()) std::printf("start: %s\n", r.advantage() == 1 ? "the party strikes first" : "the monsters' assault");
     for (int i = 0; i < 5; ++i) {
         const cr2::Fighter& f = r.fighter(i);
         if (!f.present) continue;

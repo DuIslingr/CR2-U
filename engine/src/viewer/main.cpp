@@ -3015,9 +3015,19 @@ struct Viewer {
         switch (battleStep) {
         case BattleStep::Opening: // (the opening over: StepBattleIn's Battle_Start)
             battleStep = BattleStep::TurnBegin;
+            // (StepBattleIn: the start's announcement - the leader's name; 91 a party of one)
+            if (battleRules->advantage() == 1) {
+                const bool solo = !battleRules->fighter(1).present;
+                announceQueue.push_back(formatAnnounce(announce(solo ? 91 : 1), {battleRules->fighter(0).name}));
+            } else if (battleRules->advantage() == 2) {
+                announceQueue.push_back(announce(2));
+            }
+            if (battleRules->advantage()) SDL_Log("start: %s", battleRules->advantage() == 1 ? "the party first" : "the monsters' assault");
             battleRules->script("Battle_Start");
             break;
         case BattleStep::TurnBegin:
+            // (StepBattleIn: the start's announcement up its time before the first turn)
+            if (battleRules->turn() == 0 && battleRules->advantage() && (!announceQueue.empty() || battleClock - announceAt < 1.5f)) break;
             battleRules->beginTurn();
             battleStep = BattleStep::TurnChoose;
             // (BtlCommand::StepInit: an armoured monster standing - its +0x48 bit 0 - the first time,
@@ -3031,6 +3041,12 @@ struct Viewer {
             }
             break;
         case BattleStep::TurnChoose: { // the party attacking the first monster standing
+            if (battleRules->turn() == 0 && battleRules->advantage() == 2) { // (the assault: no menus - StepBattleIn's step 2)
+                battleRules->chooseTurn(false, {});
+                SDL_Log("turn 1 (the monsters' assault)");
+                battleStep = BattleStep::ActionStart;
+                break;
+            }
             if (manualCommands && !battleRules->scriptTurnReserved()) {
                 if (!choosing) {
                     commandInput.begin(*battleRules, battleData.coupling(battle.coupling) && battleData.coupling(battle.coupling)->flag,

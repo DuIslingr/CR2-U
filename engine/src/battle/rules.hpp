@@ -227,6 +227,10 @@ public:
     // a failure leaves the party's turn to the monsters
     bool tryEscape();
     bool escaped() const { return escaped_; }
+    // The battle's start (BtlCalc::StartState, BtlWork +0x14): 1 the party strikes first - the
+    // monsters out of the first turn -, 2 the monsters ("Monster assault!!": the party out of it),
+    // 0 neither; none in a coupling with its flag
+    int advantage() const { return advantage_; }
     // Cr3Battle.Exit: the battle over, on as the game goes (BtlMain::NextMode 0: no game over);
     // exitTimer() the time a timer gives it first (-1: none)
     void exitBattle() { exited_ = true; }
@@ -276,7 +280,8 @@ private:
     bool debuffed(int f) const; // (CheckMinusStatus: 0..2, 13..20)
     int hpRate(int f) const { const Fighter& x = fighters_[size_t(f)]; return x.maxHp > 0 ? x.hp * 100 / x.maxHp : 0; }
     void levels(int& mean, int& monsters) const; // (BtlWork +0x24 / +0x26)
-    int advantage_ = 0; // (BtlWork +0x14: 1 the party strikes first, 2 the monsters - none yet)
+    int advantage_ = 0; // (BtlWork +0x14)
+    int startState();
     int orderPoint(int f, int partner) const;
     void act(const Order& o, std::vector<Event>& out);
     int liveTarget(int side, int wanted);

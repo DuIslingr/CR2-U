@@ -106,7 +106,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       --battle 222`; `cr2tool battle all`: all 340 encounters' figures, places and cameras there)
 - [x] Battles' rules, the core: the fighters' stats (a new game's party as the reference video
       shows it), hits, criticals, damage, the monsters' choices, the turn order - `cr2tool fight
-      222 pair` plays a battle by them (break gauge, sopia, items, states: not yet)
+      222 pair` plays a battle by them; the monsters' choices as BtlEnemy makes them (their 17
+      conditions, 15 target rules, actions a turn, the commands first or last in it), the
+      battle's start - the party striking first, the monsters' assault - by StartState
 - [x] Battles playing (`cr2view --battle 222 --fight pair`): each turn's actions as the game moves
       them - the command's motion, to the target's attack place and back on BtlMotionTable's
       times, the damage motion at the hit, the downed gone; the game's cameras - the opening's

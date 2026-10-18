@@ -224,7 +224,23 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
         for (const auto& e : kMap)
             if (s & e.flag) f.skills[e.group + 1] |= 1u << e.bit;
     }
+    advantage_ = startState(); // (StepBattleIn: drawn, then none where the coupling's flag says)
+    if (cp && cp->flag) advantage_ = 0;
     return true;
+}
+
+// BtlCalc::StartState: the party first by the levels apart (its mean less the monsters' added up:
+// under -4 10 in 100, under 5 20, else 30; +10 with skill 4, 1 on either), else the monsters by 10
+// in 100 unless either has skill 4, 2
+int BattleRules::startState() {
+    int mean = 0, sum = 0;
+    levels(mean, sum);
+    const int d = mean - sum;
+    int chance = d < -4 ? 10 : d < 5 ? 20 : 30;
+    if (fighters_[0].has(4, 1) || fighters_[1].has(4, 1)) chance += 10;
+    if (rand_.below(100) < chance) return 1;
+    if (rand_.below(100) > 9) return 0;
+    return fighters_[0].has(4, 2) || fighters_[1].has(4, 2) ? 0 : 2;
 }
 
 int BattleRules::outcome() const {
@@ -894,6 +910,7 @@ void BattleRules::chooseTurn(bool pair, const std::vector<Order>& party) {
     for (int f = 0; f < 5; ++f) current_[f] = 0;
     for (const Order& o : given) {
         if (o.actor < 0 || o.actor > 1 || !fighters_[size_t(o.actor)].alive) continue;
+        if (turn_ == 0 && advantage_ == 2) continue; // (CheckActionable: the monsters' assault)
         if (canPair && o.actor == 1) continue; // (a pair acts once)
         const BattleData::Command* c = data_.command(o.command);
         if (c && c->kind == 2) fighters_[size_t(o.actor)].guarding = true;

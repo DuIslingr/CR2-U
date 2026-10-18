@@ -517,7 +517,8 @@ story flag it waits for, 0 none, +0x24 its tutorial), those whose flag is on (Se
 listed in InstructionsListMenu (0x62, a ScrollListMenu - the skill lists' scrlBtn rows, Back, no
 help, no tab); one picked plays title.nut's manual_disp - flag 1122 on (the pictures through
 InterfaceWindow), InterfaceWindow.GetTutorialID the pick, its Tutorial_NNN - then the list again;
-Back the options again. Not yet: the sound the volumes set.
+Back the options again. The Sound Effects bar let go (TouchSimpleRelease: Cr3OptionData::SetSE)
+plays SE 0xc6 at its new volume.
 
 The tutorials (`script\battle_tuto.nut`, title.nut: the same functions): Tutorial_NNN loads up to
 three pictures (LoadTexture: Cr3FieldTutorial, or InterfaceWindow.SetTutorialTexture in the manual

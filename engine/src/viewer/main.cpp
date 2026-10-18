@@ -2876,11 +2876,17 @@ struct Viewer {
             if (k == SDLK_BACKSPACE || k == SDLK_RETURN || k == SDLK_KP_ENTER) optionsOpen = false;
             else if (k == SDLK_UP) optionFocus = (optionFocus + 2) % 3;
             else if (k == SDLK_DOWN) optionFocus = (optionFocus + 1) % 3;
-            else if (k == SDLK_LEFT) optionVolume[optionFocus] = std::max(optionVolume[optionFocus] - 5, 0);
-            else if (k == SDLK_RIGHT) optionVolume[optionFocus] = std::min(optionVolume[optionFocus] + 5, 100);
+            else if (k == SDLK_LEFT) optionVolume[optionFocus] = std::max(optionVolume[optionFocus] - 5, 0), volumeSet(optionFocus);
+            else if (k == SDLK_RIGHT) optionVolume[optionFocus] = std::min(optionVolume[optionFocus] + 5, 100), volumeSet(optionFocus);
             return true;
         }
         return false;
+    }
+    // a volume set (OptionMenu::TouchSimpleRelease: the effects' bar let go - Cr3OptionData::SetSE -
+    // plays SE 0xc6 at it)
+    void volumeSet(int bar) {
+        audio.setVolumes(float(optionVolume[0]) / 100.0f, float(optionVolume[1]) / 100.0f, float(optionVolume[2]) / 100.0f);
+        if (bar == 1) audio.playSe(0xc6, false);
     }
     // a tap on the options' window, its question or the manual (`x`: across, UI units): false -
     // none of them open
@@ -2902,6 +2908,7 @@ struct Viewer {
                 const float a = std::min(r.x0, r.x1), b = std::max(r.x0, r.x1);
                 optionVolume[r.id - 2000] = std::clamp(int(std::lround((x - a) / std::max(b - a, 1e-4f) * 20.0f)) * 5, 0, 100);
                 optionFocus = r.id - 2000;
+                volumeSet(optionFocus);
             }
             return true;
         }

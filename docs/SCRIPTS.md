@@ -380,6 +380,32 @@ camera); `cr2tool fieldscript <archive> <executable>`: from a new game's state `
 its end on all 217 maps in all three releases (an event's pages turning by themselves), and
 every event box's function is in its dungeon's script.
 
+## The title screen
+
+GameTitleMenu (InterfaceMain's interface 0x3b; `cr2view --title`): `logoinc` (Square Enix, Media.Vision)
+from black (Cr3FadeIn 0, 20 frames), then `title` - its animators 1 title_in, 2 title_wait, 3
+title_loop (looping), 4 title_out (PartsBase::ChangeAnime's index, in r1) - over `title_bg`
+(stretched by aspect / 1.5 past 3:2) with `divabtn_io`, from white (Cr3FadeIn 1), BGM 1; title_in,
+then title_loop until a tap anywhere (SE 0xb4: "Please Touch"), then title_wait brings the buttons
+in - CreateCircleButton at the figure's `call_circleBtn_frNN` (08 Start, 24 Scenarios -
+ScenarioFlowMenu, interface 0x73 -, 20 Options - 0x3d), following their joints and drawn short of x
+0.67 (title_wait moves them from 0.672 to 0.32; GameTitleMenu::Draw) - and title.nut's `title` runs
+(Versionup_Title's flags; Tutorial_Credit with flag 5). CloseTitleMenu: title_in backwards
+(PartsBase +0x5c bit 2: the animator stepped back). Start: with the continue data (cont.dat; CR2-U's
+cont.txt) Tutorial_ContData (flag 85), its calendar and "You have autosave data ... Resume ...?"
+(104: yes - Cr3Util_Load_ContData, the game); else the panel: newlyBtn_io's buttons (10 Load, 09 New
+Game - only New Game without game data: CreateCircleButton's skip), with game data bossIcon_io
+(GEO_boss1 .. 3 by its flags 1, 3, 4) and the calendar (calendar_io: id00 sign 21, id01 the month's
+glyph - hud_dotnum's 1 .. 12 -, id03 the day, id04 glyph 166, id08 the year, id10 the hour, id11
+glyph 163, id13 the minute, zero-padded, set 90; id14 sign 22, id16 / id19 the play time's hours and
+minutes - cr3_savedata +0x10, frames of 0.05 s, / 72000, / 1200, 99 at most), and btlBack (100: back,
+CreateTitleMenu(true) - title_wait again). New Game: "Begin a new game?" (101; with the game data's
+flag 5 102, "... with your clear data?", a no then 103, the plain one - the carrying over left out);
+Load: menuLoad_io's "Load", "Load data?" (107), "Load complete." (108) a second; each then
+Cr3FadeOut(0, 20) and the game. The panel and its buttons go while a question is asked. The links
+(the sites, Game Center) are left out. CR2-U's save keeps the calendar's time (`saved`) and play time
+(`playtime`).
+
 ## The game's flow
 
 What comes after a field's or an event's script is what it reserved, in `cr3_script_work`

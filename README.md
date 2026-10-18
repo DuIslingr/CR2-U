@@ -139,7 +139,7 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       the dungeon's map; saving (CR2-U's own save file - `cr2view --continue` resumes it) and the
       encounters' switch (a tap, Tab / C and the keys, or `--input "camp items u37 enter yes back"`,
       `map`, `save yes` in the field). The party's stats now as Cr3UpdatePlayerData makes them (the
-      sopia's percents, the seeds, past level 20). Not yet: the game's own save format, the pub
+      sopia's percents, the seeds, past level 20). Not yet: the game's own save format
 - [x] States: poison, blind, seal, the action cancelled, raised and lowered parameters, time
       stopped, the seals, the special ones - taken by the game's chances and resistances, their
       effects (counters, the magic barrier turning a sopia back, revived once, strength doubled,
@@ -172,6 +172,10 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] The few scenes' own steps: Darwin's third awakening's space (d1154b in the map's place) and
       offsets (BtlActionTable's, `tools/gen_darwin_table.py`), Lesica's partner hidden, Rule's
       paired camera
+- [x] The title screen (`cr2view --title`): the logos, the title and its "Please Touch", its buttons
+      (Start, Scenarios, Options), the continue data's question, the panel - New Game, Load, the
+      boss icons, the save's calendar (its date, the play time) -, the questions, then the game;
+      the options' Title Screen and a script's ReserveTitle back to it
 - [x] The map's own effect: eff284 with it in battles 221, 271, 272, 317
 - [ ] The screen breaking away (BtlPostEffectGlassFragment) before Darwin's third awakening's
       space

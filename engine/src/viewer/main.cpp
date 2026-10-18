@@ -56,6 +56,7 @@
 #include <deque>
 #include <map>
 #include <set>
+#include <sstream>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -315,6 +316,7 @@ struct Viewer {
     // A tap (Return, a click): the vista's page; the field's - its event's page, else the nearest
     // balloon's function (FldMain::CheckTouchEventExec_Tap, EventExecute), the leader turned to it
     void tap() {
+        if (titleMenu.stage) return titleTap();
         if (battleMode) {
             if (skipScene()) return;
             if (battleScript && battleScript->running()) battleScript->events().advance();
@@ -1553,7 +1555,7 @@ struct Viewer {
     }
 
     void drawScene(int w, int h) {
-        if (credits.stage) return; // (the staff roll: its figure over black, in the interface's pass)
+        if (credits.stage || titleMenu.stage) return; // (the staff roll: its figure over black, in the interface's pass; the title)
         if (battleMode) {
             drawBattle(w, h);
             return;
@@ -1967,6 +1969,8 @@ struct Viewer {
         audio.setVolumes(float(optionVolume[0]) / 100.0f, float(optionVolume[1]) / 100.0f, float(optionVolume[2]) / 100.0f);
         audio.update(dt);
         if (credits.stage) return updateCredits(dt);
+        if (titleMenu.stage) return updateTitle(dt);
+        if (playMode && (fieldMode || eventMode || battleMode) && !paused) playSeconds += dt; // (the save's play time)
         if (battleMode) {
             battleClock += dt;
             if (!inputScript.empty() && inputScript.front() == "skip" && scene.active && battleClock > scene.start + 1.0f) { // (--input: a tap on the scene)
@@ -2011,6 +2015,7 @@ struct Viewer {
 
     // The events' runtime the screen shows: the vista's, else the field's
     cr2::EventRuntime* activeEvents() {
+        if (titleMenu.stage && titleEvents) return titleEvents.get(); // (title.nut's)
         if ((battleMode || campOpen) && manualStage == 2 && manualEvents) return manualEvents.get(); // (the manual's tutorial)
         if (battleMode && battleScript) return &battleScript->events(); // (the battle's talks)
         return eventMode ? event.get() : script ? &script->events() : nullptr;
@@ -5092,13 +5097,13 @@ struct Viewer {
         // (DotNumParamPackTable: tools/gen_dotnum_table.py -> gfx/dotnumtable.inc)
         for (const auto& g : kDotNum) dotNumGlyphs.push_back({g[0], g[1], g[2], g[3], g[4], g[5]});
     }
-    void drawDigits(int value, int set, int digits, float x, float y, const Mat4& proj, float alpha = 1, float scale = 1) {
+    void drawDigits(int value, int set, int digits, float x, float y, const Mat4& proj, float alpha = 1, float scale = 1, bool zeros = false) {
         loadDotNum();
         cr2::Texture* tex = texture("hud_dotnum", false);
         if (!tex) return;
         int place = 1;
         for (int i = 0; i < digits; ++i, place *= 10) {
-            const int d = (i == 0 && value == 0) ? 0 : value < place ? -1 : value / place % 10; // (Cr3UtilGetNumberDisplay)
+            const int d = (i == 0 && value == 0) || zeros ? value / place % 10 : value < place ? -1 : value / place % 10; // (Cr3UtilGetNumberDisplay; SetZeroNumber: padded)
             if (d < 0) continue;
             if (size_t(set + d) >= dotNumGlyphs.size()) continue;
             const Glyph& g = dotNumGlyphs[size_t(set + d)];
@@ -5111,6 +5116,375 @@ struct Viewer {
             dev->drawQuad(*tex, v, proj.data(), rgba);
         }
     }
+    // The title screen (`--title`, the options' Title Screen; GameTitleMenu - InterfaceMain's
+    // interface 0x3b): logoInc over a fade from black, then `title` (its animators: 1 title_in, 2
+    // title_wait, 3 title_loop looping, 4 title_out) coming in over title_bg - stretched past 3:2 -
+    // and divaBtn_io from white, BGM 1, looping until a tap anywhere (SE 0xb4): title_wait brings
+    // its buttons in (the circle buttons at call_circleBtn_frNN, drawn short of x 0.67 - 08 Start,
+    // 20 Options, 24 Scenarios, ScenarioFlowMenu), and title.nut's `title` runs. Leaving them
+    // (CloseTitleMenu) title_in runs backwards (PartsBase +0x5c 2). Start: the continue data (cont.txt) - its calendar and
+    // "Resume ...?" (104) - else the panel (newlyBtn_io: 09 New Game, 10 Load - only New Game
+    // without a save; bossIcon_io's three by the save's flags 1, 3, 4; the save's calendar; btlBack
+    // 100 back): New Game "Begin a new game?" (101; with the save's flag 5 102, then 103 for a plain
+    // one), Load (menuLoad_io) "Load data?" (107), then "Load complete." (108) a second; then the
+    // game. (The site and Game Center links left out.)
+    struct TitleMenu {
+        int stage = 0; // 0 off; 1 the logo, 2 the title in, 3 waiting for a tap, 4 its buttons
+                       // coming in, 5 its buttons, 6 the panel, 7 a question, 8 "Load complete.", 9
+                       // options / scenarios, 10 leaving the buttons (then `next`)
+        int next = 0;
+        float start = 0;
+        int ask = 0;        // the question's announcement
+        bool tapped = false;
+        int action = 0;     // for the main loop: 1 a new game, 2 the save, 3 the continue data
+        float doneAt = 0;
+    } titleMenu;
+    std::unique_ptr<cr2::EventRuntime> titleEvents; // (title.nut's calls)
+    double playSeconds = 0;                         // (the save's play time, cr3_savedata +0x10 / 20)
+    static bool saveExists(const char* file) {
+        std::FILE* f = std::fopen(savePath(file).c_str(), "rb");
+        if (f) std::fclose(f);
+        return f != nullptr;
+    }
+    // a save's flags, its time and play time (its extras)
+    struct SaveInfo {
+        bool exists = false;
+        std::set<int> flags;
+        std::time_t saved = 0;
+        long playFrames = 0;
+    };
+    static SaveInfo saveInfo(const char* file) {
+        SaveInfo s;
+        std::FILE* f = std::fopen(savePath(file).c_str(), "rb");
+        if (!f) return s;
+        std::string text;
+        char buf[4096];
+        for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) text.append(buf, n);
+        std::fclose(f);
+        s.exists = true;
+        size_t p = 0;
+        while (p < text.size()) {
+            const size_t e = text.find('\n', p);
+            const std::string line = text.substr(p, e == std::string::npos ? std::string::npos : e - p);
+            p = e == std::string::npos ? text.size() : e + 1;
+            if (line.compare(0, 6, "flags ") == 0) {
+                std::istringstream in(line.substr(6));
+                for (int v; in >> v;) s.flags.insert(v);
+            } else if (line.compare(0, 6, "saved ") == 0) {
+                s.saved = std::time_t(std::atoll(line.c_str() + 6));
+            } else if (line.compare(0, 9, "playtime ") == 0) {
+                s.playFrames = std::atol(line.c_str() + 9);
+            }
+        }
+        return s;
+    }
+    void startTitle() {
+        titleMenu = TitleMenu();
+        titleMenu.stage = 1, titleMenu.start = uiClock;
+        titleEvents.reset();
+        fieldMode = eventMode = false;
+        audio.stopBgm(10);
+        SDL_Log("title: the logo");
+    }
+    bool titleRunning() const { return titleEvents && titleEvents->running(); }
+    void titleScript(const char* function) {
+        titleEvents = std::make_unique<cr2::EventRuntime>(archive, game);
+        titleEvents->language = optionLanguage, titleEvents->autoPage = pageSeconds;
+        if (!titleEvents->start("title", function)) {
+            SDL_Log("title: %s - %s", function, titleEvents->error().c_str());
+            titleEvents.reset();
+        }
+    }
+    float titleAnimLength(const std::string& fig, const std::string& anim) {
+        UiFig& u = uiFig(fig);
+        poseUi(u, anim, 0);
+        return u.fig.animLoaded ? u.fig.anim.duration() : 0.0f;
+    }
+    void titleAsk(int id) {
+        titleMenu.ask = id, titleMenu.stage = 7, titleMenu.start = uiClock;
+        SDL_Log("title: ask %d", id);
+    }
+    void titleButton(int id) {
+        TitleMenu& t = titleMenu;
+        if (t.stage == 5) {
+            if (id == 8) { // (Start: CloseTitleMenu - then the continue data, else the panel)
+                audio.playSe(0xb4, false);
+                t.stage = 10, t.start = uiClock, t.next = 6;
+            } else if (id == 20) { // (Options: interface 0x3d)
+                audio.playSe(0xb4, false);
+                campOpen = true, optionsOpen = true, optionsStart = campStart = uiClock;
+                t.stage = 9;
+            } else if (id == 24) { // (Scenarios: ScenarioFlowMenu, interface 0x73 - the save's progress, Cr3Util_Load_GameData)
+                audio.playSe(0xb4, false);
+                if (std::FILE* f = std::fopen(savePath("save1.txt").c_str(), "rb")) {
+                    std::string text;
+                    char buf[4096];
+                    for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) text.append(buf, n);
+                    std::fclose(f);
+                    game.load(text);
+                }
+                campOpen = true, campLink = 201, campStart = uiClock, scenarioScroll = 0;
+                t.stage = 9;
+            }
+        } else if (t.stage == 6) {
+            if (id == 9) { // (New Game: NewGame's question - with clear data 102)
+                audio.playSe(0xb4, false);
+                titleAsk(saveInfo("save1.txt").flags.count(5) ? 102 : 101);
+            } else if (id == 10 && saveExists("save1.txt")) {
+                audio.playSe(0xb4, false);
+                titleAsk(107);
+            } else if (id == 100) { // (CreateTitleMenu(true): the buttons back)
+                audio.playSe(0xb5, false);
+                t.stage = 4, t.start = uiClock;
+            }
+        }
+    }
+    void titleAnswer(bool yes) {
+        TitleMenu& t = titleMenu;
+        if (t.stage != 7) return;
+        const int ask = t.ask;
+        audio.playSe(yes ? 0xbe : 0xb4, false);
+        if (ask == 104) { // (the autosave: resumed, else the panel)
+            if (yes) t.action = 3, t.stage = 8, t.ask = 0, t.doneAt = uiClock + 1.0f;
+            else t.stage = 6, t.start = uiClock;
+        } else if (ask == 101 || ask == 103) {
+            if (yes) t.action = 1, t.stage = 8, t.ask = 0, t.doneAt = uiClock + 1.0f;
+            else t.stage = 6, t.start = uiClock;
+        } else if (ask == 102) { // (with the clear data: its carrying over left out - a new game)
+            if (yes) t.action = 1, t.stage = 8, t.ask = 0, t.doneAt = uiClock + 1.0f;
+            else titleAsk(103);
+        } else if (ask == 107) {
+            if (yes) t.action = 2, t.stage = 8, t.ask = 108, t.doneAt = uiClock + 2.0f; // ("Load complete." a second, then the fade)
+            else t.stage = 6, t.start = uiClock;
+        }
+    }
+    void titleToken(const std::string& tok) {
+        SDL_Log("title: input %s (stage %d)", tok.c_str(), titleMenu.stage);
+        static const std::pair<const char*, int> kButtons[] = {{"start", 8}, {"options", 20}, {"scenarios", 24}, {"new", 9}, {"load", 10}, {"back", 100}};
+        if (titleMenu.stage == 3) titleMenu.tapped = true;
+        else if (titleMenu.stage == 7 && (tok == "yes" || tok == "no")) titleAnswer(tok == "yes");
+        else if (titleMenu.stage == 9) {
+            if (tok == "back") optionsOpen = false, campLink = 0;
+        } else
+            for (const auto& [name, id] : kButtons)
+                if (tok == name) titleButton(id);
+    }
+    void titleTap() {
+        if (titleRunning()) return titleEvents->advance();
+        if (titleMenu.stage == 3) titleMenu.tapped = true;
+    }
+    bool titleClick(float fx, float fy) {
+        if (titleRunning()) return titleEvents->advance(), true;
+        if (titleMenu.stage == 9) return fieldClick(fx, fy);
+        if (titleMenu.stage == 3) return titleMenu.tapped = true;
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+        for (const TapRect& r : tapRects)
+            if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
+                if (titleMenu.stage == 7 && (r.id == 7401 || r.id == 7402)) titleAnswer(r.id == 7401);
+                else titleButton(r.id);
+                return true;
+            }
+        return true;
+    }
+    void updateTitle(float dt) {
+        TitleMenu& t = titleMenu;
+        if (titleEvents) {
+            static float clock = 0;
+            clock = std::min(clock + dt, 0.25f);
+            for (; clock >= cr2::EventRuntime::kTick; clock -= cr2::EventRuntime::kTick)
+                if (!titleEvents->tick()) SDL_Log("title: %s", titleEvents->error().c_str());
+            if (!titleEvents->running()) titleEvents.reset();
+        }
+        if (!inputScript.empty() && uiClock >= inputNext && !titleRunning() && (t.stage == 3 || (t.stage >= 5 && t.stage <= 9)) && t.stage != 8 &&
+            !(t.stage == 7 && uiClock - t.start < 0.5f)) {
+            titleToken(inputScript.front());
+            inputScript.pop_front();
+            inputNext = uiClock + 0.6f;
+        }
+        const float age = uiClock - t.start;
+        if (t.stage == 1 && age >= std::max(titleAnimLength("logoinc", "logoinc"), 0.1f)) {
+            t.stage = 2, t.start = uiClock;
+            audio.playBgm(1, 10);
+            SDL_Log("title: the title");
+        } else if (t.stage == 2 && age >= titleAnimLength("title", "title_in")) {
+            t.stage = 3, t.start = uiClock;
+        } else if (t.stage == 3 && t.tapped) {
+            t.tapped = false;
+            audio.playSe(0xb4, false);
+            t.stage = 4, t.start = uiClock, t.next = 1;
+        } else if (t.stage == 4 && age >= titleAnimLength("title", "title_wait")) {
+            if (t.next == 1) titleScript("title"); // (the first time: Versionup_Title; Tutorial_Credit with flag 5)
+            t.stage = 5, t.start = uiClock, t.next = 0;
+            SDL_Log("title: the menu");
+        } else if (t.stage == 10 && age >= titleAnimLength("title", "title_in")) {
+            t.start = uiClock;
+            if (saveExists("cont.txt")) { // (the continue data: Tutorial_ContData, its calendar and question)
+                titleScript("Tutorial_ContData");
+                titleAsk(104);
+            } else {
+                t.stage = 6;
+            }
+        } else if (t.stage == 8 && uiClock >= t.doneAt) {
+            t.stage = 0; // (the main loop takes it from here: action)
+            audio.stopBgm(10);
+        } else if (t.stage == 9 && !optionsOpen && !optionsAsk && campLink != 201 && manualStage == 0) {
+            campOpen = false; // (the window closed: the title's buttons again)
+            t.stage = 5, t.start = uiClock;
+        }
+        if (t.stage == 9) updateManual(dt);
+        if (titleEvents == nullptr && t.stage == 0 && t.action == 0) {}
+    }
+    void drawCalendar(const SaveInfo& s, const Mat4& view, const Mat4& proj, float t) {
+        UiFig& cal = uiFig("calendar_io");
+        cal.fig.place = cr2::Mat34();
+        poseUi(cal, "calendar_io", t);
+        drawFigure(cal.fig, view.data());
+        std::tm lt{};
+#ifdef _WIN32
+        localtime_s(&lt, &s.saved);
+#else
+        localtime_r(&s.saved, &lt);
+#endif
+        const long hours = std::min(s.playFrames / 72000, 99L), minutes = std::min(s.playFrames / 1200 - hours * 60, 99L);
+        float x, y;
+        auto num = [&](const char* j, int v, int digits) { if (uiJoint(cal, j, x, y)) drawDigits(v, 90, digits, x, y, proj, 1, 1, true); };
+        auto glyph = [&](const char* j, int g) { if (uiJoint(cal, j, x, y)) drawDigits(0, g, 1, x, y, proj); };
+        if (uiJoint(cal, "call_dotNum_id00", x, y)) drawStatusSign(21, x, y, proj);
+        glyph("call_dotNum_id01", lt.tm_mon + 1); // (the month's own: glyphs 1 .. 12)
+        num("call_dotNum_id03", lt.tm_mday, 2);
+        glyph("call_dotNum_id04", 166);
+        num("call_dotNum_id08", lt.tm_year + 1900, 4);
+        num("call_dotNum_id10", lt.tm_hour, 2);
+        glyph("call_dotNum_id11", 163);
+        num("call_dotNum_id13", lt.tm_min, 2);
+        if (uiJoint(cal, "call_dotNum_id14", x, y)) drawStatusSign(22, x, y, proj);
+        num("call_dotNum_id16", int(hours), 2);
+        glyph("call_dotNum_id17", 163);
+        num("call_dotNum_id19", int(minutes), 2);
+    }
+    // PartsBase::SetVisible(joint, v): the joint's meshes (their palette's first)
+    static void showJoint(UiFig& u, const std::string& joint, bool visible) {
+        for (ViewMesh& vm : u.fig.meshes) {
+            const uint32_t j = vm.source.palette.empty() ? ~0u : vm.source.palette[0];
+            if (j < u.joints.size() && u.joints[j] == joint) vm.hidden = !visible;
+        }
+    }
+    static void hideJoint(UiFig& u, const std::string& joint) { showJoint(u, joint, false); }
+    void drawTitleButtons(UiFig& parts, const Mat4& view, int skip) {
+        for (const std::string& j : parts.joints) {
+            if (j.compare(0, 18, "call_circleBtn_fr") != 0 && j.compare(0, 17, "call_circleBtn_fr") != 0) continue;
+            if (skip > 0) { // (CreateCircleButton: the first `skip` left out)
+                --skip;
+                continue;
+            }
+            const int id = std::atoi(j.c_str() + 17);
+            float x, y;
+            if (!uiJoint(parts, j, x, y) || x >= 0.67f) continue; // (GameTitleMenu::Draw: those short of 0.67)
+            UiFig& c = uiFig("circlebtn_fr");
+            c.fig.place = cr2::Mat34();
+            c.fig.place.m[3] = x, c.fig.place.m[7] = y;
+            poseUi(c, "circlebtn_fr", float(id) / 20.0f);
+            drawFigure(c.fig, view.data());
+            float sx, sy, ex, ey;
+            if (uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) tapRects.push_back({id, sx, sy, ex, ey});
+        }
+    }
+    void drawTitle() {
+        TitleMenu& tm = titleMenu;
+        tapRects.clear();
+        Mat4 camera = cr2::mat4Identity();
+        camera[14] = -0.881f;
+        const Mat4 proj = uiProjection(screenW, screenH), view = cr2::mat4Multiply(proj, camera);
+        cr2::SceneLighting l;
+        dev->setLighting(l);
+        const float age = uiClock - tm.start;
+        static const float kScreen[24] = {-1, -1, 0, 0, 1, -1, 1, 0, 1, 1, 1, 1, -1, -1, 0, 0, 1, 1, 1, 1, -1, 1, 0, 1};
+        const Mat4 id = cr2::mat4Identity();
+        if (tm.stage == 1) { // (logoInc, from black over 20 frames)
+            UiFig& logo = uiFig("logoinc");
+            logo.fig.place = cr2::Mat34();
+            poseUi(logo, "logoinc", age);
+            drawFigure(logo.fig, view.data());
+            const float a = std::max(0.0f, 1.0f - age / (20 * cr2::EventRuntime::kTick));
+            const float rgba[4] = {0, 0, 0, a};
+            if (a > 0 && white.id) dev->drawQuad(white, kScreen, id.data(), rgba);
+            return;
+        }
+        if (tm.stage == 9) return drawCamp(view, proj, screenW, screenH);
+        // the title over its painting (title_bg: wider than 3:2 stretched)
+        const float aspect = float(screenW) / float(std::max(screenH, 1));
+        UiFig& bg = uiFig("title_bg");
+        bg.fig.place = cr2::Mat34();
+        if (aspect >= 1.5f) bg.fig.place.m[0] = aspect / 1.5f;
+        poseUi(bg, "title_bg", uiClock, true);
+        drawFigure(bg.fig, view.data());
+        UiFig& ti = uiFig("title");
+        ti.fig.place = cr2::Mat34();
+        for (ViewMesh& vm : ti.fig.meshes) vm.hidden = false;
+        if (tm.stage == 2) poseUi(ti, "title_in", age);
+        else if (tm.stage == 3) poseUi(ti, "title_loop", age, true);
+        else if (tm.stage == 4) poseUi(ti, "title_wait", age);
+        else if (tm.stage == 5) poseUi(ti, "title_wait", 1e6f); // (its end: the buttons' places)
+        else poseUi(ti, "title_in", std::max(titleAnimLength("title", "title_in") - (tm.stage == 10 ? age : 1e6f), 0.0f)); // (backwards: gone)
+        hideJoint(ti, "GEO_titleBG");
+        drawFigure(ti.fig, view.data());
+        if (tm.stage == 2 || tm.stage == 3) {
+            UiFig& diva = uiFig("divabtn_io");
+            diva.fig.place = cr2::Mat34();
+            poseUi(diva, "divabtn_io", uiClock - (tm.stage == 2 ? tm.start : 0), true);
+            drawFigure(diva.fig, view.data());
+        }
+        if (tm.stage == 2) { // (from white over 20 frames)
+            const float a = std::max(0.0f, 1.0f - age / (20 * cr2::EventRuntime::kTick));
+            const float rgba[4] = {1, 1, 1, a};
+            if (a > 0 && white.id) dev->drawQuad(white, kScreen, id.data(), rgba);
+        }
+        if (titleRunning()) return;
+        if (tm.stage == 5 || tm.stage == 4) drawTitleButtons(ti, view, 0); // (CircleButtonPose: following their joints)
+        const bool panel = tm.stage == 6; // (a question: the panel gone - DeleteCircleButton, its parts, the calendar)
+        if (tm.stage == 7 && tm.ask == 107) { // (Load: CreateLoadTitle - menu with menuLoad_io)
+            UiFig& mn = uiFig("menu");
+            mn.fig.place = cr2::Mat34();
+            poseUi(mn, "menuload_io", age);
+            drawFigure(mn.fig, view.data());
+        }
+        if (panel) {
+            const SaveInfo s = saveInfo("save1.txt");
+            if (s.exists) {
+                UiFig& bi = uiFig("bossicon_io");
+                bi.fig.place = cr2::Mat34();
+                poseUi(bi, "bossicon_io", age);
+                for (const char* j : {"GEO_boss1", "GEO_boss2", "GEO_boss3"}) showJoint(bi, j, true);
+                if (!s.flags.count(1)) showJoint(bi, "GEO_boss1", false);
+                if (!s.flags.count(3)) showJoint(bi, "GEO_boss2", false);
+                if (!s.flags.count(4)) showJoint(bi, "GEO_boss3", false);
+                drawFigure(bi.fig, view.data());
+                drawCalendar(s, view, proj, age);
+            }
+            UiFig& nb = uiFig("newlybtn_io");
+            nb.fig.place = cr2::Mat34();
+            poseUi(nb, "newlybtn_io", age);
+            drawFigure(nb.fig, view.data());
+            if (tm.stage == 6) drawTitleButtons(nb, view, s.exists ? 0 : 1);
+            UiFig& bk = uiFig("btlback");
+            bk.fig.place = cr2::Mat34();
+            poseUi(bk, "btlback_in", age);
+            drawFigure(bk.fig, view.data());
+            float sx, sy, ex, ey;
+            if (tm.stage == 6 && uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
+        } else if (tm.stage == 7 && tm.ask == 104) {
+            drawCalendar(saveInfo("cont.txt"), view, proj, age);
+        }
+        if (tm.stage == 7) drawAsk(announce(tm.ask), age, view, screenW, screenH, 7401, 7402);
+        else if (tm.stage == 8 && tm.ask == 108 && uiClock < tm.doneAt - 1.0f) drawAsk(announce(108), age, view, screenW, screenH, 0, 0);
+        if (tm.stage == 8) { // (Cr3FadeOut(0, 20): to black over the last second)
+            const float a = std::clamp(1.0f - (tm.doneAt - uiClock), 0.0f, 1.0f);
+            const float rgba[4] = {0, 0, 0, a};
+            if (a > 0 && white.id) dev->drawQuad(white, kScreen, id.data(), rgba);
+        }
+    }
+
     // BattleWindowEnchant2::SetSign: sign n (EnchantParamPackTable's u0, v0, u1, v1 of
     // hud_enchant) a 0.048-unit square at (x, y) - 1 white "i" (no element), 2 red, 3 cyan, 4 green
     // (the elements 1..3), 25 the clock, the others the states
@@ -6118,6 +6492,8 @@ struct Viewer {
         char pos[96];
         std::snprintf(pos, sizeof pos, "%.6f %.6f %.6f %.6f", player[0], player[1], player[2], heading);
         extra["map"] = field.info().name, extra["place"] = pos;
+        extra["saved"] = std::to_string(static_cast<long long>(std::time(nullptr))); // (the calendar's: cr3_savedata's time)
+        extra["playtime"] = std::to_string(static_cast<long>(playSeconds * 20.0)); // (+0x10: frames of 0.05 s)
         extra["options"] = std::to_string(optionLanguage) + " " + std::to_string(optionQuality) + " " + std::to_string(optionVolume[0]) + " " +
                            std::to_string(optionVolume[1]) + " " + std::to_string(optionVolume[2]);
         const std::string text = game.save(extra), path = savePath(file);
@@ -6128,9 +6504,10 @@ struct Viewer {
         return ok;
     }
     // --continue: the save read back, its map entered there
-    bool continueSave(const std::string& binary, const std::string& dataPath) {
+    bool continueSave(const std::string& binary, const std::string& dataPath, const char* only = nullptr) {
         std::string text;
         for (const char* file : {"cont.txt", "save1.txt"}) { // (the continue data, else the save)
+            if (only && std::strcmp(file, only) != 0) continue;
             if (std::FILE* f = std::fopen(savePath(file).c_str(), "rb")) {
                 char buf[4096];
                 for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) text.append(buf, n);
@@ -6148,6 +6525,7 @@ struct Viewer {
         if (std::sscanf(extra["options"].c_str(), "%d %d %d %d %d", &o[0], &o[1], &o[2], &o[3], &o[4]) == 5)
             optionLanguage = o[0], optionQuality = o[1], optionVolume[0] = o[2], optionVolume[1] = o[3], optionVolume[2] = o[4];
         const std::string map = extra["map"].empty() ? "d1020" : extra["map"];
+        playSeconds = double(std::atol(extra["playtime"].c_str())) / 20.0;
         if (!loadField(map, "", binary, dataPath)) return false;
         float p[4];
         if (std::sscanf(extra["place"].c_str(), "%f %f %f %f", &p[0], &p[1], &p[2], &p[3]) == 4) {
@@ -8311,7 +8689,8 @@ struct Viewer {
     void drawEventUi() {
         dev->clearDepth(); // (the scene's depths behind all of it: a near camera's ground too)
         if (credits.stage) return drawCredits();
-        drawIntro(screenW, screenH);
+        if (titleMenu.stage) drawTitle();
+        else drawIntro(screenW, screenH);
         drawBalloons(screenW, screenH);
         drawKeyMark(screenW, screenH);
         drawFieldUi(screenW, screenH);
@@ -8452,6 +8831,7 @@ int main(int argc, char** argv) {
     std::string inputArg; // (--input: the commands chosen, as tokens)
     std::vector<int> flagsArg;
     bool continueSave = false;
+    bool titleScreen = false; // (--title: the game's title screen first)
     std::vector<std::pair<int, int>> itemArg;
     std::vector<std::tuple<int, int, int>> equipArg;
     int chargeArg = -1, difficultyArg = -1, membersArg[2] = {-2, -2}, ozArg = -1;
@@ -8529,6 +8909,7 @@ int main(int argc, char** argv) {
         else if (a == "--credits" && next) creditsArg = std::atoi(argv[++i]); // (the staff roll n at once: --play's, for tests)
         else if (a == "--play") playFrom = next && next[0] != '-' ? (++i, next) : "d1020";
         else if (a == "--continue") continueSave = true; // (--play from the save the field's Save wrote)
+        else if (a == "--title") titleScreen = true;
         else if (a == "--resolution" && next) std::sscanf(next, "%dx%d", &resW, &resH), ++i;
         else if (a == "--upscaler" && next) upscaler = next, ++i;
         else if (a == "--quality" && next) quality = next, ++i;
@@ -8628,6 +9009,7 @@ int main(int argc, char** argv) {
     v.upscale = upscale;
     dev->setUpscaler(upscale);
     v.shaders = std::make_unique<cr2::ShaderLibrary>(v.archive);
+    if (titleScreen && playFrom.empty()) playFrom = "d1020"; // (the title's New Game: --play's start)
     if (!playFrom.empty()) fieldName = playFrom, v.playMode = true;
     v.scriptSaves = (!playFrom.empty() || continueSave) && capture.empty();
     if (continueSave && fieldName.empty()) fieldName = "d1020"; // (the windows and fonts set up for the field)
@@ -8664,7 +9046,10 @@ int main(int argc, char** argv) {
         if (n >= 0 && n < int(std::size(v.game.globalWork))) v.game.globalWork[size_t(n)] = val;
     }
     if (membersArg[0] > -2) v.game.party[0] = membersArg[0], v.game.party[1] = membersArg[1];
-    if (continueSave) {
+    if (titleScreen) {
+        v.playMode = true;
+        v.startTitle();
+    } else if (continueSave) {
         v.playMode = true;
         if (!v.continueSave(binary, data)) return 1;
     } else if (!fieldName.empty()) {
@@ -8700,8 +9085,22 @@ int main(int argc, char** argv) {
         v.loadAnim(v.fig, size_t(it - v.fig.anims.begin()));
     }
     if (v.fieldMode && animName.empty()) v.playMotion(v.fig, "fn01");
+    // the title's choice: a new game, the save, the continue data (false: it failed)
+    auto takeTitle = [&]() {
+        if (v.titleMenu.stage != 0 || !v.titleMenu.action) return true;
+        const int act = v.titleMenu.action;
+        v.titleMenu.action = 0;
+        v.newGame();
+        const bool ok = act == 1 ? v.loadField(fieldName, at, binary, data, callEntry)
+                                 : v.continueSave(binary, data, act == 2 ? "save1.txt" : "cont.txt");
+        SDL_Log("title: %s", act == 1 ? "a new game" : act == 2 ? "the save loaded" : "the continue data");
+        return ok;
+    };
     if (v.playMode) { // --time: the game played that long first (60 frames a second), then --walk
-        for (float t = 0; t + 0.5f / 60.0f < startTime; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, 0, 0, false);
+        for (float t = 0; t + 0.5f / 60.0f < startTime; t += 1.0f / 60.0f) {
+            v.advance(1.0f / 60.0f, 0, 0, false);
+            if (!takeTitle()) return 1;
+        }
         for (float t = 0; t < walkSeconds; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, walkX, walkY, true);
         if (tapAfter) v.tap(); // (--tap: then a tap, before --run)
         for (float t = 0; t < runSeconds; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, 0, 0, false); // (--run: on after the walk)
@@ -8884,6 +9283,7 @@ int main(int argc, char** argv) {
                     float fx, fy;
                     screenFraction(e.button.x, e.button.y, fx, fy);
                     if (v.overFast(fx, fy)) v.fastHeld = true; // (the fast-forward button: held, not a tap)
+                    else if (v.titleMenu.stage) v.titleClick(fx, fy);
                     else if (v.yesNoClick(fx, fy)) {}
                     else if (v.battleMode && v.choosing) v.battleClick(fx, fy);
                     else if (v.fieldMode && !v.eventMode && v.keyLock.stage != 0) v.unlockPointer(fx, fy, 0);
@@ -8924,9 +9324,13 @@ int main(int argc, char** argv) {
                     v.zoom = std::clamp(v.zoom * (e.wheel.y > 0 ? 0.9f : 1.1f), 0.05f, 20.0f);
                 }
             }
-            if (v.toTitle) { // (the options' Title Screen, yes: --play from a new game again; else the end - no title screen here)
+            if (!takeTitle()) running = false;
+            if (v.toTitle) { // (the options' Title Screen, yes: the title screen; --play without it from a new game again; else the end)
                 v.toTitle = false;
-                if (v.playMode) {
+                if (titleScreen) {
+                    v.leaveBattle();
+                    v.startTitle();
+                } else if (v.playMode) {
                     v.leaveBattle();
                     v.newGame();
                     if (!v.loadField(fieldName, at, binary, data, callEntry)) running = false;

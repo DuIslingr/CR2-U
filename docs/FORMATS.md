@@ -68,7 +68,7 @@ Counts are the iPad's (Android / Vita alike unless noted).
 | `shad` | 466 | a GLSL ES shader's source (`shaders\<4 hex words>_fp` / `_vp`) |
 | `phys` | 419 | a Bullet scene: the fields' walls and floors, their triggers (below); magic `SYHP` ("PHYS" as a u32) |
 | `nut` | 139 | a compiled Squirrel script: `0xfafa`, `SQIR`, char / int / float sizes, then `PART`-separated parts; the source name (`D12_01_0206_evt.i`) and `main` |
-| `emta` | 3 | effect parameters |
+| `emta` | 3 (Android 2) | `eff267`, `eff280`, the two figures with a particle system (below): u32 1, f32 2, then a short list of values. Nothing in the game reads them (no `emta` in the library, as text or as a word) |
 
 ## Textures (`img`)
 
@@ -223,6 +223,41 @@ hold their field camera (`CAM_d0101c`: 13.2 degrees, 12 units away), with the li
 
 Names are hashed with `MVGL::GenerateNameHash`: CRC-32 (reflected, 0xedb88320) from 0xffffffff,
 not inverted at the end.
+
+### Particles (never run)
+
+The header's +0xe (u16) counts particle systems and +0x44 is the offset of their data. Only
+`eff267` and `eff280` have one, a single system each and no meshes.
+
+A system is 0xbc bytes, then its curves:
+
+- u32 n, then n × (t, r, g, b): the colour.
+- u32 n, then n × (t, alpha).
+- u32 n, then n × (t, x size).
+- u32 n, then n × (t, y size).
+- u16 n, u16 stride (20), then n × 8 bytes: its vertex layout (position 3 floats, colour 4
+  bytes, texture coordinates).
+
+Each curve is linear between its keys (Particle::GetValue). Fields of the 0xbc bytes, as
+`MVGL::Draw::Particle` reads them:
+
+- +0x08: the emission's spread, 0 over a sphere, 1 about one axis, else none.
+- +0x0c / +0x10: the distance from the emitter.
+- +0x14..+0x1c: the direction.
+- +0x24 / +0x28: the speed and its random part.
+- +0x2c: the most alive at once.
+- +0x34 / +0x38: the life and its random part.
+- +0x40 / +0x44 and +0x48 / +0x4c: the size and its range.
+- +0x58..+0x60: an acceleration added to the velocity each update.
+- +0x68: the damping the velocity is multiplied by.
+- +0x78: the sprite's twist (1 none).
+
+The game never runs any of it. Figure::SetupParticles, Figure::RenderParticle and
+Particle::Update are in the library, but nothing calls them: no branch, no pointer and no
+relocation names them. MVGL's other effect system, Spark, needs a `.sprk` beside the figure, and
+there is none. So `eff267` draws nothing. It is commands 252 .. 255's shot, the breaths of the
+dragons and Wyverns, between their launch effect `eff266` and the mark `eff268`. `eff280` is only
+named in the battle effect table. The port draws neither.
 
 ## Fields
 

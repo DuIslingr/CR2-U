@@ -24,7 +24,9 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
 - [x] Textures: every `img` decodes in all three releases (PVRTC, ETC1, DXT1 / DXT3, the plain
       formats; `cr2tool images`), and agrees across them
 - [x] Meshes (`geom`): the layout, vertex formats and materials; all parse (`tools/geom.py`)
-- [ ] The rest: `name`, `phys`, `emta`
+- [x] The rest: `name` (the figures' joint and material names), `phys` (the fields' Bullet
+      scenes), `emta` and the figures' particle systems (`eff267`, `eff280`: never read or run
+      by the game - docs/FORMATS.md)
 - [x] The scripts surveyed (docs/SCRIPTS.md): Squirrel 2.2.4 bytecode, all 139 parsed and
       disassembled (`tools/nut.py`); the native API they call - 23 tables, 222 functions - read
       out of the Android library (`tools/sq_bindings.py`)

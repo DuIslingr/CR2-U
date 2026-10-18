@@ -2337,6 +2337,7 @@ struct Viewer {
         bool loop = true;
         bool hidden = false;
         bool hold = false;        // (its motion kept at its end: the downed's bd02)
+        bool guarding = false;    // (Defend chosen: its stance bg01 - motion 4 - till the turn's end)
         float hideAt = -1;        // (SetAlphaAnimationAutoHide: gone once its fading is over)
         bool sceneHidden = false; // (a special scene's: SetVisibility)
         Ramp alpha, colour;       // (its opacity, its brightness: SetAlpha, SetColor)
@@ -2415,6 +2416,7 @@ struct Viewer {
         battleEffects.clear();
         for (SceneEffect& fx : commandEffects) unload(*fx.fig);
         commandEffects.clear();
+        for (int f = 0; f < 2; ++f) dropGuardObject(f);
         for (auto& [id, fx] : scene.effects)
             if (fx.fig) unload(*fx.fig);
         scene = SceneState(), sceneCameras.clear(), battleFade = BattleFade(), battleMapHidden = false, mapColour = Ramp();
@@ -2516,7 +2518,7 @@ struct Viewer {
     }
     float motionLength(BattleUnit& u, const std::string& suffix) { return useMotion(u, suffix) ? u.fig.anim.duration() : 0.0f; }
     void playMotion(BattleUnit& u, const std::string& suffix, float at, const std::string& then = "bb01") {
-        u.motion = suffix, u.then = then, u.motionStart = at, u.loop = false, u.hold = false;
+        u.motion = suffix, u.then = u.guarding && then == "bb01" ? "bg01" : then, u.motionStart = at, u.loop = false, u.hold = false;
     }
 
     void poseBattle() {
@@ -3113,6 +3115,7 @@ struct Viewer {
                     inputScript.pop_front();
                     inputNext = battleClock + 0.4f;
                 }
+                updateGuards();
                 if (commandInput.menu() == cr2::CommandInput::Menu::Target) { // (the focused target's camera)
                     const std::vector<int> c = menuChoices();
                     if (!c.empty()) setTargetCamera(c[size_t(std::clamp(menuCursor, 0, int(c.size()) - 1))]);
@@ -3158,6 +3161,7 @@ struct Viewer {
         case BattleStep::ActionStart:
             if (!battleRules->actionsLeft()) {
                 battleRules->endTurn();
+                for (int f = 0; f < 2; ++f) setGuard(f, false), dropGuardObject(f); // (BtlTurnEnd: DeleteAll; the stance back)
                 if (announceQueue.empty()) commandShown.clear(); // (BtlTurnEnd: ClearAnnounce)
                 for (const cr2::BattleRules::Event& e : battleRules->turnEndEvents()) { // (BtlTurnEnd: the poison's, the pools')
                     if (e.damage > 0) showNumber(e.target, e.damage, 20);
@@ -3191,6 +3195,8 @@ struct Viewer {
         }
         case BattleStep::ActionEnd:
             showIndex = showActions.size();
+            for (int f = 0; f < 2; ++f) // (back in its stance: ShowAttachObject - made again)
+                if (guardReturn[f] && guardObjects[f] && battleRules->fighter(f).alive) guardObject(f, 0.5f), guardReturn[f] = false;
             if (stepAnalyze()) break;
             if (stepDeaths()) break;
             if (!regenPending.empty() || battleScriptRunning()) { // (a revival, a tutorial first)
@@ -3417,6 +3423,7 @@ struct Viewer {
             if (!u || d.stage >= 9) continue;
             if (d.stage == 0) {
                 d.start = battleClock;
+                if (d.f < 2) dropGuardObject(d.f), u->guarding = false; // (ActionDeadStart: its guard gone)
                 if (d.f < 2 || (m && m->deathMotion)) {
                     playMotion(*u, "bd02", battleClock), u->hold = true;
                     d.stage = d.f < 2 ? 3 : 1;
@@ -3615,6 +3622,15 @@ struct Viewer {
             if (c) SDL_Log("  %s: %s - not done", battleRules->fighter(a.actor).name.c_str(), c->name[1].c_str());
             return;
         }
+        if (a.actor >= 0 && a.actor < 2 && a.command == cr2::CommandInput::kDefend && !(!a.hits.empty() && a.hits.front().counter)) {
+            for (Move& m : showMoves) m = Move();
+            showHitAt = 0, showCamera2 = -1;
+            showEnd = battleClock; // (action_table_empty: no announcement, no motion - the stance since the choice)
+            SDL_Log("  %s: Defend (its stance)", battleRules->fighter(a.actor).name.c_str());
+            return;
+        }
+        for (int f : {a.actor, a.partner}) // (SetAttackMotion: HideAttachObject)
+            if (f >= 0 && f < 2 && guardObjects[f]) guardObjects[f]->shown = false, guardReturn[f] = true;
         if (c && startScene(a, *c)) { // (an awakening's, an advent's, a monster's special: its scene)
             SDL_Log("  %s: %s", battleRules->fighter(a.actor).name.c_str(), c->name[1].c_str());
             return;
@@ -3907,6 +3923,7 @@ struct Viewer {
         float from[3] = {0, 0, 0}, to[3] = {0, 0, 0}, flight = 0;
         cr2::Mat34 place;
         Ramp alpha;
+        bool kept = false; // (BtlEffectCtrl's type 4: no control - there till deleted)
     };
     struct SceneState {
         bool active = false, advent = false;
@@ -4338,7 +4355,7 @@ struct Viewer {
     // an effect's frame (BtlEffect::Pose): false once it is over (unloaded)
     bool drawEffect(SceneEffect& fx, const cr2::Mat34& camera, const Mat4& vp) {
         const float t = battleClock - fx.start;
-        const bool over = fx.end >= 0 ? battleClock >= fx.end : !fx.set->loop && fx.fig->animLoaded && t > fx.fig->anim.duration();
+        const bool over = fx.kept ? false : fx.end >= 0 ? battleClock >= fx.end : !fx.set->loop && fx.fig->animLoaded && t > fx.fig->anim.duration();
         if (over) {
             unload(*fx.fig);
             return false;
@@ -4380,6 +4397,57 @@ struct Viewer {
         for (size_t k = 0; k < commandEffects.size();)
             if (drawEffect(commandEffects[k], camera, vp)) ++k;
             else commandEffects.erase(commandEffects.begin() + std::ptrdiff_t(k));
+        for (auto& g : guardObjects)
+            if (g) drawEffect(*g, camera, vp);
+    }
+    // Defend (BtlCommand::StepGuard, as it's chosen): the one choosing - a pair's both - to its
+    // stance bg01 (motion 4), and character 6 its guard, obj303, on its model 0.2 s on
+    // (BtlEffectCtrl::CreateEffect(.., 4, hidden, 0.2): ControlWait, then no control - kept); its
+    // choice taken back (StepCommandLoop), the stance and obj303 gone. The guard hidden as it
+    // attacks (HideAttachObject: a counter), made again 0.5 s after (ShowAttachObject); gone as it
+    // falls (ActionDeadStart) and with the turn's effects (BtlTurnEnd: DeleteAll)
+    std::unique_ptr<SceneEffect> guardObjects[2];
+    bool guardReturn[2] = {false, false};
+    void guardObject(int f, float delay) {
+        guardObjects[f].reset();
+        SceneEffect fx;
+        fx.fig = std::make_unique<ViewFigure>();
+        std::string err;
+        const float keep = time;
+        if (!loadFigure("obj303.geom", *fx.fig, &err)) {
+            SDL_Log("obj303: %s", err.c_str());
+            return;
+        }
+        const auto it = std::find(fx.fig->anims.begin(), fx.fig->anims.end(), std::string("obj303.anim"));
+        if (it != fx.fig->anims.end()) loadAnim(*fx.fig, size_t(it - fx.fig->anims.begin()));
+        time = keep;
+        fx.set = &cr2::effectSetting("obj303");
+        fx.fig->absolute = fx.set->kind != 2;
+        fx.start = battleClock + delay, fx.follows = f, fx.kept = true;
+        guardObjects[f] = std::make_unique<SceneEffect>(std::move(fx));
+    }
+    void dropGuardObject(int f) {
+        if (guardObjects[f]) unload(*guardObjects[f]->fig);
+        guardObjects[f].reset(), guardReturn[f] = false;
+    }
+    void setGuard(int f, bool on) {
+        BattleUnit* u = unitOf(f);
+        if (!u || u->guarding == on) return;
+        u->guarding = on;
+        u->motion = on ? "bg01" : "bb01", u->then = u->motion, u->loop = true, u->hold = false, u->motionStart = battleClock;
+        if (on && battleRules->fighter(f).id == 6) guardObject(f, 0.2f);
+        else if (!on) dropGuardObject(f);
+    }
+    // the stances by the orders chosen so far
+    void updateGuards() {
+        bool want[2] = {false, false};
+        for (const cr2::BattleRules::Order& o : commandInput.orders())
+            if (o.command == cr2::CommandInput::kDefend && o.actor >= 0 && o.actor < 2) {
+                want[o.actor] = true;
+                if (commandInput.pairTurn()) want[0] = want[1] = true;
+            }
+        for (int f = 0; f < 2; ++f)
+            if (battleRules->fighter(f).alive) setGuard(f, want[f]);
     }
     // A command's effect (BtlActionCtrl::CreateEffect - its settings' delay - and
     // SetCommandEffectPosition with 9): on the fighter `target` - following its model at the

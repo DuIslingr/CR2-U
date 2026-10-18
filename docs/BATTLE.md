@@ -541,6 +541,22 @@ added up, +0x20, over their count) less the monsters' levels added up (+0x26, Bt
 through CheckResult's -50 / -1 / 49 to 40, 50, 60 or 70 in 100 (BtlRand). Away: the battle over
 after 2 s (cr3_battle_post[8] 1); else, after 1 s, the turn the monsters' alone.
 
+Defend (command 5; BtlCommand::StepGuard, as it is chosen):
+
+- The one choosing takes motion 4 (`bg01`) as its stance; in a pair, both do.
+- Character 6 (Li Hua, `j006`) also gets her guard, obj303, on her model. It is the solo one
+  choosing, or the pair's second with `cr3_common_data[2]` 6. BtlEffectCtrl::CreateEffect is
+  called with (4, hidden, 0.2): ControlWait shows it after 0.2 s, and type 4 then leaves it alone,
+  so it stays until deleted (fighter +0xfc4).
+- Taking the choice back (StepCommandLoop) puts motion 0 back and deletes obj303.
+- In the turn, Defend's action is action_table_empty (ActionCommonInit, Standby, CommandStart,
+  CommandEnd, Done, End): no announcement and no motion. The stance has been held since the
+  choice, along with state 4 from StepNextCheck.
+- Attacking (SetAttackMotion: a counter) hides obj303 (HideAttachObject). Back in the stance
+  (SetNextMotion 4), ShowAttachObject deletes it and makes it again 0.5 s on.
+- Falling (ActionDeadStart) deletes it. BtlTurnEnd's DeleteAll takes it with the turn's other
+  effects.
+
 ## States (BtlStateManager)
 
 Each fighter keeps a list of states (BtlWork +0x2384 + 8 x its number): an id, the turns left (0:

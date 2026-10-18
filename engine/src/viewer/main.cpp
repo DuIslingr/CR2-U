@@ -1312,7 +1312,7 @@ struct Viewer {
                     ex.grind = std::max(ex.grind - 1, 0);
         if (startBattle(id, party, area)) {
             startFight(2, 1u + uint32_t(battlesSkipped));
-            fightingInFlow = true;
+            fightingInFlow = true, randomBattle = true;
         }
     }
 
@@ -2391,6 +2391,7 @@ struct Viewer {
                 (result.stage == 0 || result.stage >= 4) && gameOver.stage == 0) {
                 fightingInFlow = false;
                 SDL_Log("play: battle %s", battleRules->exited() ? "ended by its script" : battleRules->escaped() ? "escaped" : battleRules->outcome() == 1 ? "won" : "lost (back to the field: no game over yet in the story)");
+                if (ex.on && battleRules->outcome() == 1 && !randomBattle && ex.grind > 0) ex.grind = 0, exploreLog("  (won: no more fighting first)");
                 ++battlesSkipped;
                 afterBattle();
             }
@@ -2521,7 +2522,7 @@ struct Viewer {
             n.battle = -1, n.battleParty[0] = n.battleParty[1] = -1;
             if (startBattle(id, party)) {
                 startFight(2, 1u + uint32_t(battlesSkipped));
-                fightingInFlow = true;
+                fightingInFlow = true, randomBattle = false;
                 return;
             }
         }
@@ -2530,7 +2531,7 @@ struct Viewer {
         ++battlesSkipped;
         afterBattle();
     }
-    bool fightingInFlow = false;
+    bool fightingInFlow = false, randomBattle = false; // (randomBattle: an encounter's)
     // the battle dropped (the options' Title Screen)
     void leaveBattle() {
         battleMode = fightingInFlow = choosing = optionsOpen = optionsAsk = false;
@@ -8892,7 +8893,6 @@ struct Viewer {
         // last there, in this state
         std::map<std::string, std::map<std::string, std::string>> links;
         std::map<std::string, bool> leftOn;
-        uint64_t rawKey = 0; // (all the flags')
         std::set<uint64_t> retried;
         std::set<std::pair<uint64_t, std::string>> blocked; // ("map:target" given up on in this state: not picked again) // (the story's states where everything was tried again)
         std::map<std::string, std::set<std::string>> cutOff; // (a map's ways out the leader didn't reach when last there)
@@ -8906,7 +8906,9 @@ struct Viewer {
         cr2::Vec3 outFrom{};
         double nextTap = 0;
         std::string changedFor; // (the target the leader was last changed for)
-        int grind = 0; // (after a game over: encounters to fight, walking about, before the story again)
+        int grind = 0;
+        std::string lostOn; // (the map whose battle was lost: not where the fighting first is done)
+        std::string doorTried; double doorTriedAt = -1; // (a door taken: "map:door", when - if the map stays, it doesn't lead now) // (after a game over: encounters to fight, walking about, before the story again)
         std::map<std::string, int> mysticTurn; // (a mystic's uses: the next spot in turn)
         bool done = false;
     } ex;
@@ -8975,11 +8977,14 @@ struct Viewer {
     bool explorePick() {
         if (!script || !controller) return false;
         exploreGrid();
+        if (ex.grind > 0 && SDL_getenv("CR2_EXPLORE_DEBUG"))
+            SDL_Log("EXDEBUG grind %d: encounters %d, on %d, switch %d", ex.grind, int(encount.on), int(game.encountEnable), int(!encountersOff));
         if (ex.grind > 0 && encount.on && game.encountEnable && !(game.flag(0x40e) && game.flag(0x40f) && encountersOff)) { // (walking about where encounters are, till they're fought)
             cr2::Vec3 at;
-            for (int k = 0; k < 8; ++k) {
+            for (int k = 0; k < 24; ++k) {
                 std::vector<cr2::Vec3> path;
-                if (!ex.grid.reachedCell(size_t(encountRandom()), at) || std::hypot(at[0] - controller->position()[0], at[2] - controller->position()[2]) < 0.4f ||
+                if (!ex.grid.reachedCell(size_t(encountRandom()), at) || std::hypot(at[0] - controller->position()[0], at[2] - controller->position()[2]) < (k < 12 ? 0.4f : 0.15f) ||
+                    !field.exitTouched({at[0], at[1] + controller->radius + 0.01f, at[2]}, controller->radius * 3).empty() || // (not into an exit)
                     !explorePath("wander", at, 0.02f, path))
                     continue;
                 ex.target = "wander", ex.goal = at, ex.reach = 0.03f, ex.tapIt = false, ex.reachPlan = 0.02f, ex.path = path, ex.at = 0;
@@ -8987,6 +8992,19 @@ struct Viewer {
                 return true;
             }
         }
+        if (ex.grind > 0) // (nowhere here to walk about: to a map with encounters - not the lost battle's - to fight there)
+            for (const std::string& e : field.exitNames()) {
+                cr2::Vec3 lo, hi;
+                std::vector<cr2::Vec3> path;
+                if (e.substr(0, 5) == ex.lostOn || !encountTable.at(e.substr(0, 5)) || !field.exitBounds(e, lo, hi)) continue;
+                const cr2::Vec3 at{(lo[0] + hi[0]) * 0.5f, lo[1], (lo[2] + hi[2]) * 0.5f};
+                const float reach = std::max(hi[0] - lo[0], hi[2] - lo[2]) * 0.5f;
+                if (!explorePath("exit:" + e, at, reach, path)) continue;
+                ex.target = "exit:" + e, ex.goal = at, ex.reach = 0, ex.tapIt = false, ex.reachPlan = reach, ex.path = path, ex.at = 0;
+                ex.since = ex.clock, ex.stillSince = ex.clock, ex.last = controller->position();
+                exploreLog("  -> " + ex.target + " (to fight first)");
+                return true;
+            }
         struct Cand {
             int rank; // 0 an event box, 1 a thing to tap, 2 a treasure box; 3 .. 5 a way out (new, been, back)
             float length = 0;
@@ -9097,7 +9115,8 @@ struct Viewer {
                 bool wanted = false, newHere = false;
                 for (const Cand& k : c) {
                     const bool fresh = k.rank >= 3 && leadsTo.count(k.name) && !ex.everVisited.count(leadsTo[k.name].substr(0, 5));
-                    if (!k.reachable && (k.rank <= 2 || fresh)) wanted = true;
+                    const bool unseen = k.rank >= 3 && leadsTo.count(k.name) && !ex.leftOn.count(leadsTo[k.name]); // (not been there in this state)
+                    if (!k.reachable && (k.rank <= 2 || fresh || unseen)) wanted = true;
                     if (k.reachable && fresh) newHere = true;
                 }
                 if (wanted && !newHere) return take(*best);
@@ -9123,7 +9142,8 @@ struct Viewer {
                 const auto lo = ex.leftOn.find(m);
                 if (pass == 0 ? !ex.everVisited.count(m.substr(0, 5)) : (lo == ex.leftOn.end() || lo->second)) { go = step[m]; break; }
                 for (const auto& [way, to] : ex.links[m])
-                    if (!step.count(to) && to != node && !ex.cutOff[m].count(way)) step[to] = step[m], queue.push_back(to);
+                    if (!step.count(to) && to != node && !ex.cutOff[m].count(way) && !ex.blocked.count({ex.key, m.substr(0, 5) + ":" + way}))
+                        step[to] = step[m], queue.push_back(to);
             }
         }
         if (debug) {
@@ -9161,6 +9181,7 @@ struct Viewer {
             exploreShotDue = ex.clock + (ph.rfind("battle", 0) == 0 ? 3.0 : ph.rfind("field", 0) == 0 ? 0.6 : 1.5);
             exploreShotName = ph;
             if (fieldMode && !eventMode) exploreOutfit(); // (what was found, worn)
+            if (fieldMode && !eventMode && ex.visitedMap != field.info().name) ex.doorTried.clear();
             if (fieldMode && !eventMode && ex.visitedMap != field.info().name) { // (another map - not back from a battle or a vista)
                 if (ex.lastBox.empty() && !ex.target.empty() && ex.target.rfind("exit:", 0) != 0 && ex.target.rfind("sprint:", 0) != 0)
                     ex.lastBox = ex.visitedMap + ":" + ex.target; // (its event ran at once, the map changed before the touch was seen)
@@ -9175,13 +9196,6 @@ struct Viewer {
             } else if (fieldMode && !eventMode) {
                 ex.target.clear(); // (back on the same map: the way planned again)
             }
-        }
-        uint64_t raw = 1469598103934665603ull; // (every flag: a puzzle's passing ones too)
-        for (size_t i = 0; i < game.flags.size(); ++i)
-            if (game.flags[i]) raw = (raw ^ (i + 1)) * 1099511628211ull;
-        if (raw != ex.rawKey) { // (something moved - a piece of a puzzle: the maps' state seen again, a retry allowed)
-            ex.rawKey = raw;
-            ex.leftOn.clear(), ex.cutOff.clear(), ex.visited.clear(), ex.retried.erase(ex.key);
         }
         const uint64_t k = storyKey();
         if (k != ex.key) {
@@ -9235,13 +9249,13 @@ struct Viewer {
         }
         if (battleMode && gameOver.stage == 1 && battleClock - gameOver.start > 1.2f && ex.clock >= ex.nextTap) { // (lost: on)
             ex.nextTap = ex.clock + 1.0;
-            if (!gameOver.over) ex.grind += 5, ex.target.clear(), exploreLog("  lost (no game over yet): 5 encounters fought first");
+            if (!gameOver.over) ex.grind += 5, ex.target.clear(), ex.lostOn = returnMap, exploreLog("  lost (no game over yet): 5 encounters fought first");
             gameOver.tapped = true;
             return;
         }
         if (battleMode && gameOver.stage == 8 && ex.clock >= ex.nextTap) { // (a game over: tried again from the continue data - stronger first)
             ex.nextTap = ex.clock + 1.0;
-            ex.grind += 5, ex.target.clear();
+            ex.grind += 5, ex.target.clear(), ex.lostOn = returnMap;
             exploreLog("  game over: tried again, then 5 encounters fought first");
             return gameOverAnswer(true);
         }
@@ -9268,12 +9282,19 @@ struct Viewer {
             return;
         }
         if (!fieldTabShown()) return;
+        if (!ex.doorTried.empty() && ex.clock - ex.doorTriedAt > 3.0) { // (the door taken, the map the same: shut, in this state)
+            if (ex.doorTried.rfind(field.info().name + ":", 0) == 0) ex.blocked.insert({ex.key, ex.doorTried}), exploreLog("  (" + ex.doorTried + " leads nowhere now)");
+            ex.doorTried.clear();
+        }
         if (actionMark.gimmick >= 0 && actionMark.startedAt < 0 && ex.clock >= ex.nextTap) { // (a touch action offered)
             const std::string& name = field.gimmicks()[size_t(actionMark.gimmick)].name;
             const bool aimed = ex.target == name || ex.target == "sprint:" + name;
-            if (actionMark.able && (aimed || actionMark.kind != 1)) { // (a high jump only where the explorer meant to go over)
+            if (actionMark.able && (aimed || (actionMark.kind != 1 && actionMark.kind != 3 && !ex.tried.count({ex.key, name})))) { // (a high jump, a mystic only where meant; the rest passed over once)
+                if (!aimed) ex.tried.insert({ex.key, name});
                 ex.nextTap = ex.clock + 1.0;
                 exploreLog("  a touch action: " + name);
+                if (actionMark.kind != 1) // (a puzzle's piece moved - its flags may be passing ones: the maps seen again, a retry allowed)
+                    ex.leftOn.clear(), ex.cutOff.clear(), ex.visited.clear(), ex.retried.erase(ex.key);
                 if (aimed) {
                     if (actionMark.kind == 1) ex.sprintUsed[name] = ex.clock;
                     else if (actionMark.kind == 3) ++ex.taps[name];
@@ -9316,6 +9337,7 @@ struct Viewer {
             ex.tried.insert({ex.key, ex.target});
             ++ex.taps[ex.target];
             ex.lastBox = field.info().name + ":" + ex.target; // (a tap that leads off the map: a door too)
+            if (ex.doors.count(ex.lastBox)) ex.doorTried = ex.lastBox, ex.doorTriedAt = ex.clock;
             char work[64];
             std::snprintf(work, sizeof work, " (work %d %d %d %d)", game.globalWork[0], game.globalWork[1], game.globalWork[2], game.globalWork[3]);
             exploreLog("  tapped " + field.gimmicks()[size_t(nearestBalloon)].name + work);
@@ -9356,6 +9378,7 @@ struct Viewer {
                                     int(insideEvents.count(o.name)), int(script->running()));
                         }
                     ex.lastBox = field.info().name + ":" + g.name;
+                    if (ex.doors.count(ex.lastBox)) ex.doorTried = ex.lastBox, ex.doorTriedAt = ex.clock;
                     ex.tried.insert({ex.key, ex.target});
                     ex.target.clear();
                     return;

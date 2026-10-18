@@ -134,7 +134,7 @@ std::string GameState::save(const std::map<std::string, std::string>& extra) con
         if (flags[k]) o << ' ' << k;
     o << '\n';
     o << "party " << party[0] << ' ' << party[1] << '\n';
-    o << "active " << active << ' ' << int(changeEnable) << ' ' << int(tabEnable) << '\n';
+    o << "active " << active << ' ' << int(changeEnable) << ' ' << int(tabEnable) << ' ' << int(encountEnable) << '\n'; // (cr3_savedata +0x620: the encounters')
     for (int s = 0; s < 3; ++s) o << "pairs " << s << ' ' << partySets[s][0] << ' ' << partySets[s][1] << '\n';
     for (int id = 1; id < 300; ++id)
         if (itemCount[id]) o << "item " << id << ' ' << itemCount[id] << '\n';
@@ -182,9 +182,10 @@ bool GameState::load(const std::string& text, std::map<std::string, std::string>
         } else if (key == "party") {
             l >> party[0] >> party[1];
         } else if (key == "active") {
-            int e = 1, t = 1;
+            int e = 1, t = 1, n = 1;
             l >> active >> e >> t;
-            active = active == 1 ? 1 : 0, changeEnable = e != 0, tabEnable = t != 0;
+            if (!(l >> n)) n = 1; // (an older save's: on)
+            active = active == 1 ? 1 : 0, changeEnable = e != 0, tabEnable = t != 0, encountEnable = n != 0;
         } else if (key == "pairs") {
             int s = -1;
             if (l >> s && s >= 0 && s < 3) l >> partySets[s][0] >> partySets[s][1];

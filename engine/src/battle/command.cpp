@@ -26,7 +26,7 @@ std::vector<CommandInput::Shown> CommandInput::buttons() const {
         out.push_back({Solo, true});
         out.push_back({Pair, both && r.scriptSwitch(47)});
         out.push_back({Escape, !eventBattle_});
-        out.push_back({Options, true}); // (as the game shows it - its window not yet: a press does nothing)
+        out.push_back({Options, true}); // (its window the viewer's: press() takes it as nothing here)
     } else if (menu_ == Menu::Command) {
         // CheckCommandEnable: Attack switch 43 (not state 22), Sopia 44 (not 2 sealed or 23), Items
         // 45 (not 25), Defend 46 (not 24); Awake / Advent shown when one can be (+0x3e / +0x3f)

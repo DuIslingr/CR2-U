@@ -3525,15 +3525,12 @@ struct Viewer {
         result = BattleResultShow();
         result.stage = 1, result.start = battleClock;
         result.exp = battleRules->expGained(), result.sp = battleRules->spGained(), result.oz = battleRules->ozGained();
-        // CheckBonus: the party's states 38 / 39 / 40 double the EXP / SP / Oz; ExpUp / SpUp / OzUp
-        // (skill 3, 0 / 1 / 2) of either +20 in 100
-        for (int k = 0; k < 2; ++k) {
-            const cr2::Fighter& f = battleRules->fighter(k);
-            if (!f.present) continue;
-            if (f.hasState(38)) result.exp *= 2;
-            if (f.hasState(39)) result.sp *= 2;
-            if (f.hasState(40)) result.oz *= 2;
-        }
+        // CheckBonus: states 38 / 39 / 40 on either of the party double the EXP / SP / Oz (once,
+        // both or one); ExpUp / SpUp / OzUp (skill 3, 0 / 1 / 2) of either +20 in 100
+        auto either = [&](int st) { return battleRules->fighter(0).hasState(st) || battleRules->fighter(1).hasState(st); };
+        if (either(38)) result.exp *= 2;
+        if (either(39)) result.sp *= 2;
+        if (either(40)) result.oz *= 2;
         auto bonus = [&](int bit, int& v) {
             for (int k = 0; k < 2; ++k)
                 if (battleRules->fighter(k).present && battleRules->fighter(k).has(3, bit)) {

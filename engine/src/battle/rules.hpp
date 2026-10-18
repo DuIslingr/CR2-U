@@ -184,6 +184,10 @@ public:
     void setParamI(int id, int value);
     int charge() const { return charge_; }       // +0x28: the charge gauge, 0..300
     void setCharge(int c) { charge_ = std::clamp(c, 0, 300); } // (tests)
+    void setGauge(int g) { // (tests: at 4 / -4 a turn break comes)
+        gauge_ = std::clamp(g, -4, 4);
+        break_ = gauge_ == 4 || gauge_ == -4 ? 3 : 0;
+    }
     // a character's most HP, MP and its five parameters (Cr3UpdatePlayerData): its level's (its
     // record's growth), the items' for good (`seed`), the levels past 20's (Cr3UpdatePlayerBonusData:
     // 10 HP, 1 MP and 1 each a level), what its weapon, armour and accessory add, then the percent

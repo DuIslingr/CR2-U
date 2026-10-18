@@ -114,6 +114,11 @@ monsters'), and at the next turn's end it is over, the gauge back to 0. While it
 doesn't move, the breaking side's commands get +100 power (CommandY) and take half damage
 (Damage3; also its blocks, counters and auto-guard, BadStatus).
 
+As a turn break begins, BtlTurnEnd plays BtlSound::PlaySE 2, then 1 s on 3 for the party's or 4
+for the monsters' (CreatePlaySEJob). It opens BattleBreakEffectMenu (`turnBrk`, gold "BREAK!!")
+or EnemyBattleBreakEffectMenu (`turnBrkEnemy`, red), each played once. The viewer's `--gauge n`
+starts a fight with the gauge at n.
+
 ## The charge gauge
 
 BtlWork +0x28, 0..300 (Cr3Battle.Charge adds to it, at most 300). BtlActionCtrl::UpdateChargeGauge

@@ -2848,6 +2848,11 @@ struct Viewer {
     }
     int pendingBgm = 0;
     float pendingBgmAt = 0;
+    // a turn break beginning (BtlTurnEnd: the break due, +0x1f 3 -> 1 / 2): SE 2, then 1 s on 3 for
+    // the party's, 4 the monsters'; turnBrk / turnBrkEnemy (Battle / EnemyBattleBreakEffectMenu)
+    // played once over the HUD
+    int breakShown = 0;
+    float breakShownAt = 0;
     void battleTutorial(const char* function, int flag) {
         if (const cr2::BattleData::Coupling* cp = battleData.coupling(battle.coupling); cp && cp->flag) return; // (+0x18)
         if (!battleScript || !battleScriptOk || battleScript->own() || battleScriptRunning() || game.flag(flag)) return;
@@ -2986,6 +2991,7 @@ struct Viewer {
 
     std::vector<std::pair<int, int>> stateArg; // (--state fighter:state)
     int chargeArg = -1;                        // (--charge: the gauge to begin with)
+    int gaugeArg = 0;
     void startFight(int mode, uint32_t seed) {
         battleFight = mode;
         glassRng.seed(seed); // (the game's lrand48: seeded by the clock)
@@ -3015,6 +3021,7 @@ struct Viewer {
         for (const auto& [f, id] : stateArg) // (--state: one use of it, tests)
             if (f >= 0 && f < 5) battleRules->fighter(f).states.push_back({id, 0, 1});
         if (chargeArg >= 0) battleRules->setCharge(chargeArg); // (--charge, tests)
+        if (gaugeArg != 0) battleRules->setGauge(gaugeArg); // (--gauge, tests)
         battleRules->setSopiaOwned(game.sopiaOwned); // (the drops: a sopia not had yet)
         battleRules->script = [this](const std::string& f) {
             if (battleScript && battleScriptOk && battleScript->own() && !(battleScriptOk = battleScript->call(f)))
@@ -3198,7 +3205,14 @@ struct Viewer {
         }
         case BattleStep::ActionStart:
             if (!battleRules->actionsLeft()) {
+                const int breakBefore = battleRules->breakState();
                 battleRules->endTurn();
+                if (breakBefore == 3 && (battleRules->breakState() == 1 || battleRules->breakState() == 2)) {
+                    battleSe(2);
+                    seJobs.push_back({battleClock + 1.0f, cr2::SoundData::battleSe(battleRules->breakState() == 1 ? 3 : 4)});
+                    breakShown = battleRules->breakState(), breakShownAt = battleClock;
+                    SDL_Log("turn break: %s (%.1f s)", breakShown == 1 ? "the party's" : "the monsters'", battleClock);
+                }
                 for (int f = 0; f < 2; ++f) setGuard(f, false), dropGuardObject(f); // (BtlTurnEnd: DeleteAll; the stance back)
                 if (announceQueue.empty()) commandShown.clear(); // (BtlTurnEnd: ClearAnnounce)
                 for (const cr2::BattleRules::Event& e : battleRules->turnEndEvents()) { // (BtlTurnEnd: the poison's, the pools')
@@ -6576,6 +6590,22 @@ struct Viewer {
     }
     void drawBattleHudParts(int w, int h) {
         if (!battleMode || !battleRules) return;
+        drawBattleHudMain(w, h);
+        if (breakShown) { // (the turn break's figure, once)
+            const Mat4 proj = uiProjection(w, h);
+            Mat4 camera = cr2::mat4Identity();
+            camera[14] = -0.881f;
+            const Mat4 view = cr2::mat4Multiply(proj, camera);
+            const char* name = breakShown == 1 ? "turnbrk" : "turnbrkenemy";
+            UiFig& f = uiFig(name);
+            f.fig.place = cr2::Mat34();
+            const float t = battleClock - breakShownAt;
+            poseUi(f, name, t);
+            if (!f.fig.animLoaded || t > f.fig.anim.duration()) breakShown = 0;
+            else drawFigure(f.fig, view.data());
+        }
+    }
+    void drawBattleHudMain(int w, int h) {
         if (battleScript && !battleScript->statusShown()) return; // (its talk on)
         const Mat4 proj = uiProjection(w, h);
         Mat4 camera = cr2::mat4Identity();
@@ -9200,7 +9230,7 @@ int main(int argc, char** argv) {
     bool titleScreen = false; // (--title: the game's title screen first)
     std::vector<std::pair<int, int>> itemArg;
     std::vector<std::tuple<int, int, int>> equipArg;
-    int chargeArg = -1, difficultyArg = -1, membersArg[2] = {-2, -2}, ozArg = -1;
+    int chargeArg = -1, difficultyArg = -1, membersArg[2] = {-2, -2}, ozArg = -1, gaugeArg = 0;
     std::vector<std::string> workArgs;
     std::vector<std::pair<int, int>> stateArg;
     std::vector<std::pair<int, int>> sopiaArg;
@@ -9250,6 +9280,7 @@ int main(int argc, char** argv) {
             ++i;
         }
         else if (a == "--charge" && next) chargeArg = std::atoi(next), ++i; // (the charge gauge to begin with: tests)
+        else if (a == "--gauge" && next) gaugeArg = std::atoi(next), ++i; // (the break gauge to begin with, -4..4: tests)
         else if (a == "--difficulty" && next) difficultyArg = std::atoi(next), ++i; // (the world select's level - 1: tests)
         else if (a == "--oz" && next) ozArg = std::atoi(next), ++i; // (the Oz to begin with: tests)
         else if (a == "--work" && next) workArgs.push_back(next), ++i; // (n:v - Cr3UtilGlobalWork n to begin with: tests)
@@ -9428,7 +9459,7 @@ int main(int argc, char** argv) {
     v.load(start);
     if (model == "c001" && leaderDefaulted) v.leaderFollows = true, v.refreshLeader();
     v.stateArg = stateArg;
-    v.chargeArg = chargeArg;
+    v.chargeArg = chargeArg, v.gaugeArg = gaugeArg;
     if (battleId > 0 && !v.startBattle(battleId, battleParty)) return 1;
     // the commands: chosen on the screen in a window (--fight manual, or --play), or given (--input)
     v.manualCommands = fightMode == 3 || !inputArg.empty() || (capture.empty() && !playFrom.empty());

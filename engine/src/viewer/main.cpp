@@ -262,6 +262,7 @@ struct Viewer {
         int anisotropy = 16;      // samples (1: off)
         bool sharpTextures = false;
         bool hdTextures = false;
+        bool padSwap = false;     // a controller's: × (south) confirms, ○ (east) goes back - else as the Vita
     } settings;
     bool settingsPersist = false;
     int rendererInUse = 0;        // (the device that started: the Renderer row's "next start")
@@ -292,6 +293,7 @@ struct Viewer {
             else if (k == "anisotropy") s.anisotropy = v >= 16 ? 16 : v >= 8 ? 8 : v >= 4 ? 4 : v >= 2 ? 2 : 1;
             else if (k == "sharp_textures") s.sharpTextures = v != 0;
             else if (k == "hd_textures") s.hdTextures = v != 0;
+            else if (k == "pad_swap") s.padSwap = v != 0;
         }
         std::fclose(f);
     }
@@ -302,9 +304,9 @@ struct Viewer {
         const Settings& s = settings;
         std::fprintf(f, "# CR2-U: the options' Display & Graphics (the command line's flags go over these)\n"
                         "display=%d\nresolution=%d\nvsync=%d\nfps=%d\nrenderer=%d\nupscaler=%d\nquality=%d\nsharpness=%d\n"
-                        "msaa=%d\nanisotropy=%d\nsharp_textures=%d\nhd_textures=%d\n",
+                        "msaa=%d\nanisotropy=%d\nsharp_textures=%d\nhd_textures=%d\npad_swap=%d\n",
                      s.display, s.resolution, s.vsync ? 1 : 0, s.fps, s.renderer, s.upscaler, s.quality, s.sharpness, s.msaa,
-                     s.anisotropy, s.sharpTextures ? 1 : 0, s.hdTextures ? 1 : 0);
+                     s.anisotropy, s.sharpTextures ? 1 : 0, s.hdTextures ? 1 : 0, s.padSwap ? 1 : 0);
         std::fclose(f);
     }
     // The settings onto the device, the window and the textures (each only as it changes)
@@ -457,6 +459,10 @@ struct Viewer {
                                  : "None made yet: cr2view --export-textures, then tools/hd_textures.py into " + hdDir,
                             true, [&s](int) { s.hdTextures = !s.hdTextures; }});
         }
+        rows.push_back({"Swap \u25cb and \u00d7", onOff(s.padSwap),
+                        s.padSwap ? "A controller's \u00d7 (the bottom button) confirms, \u25cb (the right one) goes back"
+                                  : "A controller's \u25cb (the right button) confirms, \u00d7 (the bottom one) goes back - as on the Vita",
+                        true, [&s](int) { s.padSwap = !s.padSwap; }});
         rows.push_back({"Defaults", "", "Every setting here back to its default", true, [&s](int) { s = Settings(); }});
         return rows;
     }
@@ -2988,6 +2994,100 @@ struct Viewer {
         float x0, y0, x1, y1; // (UI units)
     };
     std::vector<TapRect> tapRects;
+    // ---- The keys' (and a controller's) focus where the iPad's and Android's game is touch alone and
+    // the Vita moves a cursor (GameTitleMenu's buttons and questions, the shop's first two menus, the
+    // party's): the arrows to the next button that way (by their tap areas' middles, round past the
+    // last), Return its tap, the focused one in the game's own look (CircleBtn::SetForcusTarget: PRG_shiftR
+    // half across, as a focused command button) - and the field's tab, which the Vita steps round
+    // (FieldMenuTabMenu: camp, encounters, save, map; ○ the one lit)
+    int keyFocus = -1; // (a tap area's id; -1 none yet)
+    int tabFocus = 0;  // (the tab's: its area - 2 camp, 5 encounters, 4 save, 3 map; 0 none)
+    bool focusScreen() const {
+        return titleMenu.stage == 5 || titleMenu.stage == 6 || titleMenu.stage == 7 || shop.stage == 1 || shop.stage == 2 ||
+               party.stage == 1 || party.stage == 2;
+    }
+    bool focusKey(SDL_Keycode k) {
+        if (tabFocusKey(k)) return true;
+        if (!focusScreen() || (titleMenu.stage && titleRunning())) return false;
+        if (k == SDLK_BACKSPACE && titleMenu.stage == 6) return titleButton(100), true;
+        if (k == SDLK_BACKSPACE && titleMenu.stage == 7) return titleAnswer(false), true;
+        std::vector<TapRect> rs;
+        for (const TapRect& r : tapRects)
+            if (r.id >= 0) rs.push_back(r);
+        if (rs.empty()) return false;
+        auto mid = [](const TapRect& r, float& x, float& y) { x = (r.x0 + r.x1) * 0.5f, y = (r.y0 + r.y1) * 0.5f; };
+        const auto cur = std::find_if(rs.begin(), rs.end(), [&](const TapRect& r) { return r.id == keyFocus; });
+        const bool arrow = k == SDLK_UP || k == SDLK_DOWN || k == SDLK_LEFT || k == SDLK_RIGHT;
+        if (arrow && cur == rs.end()) {
+            keyFocus = rs.front().id;
+            audio.playSe(0xb3, false); // (the cursor's: the Vita's ScrollList / CircleBtn move)
+            return true;
+        }
+        if (arrow) {
+            const float dx = k == SDLK_RIGHT ? 1.0f : k == SDLK_LEFT ? -1.0f : 0.0f, dy = k == SDLK_UP ? 1.0f : k == SDLK_DOWN ? -1.0f : 0.0f;
+            float cx, cy;
+            mid(*cur, cx, cy);
+            int best = -1, wrap = -1;
+            float bestScore = 1e9f, wrapScore = 1e9f;
+            for (size_t i = 0; i < rs.size(); ++i) {
+                if (rs[i].id == cur->id) continue;
+                float x, y;
+                mid(rs[i], x, y);
+                const float along = (x - cx) * dx + (y - cy) * dy, across = std::abs((x - cx) * dy - (y - cy) * dx);
+                if (along > 0.01f) {
+                    if (along + 2 * across < bestScore) bestScore = along + 2 * across, best = int(i);
+                } else if (along < -0.01f && across < 0.08f && along < wrapScore) { // (round: the farthest back in line)
+                    wrapScore = along, wrap = int(i);
+                }
+            }
+            const int to = best >= 0 ? best : wrap;
+            if (to >= 0) keyFocus = rs[size_t(to)].id, audio.playSe(0xb3, false), SDL_Log("focus: %d", keyFocus);
+            return true;
+        }
+        if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+            if (cur == rs.end()) return keyFocus = rs.front().id, true;
+            float x, y;
+            mid(*cur, x, y);
+            const float s = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+            const float fx = x * s / float(std::max(screenW, 1)) + 0.5f, fy = 0.5f - y * s / float(std::max(screenH, 1));
+            SDL_Log("focus: tap %d", cur->id);
+            if (titleMenu.stage) titleClick(fx, fy);
+            else fieldClick(fx, fy);
+            return true;
+        }
+        return false;
+    }
+    // the open tab's ring (FUN_81098da8: Up / Left back, Down / Right on - the encounters' left out
+    // while off; ○ the one lit)
+    bool tabFocusKey(SDL_Keycode k) {
+        if (!fieldTabShown() || !fieldTabOpen) return tabFocus = 0, false;
+        const bool encounters = game.flag(0x40f);
+        static const int kRing[4] = {2, 5, 4, 3};
+        int at = 0;
+        while (at < 4 && kRing[at] != tabFocus) ++at;
+        if (k == SDLK_DOWN || k == SDLK_RIGHT || k == SDLK_UP || k == SDLK_LEFT) {
+            const int step = k == SDLK_DOWN || k == SDLK_RIGHT ? 1 : 3;
+            at = at >= 4 ? (step == 1 ? 0 : 3) : (at + step) % 4;
+            if (kRing[at] == 5 && !encounters) at = (at + step) % 4;
+            tabFocus = kRing[at];
+            audio.playSe(0xb3, false);
+            SDL_Log("field: the tab's %d lit", tabFocus);
+            return true;
+        }
+        if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && tabFocus) return fieldTabTap(tabFocus), true;
+        return false;
+    }
+    // a list shown (a page of it a press of L / R: ScrollListMenu's)
+    bool listShown() const {
+        using CI = cr2::CommandInput;
+        const bool battleList = battleMode && choosing &&
+                                (commandInput.menu() == CI::Menu::Items || commandInput.menu() == CI::Menu::Advent ||
+                                 commandInput.menu() == CI::Menu::Awake || commandInput.menu() == CI::Menu::Sopia);
+        return battleList || manualStage == 1 || settingsOpen || (campOpen && campList != 0) || library.stage == 1;
+    }
+    bool inMenu() const {
+        return campOpen || (battleMode && choosing) || shop.stage || world.stage || pub.stage || library.stage == 1 || party.stage;
+    }
     // a step of the choosing begun: its camera (StepGetset: Cam_Getset; SetCommandCamera: 0x1a the
     // first's, 0x1b the second's, 0x1d the pair's command, 0x1c the one alone's - the target's camera
     // BtlCommand::SetCommandTargetCamera's - setTargetCamera)
@@ -6067,6 +6167,16 @@ struct Viewer {
         }
     }
     static void hideJoint(UiFig& u, const std::string& joint) { showJoint(u, joint, false); }
+    // a circle button drawn at `id`: lit if it has the focus (else as its material is)
+    void focusLook(UiFig& c, int id) {
+        const bool on = focusScreen() && id == keyFocus;
+        for (ViewMesh& vm : c.fig.meshes) {
+            const uint32_t mi = vm.source.material;
+            if (mi >= c.materials.size() || c.materials[mi] != "PRG_shiftR") continue;
+            vm.material.params[0x5e] = on ? std::vector<float>{0.5f, 0.0f} : vm.baseMaterial.params[0x5e];
+            if (vm.material.params[0x5e].empty()) vm.material.params.erase(0x5e);
+        }
+    }
     void drawTitleButtons(UiFig& parts, const Mat4& view, int skip) {
         for (const std::string& j : parts.joints) {
             if (j.compare(0, 18, "call_circleBtn_fr") != 0 && j.compare(0, 17, "call_circleBtn_fr") != 0) continue;
@@ -6081,6 +6191,7 @@ struct Viewer {
             c.fig.place = cr2::Mat34();
             c.fig.place.m[3] = x, c.fig.place.m[7] = y;
             poseUi(c, "circlebtn_fr", float(id) / 20.0f);
+            focusLook(c, id);
             drawFigure(c.fig, view.data());
             float sx, sy, ex, ey;
             if (uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) tapRects.push_back({id, sx, sy, ex, ey});
@@ -6346,7 +6457,7 @@ struct Viewer {
             poseUi(c, "circlebtn_fr", float(frameOf ? frameOf : n) / 20.0f);
             // CircleBtn::ChangeTapButtonColor: focused (2) PRG_shiftR's texture half across
             // (OffsetSet1 U 0.5), not selectable (0.5) every material's colour at half
-            const int look = buttonLook ? buttonLook(n) : 1;
+            const int look = buttonLook ? buttonLook(n) : focusScreen() && n == keyFocus ? 2 : 1;
             for (ViewMesh& vm : c.fig.meshes) {
                 const uint32_t mi = vm.source.material;
                 if (mi < c.materials.size() && c.materials[mi] == "PRG_shiftR") vm.material.params[0x5e] = {look == 2 ? 0.5f : 0.0f, 0.0f};
@@ -7394,7 +7505,9 @@ struct Viewer {
             const uint32_t mi = vm.source.material;
             const std::string mn = mi < tab.materials.size() ? tab.materials[mi] : "";
             const bool off = (mn == "PRG_map" && dungeonNum() == 12) || (mn == "PRG_save" && game.flag(0x3ea)) || (mn == "PRG_enc" && !game.flag(0x40f));
-            vm.material.params[0x33] = off ? std::vector<float>{0.5f, 0.5f, 0.5f, 1.0f} : vm.baseMaterial.params[0x33];
+            const bool lit = fieldTabOpen && ((tabFocus == 2 && mn == "PRG_camp") || (tabFocus == 5 && mn == "PRG_enc") ||
+                                              (tabFocus == 4 && mn == "PRG_save") || (tabFocus == 3 && mn == "PRG_map"));
+            vm.material.params[0x33] = off ? std::vector<float>{0.5f, 0.5f, 0.5f, 1.0f} : lit ? std::vector<float>{1.0f, 2.0f, 3.0f, 1.0f} : vm.baseMaterial.params[0x33];
             if (vm.material.params[0x33].empty()) vm.material.params.erase(0x33);
         }
         drawFigure(tab.fig, view.data());
@@ -7694,6 +7807,7 @@ struct Viewer {
             c.fig.place = cr2::Mat34();
             c.fig.place.m[3] = x, c.fig.place.m[7] = y;
             poseUi(c, "circlebtn_fr", float(n) / 20.0f);
+            focusLook(c, n == 11 ? yes : no);
             drawFigure(c.fig, view.data());
             float sx, sy, ex, ey;
             if (uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) tapRects.push_back({n == 11 ? yes : no, sx, sy, ex, ey});
@@ -9377,6 +9491,7 @@ struct Viewer {
                     vm.material.params[0x33] = both && k == 1 && game.flag(0x3fa) ? std::vector<float>{0.5f, 0.5f, 0.5f, 1.0f} : vm.baseMaterial.params[0x33];
                     if (vm.material.params[0x33].empty()) vm.material.params.erase(0x33);
                 }
+                focusLook(c, both ? k : -2);
                 drawFigure(c.fig, view.data());
                 float lx, ly;
                 if (ch >= 0 && uiJoint(c, "call_dotNum_id30", lx, ly)) drawDigits(game.level[ch], 120, 3, lx, ly, proj); // (SetLevelNumbers)
@@ -10072,7 +10187,7 @@ int main(int argc, char** argv) {
     }
     v.yaw = yaw, v.pitch = pitch;
 
-    if (!SDL_Init(SDL_INIT_VIDEO)) return std::fprintf(stderr, "SDL: %s\n", SDL_GetError()), 1;
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) return std::fprintf(stderr, "SDL: %s\n", SDL_GetError()), 1;
     // The window: --size, else a capture's the resolution itself, else the resolution's shape
     // fitted to 90% of the display (the frames stay the resolution, scaled into it)
     if (!width || !height) {
@@ -10293,6 +10408,53 @@ int main(int argc, char** argv) {
         code = ok ? 0 : 1;
     } else {
         bool running = true, dragging = false;
+        // A controller, as the Vita's buttons (its own code - docs/CONTROLS.md): by position, ○ the right
+        // button and × the bottom one (the settings' Swap ○ and × the other way); its presses as the
+        // keys the menus take - ○ Return, × Backspace, the d-pad (or the left stick pushed all the way)
+        // the arrows, repeating as InputEquipment's do (after 0.6 s, then every 0.08 s), L / R a list's
+        // page, START the title's "Please Touch", □ held the fast-forward; △ (the port's own: the Vita's is
+        // a touch) the field's tab. On the field the left stick walks, a long push running
+        SDL_Gamepad* pad = nullptr;
+        SDL_Keycode padDir = 0;
+        Uint64 padDirNext = 0;
+        auto pushKey = [](SDL_Keycode key) {
+            SDL_Event k{};
+            k.type = SDL_EVENT_KEY_DOWN;
+            k.key.key = key;
+            k.key.down = true;
+            SDL_PushEvent(&k);
+        };
+        // CR2_PAD_SCRIPT (tests): a virtual controller, its buttons and stick set at their times - "1.5:east
+        // 2:down 3:lx=1 4:lx=0" (a button is held 0.1 s; east / south / north / west, up / down / left /
+        // right, l / r, start, back; lx / ly the left stick, -1 .. 1, ly up positive)
+        struct PadStep {
+            float at;
+            std::string what;
+        };
+        std::vector<PadStep> padScript;
+        SDL_Joystick* testPad = nullptr;
+        if (const char* ps = SDL_getenv("CR2_PAD_SCRIPT")) {
+            SDL_VirtualJoystickDesc desc;
+            SDL_INIT_INTERFACE(&desc);
+            desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+            desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
+            desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+            desc.name = "CR2-U test controller";
+            if (const SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc)) testPad = SDL_OpenJoystick(id);
+            std::string all = ps;
+            for (size_t at = 0; at < all.size();) {
+                const size_t sp = std::min(all.find(' ', at), all.size());
+                const std::string t = all.substr(at, sp - at);
+                if (const size_t c = t.find(':'); c != std::string::npos) padScript.push_back({float(std::atof(t.c_str())), t.substr(c + 1)});
+                at = sp + 1;
+            }
+        }
+        std::vector<std::pair<Uint64, SDL_GamepadButton>> testReleases;
+        auto padStick = [&](float& x, float& y) { // (the left stick, up positive; the Vita's 0.25 dead zone)
+            x = pad ? float(SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX)) / 32767.0f : 0.0f;
+            y = pad ? -float(SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY)) / 32767.0f : 0.0f;
+            if (std::hypot(x, y) < 0.25f) x = y = 0;
+        };
         // (the window's point on the game's screen, letterboxed in the window at its own shape: its fractions)
         auto screenFraction = [&](float wx, float wy, float& fx, float& fy) {
             int ww = 1, wh = 1, pw = 1, ph = 1;
@@ -10355,6 +10517,11 @@ int main(int argc, char** argv) {
                         else if (k == SDLK_BACKSPACE || k == SDLK_N) v.answerYesNo(false);
                         continue;
                     }
+                    if ((k == SDLK_PAGEUP || k == SDLK_PAGEDOWN) && v.listShown()) { // (a list's page: four rows on)
+                        for (int r = 0; r < 4; ++r) pushKey(k == SDLK_PAGEUP ? SDLK_UP : SDLK_DOWN);
+                        continue;
+                    }
+                    if (v.focusKey(k)) continue; // (the title's, the shop's and the party's buttons; the field's tab)
                     if (v.battleMode && v.choosing) {
                         v.battleKey(k);
                         continue;
@@ -10415,6 +10582,23 @@ int main(int argc, char** argv) {
                     if (to != v.current) v.load(to);
                     if ((k == SDLK_UP || k == SDLK_DOWN) && !f.anims.empty())
                         v.loadAnim(f, (f.animIndex + (k == SDLK_DOWN ? 1 : f.anims.size() - 1)) % f.anims.size());
+                } else if (e.type == SDL_EVENT_GAMEPAD_ADDED) {
+                    if (!pad && (pad = SDL_OpenGamepad(e.gdevice.which))) SDL_Log("controller: %s", SDL_GetGamepadName(pad));
+                } else if (e.type == SDL_EVENT_GAMEPAD_REMOVED) {
+                    if (pad && SDL_GetGamepadID(pad) == e.gdevice.which) SDL_CloseGamepad(pad), pad = nullptr, padDir = 0;
+                } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad) {
+                    const SDL_GamepadButton b = SDL_GamepadButton(e.gbutton.button);
+                    const SDL_GamepadButton circle = v.settings.padSwap ? SDL_GAMEPAD_BUTTON_SOUTH : SDL_GAMEPAD_BUTTON_EAST;
+                    const SDL_GamepadButton cross = v.settings.padSwap ? SDL_GAMEPAD_BUTTON_EAST : SDL_GAMEPAD_BUTTON_SOUTH;
+                    const bool shopList = v.shop.stage >= 3 && v.shop.kind > 0; // (ShopCutInPiupiuMenu: L / R the character)
+                    SDL_Keycode key = 0;
+                    if (b == circle) key = SDLK_RETURN;
+                    else if (b == cross) key = SDLK_BACKSPACE;
+                    else if (b == SDL_GAMEPAD_BUTTON_NORTH) key = SDLK_TAB;
+                    else if (b == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER && v.inMenu()) key = shopList ? SDLK_LEFT : SDLK_PAGEUP;
+                    else if (b == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER && v.inMenu()) key = shopList ? SDLK_RIGHT : SDLK_PAGEDOWN;
+                    else if (b == SDL_GAMEPAD_BUTTON_START && v.titleMenu.stage >= 2 && v.titleMenu.stage <= 3) key = SDLK_RETURN;
+                    if (key) pushKey(key);
                 } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
                     dragging = true;
                     float fx, fy;
@@ -10486,6 +10670,45 @@ int main(int argc, char** argv) {
             }
             const Uint64 now = SDL_GetTicksNS();
             const float dt = float(double(now - last) / 1e9);
+            if (testPad) { // (CR2_PAD_SCRIPT's steps, by the seconds since the window opened)
+                static const std::map<std::string, SDL_GamepadButton> kButtons = {
+                    {"east", SDL_GAMEPAD_BUTTON_EAST}, {"south", SDL_GAMEPAD_BUTTON_SOUTH}, {"north", SDL_GAMEPAD_BUTTON_NORTH},
+                    {"west", SDL_GAMEPAD_BUTTON_WEST}, {"up", SDL_GAMEPAD_BUTTON_DPAD_UP}, {"down", SDL_GAMEPAD_BUTTON_DPAD_DOWN},
+                    {"left", SDL_GAMEPAD_BUTTON_DPAD_LEFT}, {"right", SDL_GAMEPAD_BUTTON_DPAD_RIGHT}, {"l", SDL_GAMEPAD_BUTTON_LEFT_SHOULDER},
+                    {"r", SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER}, {"start", SDL_GAMEPAD_BUTTON_START}, {"back", SDL_GAMEPAD_BUTTON_BACK}};
+                const float since = float(double(now - started) / 1e9);
+                while (!padScript.empty() && padScript.front().at <= since) {
+                    const std::string w = padScript.front().what;
+                    padScript.erase(padScript.begin());
+                    if (w.rfind("lx=", 0) == 0) SDL_SetJoystickVirtualAxis(testPad, SDL_GAMEPAD_AXIS_LEFTX, Sint16(std::clamp(std::atof(w.c_str() + 3), -1.0, 1.0) * 32767));
+                    else if (w.rfind("ly=", 0) == 0) SDL_SetJoystickVirtualAxis(testPad, SDL_GAMEPAD_AXIS_LEFTY, Sint16(-std::clamp(std::atof(w.c_str() + 3), -1.0, 1.0) * 32767));
+                    else if (auto b = kButtons.find(w); b != kButtons.end()) {
+                        SDL_SetJoystickVirtualButton(testPad, b->second, true);
+                        testReleases.push_back({now + 100000000, b->second});
+                    }
+                    SDL_Log("test controller: %s", w.c_str());
+                }
+                for (size_t r = 0; r < testReleases.size();)
+                    if (testReleases[r].first <= now) SDL_SetJoystickVirtualButton(testPad, testReleases[r].second, false), testReleases.erase(testReleases.begin() + long(r));
+                    else ++r;
+            }
+            if (pad) { // (the d-pad, or the stick pushed all the way: a direction's press, then its repeats)
+                float ax, ay;
+                padStick(ax, ay);
+                SDL_Keycode d = SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_UP)      ? SDLK_UP
+                                : SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_DOWN)  ? SDLK_DOWN
+                                : SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT)  ? SDLK_LEFT
+                                : SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT) ? SDLK_RIGHT
+                                                                                           : 0;
+                if (!d && std::max(std::abs(ax), std::abs(ay)) >= 0.9f)
+                    d = std::abs(ay) >= std::abs(ax) ? (ay > 0 ? SDLK_UP : SDLK_DOWN) : (ax > 0 ? SDLK_RIGHT : SDLK_LEFT);
+                if (d != padDir) {
+                    padDir = d;
+                    if (d) pushKey(d), padDirNext = now + 600000000;
+                } else if (d && now >= padDirNext) {
+                    pushKey(d), padDirNext = now + 80000000;
+                }
+            }
             ++fpsFrames, ++totalFrames;
             if (now - fpsSince >= 500000000) {
                 measured = float(double(fpsFrames) * 1e9 / double(now - fpsSince));
@@ -10494,13 +10717,22 @@ int main(int argc, char** argv) {
             if (!v.paused) v.time += dt;
             last = now;
             if (!v.paused && v.battleMode && !v.fieldMode && !v.eventMode) v.advance(dt, 0, 0, false);
-            if (!v.paused && (v.eventMode || v.fieldMode || v.credits.stage)) { // the arrows / WASD run, with Shift walk
+            if (!v.paused && (v.eventMode || v.fieldMode || v.credits.stage || v.titleMenu.stage)) { // the arrows / WASD run, with Shift walk (the title: its clock)
                 const bool* keys = SDL_GetKeyboardState(nullptr);
-                if (keys[SDL_SCANCODE_F]) v.fastHeld = true; // (F held: the fast-forward button's)
+                if (keys[SDL_SCANCODE_F] || (pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_WEST))) v.fastHeld = true; // (F or □ held: the fast-forward button's)
                 else if (!(SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK)) v.fastHeld = false;
-                const float sx = float((keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) - (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]));
-                const float sy = float((keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W]) - (keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S]));
-                v.advance(dt, sx, sy, !(keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]));
+                float sx = float((keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) - (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]));
+                float sy = float((keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W]) - (keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S]));
+                bool run = !(keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]);
+                if (pad && !v.fieldTabOpen) { // (FldMain::PlayerMove: the stick's push as the finger's drag - far, a run)
+                    float ax, ay;
+                    padStick(ax, ay);
+                    const float dx = float(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) - float(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT));
+                    const float dy = float(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_UP)) - float(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_DOWN));
+                    if (ax != 0 || ay != 0) sx = ax, sy = ay, run = std::hypot(ax, ay) >= 0.75f;
+                    else if (dx != 0 || dy != 0) sx = dx, sy = dy, run = true;
+                }
+                v.advance(dt, sx, sy, run);
             }
             if (v.fig.animLoaded && v.time > v.fig.anim.duration()) v.time = std::fmod(v.time, std::max(v.fig.anim.duration(), 0.05f));
             v.pose();

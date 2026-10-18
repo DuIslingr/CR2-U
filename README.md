@@ -78,12 +78,24 @@ is proprietary and the port is GPL, so a DLSS build is for your own use (THIRD_P
 
 ## Controls
 
-Keyboard, mouse and touch; no controller yet. Everything the original takes by touch takes a click
+A controller plays as the Vita does (its own code: `docs/CONTROLS.md`). The face buttons are by
+position, so on an Xbox pad ○ is B, × is A, △ is Y and □ is X; ○ confirms, as on the Vita - the
+options' Graphics list has "Swap ○ and ×". Everything the original takes by touch also takes a click
 or a tap: the buttons, the lists, the volume bars, the balloons, the touch actions' drags and taps.
+
+| Button | On the field | In menus and messages |
+|---|---|---|
+| Left stick / D-pad | walk (the stick pushed far runs) | move the cursor (held, it repeats) |
+| ○ | talk, the touch action in reach | confirm, turn the page |
+| × | - | back, cancel |
+| □ (held) | - | fast-forward the messages |
+| △ | open / close the tab (Camp, Map, Save) - the port's own, the Vita's is a touch | - |
+| L / R | - | a list's page; the shop's character |
+| START | - | the title's "Please Touch" |
 
 | Keyboard | |
 |---|---|
-| Arrow keys / W A S D | run on the field (Shift walks); in menus, the cursor |
+| Arrow keys / W A S D | run on the field (Shift walks); in menus, the cursor - also over the title's, the shop's and the party's buttons |
 | Return | talk to what has a balloon, turn a message's page, pick |
 | Backspace (Android: Back) | back, cancel |
 | Y / N | answer a question |
@@ -138,6 +150,7 @@ release's named code and a reference playthrough (`docs/STATUS.md` has each part
 | `docs/FORMATS.md` | the game's file formats as reverse-engineered |
 | `docs/SCRIPTS.md` | the Squirrel scripts, the native API they call, the game's saves |
 | `docs/BATTLE.md` | the battles' rules and staging as reverse-engineered |
+| `docs/CONTROLS.md` | the Vita's buttons as its code reads them, and how a controller maps onto them |
 
 ## Layout
 

@@ -8566,6 +8566,19 @@ struct Viewer {
             buttonLook = [&, this](int n) { return !shop.buy && ((n == 16 && !sellable(0)) || (n == 23 && !sellable(3))) ? 0 : 1; };
             drawCommandMenu("shopcmd_io", std::min(t, half), view, {}, {}, w, h, 0, "shopcmd_io");
             buttonLook = nullptr;
+            // the buy / sell sign (shopMode_io; SetSellBuySelected: the one chosen's material at
+            // 1, the other's at 0.3)
+            UiFig& mode = uiFig("shopmode_io");
+            mode.fig.place = cr2::Mat34();
+            poseUi(mode, "shopmode_io", t);
+            for (ViewMesh& vm : mode.fig.meshes) {
+                const uint32_t m = vm.source.material;
+                const std::string mn = m < mode.materials.size() ? mode.materials[m] : "";
+                const float k = mn == "MTR_buy" ? (shop.buy ? 1.0f : 0.3f) : mn == "MTR_sell" ? (shop.buy ? 0.3f : 1.0f) : -1.0f;
+                vm.material.params[0x33] = k >= 0 ? std::vector<float>{k, k, k, 1.0f} : vm.baseMaterial.params[0x33];
+                if (vm.material.params[0x33].empty()) vm.material.params.erase(0x33);
+            }
+            drawFigure(mode.fig, view.data());
             back();
         }
         else if (shop.stage == 3) {

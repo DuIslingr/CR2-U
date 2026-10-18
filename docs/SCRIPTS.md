@@ -336,7 +336,9 @@ the whole price) and the question (announce 0x70 / 0x71: the count held): yes - 
 the Oz (SE 200). An equipment list shows its character's windows (SetCharaStatusParamerter /
 SetItemStatusParamerter: CharaStatusWindowB and the capacity window, with the change the focused
 one makes worn), Left / Right going through every joined character (CharaChange); every list
-shows the focused item's help. (The buy / sell sign: not yet.)
+shows the focused item's help. With the kinds, ShopSecondMenu shows the buy / sell sign
+(`shopMode_io`; SetSellBuySelected: the chosen one's material, `MTR_buy` / `MTR_sell`, at 1, the
+other's at 0.3).
 
 The party (the town's c007, with flags 1010 and 1917: `ReserveParty` - FldMain step 0xc,
 FldPartyOrganize; PartyOrganizationMenu): its console (`console_io`, to half its length: 13 Talk

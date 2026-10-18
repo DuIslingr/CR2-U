@@ -222,7 +222,12 @@ names announcemenuname's), then the levels (Lv. 01 - 10 .. : eleven, flags 0x534
 question in the System window (the dungeon, the level, announce 0x80: yes / no). Yes chooses
 the dungeon (`GetSelectDungeonNum`, saved) and the difficulty, the level less one, and calls the
 town's `WarpTask` (CallEvent: the warp's tutorial, effect and jump to the dungeon); no asks
-again, Back steps back to the field. (CheckCoupling's party conditions on a dungeon: not yet.)
+again, Back steps back to the field. A dungeon can want a set pair (MapSelectMenu::
+CheckCoupling). Its flag (0x534578 by its number: 1079, 1076, 1077, 1078, 1074, 1073, 1075, 1072,
+1080 for 1..9) must be set, and one of its rows (0x5345d8: the dungeon, a flag, the two characters
+from 0) must have its flag set. If the party (cr3_common_data +3, +4) is not that pair, the System
+window asks announce 0x81, yes / no. Yes: ChangeCoupling makes the pair the party (+1..+4), then
+the levels. No: the dungeons again.
 
 The chapter select (the town's book, `obj005_00` on t0104: `ReserveChapter` - FldMain step 0xe,
 FldChapterSelect; InterfaceMain's ChapterSelectMenu, ChapterSelectTitleMenu's `menu` on

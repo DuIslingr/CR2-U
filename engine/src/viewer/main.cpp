@@ -7979,7 +7979,7 @@ struct Viewer {
     // back: the field.
     struct WorldSelect {
         bool chapters = false; // (the chapter select)
-        int stage = 0; // 0 shut, 1 the dungeons, 2 the levels, 3 the question
+        int stage = 0; // 0 shut, 1 the dungeons, 2 the levels, 3 the question, 4 the pair's question
         float at = 0;  // (since: uiClock)
         int focus = 0, dungeonFocus = 0;
         int dungeon = 0, level = 0;
@@ -8026,9 +8026,27 @@ struct Viewer {
         SDL_Log("chapter select: %zu chapters", worldRows().size());
         if (worldRows().empty()) world.stage = 0, pendingBranch = true;
     }
+    // MapSelectMenu::CheckCoupling: a dungeon whose flag (0x534578, by its number) is set, and of
+    // its rows (0x5345d8: the dungeon, a flag, the two characters from 0) one whose flag is set,
+    // wants that pair as the party (cr3_common_data +3, +4); the pair it wants, or none
+    static bool worldPair(const cr2::GameState& g, int dungeon, int pair[2]) {
+        static const int kFlag[10] = {0, 1079, 1076, 1077, 1078, 1074, 1073, 1075, 1072, 1080};
+        static const int kRows[13][4] = {{4, 1061, 0, 2}, {3, 1062, 0, 5}, {5, 1063, 0, 3}, {6, 1066, 0, 5}, {7, 1067, 0, 3},
+                                         {4, 1064, 0, 4}, {2, 1065, 2, 3}, {6, 1066, 0, 5}, {7, 1067, 0, 3}, {8, 1068, 0, 4},
+                                         {6, 1066, 0, 5}, {7, 1067, 0, 3}, {8, 1068, 0, 4}};
+        if (dungeon < 1 || dungeon > 9 || !g.flag(kFlag[dungeon])) return false;
+        for (const auto& r : kRows)
+            if (r[0] == dungeon && g.flag(r[1]) && (g.party[0] != r[2] || g.party[1] != r[3])) {
+                pair[0] = r[2], pair[1] = r[3];
+                return true;
+            }
+        return false;
+    }
     void worldPick(const ListRow& r) {
         audio.playSe(0xb4, false);
+        int pair[2];
         if (world.stage == 1 && world.chapters) world.dungeon = r.id, world.dungeonFocus = world.focus, world.stage = 3;
+        else if (world.stage == 1 && worldPair(game, r.id, pair)) world.dungeon = r.id, world.dungeonFocus = world.focus, world.stage = 4; // (the System window: announce 0x81, yes / no)
         else if (world.stage == 1) world.dungeon = r.id, world.dungeonFocus = world.focus, world.stage = 2, world.focus = 0;
         else if (world.stage == 2) world.level = r.id, world.stage = 3;
         world.at = uiClock;
@@ -8040,6 +8058,18 @@ struct Viewer {
         else world.stage = 0, pendingBranch = true; // (back to the field: what else was reserved)
     }
     void worldAnswer(bool yes) {
+        if (world.stage == 4) { // (yes: ChangeCoupling - the pair the party, cr3_common_data +1..+4 - then the levels; no: the dungeons again)
+            audio.playSe(yes ? 0xb4 : 0xb5, false);
+            int pair[2];
+            if (yes && worldPair(game, world.dungeon, pair)) {
+                game.party[0] = pair[0], game.party[1] = pair[1];
+                SDL_Log("world select: the party %d and %d", pair[0], pair[1]);
+            }
+            if (yes) world.stage = 2, world.focus = 0;
+            else world.stage = 1, world.focus = world.dungeonFocus;
+            world.at = uiClock;
+            return;
+        }
         if (world.stage != 3) return;
         if (!yes) return worldBack();
         audio.playSe(0xb4, false);
@@ -8055,7 +8085,7 @@ struct Viewer {
         callGimmick("WarpTask"); // (FldMain step 10: CallEvent("WarpTask"))
     }
     void worldTap(int id) {
-        if (world.stage == 3) {
+        if (world.stage >= 3) {
             if (id == 7601 || id == 7602) worldAnswer(id == 7601);
             return;
         }
@@ -8066,7 +8096,7 @@ struct Viewer {
                 if (r.id == id) return worldPick(r);
     }
     void worldKey(SDL_Keycode k) {
-        if (world.stage == 3) {
+        if (world.stage >= 3) {
             if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) worldAnswer(true);
             else if (k == SDLK_BACKSPACE || k == SDLK_N) worldAnswer(false);
             return;
@@ -8088,6 +8118,7 @@ struct Viewer {
             const std::string q = menuName(14 + std::clamp(world.dungeonFocus, 0, 3)) + "\\n" + announce(0x8b);
             return drawAsk(q, t, view, w, h, 7601, 7602);
         }
+        if (world.stage == 4) return drawAsk(announce(0x81), t, view, w, h, 7601, 7602);
         if (world.stage == 3) {
             const std::string q = menuName(world.dungeon) + "\\n" + menuName(0x14 + world.level) + "\\n" + announce(0x80);
             return drawAsk(q, t, view, w, h, 7601, 7602);

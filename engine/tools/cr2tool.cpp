@@ -51,6 +51,7 @@
 #include "assets/geom.hpp"
 #include "battle/battledata.hpp"
 #include "battle/glass.hpp"
+#include "script/gamesave.hpp"
 #include "battle/rules.hpp"
 #include "assets/image.hpp"
 #include "assets/skeleton.hpp"
@@ -130,7 +131,9 @@ int usage() {
                  "cr2tool battle <archive> <coupling | all>\n"
                  "cr2tool fight <archive> <coupling> [solo | pair] [seed] [a,b]\n"
                  "cr2tool sound <archive>\n"
-                 "cr2tool glass <seeds>\n");
+                 "cr2tool glass <seeds>\n"
+                 "cr2tool save-import <game.dat | cont.dat> [system.dat]  (a CR2-U save on stdout)\n"
+                 "cr2tool save-export <archive> <CR2-U save> <game.dat>\n");
     return 2;
 }
 
@@ -1088,6 +1091,67 @@ int glass(int seeds) {
     return bad ? 1 : 0;
 }
 
+// The game's own saves (script/gamesave.hpp): game.dat / cont.dat (and its system.dat) as a CR2-U
+// save on stdout; a CR2-U save as game.dat (its records' HP, MP and parameters by the battle data)
+bool readFile(const char* path, std::vector<uint8_t>& out) {
+    std::FILE* f = std::fopen(path, "rb");
+    if (!f) return false;
+    out.clear();
+    uint8_t buf[4096];
+    for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) out.insert(out.end(), buf, buf + n);
+    std::fclose(f);
+    return true;
+}
+int saveImport(const char* game, const char* system) {
+    std::vector<uint8_t> d;
+    if (!readFile(game, d)) return std::fprintf(stderr, "%s: can't read\n", game), 1;
+    cr2::GameState g;
+    cr2::GameSavePlace place;
+    bool crc = false;
+    std::string err;
+    if (!cr2::readGameSave(d, g, place, &crc, &err)) return std::fprintf(stderr, "%s: %s\n", game, err.c_str()), 1;
+    if (!crc) std::fprintf(stderr, "%s: its CRC doesn't hold (read anyway)\n", game);
+    std::map<std::string, std::string> extra;
+    if (system) {
+        uint32_t options[6];
+        if (!readFile(system, d) || !cr2::readSystemSave(d, g, options, &crc, &err)) return std::fprintf(stderr, "%s: %s\n", system, err.c_str()), 1;
+        if (!crc) std::fprintf(stderr, "%s: its CRC doesn't hold (read anyway)\n", system);
+    }
+    char pos[96];
+    std::snprintf(pos, sizeof pos, "%.6f %.6f %.6f %.6f", place.position[0], place.position[1], place.position[2], place.heading);
+    extra["map"] = place.map, extra["place"] = pos, extra["playtime"] = std::to_string(place.playFrames);
+    std::fputs(g.save(extra).c_str(), stdout);
+    return 0;
+}
+int saveExport(const char* path, const char* save, const char* out) {
+    cr2::MvglArchive a;
+    if (!openArchive(a, path)) return 1;
+    std::vector<uint8_t> d;
+    std::string err;
+    cr2::BattleData data;
+    if (!a.read("data\\battledata.dat", d, &err) || !data.parse(d, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
+    if (!readFile(save, d)) return std::fprintf(stderr, "%s: can't read\n", save), 1;
+    cr2::GameState g;
+    std::map<std::string, std::string> extra;
+    if (!g.load(std::string(d.begin(), d.end()), &extra, &err)) return std::fprintf(stderr, "%s: %s\n", save, err.c_str()), 1;
+    cr2::GameSavePlace place;
+    if (!extra["map"].empty()) place.map = extra["map"];
+    std::sscanf(extra["place"].c_str(), "%f %f %f %f", &place.position[0], &place.position[1], &place.position[2], &place.heading);
+    place.playFrames = uint32_t(std::atol(extra["playtime"].c_str()));
+    const auto bytes = cr2::writeGameSave(g, place, [&](int ch, int& hp, int& mp, int param[5]) {
+        int eq[8];
+        for (int e = 0; e < 8; ++e) eq[e] = g.equip[ch][e];
+        const auto st = cr2::BattleRules::playerStats(data, ch + 1, std::max(g.level[ch], 1), eq, g.sopiaLevel, g.seed[ch], g.itemCount);
+        hp = st.maxHp, mp = st.maxMp;
+        for (int k = 0; k < 5; ++k) param[k] = st.param[k];
+    });
+    std::FILE* f = std::fopen(out, "wb");
+    if (!f || std::fwrite(bytes.data(), 1, bytes.size(), f) != bytes.size()) return std::fprintf(stderr, "%s: can't write\n", out), 1;
+    std::fclose(f);
+    std::printf("%s: %zu bytes (map %s)\n", out, bytes.size(), place.map.c_str());
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1114,5 +1178,7 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[1], "run") && argc > 3) return run(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "sound")) return sound(argv[2]);
     if (!std::strcmp(argv[1], "glass")) return glass(std::max(std::atoi(argv[2]), 1));
+    if (!std::strcmp(argv[1], "save-import")) return saveImport(argv[2], argc > 3 ? argv[3] : nullptr);
+    if (!std::strcmp(argv[1], "save-export") && argc > 4) return saveExport(argv[2], argv[3], argv[4]);
     return usage();
 }

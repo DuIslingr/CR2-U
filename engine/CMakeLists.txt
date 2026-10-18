@@ -36,6 +36,7 @@ add_library(cr2core STATIC
     src/gfx/text.cpp
     src/script/vm.cpp
     src/script/gamestate.cpp
+    src/script/gamesave.cpp
     src/battle/battledata.cpp
     src/battle/rules.cpp
     src/battle/motion.cpp

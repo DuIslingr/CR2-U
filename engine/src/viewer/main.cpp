@@ -56,6 +56,7 @@
 #include <deque>
 #include <map>
 #include <set>
+#include <filesystem>
 #include <sstream>
 #include <memory>
 #include <string>
@@ -76,6 +77,7 @@
 #include "battle/script.hpp"
 #include "battle/special.hpp"
 #include "battle/glass.hpp"
+#include "script/gamesave.hpp"
 #include "event/runtime.hpp"
 #include "viewer/audio.hpp"
 #include "field/character.hpp"
@@ -6948,6 +6950,36 @@ struct Viewer {
         SDL_Log("continue: %s at %.3f %.3f %.3f", map.c_str(), player[0], player[1], player[2]);
         return true;
     }
+    // --game-save: the game's own game.dat / cont.dat (script/gamesave.hpp) - and its system.dat
+    // beside it, the flags 0..991 - played from its map and place
+    bool loadGameSave(const std::string& path, const std::string& binary, const std::string& dataPath) {
+        auto read = [](const std::string& p, std::vector<uint8_t>& out) {
+            std::FILE* f = std::fopen(p.c_str(), "rb");
+            if (!f) return false;
+            out.clear();
+            uint8_t buf[4096];
+            for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) out.insert(out.end(), buf, buf + n);
+            std::fclose(f);
+            return true;
+        };
+        std::vector<uint8_t> d;
+        cr2::GameSavePlace place;
+        bool crc = false;
+        std::string err;
+        if (!read(path, d) || !cr2::readGameSave(d, game, place, &crc, &err)) return SDL_Log("game save %s: %s", path.c_str(), err.empty() ? "can't read" : err.c_str()), false;
+        const std::string sys = (std::filesystem::path(path).parent_path() / "system.dat").string();
+        uint32_t options[6];
+        bool sysCrc = false;
+        const bool system = read(sys, d) && cr2::readSystemSave(d, game, options, &sysCrc);
+        SDL_Log("game save %s%s%s: %s at %.3f %.3f %.3f", path.c_str(), crc ? "" : " (its CRC doesn't hold)", system ? ", with its system.dat" : "",
+                place.map.c_str(), place.position[0], place.position[1], place.position[2]);
+        playSeconds = double(place.playFrames) / 20.0;
+        if (!loadField(place.map, "", binary, dataPath)) return false;
+        player[0] = place.position[0], player[1] = place.position[1], player[2] = place.position[2], heading = place.heading;
+        fig.place = cr2::Mat34();
+        fig.place.m[3] = player[0], fig.place.m[7] = player[1], fig.place.m[11] = player[2];
+        return true;
+    }
     void saveAnswer(bool yes) {
         if (saveStage != 1) return;
         if (yes) {
@@ -9449,6 +9481,7 @@ int main(int argc, char** argv) {
     std::string inputArg; // (--input: the commands chosen, as tokens)
     std::vector<int> flagsArg;
     bool continueSave = false;
+    std::string gameSavePath;
     bool titleScreen = false; // (--title: the game's title screen first)
     std::vector<std::pair<int, int>> itemArg;
     std::vector<std::tuple<int, int, int>> equipArg;
@@ -9528,6 +9561,7 @@ int main(int argc, char** argv) {
         else if (a == "--credits" && next) creditsArg = std::atoi(argv[++i]); // (the staff roll n at once: --play's, for tests)
         else if (a == "--play") playFrom = next && next[0] != '-' ? (++i, next) : "d1020";
         else if (a == "--continue") continueSave = true; // (--play from the save the field's Save wrote)
+        else if (a == "--game-save" && next) gameSavePath = next, ++i; // (--play from the game's own game.dat / cont.dat)
         else if (a == "--title") titleScreen = true;
         else if (a == "--resolution" && next) std::sscanf(next, "%dx%d", &resW, &resH), ++i;
         else if (a == "--upscaler" && next) upscaler = next, ++i;
@@ -9668,6 +9702,9 @@ int main(int argc, char** argv) {
     if (titleScreen) {
         v.playMode = true;
         v.startTitle();
+    } else if (!gameSavePath.empty()) {
+        v.playMode = true;
+        if (!v.loadGameSave(gameSavePath, binary, data)) return 1;
     } else if (continueSave) {
         v.playMode = true;
         if (!v.continueSave(binary, data)) return 1;

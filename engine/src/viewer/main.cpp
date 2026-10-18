@@ -2317,6 +2317,8 @@ struct Viewer {
         float motionStart = 0;
         bool loop = true;
         bool hidden = false;
+        bool hold = false;        // (its motion kept at its end: the downed's bd02)
+        float hideAt = -1;        // (SetAlphaAnimationAutoHide: gone once its fading is over)
         bool sceneHidden = false; // (a special scene's: SetVisibility)
         Ramp alpha, colour;       // (its opacity, its brightness: SetAlpha, SetColor)
         // the frame its target camera is in (StepBattleIn_Setup's: its DummyCP on its stance's
@@ -2494,7 +2496,7 @@ struct Viewer {
     }
     float motionLength(BattleUnit& u, const std::string& suffix) { return useMotion(u, suffix) ? u.fig.anim.duration() : 0.0f; }
     void playMotion(BattleUnit& u, const std::string& suffix, float at, const std::string& then = "bb01") {
-        u.motion = suffix, u.then = then, u.motionStart = at, u.loop = false;
+        u.motion = suffix, u.then = then, u.motionStart = at, u.loop = false, u.hold = false;
     }
 
     void poseBattle() {
@@ -2509,10 +2511,12 @@ struct Viewer {
             for (int c = 0; c < 3; ++c) u.fig.tint[c] = k;
             u.fig.tint[3] = u.alpha.at(battleClock);
             if (!u.fig.skinned) continue;
+            if (u.hideAt >= 0 && battleClock >= u.hideAt) u.hidden = true, u.hideAt = -1;
             float t = battleClock - u.motionStart;
             if (!u.loop) { // (once, then its stance)
                 const float d = motionLength(u, u.motion);
-                if (d <= 0 || t >= d) u.motionStart += std::max(d, 0.0f), u.motion = u.then, u.loop = true, t = battleClock - u.motionStart;
+                if (u.hold && t >= d) t = d; // (kept at its end)
+                else if (d <= 0 || t >= d) u.motionStart += std::max(d, 0.0f), u.motion = u.then, u.loop = true, t = battleClock - u.motionStart;
             }
             if (!useMotion(u, u.motion) && !useMotion(u, "bb01")) continue;
             pose(u.fig, std::max(t, 0.0f), u.loop);
@@ -3167,6 +3171,7 @@ struct Viewer {
         case BattleStep::ActionEnd:
             showIndex = showActions.size();
             if (stepAnalyze()) break;
+            if (stepDeaths()) break;
             if (!regenPending.empty() || battleScriptRunning()) { // (a revival, a tutorial first)
             } else if (!showActions.empty()) {
                 // (ActionCommonEventCommandEnd: a command lending an element - +0x70 / +0x71 1..3 -
@@ -3188,7 +3193,7 @@ struct Viewer {
                 break;
             }
             battleRules->endAction();
-            analyze.stage = 0;
+            analyze.stage = 0, deathsQueued = false;
             battleStep = BattleStep::ActionStart;
             break;
         case BattleStep::Over: break;
@@ -3352,6 +3357,93 @@ struct Viewer {
         for (const std::string& s : out) SDL_Log("result: %s", s.c_str());
     }
     bool announceHeld = false; // (the banner kept: the victory's)
+
+    // The downed, after the command (BtlActionCtrl's dead actions, ActionDeadStart ..): one of
+    // the party its motion 7 (bd02), kept, waited for (ActionDeadWaitDeadMotion); a monster with
+    // its +0x3a its size's defeat camera and bd02, waited for (ActionDeadWaitBossMotion: 5 s at
+    // most), then - unless its +0x38 - eff202 above it (its figure's height,
+    // GetEffectDeadOffsetByModelName), fading 1 -> 0 over 1 s after 0.25 s and gone, SE 0x66, then
+    // 0.95 s; any other at once - unless its +0x38 - fading over 0.5 s and gone, eff201 above it,
+    // SE 0x65, not waited for
+    struct Death {
+        int f = -1, stage = 0;
+        float start = 0;
+    };
+    std::vector<Death> deaths;
+    bool deathsQueued = false;
+    void deathEffect(const char* name, int f, BattleUnit& u) {
+        commandEffect(name, f, false);
+        if (commandEffects.empty()) return;
+        SceneEffect& fx = commandEffects.back();
+        fx.follows = -1;
+        fx.place = u.home;
+        unscaled(fx.place);
+        fx.place.m[7] += cr2::deadOffset(u.figure);
+    }
+    bool stepDeaths() {
+        if (!deathsQueued) {
+            deathsQueued = true;
+            deaths.clear();
+            for (const ShowAction& a : showActions)
+                for (const auto& e : a.hits)
+                    if (e.defeated && !e.regenerated && std::none_of(deaths.begin(), deaths.end(), [&](const Death& d) { return d.f == e.target; }))
+                        deaths.push_back({e.target});
+        }
+        bool wait = false;
+        for (Death& d : deaths) {
+            BattleUnit* u = unitOf(d.f);
+            const cr2::BattleData::Monster* m = d.f >= 2 ? battleRules->fighter(d.f).monster : nullptr;
+            if (!u || d.stage >= 9) continue;
+            if (d.stage == 0) {
+                d.start = battleClock;
+                if (d.f < 2 || (m && m->deathMotion)) {
+                    playMotion(*u, "bd02", battleClock), u->hold = true;
+                    d.stage = d.f < 2 ? 3 : 1;
+                    if (m) { // (the defeat camera: by its size, the size pattern)
+                        const char* cam = m->size == 2 ? "Cam_defeat_L_00" : battle.pattern == 12 ? "Cam_defeat_neron_00"
+                                        : m->size == 3 ? "Cam_defeat_XL_00" : battle.pattern == 11 ? "Cam_defeat_Hpair_00"
+                                        : m->size == 4 ? "Cam_defeat_Hsolo_00" : nullptr;
+                        if (cam) {
+                            setBattleCamera(cam);
+                            if (m->size == 4 && battle.pattern != 11)
+                                for (int c = 0; c < 3; ++c) battleCameraPlace.m[c * 4 + 3] = u->home.m[c * 4 + 3];
+                        }
+                    }
+                } else {
+                    if (!m || !m->deathPlain) {
+                        u->alpha.begin(battleClock, 1, 0, 0.5f), u->hideAt = battleClock + 0.5f;
+                        deathEffect("eff201", d.f, *u);
+                    }
+                    battleSe(0x65);
+                    d.stage = 9;
+                    continue;
+                }
+            }
+            const float len = motionLength(*u, "bd02");
+            if (d.stage == 3) { // (one of the party: its motion's end)
+                if (battleClock - d.start < len) wait = true;
+                else d.stage = 9;
+                continue;
+            }
+            if (d.stage == 1) {
+                if (battleClock - d.start < std::min(len, 5.0f)) {
+                    wait = true;
+                    continue;
+                }
+                if (!m->deathPlain) {
+                    deathEffect("eff202", d.f, *u);
+                    u->alpha.begin(battleClock + 0.25f, 1, 0, 1.0f), u->hideAt = battleClock + 1.25f;
+                    battleSe(0x66);
+                }
+                d.stage = 2, d.start = battleClock;
+            }
+            if (d.stage == 2) {
+                if (battleClock - d.start < 0.95f) wait = true;
+                else d.stage = 9;
+            }
+        }
+        return wait;
+    }
 
     // Analyze (command kind 26; BtlActionCtrl::ActionSopiaWaitEffect -> ActionSopiaAnalyze): its
     // effect over, the one struck's "HP: %d / %d" on the banner until a tap, then its MonsterHelp
@@ -3678,8 +3770,6 @@ struct Viewer {
             if (showCamera2 >= 0) setBattleCamera(showCamera2);
             landHits(a, true);
         }
-        for (const auto& e : a.hits)
-            if (e.defeated && showHitDone && s > showHitAt + 0.6f && fighterUnit[e.target] >= 0) battleUnits[size_t(fighterUnit[e.target])].hidden = true;
     }
 
     // an action's hits landing (the targets' damage motion, the sounds, the hit's effect, the

@@ -99,6 +99,8 @@ struct DarwinPatternOffset {
     float v[3];
 };
 const float* darwinFigureOffset(const std::string& figure);
+// how far above a dying monster its death effect goes (GetEffectDeadOffsetByModelName; 0 none)
+float deadOffset(const std::string& figure);
 const float* darwinPatternOffset(int key);
 
 } // namespace cr2

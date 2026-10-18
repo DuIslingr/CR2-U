@@ -97,6 +97,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         m.size = int(int8_t(d[o + 0x53]));
         for (int k = 0; k < 5; ++k) m.param[k] = s16(d, o + 0x20 + size_t(k) * 2);
         m.level = d[o + 0x3b];
+        m.deathPlain = d[o + 0x38] != 0, m.deathMotion = d[o + 0x3a] != 0;
         for (int k = 0; k < 7; ++k) m.resist[k] = d[o + 0x3c + size_t(k)];
         for (int k = 0; k < 5; ++k) m.stateResist[k] = d[o + 0x43 + size_t(k)];
         m.skills = u32(d, o + 0x48);

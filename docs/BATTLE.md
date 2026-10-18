@@ -265,6 +265,19 @@ pair out over 1 s and hides them, ActionAdventStandby (the status windows off, t
 scene, ActionAdventCleanup (its effects gone, the pair shown at full opacity, the windows back).
 A tap skips a scene while its skip is on (SetSkipEnable; BtlMain::IsEnabled(0x104)): not here.
 
+## The downed (BtlActionCtrl's dead actions)
+
+After the command (ActionDeadStandby .. ActionDeadWaitDeadMotion), each downed: one of the party
+its motion 7 (`bd02`), kept at its end, its end waited for (then a revival, state 33); a monster
+with its +0x3a (125 of them) the defeat camera - its size 2 `Cam_defeat_L_00`, the boss's pattern
+12 `Cam_defeat_neron_00`, size 3 `_XL_`, pattern 11 `_Hpair_`, size 4 `_Hsolo_` (at its place) -
+and `bd02`, waited for (ActionDeadWaitBossMotion: 5 s at most), then unless its +0x38 (34) eff202
+above it, the figure fading 1 -> 0 over 1 s after 0.25 s and gone (StartAlphaAnimation,
+SetAlphaAnimationAutoHide), SE 0x66, then 0.95 s (ActionDeadWaitDeadMotion); any other monster at
+once - unless its +0x38 - fading over 0.5 s and gone, eff201 above it, SE 0x65, the next action not
+waiting. "Above": BtlEffectTable::GetEffectDeadOffsetByModelName, by the figure's first four
+characters (0x5c061c: 53 heights, `tools/gen_dead_table.py`).
+
 ## Stealing (BtlActionCtrl::CheckSteal)
 
 Steal Item (command 72, kind 29: a blow, then PostCommandAction's CheckSteal; sopia 13's first

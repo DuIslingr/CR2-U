@@ -10,6 +10,7 @@ namespace {
 #include "battle/specialtable.inc"
 #include "battle/effecttable.inc"
 #include "battle/darwintable.inc"
+#include "battle/deadtable.inc"
 
 } // namespace
 
@@ -36,6 +37,12 @@ const float* darwinFigureOffset(const std::string& figure) {
     for (const DarwinOffset& e : kDarwinFigureOffsets) // (GetAwakeDawinLv3Offset: the first four characters' hash)
         if (e.name && figure.compare(0, 4, e.name, 0, 4) == 0 && figure.size() >= 4) return e.v;
     return nullptr;
+}
+
+float deadOffset(const std::string& figure) {
+    for (const auto& e : kDeadOffsets)
+        if (figure.size() >= 4 && figure.compare(0, 4, e.name, 0, 4) == 0) return e.height;
+    return 0;
 }
 
 const float* darwinPatternOffset(int key) {

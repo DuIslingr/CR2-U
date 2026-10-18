@@ -136,11 +136,13 @@ void AudioPlayer::endVoice(Voice& v) {
 
 void AudioPlayer::startClip(Voice& v, SoundData::Bank bank, int clip, bool loop) {
     endVoice(v);
-    if (!data_.clip(bank, clip, v.pcm) || v.pcm.empty()) return;
+    SoundData::ClipFormat fmt;
+    if (!data_.clip(bank, clip, v.pcm, &fmt) || v.pcm.empty()) return;
+    v.rate = fmt.rate, v.channels = fmt.channels;
     v.active = true, v.loop = loop, v.clip = clip, v.voice = bank == SoundData::Voices;
     if (!device_) return;
     SDL_AudioSpec spec{};
-    spec.format = SDL_AUDIO_S16, spec.channels = 1, spec.freq = SoundData::kRate;
+    spec.format = SDL_AUDIO_S16, spec.channels = v.channels, spec.freq = v.rate;
     v.stream = SDL_CreateAudioStream(&spec, nullptr);
     if (!v.stream || !SDL_BindAudioStream(device_, v.stream)) {
         endVoice(v);
@@ -221,8 +223,8 @@ void AudioPlayer::update(float dt) {
         }
         if (!v.stream) { // (silent: over after its length)
             if (!v.loop) {
-                const float left = float(v.pcm.size()) / SoundData::kRate;
-                v.pcm.resize(size_t(std::max(0.0f, left - dt) * SoundData::kRate));
+                const float left = float(v.pcm.size()) / float(v.rate * v.channels);
+                v.pcm.resize(size_t(std::max(0.0f, left - dt) * float(v.rate)) * size_t(v.channels));
                 if (v.pcm.empty()) endVoice(v);
             }
             continue;

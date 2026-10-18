@@ -120,6 +120,7 @@ endif()
 # stb_vorbis (public domain, vendored - CR1:U's copy): the Android release's music (Ogg Vorbis)
 set_source_files_properties(third_party/stb/stb_vorbis.c PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
 target_include_directories(cr2core PUBLIC src)
+target_include_directories(cr2core PRIVATE third_party/hevag) # (the HE-VAG filter table: vgmstream's, ISC)
 target_link_libraries(cr2core PUBLIC squirrel2)
 # The Android release's APK (its library: the maps' table; its fonts): zlib (the system's) inflates
 # them; without it, only an unpacked APK's

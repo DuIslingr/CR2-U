@@ -10,6 +10,7 @@ them in `engine/third_party/`:
 | `stb/stb_vorbis.c` | stb_vorbis 1.22 by Sean Barrett (the copy CR1:U vendors) - decodes the Android release's music (Ogg Vorbis) | public domain / MIT (in the file) |
 | `faad2/` | FAAD2 2.11.1's `libfaad` (the copy CR1:U vendors) - decodes the iPad release's music (AAC in CAF) when the system has no FAAD2. Code from FAAD2 is copyright (c) Nero AG, www.nero.com | GPL-2.0-or-later (`COPYING`) |
 | `libatrac9/` | LibAtrac9 by Alex Barney, commit efca2e3 (the copy CR1:U vendors) - decodes the Vita release's music (ATRAC9 in SXD) | MIT (`LICENSE`) |
+| `hevag/` | The HE-VAG prediction filter table from vgmstream (the copy CR1:U vendors) - the Vita release's sound effects | ISC (`COPYING`) |
 | `squirrel2/` | Squirrel 2.2.4 stable by Alberto Demichelis (the VM and its standard library, unmodified; `squirrel_2.2.4_stable.tar.gz` from the Squirrel project on SourceForge) - the version the game embeds, which runs its compiled scripts | zlib (`COPYRIGHT`) |
 
 Not included: the **NVIDIA DLSS SDK** (proprietary). Its support builds only when you place the

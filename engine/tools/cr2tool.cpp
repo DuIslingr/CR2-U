@@ -102,8 +102,10 @@ int sound(const char* path) {
         int ok = 0;
         double seconds = 0;
         std::vector<int16_t> pcm;
-        for (int k = 0; k < sd.clips(bank); ++k)
-            if (sd.clip(bank, k, pcm)) ++ok, seconds += double(pcm.size()) / cr2::SoundData::kRate;
+        for (int k = 0; k < sd.clips(bank); ++k) {
+            cr2::SoundData::ClipFormat fmt;
+            if (sd.clip(bank, k, pcm, &fmt)) ++ok, seconds += double(pcm.size()) / double(fmt.rate * fmt.channels);
+        }
         std::printf("%s: %d / %d clips read, %.0f s\n", b == 0 ? "effects" : "voices", ok, sd.clips(bank), seconds);
     }
     std::printf("%d tracks decode, %d don't\n", tracks, bad);

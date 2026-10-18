@@ -13,7 +13,8 @@
 // The iPad's are the same banks as files (Sound.ios/sound/sndeff.bin, voice.bin), its music AAC
 // in CAF (bgmNN.caf: FAAD2), looping at its own table's AAC packet. The Vita's music is ATRAC9 in
 // SXD (Sound.psp2/sound/bgmNN.sxd: LibAtrac9), looping between its WAVE entry's points; its banks
-// (sndeff.sxd, voice.sxd1 / .sxd2) are not read yet.
+// SXD too - sndeff.sxd (HE-VAG, 44.1 / 22.05 kHz, some stereo) and voice.sxd1 (the entries) over
+// voice.sxd2 (their ATRAC9 streams) - clip n their wave n.
 
 #include <cstdint>
 #include <functional>
@@ -22,6 +23,8 @@
 #include <vector>
 
 namespace cr2 {
+
+struct SxdWave;
 
 // A music track decoding: interleaved s16, sought by frame
 class MusicStream {
@@ -59,9 +62,13 @@ public:
     static int voiceClip(const std::string& figure, int kind);
 
     enum Bank { Effects = 0, Voices = 1 };
-    int clips(Bank b) const { return int(bank_[b].table.size()); }
-    // a clip's samples (s16 mono, 22050 Hz); false: no such clip
-    bool clip(Bank b, int n, std::vector<int16_t>& out) const;
+    int clips(Bank b) const;
+    // a clip's samples (s16, interleaved; Android's and the iPad's mono at 22050 Hz, the Vita's
+    // its wave's - `format` says); false: no such clip
+    struct ClipFormat {
+        int rate = 22050, channels = 1;
+    };
+    bool clip(Bank b, int n, std::vector<int16_t>& out, ClipFormat* format = nullptr) const;
     static constexpr int kRate = 22050;
 
 private:
@@ -81,6 +88,8 @@ private:
     std::string from_;
     bool opened_ = false;
     enum class Kind { Android, Ipad, Vita } kind_ = Kind::Android;
+    std::vector<SxdWave> vitaWaves_[2]; // (the Vita's banks: their waves, in vitaFile_)
+    std::string vitaFile_[2];
 };
 
 // AAC in CAF (the iPad's bgmNN.caf: desc, kuki - the ESDS's AudioSpecificConfig -, pakt - the
@@ -101,7 +110,10 @@ std::unique_ptr<MusicStream> openAac(std::vector<uint8_t> file, std::string* err
 // body} - REQD, NAME, WAVE (entries: +0x04 the codec / channels, +0x08 the rate, +0x14 the frames,
 // +0x18 / +0x1c the loop's start and end, +0x20 the stream's size, +0x24 its offset from there,
 // +0x2c the ATRAC9 config, a little-endian word), DATA
+// (the banks' waves: decodeSxdWave)
 struct SxdWave {
+    int codec = 0x42; // (0x42 ATRAC9, 0x21 HE-VAG)
+    bool streamed = false; // (+0 bit 1: its stream in another file - voice.sxd2 -, `at` there)
     int rate = 48000, channels = 2;
     int64_t frames = 0, loopStart = -1, loopEnd = -1;
     uint8_t config[4] = {};
@@ -110,6 +122,8 @@ struct SxdWave {
 bool parseSxdWaves(const std::vector<uint8_t>& file, std::vector<SxdWave>& out, std::string* error = nullptr);
 // an SXD's first wave's ATRAC9 decoding (LibAtrac9); null without it
 std::unique_ptr<MusicStream> openSxdAt9(std::vector<uint8_t> file, std::string* error = nullptr);
+// a wave decoded whole (its stream's bytes `data`): HE-VAG, or ATRAC9 (false without LibAtrac9)
+bool decodeSxdWave(const SxdWave& w, const uint8_t* data, size_t size, std::vector<int16_t>& out);
 
 // Ogg Vorbis decoding (stb_vorbis): a track opened, read in pieces, sought
 class OggStream : public MusicStream {

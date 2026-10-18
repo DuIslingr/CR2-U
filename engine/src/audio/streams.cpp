@@ -13,6 +13,8 @@
 #include <libatrac9.h>
 #endif
 
+#include "hevag_coefs.h"
+
 namespace cr2 {
 
 namespace {
@@ -301,13 +303,14 @@ bool parseSxdWaves(const std::vector<uint8_t>& file, std::vector<SxdWave>& out, 
                 const size_t e = ref + le32(f + ref);
                 if (e + 0x30 > size) return fail(error, "a wave past the end");
                 SxdWave w;
-                w.channels = f[e + 5], w.rate = int(le32(f + e + 8));
+                w.streamed = (le32(f + e) & 2) != 0;
+                w.codec = f[e + 4], w.channels = f[e + 5], w.rate = int(le32(f + e + 8));
                 w.frames = le32(f + e + 0x14);
                 w.loopStart = int32_t(le32(f + e + 0x18)), w.loopEnd = int32_t(le32(f + e + 0x1c));
-                w.size = le32(f + e + 0x20), w.at = e + 0x24 + le32(f + e + 0x24);
+                w.size = le32(f + e + 0x20), w.at = w.streamed ? le32(f + e + 0x24) : e + 0x24 + le32(f + e + 0x24);
                 const uint32_t cfg = le32(f + e + 0x2c);
                 for (int b = 0; b < 4; ++b) w.config[b] = uint8_t(cfg >> (24 - 8 * b));
-                if (w.at + w.size > size || w.channels <= 0) return fail(error, "a wave's stream past the end");
+                if ((!w.streamed && w.at + w.size > size) || w.channels <= 0) return fail(error, "a wave's stream past the end");
                 if (w.loopEnd <= w.loopStart || w.loopStart < 0) w.loopStart = w.loopEnd = -1;
                 out.push_back(w);
             }
@@ -315,6 +318,65 @@ bool parseSxdWaves(const std::vector<uint8_t>& file, std::vector<SxdWave>& out, 
         p += 8 + len;
     }
     return true;
+}
+
+bool decodeSxdWave(const SxdWave& w, const uint8_t* data, size_t size, std::vector<int16_t>& out) {
+    const size_t ch = size_t(std::max(w.channels, 1));
+    out.clear();
+    if (w.codec == 0x21) { // (HE-VAG: 16-byte frames of 28 samples, a stereo wave's in turn)
+        const size_t frames = size / 16 / ch;
+        out.assign(frames * 28 * ch, 0);
+        for (size_t c = 0; c < ch; ++c) {
+            float h1 = 0, h2 = 0, h3 = 0, h4 = 0;
+            for (size_t fr = 0; fr < frames; ++fr) {
+                const uint8_t* p = data + (fr * ch + c) * 16;
+                const int shift = p[0] & 0x0f, flag = p[1] & 0x0f;
+                int index = (p[0] >> 4) | (p[1] & 0xf0);
+                if (index > 127) index = 0;
+                const float* k = hevag_coefs_f[index];
+                for (int i = 0; i < 28; ++i) {
+                    float s = 0;
+                    if (flag < 7) { // (7: silence)
+                        const int nibble = i & 1 ? p[2 + i / 2] >> 4 : p[2 + i / 2] & 0x0f;
+                        s = h1 * k[0] + h2 * k[1] + h3 * k[2] + h4 * k[3] + float(((nibble >= 8 ? nibble - 16 : nibble) * 4096) >> shift);
+                    }
+                    const int v = std::clamp(int(s), -32768, 32767);
+                    out[(fr * 28 + size_t(i)) * ch + c] = int16_t(v);
+                    h4 = h3, h3 = h2, h2 = h1, h1 = float(v);
+                }
+            }
+        }
+    } else if (w.codec == 0x42) {
+#ifdef CR2_HAVE_ATRAC9
+        void* h = Atrac9GetHandle();
+        unsigned char config[4];
+        std::memcpy(config, w.config, 4);
+        Atrac9CodecInfo info;
+        if (!h || Atrac9InitDecoder(h, config) != 0 || Atrac9GetCodecInfo(h, &info) != 0 || info.superframeSize <= 0) {
+            if (h) Atrac9ReleaseHandle(h);
+            return false;
+        }
+        std::vector<int16_t> sf(size_t(info.framesInSuperframe) * size_t(info.frameSamples) * size_t(info.channels));
+        for (size_t at = 0; at + size_t(info.superframeSize) <= size; at += size_t(info.superframeSize)) {
+            const uint8_t* p = data + at;
+            bool ok = true;
+            for (int k = 0; k < info.framesInSuperframe && ok; ++k) {
+                int used = 0;
+                ok = Atrac9Decode(h, p, sf.data() + size_t(k) * size_t(info.frameSamples) * size_t(info.channels), &used) == 0 && used > 0;
+                p += used;
+            }
+            if (!ok) break;
+            out.insert(out.end(), sf.begin(), sf.end());
+        }
+        Atrac9ReleaseHandle(h);
+#else
+        return false;
+#endif
+    } else {
+        return false;
+    }
+    if (w.frames > 0 && out.size() > size_t(w.frames) * ch) out.resize(size_t(w.frames) * ch); // (its frames alone)
+    return !out.empty();
 }
 
 std::unique_ptr<MusicStream> openSxdAt9(std::vector<uint8_t> file, std::string* error) {

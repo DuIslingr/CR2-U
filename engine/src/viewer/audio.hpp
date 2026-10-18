@@ -47,6 +47,7 @@ private:
     struct Voice {
         SDL_AudioStream* stream = nullptr;
         std::vector<int16_t> pcm;
+        int rate = SoundData::kRate, channels = 1;
         bool loop = false, active = false, voice = false;
         int clip = -1;
         float fade = 1, fadeStep = 0; // (a stop's fade: its gain falling by fadeStep a second)

@@ -5,6 +5,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 
 #include "assets/release.hpp"
 
@@ -148,7 +149,17 @@ bool SoundData::open(const std::string& archivePath, std::string* error) {
             std::snprintf(n, sizeof n, "bgm%02d.sxd", t + 1);
             if (fs::exists(vita / n, ec)) tracks_[t] = Piece{(vita / n).string(), 0, uint64_t(fs::file_size(vita / n, ec))};
         }
-        from_ = vita.string() + " (the music; the effects and voices - sndeff.sxd, voice.sxd1 / .sxd2 - not read)";
+        // the banks: sndeff.sxd, voice.sxd1's entries over voice.sxd2
+        auto bank = [&](int b, const char* head, const char* data) {
+            std::ifstream f(vita / head, std::ios::binary);
+            if (!f) return false;
+            const std::vector<uint8_t> d((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            if (!parseSxdWaves(d, vitaWaves_[b])) return false;
+            vitaFile_[b] = (vita / data).string();
+            return true;
+        };
+        const bool banks = bank(Effects, "sndeff.sxd", "sndeff.sxd") && bank(Voices, "voice.sxd1", "voice.sxd2");
+        from_ = vita.string() + (banks ? "" : " (its banks don't read)");
         kind_ = Kind::Vita;
         return opened_ = true;
     }
@@ -202,7 +213,18 @@ int SoundData::voiceClip(const std::string& figure, int kind) {
     return -1;
 }
 
-bool SoundData::clip(Bank b, int n, std::vector<int16_t>& out) const {
+int SoundData::clips(Bank b) const { return kind_ == Kind::Vita ? int(vitaWaves_[b].size()) : int(bank_[b].table.size()); }
+
+bool SoundData::clip(Bank b, int n, std::vector<int16_t>& out, ClipFormat* format) const {
+    if (kind_ == Kind::Vita) { // (the Vita's: wave n of the bank's SXD)
+        if (n < 0 || n >= int(vitaWaves_[b].size())) return false;
+        const SxdWave& w = vitaWaves_[b][size_t(n)];
+        std::vector<uint8_t> d;
+        if (!readPiece(Piece{vitaFile_[b], w.at, w.size}, d) || !decodeSxdWave(w, d.data(), d.size(), out)) return false;
+        if (format) format->rate = w.rate, format->channels = w.channels;
+        return true;
+    }
+    if (format) *format = ClipFormat();
     const BankFile& f = bank_[b];
     if (n < 0 || n >= int(f.table.size())) return false;
     const auto [offset, size] = f.table[size_t(n)];

@@ -162,8 +162,8 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       fighters' voices, the menus' decide / back; the options' volumes (`--mute`; silent under
       `--capture`; `cr2tool sound` decodes all of it). The iPad's music too (AAC in CAF, FAAD2 -
       the system's or the bundled copy - looping at its own table's packets) and the Vita's
-      (ATRAC9 in SXD, LibAtrac9, looping between its points). Not yet: the Vita's effects and
-      voices (`sndeff.sxd`, `voice.sxd1` / `.sxd2`)
+      (ATRAC9 in SXD, LibAtrac9, looping between its points), and the Vita's effects and voices
+      (HE-VAG and ATRAC9 in `sndeff.sxd`, `voice.sxd1` / `.sxd2`)
 - [x] The awakenings', advents' and monsters' special scenes (BtlSpecialCommandList, built in
       the game's code: read by an ARM interpreter over the library) - their effects (by the
       effects' table), summoned figures, cameras, the fighters hidden and faded, the screen's

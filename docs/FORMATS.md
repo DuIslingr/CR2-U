@@ -612,16 +612,21 @@ the effects (`Sound/sndeff`) and the voices (`Sound/voice`).
   - Packet p is p x 1024 less the priming in the decoded stream. Its 2000832 for bgm01 is the
     Vita's 2003653: the Vita's content runs some 2,400..3,000 frames later than the iPad's.
 - **The Vita's** (`Sound.psp2/sound/`): SXD files (MVGL::Sound's PSP2 build) - `bgmNN.sxd` the
-  music; `sndeff.sxd`, `voice.sxd1` (its headers) / `voice.sxd2` (its data, "SXDS") the banks,
-  not read yet.
+  music; `sndeff.sxd` the effects, `voice.sxd1` the voices' entries over `voice.sxd2` (their
+  streams after a 0x60-byte "SXDS" header). Cr3UtilSoundPlaySE(n) / PlayVoice(n) play wave n
+  (Cr3SoundPlay_Package): 391 effects and 3249 voices, Android's first 391 / 3249 in order.
   - An SXD is "SXDF", a 0x60-byte header (+0x20 its name), then chunks {char[4] id, u32 size,
     body}: REQD, NAME, WAVE, DATA.
   - WAVE: +4 its entries' count, then a u32 each from +8, the entry that far from it.
-  - An entry: +4 u8 the codec (0x42 ATRAC9) and +5 the channels; +8 the rate; +0x14 the frames;
+  - An entry: +0 flags (bit 1: streamed - +0x24 an offset into the `.sxd2`); +4 u8 the codec
+    (0x42 ATRAC9, 0x21 HE-VAG) and +5 the channels; +8 the rate; +0x14 the frames;
     +0x18 / +0x1c the loop's start and end, both inclusive (Android's repeat frame at 48 kHz);
     +0x20 the stream's size; +0x24 its offset from there; +0x2c the ATRAC9 config as a
     little-endian word (0xFE7409F0: 48 kHz stereo, superframes of 1024 samples).
   - The music's tracks run on past their loop's end.
+  - The effects: HE-VAG, 16-byte frames of 28 samples (a stereo wave's channels a frame each in
+    turn), mostly 44.1 kHz where Android's are 22.05 kHz. The 33 stereo ones' left channel is
+    Android's clip. The voices: ATRAC9 mono, 48 kHz (config 0xFE7005F0).
 - **A bank** (CPackage): a table of {u32 offset, u32 size} - its length the first offset (394
   effects, 3250 voices) - over headerless signed 16-bit mono PCM at 22050 Hz
   (COpenSLESAudioPlayer::initialize(2, 1, 22050000 mHz)). Cr3UtilSoundPlaySE(n) /

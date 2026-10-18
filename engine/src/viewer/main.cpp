@@ -9808,7 +9808,7 @@ std::string upscaleName(const cr2::UpscaleSettings& u) {
     std::string q = "x" + std::to_string(u.ratio);
     for (const Quality& k : kQualities)
         if (k.ratio == u.ratio) q = k.name;
-    return std::string(u.mode == cr2::Upscaler::Fsr3 ? "FSR 3.1 " : "DLSS ") + q;
+    return std::string(u.mode == cr2::Upscaler::Fsr3 ? "FSR 3.1 " : u.mode == cr2::Upscaler::MetalFx ? "MetalFX " : "DLSS ") + q;
 }
 
 } // namespace
@@ -9954,7 +9954,8 @@ int main(int argc, char** argv) {
     upscale.sharpness = sharpness;
     if (upscaler == "fsr3" || upscaler == "fsr") upscale.mode = cr2::Upscaler::Fsr3;
     else if (upscaler == "dlss") upscale.mode = cr2::Upscaler::Dlss;
-    else if (upscaler != "off") return std::fprintf(stderr, "--upscaler: off, fsr3 or dlss\n"), 2;
+    else if (upscaler == "metalfx") upscale.mode = cr2::Upscaler::MetalFx;
+    else if (upscaler != "off") return std::fprintf(stderr, "--upscaler: off, fsr3, dlss or metalfx\n"), 2;
     {
         const auto q = std::find_if(std::begin(kQualities), std::end(kQualities), [&](const Quality& k) { return quality == k.name; });
         if (q == std::end(kQualities)) return std::fprintf(stderr, "--quality: native, quality, balanced, performance or ultra\n"), 2;
@@ -10083,6 +10084,7 @@ int main(int argc, char** argv) {
         }
     }
     // The device: Vulkan unless asked otherwise or it can't start, then OpenGL
+    cr2::useBundledVulkan(); // (macOS: the .app's own loader)
     std::unique_ptr<cr2::RenderDevice> dev;
     SDL_Window* win = nullptr;
     const SDL_WindowFlags shown = capture.empty() ? SDL_WINDOW_RESIZABLE : SDL_WINDOW_HIDDEN;

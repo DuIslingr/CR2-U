@@ -454,7 +454,10 @@ encounters' switch (shown with flag 0x40e, on with 0x40f); each but the tab only
 with campWin1_io, the third window's joints; 0x24 for two - campWin2_io), CampTitleMenu (0x2c: `menu`
 with menuCamp_io), CampMenu (0x29: campBtn_io's circle buttons 16 Items - not selectable with no
 item -, 17 Equipment, 18 Sopia, 20 Options; btlBack; campLnk - campLnk1_io with GEO_pub hidden before
-flag 0x4b0, campLnk2_io after - its 201 / 202 links), the battery, the Oz (0x52: ozWin_io, its seven
+flag 0x4b0, campLnk2_io after - its 201 / 202 links), the battery (BatteryWindowMenu, also with the shop and the pub, and in the field
+once the level is under 20% - looked at every 10 s: `battery_id` at a frame by the power, every 20
+frames - charging 0.35 full, 0.3 under 30%, 0.25 under 60%, else 0.2; charged 0.2; discharging 0.15
+under 30%, 0.1 under 60%, else 0.05; the viewer: SDL's power info, no battery as charged), the Oz (0x52: ozWin_io, its seven
 digits) and the clock (0x51 PlayTimeWindowMenu: timeWin_io - the device's time, GetCurrentHourTime:
 the hours at call_dotNum_id04, glyph 163's ":" at 03, the minutes at 01, set 90). A button's result
 (InterfaceMain::Update's camp step): 1 CampItemListMenu (0x2d), 2 the equipment (0x2f, 0x30, 0x3a,

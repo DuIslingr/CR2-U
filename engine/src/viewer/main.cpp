@@ -9007,6 +9007,39 @@ struct Viewer {
             if (game.tabEnable) drawFieldTab(view); // (Cr3TabMenu.SetEnable)
             drawChangeButton(view);
         }
+        // the battery (BatteryWindowMenu: with the camp, the shop, the pub - Set*Parameter's
+        // SetBatteryWindowParameter -, and in the field once its level is under 20%, looked at
+        // every 10 s - InterfaceMain::Update)
+        if (campOpen || shop.stage || pub.stage) drawBattery(view);
+        else if (tabShown && batteryLow) drawBattery(view);
+    }
+    // battery_id at a frame by the device's power (BatteryWindowMenu::Update, every 20 frames:
+    // charging - 0.35 full, 0.3 under 30%, 0.25 under 60%, else 0.2; charged 0.2; discharging 0.15
+    // under 30%, 0.1 under 60%, else 0.05; unknown 0) - SDL's power info; a machine without a
+    // battery as charged
+    bool batteryLow = false;
+    float batteryCheckedAt = -100, batteryFrameAt = -100, batteryFrame = 0.2f;
+    void updateBattery() {
+        if (uiClock - batteryFrameAt < 1.0f) return;
+        batteryFrameAt = uiClock;
+        int pct = -1;
+        const SDL_PowerState st = SDL_GetPowerInfo(nullptr, &pct);
+        const float level = pct < 0 ? 1.0f : float(pct) / 100.0f;
+        if (st == SDL_POWERSTATE_CHARGING) batteryFrame = level >= 1.0f ? 0.35f : level < 0.3f ? 0.3f : level < 0.6f ? 0.25f : 0.2f;
+        else if (st == SDL_POWERSTATE_CHARGED || st == SDL_POWERSTATE_NO_BATTERY) batteryFrame = 0.2f;
+        else if (st == SDL_POWERSTATE_ON_BATTERY) batteryFrame = level < 0.3f ? 0.15f : level < 0.6f ? 0.1f : 0.05f;
+        else batteryFrame = 0;
+        if (uiClock - batteryCheckedAt >= 10.0f) { // (InterfaceMain::Update: each 10 s)
+            batteryCheckedAt = uiClock;
+            batteryLow = st == SDL_POWERSTATE_ON_BATTERY && level < 0.2f;
+        }
+    }
+    void drawBattery(const Mat4& view) {
+        updateBattery();
+        UiFig& b = uiFig("battery_id");
+        b.fig.place = cr2::Mat34();
+        poseUi(b, "battery_id", batteryFrame);
+        drawFigure(b.fig, view.data());
     }
 
     void drawBalloons(int w, int h) {

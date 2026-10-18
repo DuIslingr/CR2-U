@@ -156,9 +156,8 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     vm.setNative("VistaEvent", "LightMove", [this](NativeCall& c) { scene_.lightMove(c.number(0), c.number(1)); });
     // the player's slash (WaitPlayerSlash: ExecutionStart, then CheckExecution each frame until
     // the swipe; ExecutionEndStart the finishing one)
-    auto execution = [this](NativeCall&) { execution_ = true, pageTime_ = 0; };
-    vm.setNative("VistaEvent", "ExecutionStart", execution);
-    vm.setNative("VistaEvent", "ExecutionEndStart", execution);
+    vm.setNative("VistaEvent", "ExecutionStart", [this](NativeCall&) { execution_ = true, executionEnd_ = false, pageTime_ = 0; });
+    vm.setNative("VistaEvent", "ExecutionEndStart", [this](NativeCall&) { execution_ = true, executionEnd_ = true, pageTime_ = 0; });
     vm.setNative("VistaEvent", "CheckExecution", [this](NativeCall& c) { c.result(!execution_); });
     // the message window
     auto textData = [this](NativeCall& c) { loadText(c.string(0), text_); };

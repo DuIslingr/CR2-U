@@ -318,6 +318,7 @@ struct Viewer {
     // balloon's function (FldMain::CheckTouchEventExec_Tap, EventExecute), the leader turned to it
     void tap() {
         if (titleMenu.stage) return titleTap();
+        if (vslash.stage) return; // (the slash: a swipe, not a tap)
         if (battleMode) {
             if (skipScene()) return;
             if (battleScript && battleScript->running()) battleScript->events().advance();
@@ -1975,6 +1976,7 @@ struct Viewer {
         }
         audio.setVolumes(float(optionVolume[0]) / 100.0f, float(optionVolume[1]) / 100.0f, float(optionVolume[2]) / 100.0f);
         audio.update(dt);
+        updateVistaSlash();
         if (credits.stage) return updateCredits(dt);
         if (titleMenu.stage) return updateTitle(dt);
         if (playMode && (fieldMode || eventMode || battleMode) && !paused) playSeconds += dt; // (the save's play time)
@@ -9094,6 +9096,116 @@ struct Viewer {
         dev->setLighting(l);
         drawFigure(u.fig, cr2::mat4Multiply(uiProjection(w, h), camera).data());
     }
+    // The vista's slash (VistaEvent.ExecutionStart / ExecutionEndStart - EvtUtilVistaExecution*:
+    // InterfaceMain::SetEnforecementEffectParameter 0 / 1, FieldGimickEffect07Menu, interface 0x45
+    // / 0x7b): `kill` (`finale`) - kill_io in, kill_wait looping - and redCsr_loop (blueCsr_loop)
+    // at its place. A swipe through it (TouchSimpleRelease: the place's projection on the press ..
+    // release line within it, and the slide area): `execution` (`catastrophe`) once, SE 0x15c,
+    // then kill_io backwards and CheckExecution true (EndCheckEnforecementEffectWindow 1); a swipe
+    // past it: kill_io backwards, then the whole again (2). `--input slash` / `slashfail`
+    struct VistaSlash {
+        int stage = 0; // 0 none, 1 in / waiting, 2 the hit's figure, 3 out
+        bool end = false, hit = false, pressed = false;
+        float at = 0, x0 = 0, y0 = 0;
+    } vslash;
+    void updateVistaSlash() {
+        cr2::EventRuntime* ev = activeEvents();
+        const bool awaited = ev && ev->awaitingSlash();
+        if (!awaited) {
+            vslash = VistaSlash();
+            return;
+        }
+        if (vslash.stage == 0) {
+            vslash = VistaSlash(), vslash.stage = 1, vslash.end = ev->finishingSlash(), vslash.at = uiClock;
+            SDL_Log("vista: the slash awaited%s (%.1f s)", vslash.end ? " (the finale)" : "", uiClock);
+        }
+        if (vslash.stage == 1 && uiClock - vslash.at > 0.5f && !inputScript.empty() && (inputScript.front() == "slash" || inputScript.front() == "slashfail")) {
+            const bool hit = inputScript.front() == "slash";
+            inputScript.pop_front();
+            vslashEnd(hit);
+        }
+        const float t = uiClock - vslash.at;
+        if (vslash.stage == 2 && t > uiDuration(vslash.end ? "catastrophe" : "execution")) vslash.stage = 3, vslash.at = uiClock;
+        else if (vslash.stage == 3 && t > uiDuration(vslash.end ? "finale_io" : "kill_io", vslash.end ? "finale" : "kill")) {
+            if (vslash.hit) {
+                SDL_Log("vista: the slash done");
+                ev->advance(); // (CheckExecution: true)
+                vslash = VistaSlash();
+            } else {
+                vslash = VistaSlash(), vslash.stage = 1, vslash.end = ev->finishingSlash(), vslash.at = uiClock; // (SetEnforecementEffectParameter again)
+            }
+        }
+    }
+    void vslashEnd(bool hit) {
+        if (vslash.stage != 1) return;
+        vslash.hit = hit, vslash.at = uiClock;
+        if (hit) audio.playSe(0x15c, false), vslash.stage = 2;
+        else vslash.stage = 3;
+        SDL_Log("vista: the slash %s (%.1f s)", hit ? "lands" : "misses", uiClock);
+    }
+    // the mark's place (its figure's own, the interface's units)
+    bool vslashPlace(float& x, float& y) {
+        UiFig& f = uiFig(vslash.end ? "finale" : "kill");
+        return uiJoint(f, "tapAreaS01", x, y) ? true : (x = 0, y = 0, true);
+    }
+    void vslashPointer(float fx, float fy, int phase) { // (0 pressed, 2 let go)
+        if (vslash.stage != 1) return;
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+        if (phase == 0) {
+            vslash.pressed = true, vslash.x0 = x, vslash.y0 = y;
+            return;
+        }
+        if (!vslash.pressed) return;
+        vslash.pressed = false;
+        float mx = 0, my = 0;
+        vslashPlace(mx, my);
+        const float dx = x - vslash.x0, dy = y - vslash.y0, l2 = dx * dx + dy * dy;
+        if (l2 <= 0) return; // (a tap: nothing)
+        const float u = ((mx - vslash.x0) * dx + (my - vslash.y0) * dy) / l2;
+        vslashEnd(u >= 0 && u <= 1 && std::hypot(vslash.x0 + u * dx - mx, vslash.y0 + u * dy - my) * 2048.0f < 192.0f);
+    }
+    float uiDuration(const std::string& anim, const std::string& fig = "") {
+        UiFig& f = uiFig(fig.empty() ? anim : fig);
+        poseUi(f, anim, 0);
+        return f.fig.animLoaded ? f.fig.anim.duration() : 0.5f;
+    }
+    void drawVistaSlash() {
+        if (vslash.stage == 0) return;
+        Mat4 camera = cr2::mat4Identity();
+        camera[14] = -0.881f;
+        const Mat4 view = cr2::mat4Multiply(uiProjection(screenW, screenH), camera);
+        cr2::SceneLighting l;
+        dev->setLighting(l);
+        const std::string name = vslash.end ? "finale" : "kill";
+        UiFig& f = uiFig(name);
+        f.fig.place = cr2::Mat34();
+        const float t = uiClock - vslash.at, in = uiDuration(name + "_io", name);
+        if (vslash.stage == 1) {
+            if (t < in) poseUi(f, name + "_io", t);
+            else poseUi(f, name + "_wait", t - in, true);
+        } else if (vslash.stage == 2) {
+            poseUi(f, name + "_wait", t, true);
+        } else {
+            poseUi(f, name + "_io", std::max(in - t, 0.0f)); // (+0x5c 2: backwards)
+        }
+        drawFigure(f.fig, view.data());
+        float mx = 0, my = 0;
+        vslashPlace(mx, my);
+        if (vslash.stage == 1) { // (the cursor)
+            const std::string cn = vslash.end ? "bluecsr_loop" : "redcsr_loop";
+            UiFig& c = uiFig(cn);
+            c.fig.place = cr2::Mat34();
+            poseUi(c, cn, uiClock, true);
+            drawFigure(c.fig, view.data());
+        } else if (vslash.stage == 2) { // (the hit's)
+            const std::string hn = vslash.end ? "catastrophe" : "execution";
+            UiFig& h = uiFig(hn);
+            h.fig.place = cr2::Mat34();
+            poseUi(h, hn, t);
+            drawFigure(h.fig, view.data());
+        }
+    }
     void drawEventUi() {
         dev->clearDepth(); // (the scene's depths behind all of it: a near camera's ground too)
         if (credits.stage) return drawCredits();
@@ -9103,6 +9215,7 @@ struct Viewer {
         drawKeyMark(screenW, screenH);
         drawFieldUi(screenW, screenH);
         drawBattleHud(screenW, screenH);
+        drawVistaSlash();
         if (battleMode && white.id) { // (a special scene's: Cr3Fade over the battle)
             const float alpha = battleFade.alpha.at(battleClock);
             if (alpha > 0) {
@@ -9710,6 +9823,7 @@ int main(int argc, char** argv) {
                     else if (v.titleMenu.stage) v.titleClick(fx, fy);
                     else if (v.yesNoClick(fx, fy)) {}
                     else if (v.battleMode && v.choosing) v.battleClick(fx, fy);
+                    else if (v.vslash.stage == 1) v.vslashPointer(fx, fy, 0);
                     else if (v.fieldMode && !v.eventMode && v.keyLock.stage != 0) v.unlockPointer(fx, fy, 0);
                     else if (v.fieldMode && !v.eventMode && v.iai.stage) v.iaiPointer(fx, fy, 0);
                     else if (v.fieldMode && !v.eventMode && v.aim.stage) v.aimPointer(fx, fy, 0);
@@ -9723,6 +9837,11 @@ int main(int argc, char** argv) {
                     dragging = false;
                     v.fastHeld = false;
                     if (v.fieldMode && v.keyLock.stage == 1) v.unlockPointer(0, 0, 2);
+                    if (v.vslash.stage == 1) {
+                        float fx, fy;
+                        screenFraction(e.button.x, e.button.y, fx, fy);
+                        v.vslashPointer(fx, fy, 2);
+                    }
                     if (v.fieldMode && v.aim.stage == 2) {
                         float fx, fy;
                         screenFraction(e.button.x, e.button.y, fx, fy);

@@ -92,6 +92,7 @@ public:
     int messagesSet() const { return messagesSet_; } // (SetMessages since the start: checks)
     // the scene waits for the player's slash (VistaEvent.ExecutionStart)
     bool awaitingSlash() const { return execution_; }
+    bool finishingSlash() const { return executionEnd_; } // (ExecutionEndStart's: the finale)
     // a tap (a swipe): the slash awaited, else the page typed at once, else the message's next
     // page, or its end (CheckMessage then says it's done)
     void advance();
@@ -192,7 +193,7 @@ private:
     int message_ = 0, page_ = 0, revealed_ = 0, messagesSet_ = 0;
     float pageTime_ = 0;
     ParsedMessage parsed_;
-    bool execution_ = false;
+    bool execution_ = false, executionEnd_ = false;
     bool terminated_ = false, drawSkip_ = false;
     int wait_ = 0, frame_ = 0;
     std::string error_;

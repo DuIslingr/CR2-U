@@ -575,8 +575,16 @@ camera, the moves, the animations and the fades where they are by then. The scri
   SetEffectLine, BattleEffectTypeBMenu) lay `radiate_loop` over the screen on its loop, scaled
   across by aspect / 1.5 (or 1.5 / aspect), until deleted. The vista camera's near plane is at least 0.05, its far 5 x the camera's (at most 5000;
   VistaCamera::Init, but for D11_06_0102 and D12_03_0106a). `ExecutionStart` /
-  `ExecutionEndStart` wait for the player's slash (`WaitPlayerSlash`: `CheckExecution` each
-  frame);
+  `ExecutionEndStart` wait for the player's slash (`WaitPlayerSlash` / `WaitPlayerSlash2`:
+  `CheckExecution` each frame). It is FieldGimickEffect07Menu (InterfaceMain::
+  SetEnforecementEffectParameter 0 / 1, interfaces 0x45 / 0x7b): `kill` (or `finale`) plays its
+  `_io` in, then `_wait` looping, with `redCsr_loop` (`blueCsr_loop`) over it.
+  - A swipe through it hits (TouchSimpleRelease: the mark's projection on the press .. release
+    line within it, and the slide area): `execution` (`catastrophe`) plays once with SE 0x15c,
+    then `_io` backwards, and VistaMain sets the check true (EndCheckEnforecementEffectWindow 1).
+  - A swipe past it: `_io` backwards, then the whole again (2).
+  - It is used by D12_02_0102a, D12_03_0106a, D12_04_0102a and D12_05_0202 (kill) and
+    T01_07_0302 (the finale). `--input slash` / `slashfail` in the viewer.
 - **the windows** (`EvtWindow`): Cr3Event's seven - 0 a cut-in (portraits), 1 the vista's, 2 / 3
   announcements, 4 a tutorial's, 5 the system's, 6 the narration - `Open(n)`, `SetMessage(n,
   message)`; `LoadSharedTextData(name)` (`message\<name>.dat`),

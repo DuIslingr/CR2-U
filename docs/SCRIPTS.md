@@ -94,7 +94,10 @@ and objects 0.2 (FldNPC / FldObject +0x14), event boxes and effects 0.15 - gets 
 `balloon` figure through the interface's camera, over the gimmick by a height from a table by
 name - c001 0.21, obj002 0.23, ... - else NPCs 0.2, objects and events 0.25, effects 0.1), and
 a tap anywhere calls the nearest one's function (EventExecute: `c003_01`, `obj002_00`, `evt023`)
-with the leader turned to it. From a new game's state, `cr2tool fieldscript`: 136 to tap across
+with the leader turned to it. While any balloon is up, the attention mark shows too
+(FldMain::SetAttentionMarkVisible -> InterfaceMain::SetCheckAreaParameter: CheckAreaExclamationMenu's
+`checkArea`, the "!" at the screen's corner, looping; gone with the balloons - EndCheckArea - and
+off once the field is being left). From a new game's state, `cr2tool fieldscript`: 136 to tap across
 the maps (the treasure boxes aside: none drawn), every one's function there and playing to its
 end, 100 of them saying something.
 

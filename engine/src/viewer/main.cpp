@@ -9004,7 +9004,10 @@ struct Viewer {
     void drawBalloons(int w, int h) {
         if (!fieldMode || eventMode || !script || !script->boxVisible()) return;
         drawFlagMarks(w, h);
-        if (balloons.empty()) return;
+        if (balloons.empty()) {
+            attentionShown = false; // (EndCheckArea)
+            return;
+        }
         if (!balloonLoaded) {
             balloonLoaded = true;
             std::string err;
@@ -9033,7 +9036,16 @@ struct Viewer {
             pose(balloonFigure, time);
             drawFigure(balloonFigure, view.data());
         }
+        // the attention mark (FldMain::SetAttentionMarkVisible: while any balloon is up -
+        // InterfaceMain::SetCheckAreaParameter, CheckAreaExclamationMenu's `checkArea`, looping)
+        if (!attentionShown) attentionShown = true, attentionAt = uiClock;
+        UiFig& mark = uiFig("checkarea");
+        mark.fig.place = cr2::Mat34();
+        poseUi(mark, "checkarea", uiClock - attentionAt, true);
+        drawFigure(mark.fig, view.data());
     }
+    bool attentionShown = false;
+    float attentionAt = 0;
 
     // the flag marks (FldFlagMark::Update: the `flag` figure at a flagged gimmick's balloon place,
     // FldUtilGetBalloonPosOffset - hidden while it has a balloon: CheckEntryFlagName)

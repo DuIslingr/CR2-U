@@ -15,11 +15,6 @@
 
 namespace cr2 {
 
-// What a key's shaders do that shading.glsl leaves out
-enum UnsupportedShading : uint32_t {
-    kUnsupportedPointLight = 1, // PointLamp01 (2 shaders)
-};
-
 // What a key's vertex shader does to the vertices' places (the figure's skinning on the CPU
 // does it: the viewer's pose)
 enum VertexPlacing : uint32_t {
@@ -30,7 +25,6 @@ enum VertexPlacing : uint32_t {
 
 struct ShaderFeatures {
     uint32_t shade = 0;       // SHADE_* (0: a built-in Figure shader - the key is all 0)
-    uint32_t unsupported = 0; // UnsupportedShading
     uint32_t vertex = 0;      // VertexPlacing
 };
 

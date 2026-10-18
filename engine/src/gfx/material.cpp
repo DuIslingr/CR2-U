@@ -35,8 +35,8 @@ ShaderFeatures decodeShaderKey(const std::array<uint32_t, 4>& key) {
     if (w2 & 0x1) s |= SHADE_UV1 | SHADE_OFFSET2;
     if (w1 & 0x20000000) s |= SHADE_DISTORTION;
     if (w0 & 0x80000) s |= SHADE_OVERLAY;
+    if (w0 & 0x4) s |= SHADE_POINT_LIGHT;
     out.shade = s;
-    if (w0 & 0x4) out.unsupported |= kUnsupportedPointLight;
     if (w2 & 0x4) out.vertex |= (w2 & 0x8) ? kBillboard | kUpright : kBillboard;
     return out;
 }
@@ -45,45 +45,44 @@ ShaderFeatures featuresFromGlsl(const std::string& vp, const std::string& fp) {
     auto has = [](const std::string& src, const char* line) { return src.find(line) != std::string::npos; };
     ShaderFeatures out;
     struct Line {
-        uint32_t shade, unsupported, vertex;
+        uint32_t shade, vertex;
         const char* fp; // the fragment program has this
         const char* vp; // or the vertex program this
     };
     static const Line kLines[] = {
-        {SHADE_TEXTURE, 0, 0, "texture2D(ColorSampler", nullptr},
-        {SHADE_NORMAL_MAP, 0, 0, "Nn = Nn + bump.x", nullptr},
-        {SHADE_LIT, 0, 0, "diffContrib=diffTmp", nullptr},
-        {SHADE_DIR_LIGHT, 0, 0, "Ln = DirLamp01Dir;", nullptr},
-        {SHADE_HEMISPHERE, 0, 0, "SkyDir", nullptr},
-        {SHADE_CLUT, 0, 0, "CLUTSampler", nullptr},
-        {SHADE_SPECULAR, 0, 0, "specContrib=specTmp", nullptr},
-        {SHADE_SPEC_VERTEX_ALPHA, 0, 0, "spStr = vColor.a", nullptr},
-        {SHADE_SPEC_MAP_ALPHA, 0, 0, "spStr = normalRGBA.a", nullptr},
-        {SHADE_OBSCURE, 0, 0, "obscure *= vColor.r", nullptr},
-        {SHADE_OBSCURE_SPEC, 0, 0, "specContrib*obscure", nullptr},
-        {SHADE_TINT, 0, 0, "diffuseColor.rgb *= vColor.rgb", nullptr},
-        {SHADE_TINT | SHADE_TINT_ALPHA, 0, 0, "diffuseColor *= vColor;", nullptr},
-        {SHADE_VELVET, 0, 0, "subContrib*VelvetStrength", nullptr},
-        {SHADE_FUZZY, 0, 0, "vdn = ", nullptr},
-        {SHADE_ALPHA_TEST, 0, 0, "discard", nullptr},
-        {SHADE_FOG, 0, 0, "FogColor", nullptr},
-        {SHADE_LIGHT_MAP, 0, 0, "LightSampler", nullptr},
-        {SHADE_SCROLL, 0, 0, nullptr, "ScrollSpeedSet1"},
-        {SHADE_OFFSET, 0, 0, nullptr, "OffsetSet1"},
-        {SHADE_UV1, 0, 0, nullptr, "vTexcoord1"},
-        {SHADE_SCROLL2, 0, 0, nullptr, "ScrollSpeedSet2"},
-        {SHADE_OFFSET2, 0, 0, nullptr, "OffsetSet2"},
-        {SHADE_DISTORTION, 0, 0, "DistortionStrength", nullptr},
-        {SHADE_OVERLAY, 0, 0, "OverlayColorSampler", nullptr},
-        {0, kUnsupportedPointLight, 0, "PointLamp01", nullptr},
-        {0, 0, kBillboard, nullptr, "ViewInverse"},
-        {0, 0, kUpright, nullptr, "camPos"},
+        {SHADE_TEXTURE, 0, "texture2D(ColorSampler", nullptr},
+        {SHADE_NORMAL_MAP, 0, "Nn = Nn + bump.x", nullptr},
+        {SHADE_LIT, 0, "diffContrib=diffTmp", nullptr},
+        {SHADE_DIR_LIGHT, 0, "Ln = DirLamp01Dir;", nullptr},
+        {SHADE_HEMISPHERE, 0, "SkyDir", nullptr},
+        {SHADE_CLUT, 0, "CLUTSampler", nullptr},
+        {SHADE_SPECULAR, 0, "specContrib=specTmp", nullptr},
+        {SHADE_SPEC_VERTEX_ALPHA, 0, "spStr = vColor.a", nullptr},
+        {SHADE_SPEC_MAP_ALPHA, 0, "spStr = normalRGBA.a", nullptr},
+        {SHADE_OBSCURE, 0, "obscure *= vColor.r", nullptr},
+        {SHADE_OBSCURE_SPEC, 0, "specContrib*obscure", nullptr},
+        {SHADE_TINT, 0, "diffuseColor.rgb *= vColor.rgb", nullptr},
+        {SHADE_TINT | SHADE_TINT_ALPHA, 0, "diffuseColor *= vColor;", nullptr},
+        {SHADE_VELVET, 0, "subContrib*VelvetStrength", nullptr},
+        {SHADE_FUZZY, 0, "vdn = ", nullptr},
+        {SHADE_ALPHA_TEST, 0, "discard", nullptr},
+        {SHADE_FOG, 0, "FogColor", nullptr},
+        {SHADE_LIGHT_MAP, 0, "LightSampler", nullptr},
+        {SHADE_SCROLL, 0, nullptr, "ScrollSpeedSet1"},
+        {SHADE_OFFSET, 0, nullptr, "OffsetSet1"},
+        {SHADE_UV1, 0, nullptr, "vTexcoord1"},
+        {SHADE_SCROLL2, 0, nullptr, "ScrollSpeedSet2"},
+        {SHADE_OFFSET2, 0, nullptr, "OffsetSet2"},
+        {SHADE_DISTORTION, 0, "DistortionStrength", nullptr},
+        {SHADE_OVERLAY, 0, "OverlayColorSampler", nullptr},
+        {SHADE_POINT_LIGHT, 0, "PointLamp01", nullptr},
+        {0, kBillboard, nullptr, "ViewInverse"},
+        {0, kUpright, nullptr, "camPos"},
     };
     out.shade = SHADE_ON;
     for (const Line& l : kLines)
         if ((l.fp && has(fp, l.fp)) || (l.vp && has(vp, l.vp))) {
             out.shade |= l.shade;
-            out.unsupported |= l.unsupported;
             out.vertex |= l.vertex;
         }
     return out;
@@ -172,6 +171,12 @@ bool lightsFromFigure(const Geom& g, const Skeleton& sk, SceneLighting& out) {
             const float axis[3] = {m->m[2], m->m[6], m->m[10]};
             normalise(axis, out.lightDir);
             for (int k = 0; k < 3; ++k) out.lightColor[k] = l.intensity() * l.colour()[k];
+            any = true;
+        } else if (l.type == GeomLight::Point && l.index == 0 && m) { // PointLamp01 (RenderContaindLights)
+            // its joint's place, and its radius the joint's x scale (+0x0c's range unused)
+            out.pointPos[0] = m->m[3], out.pointPos[1] = m->m[7], out.pointPos[2] = m->m[11];
+            out.pointPos[3] = std::sqrt(m->m[0] * m->m[0] + m->m[4] * m->m[4] + m->m[8] * m->m[8]);
+            for (int k = 0; k < 3; ++k) out.pointColor[k] = l.intensity() * l.colour()[k];
             any = true;
         } else if (l.type == GeomLight::Ambient) {
             for (int k = 0; k < 3; ++k) {

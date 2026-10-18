@@ -12,6 +12,7 @@ layout(location = 6) in vec3 aBinormal;
 layout(location = 7) in vec2 aUV1;
 layout(location = 0) out vec2 vUV;
 layout(location = 9) out vec2 vUV1;
+layout(location = 10) out vec4 vPoint;
 layout(location = 1) out vec4 vColor;
 layout(location = 4) out vec3 vNormal;
 layout(location = 5) out vec3 vTangent;
@@ -32,12 +33,14 @@ void main() {
     if ((mat.flags.x & SHADE_ON) != 0) {
         vUV = shadeUV(aUV);
         vUV1 = shadeUV1(aUV1);
+        vPoint = shadePoint(aPos);
         vTangent = aTangent;
         vBinormal = aBinormal;
         vView = shadeView(aPos);
         vFog = shadeFog(gl_Position.w);
     } else {
         vTangent = vBinormal = vView = vec3(0.0);
+        vPoint = vec4(0.0);
         vFog = 0.0;
     }
 #ifdef SCENE

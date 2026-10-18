@@ -63,7 +63,8 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       camera, or upright about y, as their vertex shaders do
 - [x] The effects' shading: the second texture coordinate set (its scroll and offset), distortion
       (the colour's coordinates moved by the normal map's), overlays
-- [ ] Shading left out: point lights (2 shaders)
+- [x] The sky dungeons' point light: carried by the leader (FldMap::Draw), lighting the maps'
+      3D figures
 - [x] Fields: the maps' table (read from your copy's executable), the painted layers, the map's 3D
       figure, its camera, lights and points; the viewer walks a character around a map
       (`cr2view --field d0101`), scrolling as the game does, idle / walk motions

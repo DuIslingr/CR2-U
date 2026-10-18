@@ -3,7 +3,7 @@
 // (shade_flags.h, which comes first). Shared by the Vulkan shaders (#include) and the GL device
 // (the text, after its version line); SHADING_FRAGMENT adds the samplers and shade().
 //
-// The block is ShadingBlock in render_device.hpp (std140, 288 bytes). Lights, the camera and
+// The block is ShadingBlock in render_device.hpp (std140, 320 bytes). Lights, the camera and
 // positions are in one space: the mesh's vertices as drawn.
 #ifdef GL_ES
 #define SHADE_HIGHP highp // (the flags need more than mediump's 16 bits)
@@ -33,6 +33,8 @@ layout(std140) uniform Material {
     vec4 camera;           // CameraPosition
     vec4 uvAnim2;          // ScrollSpeedSet2, OffsetSet2
     vec4 strengths;        // OverlayStrength, DistortionStrength, -, -
+    vec4 pointPos;         // PointLamp01Pos (w: its radius)
+    vec4 pointColor;       // PointLamp01Color
 } mat;
 
 // ---- the vertex programs' parts ----
@@ -60,6 +62,14 @@ float shadeFog(float w) {
 
 vec3 shadeView(vec3 pos) { return normalize(mat.camera.xyz - pos); }
 
+// vPointLamp01Dir: towards the point light, and how near (1 at it, 0 from its radius out)
+vec4 shadePoint(vec3 pos) {
+    if ((mat.flags.x & SHADE_POINT_LIGHT) == 0 || mat.pointPos.w <= 0.0) return vec4(0.0);
+    vec3 d = mat.pointPos.xyz - pos;
+    float l = length(d);
+    return vec4(l > 0.0 ? d / l : vec3(0.0), max(mat.pointPos.w - l, 0.0) / mat.pointPos.w);
+}
+
 #ifdef SHADING_FRAGMENT
 #ifdef VULKAN
 layout(set = 0, binding = 0) uniform sampler2D uTex;    // ColorSampler
@@ -71,7 +81,7 @@ uniform sampler2D uNormal;
 uniform sampler2D uExtra;
 #endif
 
-vec4 shade(vec2 uv, vec2 uv1, vec4 vColor, vec3 vNormal, vec3 vTangent, vec3 vBinormal, vec3 vView, float ff) {
+vec4 shade(vec2 uv, vec2 uv1, vec4 vColor, vec3 vNormal, vec3 vTangent, vec3 vBinormal, vec3 vView, float ff, vec4 vPoint) {
     int f = mat.flags.x;
     vec3 Nn = vNormal;
     vec4 normalRGBA = vec4(0.5, 0.5, 0.5, 1.0);
@@ -133,6 +143,8 @@ vec4 shade(vec2 uv, vec2 uv1, vec4 vColor, vec3 vNormal, vec3 vTangent, vec3 vBi
                 specTmp += vec3(vdn, vdn, vdn) * mat.fuzzy.rgb * mat.velvet.y;
             }
         }
+        if ((f & SHADE_POINT_LIGHT) != 0) // (its direction as interpolated, not normalised again)
+            diffTmp += max(0.0, dot(vPoint.xyz, Nn)) * mat.pointColor.rgb * vPoint.w;
         vec3 ambient = mat.ambient.rgb;
         if ((f & SHADE_HEMISPHERE) != 0) {
             float hst = (dot(Nn, mat.skyDir.xyz) + 1.0) * 0.5;

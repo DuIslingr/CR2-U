@@ -30,5 +30,6 @@
 #define SHADE_OFFSET2 0x800000      // uv1 += OffsetSet2
 #define SHADE_DISTORTION 0x1000000  // the colour's uv + (the normal map at uv1 - 1/2) x DistortionStrength
 #define SHADE_OVERLAY 0x2000000     // OverlayColorSampler over the colour by OverlayStrength x its alpha
+#define SHADE_POINT_LIGHT 0x4000000 // PointLamp01: towards it per vertex, fading to 0 at its radius
 
 #endif

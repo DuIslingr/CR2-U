@@ -200,7 +200,7 @@ fog), +6 u16 which of its kind (DirLamp01..03, PointLamp01..07), then floats fro
 | Type | +0x08 | +0x0c | +0x10.. | +0x1c | +0x20.. |
 |---|---|---|---|---|---|
 | directional | intensity | | colour (4) | | |
-| point | intensity | range | colour | | |
+| point | intensity | range (unused) | colour | | |
 | ambient | intensity | | sky colour (3) | | ground colour (3; 0 in every map) |
 | fog | far | near | colour (3) | alpha | |
 
@@ -344,8 +344,13 @@ fract(ScrollSpeedSet2 x Time)) is the distortion's (16) - NormalSampler read the
 coordinates + (its rgb - 1/2).xy x DistortionStrength, the bump from the same texel - or an
 overlay's (2; the third reads it at the first set): the colour's rgb mixed toward
 OverlayColorSampler's by OverlayStrength x its alpha, before DiffuseColor. d0252b's overlay names
-no texture: its sampler, never set, reads unit 0 - the colour's own, over itself. Left out so far:
-point lights (2 keys). Android's / the Vita's key bits (word 0 first):
+no texture: its sampler, never set, reads unit 0 - the colour's own, over itself. Point lights (2
+keys - the 40 sky dungeons' `<map>f` figures, obj101 / obj102): per vertex the direction to
+PointLamp01Pos and max(radius - distance, 0) / radius, then max(0, N.L) x PointLamp01Color x that
+on the light (the direction as interpolated); RenderContaindLights puts the point light's joint's
+place and, for its radius, the joint's x scale (d0303's 50; +0x0c's range, 0.5, unused), colour
+intensity x colour. FldMap::Draw, on the maps whose +0x15 is set (the d5051f2 sky's), moves it by
+the leader's DummyEP04 + 0.1 up: a light carried. Android's / the Vita's key bits (word 0 first):
 word 0 - 0x1 DirLamp01, 0x4 PointLamp01, 0x20 hemisphere, 0x40 flat ambient, 0x80 CLUT, 0x100
 specular, 0xe00 its strength from the vertex alpha, 0x4000 obscure, 0x8000 the vertex colour
 tints, 0x10000 ColorSampler, 0x20000 NormalSampler, 0x80000 overlay; word 1 - 0x4000 velvet,

@@ -14,6 +14,7 @@ layout(location = 6) in vec3 vBinormal;
 layout(location = 7) in vec3 vView;
 layout(location = 8) in float vFog;
 layout(location = 9) in vec2 vUV1;
+layout(location = 10) in vec4 vPoint;
 layout(location = 0) out vec4 fragColor;
 #ifdef SCENE
 layout(location = 2) in vec4 vCur;
@@ -24,7 +25,7 @@ layout(location = 2) out float fragReactive;
 void main() {
     vec4 c;
     if ((mat.flags.x & SHADE_ON) != 0) {
-        c = shade(vUV, vUV1, vColor, vNormal, vTangent, vBinormal, vView, vFog);
+        c = shade(vUV, vUV1, vColor, vNormal, vTangent, vBinormal, vView, vFog, vPoint);
     } else {
         vec4 base = pc.color * vColor;
         c = base;

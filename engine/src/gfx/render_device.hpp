@@ -89,6 +89,8 @@ struct SceneLighting {
     float fogColor[3] = {1, 1, 1};
     float camera[3] = {0, 0, 0};
     float time = 0; // seconds (scrolling textures)
+    float pointPos[4] = {0, 0, 0, 0}; // PointLamp01Pos: where, and its radius (0: none)
+    float pointColor[3] = {0, 0, 0};  // PointLamp01Color
 };
 
 // The shaders' Material block (shading.glsl), std140
@@ -102,8 +104,9 @@ struct ShadingBlock {
     float lightDir[4], lightColor[4], ambient[4], ground[4], skyDir[4], fogParams[4], fogColor[4], camera[4];
     float uvAnim2[4]; // ScrollSpeedSet2, OffsetSet2
     float strengths[4]; // OverlayStrength, DistortionStrength, -, -
+    float pointPos[4], pointColor[4]; // PointLamp01Pos (w: the radius), PointLamp01Color
 };
-static_assert(sizeof(ShadingBlock) == 288, "Material block layout");
+static_assert(sizeof(ShadingBlock) == 320, "Material block layout");
 ShadingBlock shadingBlock(const MeshShading& sh, const SceneLighting& scene);
 
 // A GL blend factor enum as a DrawState code (source, or destination with `dst`)

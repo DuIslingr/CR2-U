@@ -1582,6 +1582,11 @@ struct Viewer {
             dev->setCamera(fr.zNear, fr.zFar, fr.fovY * 3.14159265f / 180);
             cr2::SceneLighting l = field.lighting();
             std::memcpy(l.camera, fr.camera, sizeof l.camera);
+            // FldMap::Draw on the sky's maps (+0x15): the point light carried - the light figure's
+            // place + the leader's DummyEP04 + 0.1 up
+            cr2::Mat34 ep;
+            if (field.info().sharedBackground && jointPlace(fig, "DummyEP04", ep))
+                l.pointPos[0] += ep.m[3], l.pointPos[1] += ep.m[7] + 0.1f, l.pointPos[2] += ep.m[11];
             l.time = time;
             dev->setLighting(l);
             // (the layers the script hid - Cr3FieldMap.SetVisibleBG / MG / 3D / FG - left out)

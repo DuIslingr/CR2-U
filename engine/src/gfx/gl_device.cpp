@@ -56,6 +56,7 @@ layout(location = 7) in vec2 aUV1;
 uniform mat4 uMvp;
 out vec2 vUV;
 out vec2 vUV1;
+out vec4 vPoint;
 out vec4 vColor;
 out vec3 vNormal;
 out vec3 vTangent;
@@ -71,12 +72,14 @@ void main() {
     if ((mat.flags.x & SHADE_ON) != 0) {
         vUV = shadeUV(aUV);
         vUV1 = shadeUV1(aUV1);
+        vPoint = shadePoint(aPos);
         vTangent = aTangent;
         vBinormal = aBinormal;
         vView = shadeView(aPos);
         vFog = shadeFog(gl_Position.w);
     } else {
         vTangent = vBinormal = vView = vec3(0.0);
+        vPoint = vec4(0.0);
         vFog = 0.0;
     }
 }
@@ -85,6 +88,7 @@ void main() {
 const char* kMeshFragment = R"(
 in vec2 vUV;
 in vec2 vUV1;
+in vec4 vPoint;
 in vec4 vColor;
 in vec3 vNormal;
 in vec3 vTangent;
@@ -99,7 +103,7 @@ uniform float uAlphaRef;
 out vec4 fragColor;
 void main() {
     if ((mat.flags.x & SHADE_ON) != 0) {
-        fragColor = shade(vUV, vUV1, vColor, vNormal, vTangent, vBinormal, vView, vFog);
+        fragColor = shade(vUV, vUV1, vColor, vNormal, vTangent, vBinormal, vView, vFog, vPoint);
         return;
     }
     vec4 base = uColor * vColor;
@@ -498,6 +502,8 @@ ShadingBlock shadingBlock(const MeshShading& sh, const SceneLighting& l) {
     put(b.uvAnim2 + 2, sh.offset2, 2);
     b.strengths[0] = sh.overlayStrength;
     b.strengths[1] = sh.distortionStrength;
+    put(b.pointPos, l.pointPos, 4);
+    put(b.pointColor, l.pointColor, 3, 1);
     return b;
 }
 

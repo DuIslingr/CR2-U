@@ -318,6 +318,7 @@ struct Viewer {
         if (battleMode) {
             if (skipScene()) return;
             if (battleScript && battleScript->running()) battleScript->events().advance();
+            else if (analyze.stage == 1 || analyze.stage == 2) analyze.tapped = true;
             else if (result.stage > 0) result.tapped = true;
             return;
         }
@@ -3140,6 +3141,7 @@ struct Viewer {
         }
         case BattleStep::ActionEnd:
             showIndex = showActions.size();
+            if (stepAnalyze()) break;
             if (!regenPending.empty() || battleScriptRunning()) { // (a revival, a tutorial first)
             } else if (!showActions.empty()) {
                 // (ActionCommonEventCommandEnd: a command lending an element - +0x70 / +0x71 1..3 -
@@ -3161,6 +3163,7 @@ struct Viewer {
                 break;
             }
             battleRules->endAction();
+            analyze.stage = 0;
             battleStep = BattleStep::ActionStart;
             break;
         case BattleStep::Over: break;
@@ -3324,6 +3327,42 @@ struct Viewer {
         for (const std::string& s : out) SDL_Log("result: %s", s.c_str());
     }
     bool announceHeld = false; // (the banner kept: the victory's)
+
+    // Analyze (command kind 26; BtlActionCtrl::ActionSopiaWaitEffect -> ActionSopiaAnalyze): its
+    // effect over, the one struck's "HP: %d / %d" on the banner until a tap, then its MonsterHelp
+    // (the monster's number), until a tap - 5 s each for a fight nobody taps
+    struct {
+        int stage = 0; // 1 the HP, 2 the help, 3 done
+        float start = 0;
+        bool tapped = false;
+    } analyze;
+    bool stepAnalyze() {
+        if (showActions.empty() || analyze.stage >= 3) return false;
+        const cr2::BattleData::Command* c = battleData.command(showActions.front().command);
+        const int target = showActions.front().hits.empty() ? -1 : showActions.front().hits.front().target;
+        if (!c || c->kind != 26 || target < 0) return false;
+        const bool tapped = analyze.tapped;
+        analyze.tapped = false;
+        const cr2::Fighter& t = battleRules->fighter(target);
+        if (analyze.stage == 0) {
+            char buf[64];
+            std::snprintf(buf, sizeof buf, "HP: %d / %d", t.hp, t.maxHp);
+            announceQueue.clear();
+            commandShown = buf, commandShownStart = announceAt = battleClock, announceHeld = true;
+            analyze.stage = 1, analyze.start = battleClock;
+            SDL_Log("    analyze: %s", buf);
+        } else if (tapped || battleClock - analyze.start > 5.0f) {
+            if (analyze.stage == 1 && t.monster) {
+                commandShown = messageText("monsterhelp", t.id), commandShownStart = announceAt = battleClock;
+                analyze.stage = 2, analyze.start = battleClock;
+                SDL_Log("    analyze: the help (%zu bytes)", commandShown.size());
+            } else {
+                analyze.stage = 3, announceHeld = false, commandShown.clear();
+                return false;
+            }
+        }
+        return true;
+    }
     void beginResult() {
         result = BattleResultShow();
         result.stage = 1, result.start = battleClock;

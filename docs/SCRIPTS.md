@@ -276,6 +276,12 @@ plain attack's launch effect for that attack (CreateAttackObject). A sopia turne
 magic barrier (state 29; ActionSopiaMirror / CreateMirrorEffect): eff227 on each that holds
 it - at its side's middle were its locator 7 - and the sound 0x92.
 
+Analyze (command 107, kind 26 - sopia 12's second level, 30's fifth): its effect over
+(ActionSopiaWaitEffect jumps to step 43, ActionSopiaAnalyze), the banner "HP: %d / %d" of the one
+struck (a literal of the code's), a tap, then its `message\monsterhelp.dat` line (by the monster's
+number, BtlWork +0x44 + 2 x the unit; 274 lines, one a monster), a tap, then the command's end
+(step 13). The viewer moves on after 5 s untapped (`--sopia 12:2 --input "solo sopia s107 2"`).
+
 A battle's special scene may be skipped (BtlActionCtrl::ActionAwakeMain / AdventMain): from its
 start (ActionAwake / AdventStandby) until a SetSkipEnable step turns it off, a tap - but for
 coupling 282's command 123 and 221's / 271's 352 - runs ActionAwakeSkip / AdventSkip: the moves,

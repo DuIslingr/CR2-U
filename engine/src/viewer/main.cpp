@@ -9514,6 +9514,8 @@ int main(int argc, char** argv) {
     float runSeconds = 0; // --run: a capture plays this long first, 60 frames a second
     int fps = 60;         // --fps: the frame rate the window aims at (0: as fast as the display shows them)
     float yaw = 30, pitch = 15, startTime = 0;
+    // no arguments (a double-click, Android's launcher): the game, from its title screen
+    if (argc <= 1) titleScreen = true;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         const char* next = i + 1 < argc ? argv[i + 1] : nullptr;
@@ -9599,7 +9601,13 @@ int main(int argc, char** argv) {
         upscale.ratio = q->ratio;
     }
     if (data.empty()) { // (CR2_DATA, else a copy beside the executable: vita/, android/, ipad/)
+#ifdef SDL_PLATFORM_ANDROID
+        // (the app's own folder on the shared storage, reachable over USB:
+        // Android/data/local.preservation.chaosrings2/files/ - vita/, android/ or ipad/ in it)
+        const char* base = SDL_GetAndroidExternalStoragePath();
+#else
         const char* base = SDL_GetBasePath();
+#endif
         data = cr2::defaultArchive(base ? base : "");
     }
     data = cr2::resolveArchive(data); // (a folder: the OBB or the CRDB.*.mvgl in it, a Vita copy's PCSG00498 ...)
@@ -9655,7 +9663,7 @@ int main(int argc, char** argv) {
         if (b == cr2::Backend::Vulkan && renderer != "vulkan") continue;
         std::unique_ptr<cr2::RenderDevice> d = b == cr2::Backend::Vulkan ? cr2::makeVkDevice() : cr2::makeGlDevice();
         if (!d) continue;
-        win = SDL_CreateWindow("CR2-U viewer", width, height, SDL_WindowFlags(d->windowFlags()) | shown);
+        win = SDL_CreateWindow(titleScreen ? "Chaos Rings II" : "CR2-U viewer", width, height, SDL_WindowFlags(d->windowFlags()) | shown);
         if (win && d->init(win)) {
             dev = std::move(d);
             SDL_Log("renderer: %s", dev->description().c_str());

@@ -10,11 +10,14 @@ it is and never changes it.
 
 ## Status
 
-Groundwork. Chaos Rings II is not on CR1 / Omega's engine: it is built on Media.Vision's own
-library, MVGL (`MVGL::Draw`, `MVGL::Sound`, `MVGL::Utilities::Database`, ...), with the game's
-logic split between native classes (`FldMain`, `BtlActionCtrl`, `InterfaceMain` and about a
-hundred menus) and compiled Squirrel scripts (`.nut`, the events). So the engine is new; CR1:U's
-platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over as it grows.
+Playable: from the title screen through the fields, the events, the battles and the menus to the
+staff roll, on Windows, macOS, Linux and Android (released as
+[v0.1.0](https://github.com/DuIslingr/CR2-U/releases/tag/v0.1.0)). Chaos Rings II is not on CR1 /
+Omega's engine: it is built on Media.Vision's own library, MVGL (`MVGL::Draw`, `MVGL::Sound`,
+`MVGL::Utilities::Database`, ...), with the game's logic split between native classes (`FldMain`,
+`BtlActionCtrl`, `InterfaceMain` and about a hundred menus) and compiled Squirrel scripts (`.nut`,
+the events). So the engine is its own; CR1:U's platform layers (SDL3, the renderers, audio
+decoding, upscaling, HD textures) carried over.
 
 - [x] The data archive (MDB1 `.mvgl`, and the Android OBB, which is one too): read, every file
       listed and decoded (doboz) - `tools/mvgl.py`
@@ -221,7 +224,12 @@ platform layers (SDL3, the renderers, audio decoding, upscaling) can carry over 
       hakkei's taps, the mystic's choice of spot (a tap on the marker / the mark, Return, `--input
       sprint` / `action`, then `slash` / `slashfail`, `drag` / `aim` / `aimfail`, `punch` /
       `punchfail`, `tapspot` / `tapspotfail`)
-- [ ] Engine: events, battles, menus
+- [x] The engine whole: the events, the battles and the menus above run the game end to end
+      (`cr2tool play all`: every event to its end, in all three releases; no native stub reached)
+- [x] Platforms: Windows (MSVC, or llvm-mingw from Linux), macOS (universal, Vulkan through
+      MoltenVK), Linux (AppImage) and Android (an APK) - see Platforms below
+- [x] CR2-U's own settings: the options' Graphics list (display, resolution, VSync, frame rate,
+      renderer, FSR 3.1 / DLSS / MetalFX, MSAA, anisotropic and texture filtering, HD textures)
 
 ## What you need
 

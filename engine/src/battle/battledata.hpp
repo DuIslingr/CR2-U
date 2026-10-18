@@ -89,6 +89,7 @@ public:
         uint32_t special = 0;
         int mp = 0;          // +0x42: its MP (BtlUtilStatus::CalcUseMp)
         int icon = 0;        // +0x72: its icon (mainIcon_id's frame)
+        bool pairable = false; // +0x73: one the monster pair may take together (BtlEnemy +0x110)
     };
     // a sopia (GetSopiaDataPointer, from 1; 0x2c bytes): the command it gives at each of its five
     // levels (+0x18, s16 each: the first `level` of them; 0 none), the auto skill at each (+0x22,

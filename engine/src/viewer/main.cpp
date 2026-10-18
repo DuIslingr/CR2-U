@@ -3551,7 +3551,9 @@ struct Viewer {
             }
             SDL_Log("    camera %s", battleCamera.c_str());
         }
-        if (c) SDL_Log("  %s: %s", battleRules->fighter(a.actor).name.c_str(), c->name[1].c_str());
+        if (c)
+            SDL_Log("  %s%s%s: %s", battleRules->fighter(a.actor).name.c_str(), a.partner >= 0 ? " + " : "",
+                    a.partner >= 0 ? battleRules->fighter(a.partner).name.c_str() : "", c->name[1].c_str());
         if (c) commandShown = c->name[1], commandShownStart = battleClock;
         if (!a.hits.empty() && a.hits.front().counter) commandShown = announce(0x47), commandShownStart = battleClock; // ("Counter")
     }

@@ -301,8 +301,16 @@ the party's most / least HP (the first of equals); 3 the monsters' most; 5 the m
 the party raised, 7 not lowered; 8 a monster lowered, 9 not raised; 10 of the party with no element
 lent, 11 a monster with none, 12 .. 14 of the party with element 1 .. 3. The Mantis: Lockjaw,
 always, at one of the party. Conquest (two actions): its seals, one each, then Divine Shackles.
-Left out: the monster pair (BtlWork +0x51 11: monsters 2 and 3 together, command 410), and command
-363 taking motion `bg01` and shot 6 once a monster chooses it.
+The huge pair (BtlEnemy::SetPreEnemyAction(): size pattern 11 Hpair - BtlWork +0x51 -, the turn
+not the script's - +0x22f7 -, both standing, and no "must" of the first's holding,
+CheckPairAction): the first's pre-action weighed with command 410 too (+0x111); short of 410 the
+second's own pre-action, the third none; with 410 the two one pair this turn (+0xb02 each other's,
++0xaf0 bit 0): the first's choice of the commands it may take with its partner (+0x110: their
++0x73), else its attack (+0x4c, at the 410 slot's target, state 37 cleared), the attack taken as
+the pair's (ActionAttackStandby: +0x54), the second with it - its own action none, the two's
+Speed meaned for the order and their power together, as the party's pair. Couplings 47 .. 51 and
+305 .. 309 (the shadows); over 40 seeds a pair in 6, 10, 4, 1 and 0 of them for 47 .. 51.
+Left out: command 363 taking motion `bg01` and shot 6 once a monster chooses it.
 
 The battle's start (BtlCalc::StartState, at StepBattleIn's set-up, BtlWork +0x14): 1 the party
 first - BtlRand(100) under 10 with the party's mean level less the monsters' levels added up under

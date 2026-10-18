@@ -141,7 +141,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         c.voice = s16(d, o + 0x68), c.voiceDelay = s16(d, o + 0x6a);
         c.hitSe = s16(d, o + 0x74), c.launchSe = s16(d, o + 0x76), c.shotSe = s16(d, o + 0x78), c.postSe = s16(d, o + 0x7a);
         c.awaken = d[o + 0x48];
-        c.mp = s16(d, o + 0x42), c.icon = d[o + 0x72];
+        c.mp = s16(d, o + 0x42), c.icon = d[o + 0x72], c.pairable = d[o + 0x73] != 0;
         commands_.push_back(c);
     }
     const uint32_t sopias = u32(d, 0x1c);

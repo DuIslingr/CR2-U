@@ -274,6 +274,12 @@ private:
     // target by the slot's rule (Target0..14, SetCommandTarget)
     Order enemyPreChoice(int m);
     Order enemyChoice(int m);
+    bool enemyPairChoice(); // (SetPreEnemyAction(): the pair of huge ones, pattern 11 Hpair)
+    bool pairMode_ = false, pairOnly_ = false; // (BtlEnemy +0x111: command 410 weighed; +0x110: the pair's commands alone)
+    int pattern_ = -1; // (BtlWork +0x51: the monsters' size pattern)
+    int lastSlot_ = -1; // (BtlEnemy +0xc: the slot last chosen)
+    Order pairPre_[2];
+    bool pairFormed_ = false;
     bool enemyCondition(int m, int slot) const;
     int enemyTarget(int m, int slot, int type);
     bool buffed(int f) const;  // (BtlUtilStatus::CheckPlusStatus: standing, with one of 5..12)

@@ -224,6 +224,7 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
         for (const auto& e : kMap)
             if (s & e.flag) f.skills[e.group + 1] |= 1u << e.bit;
     }
+    pattern_ = setup.pattern; // (BtlWork::SetSizePattern: +0x51)
     advantage_ = startState(); // (StepBattleIn: drawn, then none where the coupling's flag says)
     if (cp && cp->flag) advantage_ = 0;
     return true;
@@ -632,17 +633,59 @@ BattleRules::Order BattleRules::enemyPreChoice(int mi) {
         if ((f.hasState(2) && c->magic == 1) || !enemyCondition(mi, k)) continue; // (a sopia sealed)
         bool take = m->must[k] == 1;
         if (!take) {
-            const int weight = m->commands[k] == 0x19a ? 0 : m->weight[k];
+            const int weight = m->commands[k] == 0x19a && !pairMode_ ? 0 : m->weight[k];
             take = rand_.below(100) < weight;
         }
         if (take) {
             o.command = m->commands[k];
-            f.usedSlots |= 1u << k;
+            f.usedSlots |= 1u << k, lastSlot_ = k;
             enemyTargetAndGuard(o, *c, k, fighters_, [&](int s) { return enemyTarget(mi, s, c->target); });
             return o;
         }
     }
     return o;
+}
+
+// SetPreEnemyAction() for the huge pair (pattern 11, the turn not the script's, both standing and
+// the first with no "must" holding - CheckPairAction): its pre-action weighed with command 410;
+// 410 makes the two one pair this turn - the first's choice of the pair's commands (+0x73), else
+// its attack (+0x4c, at the 410 slot's target), the second joining it - else the second's own
+// pre-action. True when it chose for them (the third none)
+bool BattleRules::enemyPairChoice() {
+    if (pattern_ != 11 || scripted_.reserved || !fighters_[2].alive || !fighters_[3].alive || !fighters_[2].monster) return false;
+    const BattleData::Monster& m2 = *fighters_[2].monster;
+    for (int k = 0; k < 10; ++k) { // (CheckPairAction(2))
+        const BattleData::Command* c = data_.command(m2.commands[k]);
+        if (m2.commands[k] <= 0 || !c || (fighters_[2].hasState(2) && c->magic == 1)) continue;
+        if (enemyCondition(2, k) && m2.must[k] == 1) return false;
+    }
+    pairMode_ = true;
+    Order first = fighters_[2].hasState(21) ? Order{2, 0, -1} : enemyPreChoice(2);
+    pairMode_ = false;
+    if (first.command != 0x19a) {
+        pairPre_[0] = first;
+        pairPre_[1] = fighters_[3].hasState(21) ? Order{3, 0, -1} : enemyPreChoice(3);
+        pairFormed_ = false;
+        return true;
+    }
+    pairOnly_ = true;
+    const int slot410 = lastSlot_;
+    first = fighters_[2].hasState(21) ? Order{2, 0, -1} : enemyChoice(2); // (SetEnemyAction: none with time stopped)
+    pairOnly_ = false;
+    if (first.command <= 0) {
+        first = {2, m2.counter, -1};
+        fighters_[2].clearState(37);
+        if (const BattleData::Command* c = data_.command(first.command))
+            enemyTargetAndGuard(first, *c, slot410, fighters_, [&](int s) { return enemyTarget(2, s, c->target); });
+    }
+    fighters_[2].partner = 3, fighters_[3].partner = 2;
+    // (BtlActionCtrl::ActionAttackStandby: the attack - SetCommand's +0x524 0 - taken as the
+    // pair's, +0x54)
+    if (first.command == m2.counter && m2.pairAttack > 0) first.command = m2.pairAttack;
+    pairPre_[0] = first;
+    pairPre_[1] = {3, first.command, first.target};
+    pairFormed_ = true;
+    return true;
 }
 
 // SetActionCommand: of the rest - not taken this turn, a sopia none while sealed, a `bx01` one
@@ -661,6 +704,7 @@ BattleRules::Order BattleRules::enemyChoice(int mi) {
     for (int k = 0; k < 10; ++k) {
         const BattleData::Command* c = data_.command(m->commands[k]);
         if (m->commands[k] <= 0 || !c || c->kind == 4 || (c->specials & 0x80)) continue;
+        if (pairOnly_ && !c->pairable) continue;
         if ((f.hasState(2) && c->magic == 1) || (f.usedSlots >> k & 1)) continue;
         if (c->motion == "bx01" && m->actions > used + 1) continue;
         ok[k] = enemyCondition(mi, k);
@@ -679,7 +723,7 @@ BattleRules::Order BattleRules::enemyChoice(int mi) {
     if (chosen < 0) return o;
     o.command = m->commands[chosen];
     f.clearState(37);
-    f.usedSlots |= 1u << chosen;
+    f.usedSlots |= 1u << chosen, lastSlot_ = chosen;
     const BattleData::Command* c = data_.command(o.command);
     enemyTargetAndGuard(o, *c, chosen, fighters_, [&](int s) { return enemyTarget(mi, s, c->target); });
     return o;
@@ -923,14 +967,18 @@ void BattleRules::chooseTurn(bool pair, const std::vector<Order>& party) {
     // the monsters (BtlActionCtrl::StepSetAction): their commands first or last in the turn
     // (BtlEnemy::SetPreEnemyAction - none in the first turn of one the party starts, nor for one
     // whose time stopped), the rest chosen as their actions come (SetActive: SetEnemyAction)
+    for (int m = 2; m < 5; ++m) fighters_[size_t(m)].partner = -1; // (ClearEnemyAction: +0xb02)
+    const bool pairChosen = !(turn_ == 0 && advantage_ == 1) && enemyPairChoice();
     for (int m = 2; m < 5; ++m) {
         Fighter& f = fighters_[size_t(m)];
         if (!f.alive || (turn_ == 0 && advantage_ == 1)) continue; // (CheckActionable)
+        if (pairChosen && pairFormed_ && m == 3) continue; // (the pair acts once)
         Order o{m, 0, -1};
         if (scripted_.reserved && scripted_.command[m] > 0) o = {m, scripted_.command[m], scripted_.target[m]};
-        else if (!f.hasState(21) && !(turn_ == 0 && advantage_ == 1)) o = enemyPreChoice(m);
+        else if (pairChosen) o = m < 4 ? pairPre_[m - 2] : Order{m, 0, -1};
+        else if (!f.hasState(21)) o = enemyPreChoice(m);
         const BattleData::Command* c = data_.command(o.command);
-        int point = orderPoint(m, -1);
+        int point = orderPoint(m, f.partner);
         if (c && (c->specials >> 7 & 1)) point += 10000;
         if (c && c->kind == 4) point -= 5000;
         turns.push_back({o, point});

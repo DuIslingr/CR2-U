@@ -8907,7 +8907,8 @@ struct Viewer {
         double nextTap = 0;
         std::string changedFor; // (the target the leader was last changed for)
         int grind = 0;
-        std::string lostOn; // (the map whose battle was lost: not where the fighting first is done)
+        std::string lostOn;
+        int needChar = -1; // (a touch action's character not in the pair: taken at the party next) // (the map whose battle was lost: not where the fighting first is done)
         std::string doorTried; double doorTriedAt = -1; // (a door taken: "map:door", when - if the map stays, it doesn't lead now) // (after a game over: encounters to fight, walking about, before the story again)
         std::map<std::string, int> mysticTurn; // (a mystic's uses: the next spot in turn)
         bool done = false;
@@ -8987,6 +8988,17 @@ struct Viewer {
                     !field.exitTouched({at[0], at[1] + controller->radius + 0.01f, at[2]}, controller->radius * 3).empty() || // (not into an exit)
                     !explorePath("wander", at, 0.02f, path))
                     continue;
+                bool boxed = false; // (not through an event box: one may be the way on, or a scene)
+                for (const cr2::Vec3& q : path) {
+                    const float qa[3] = {q[0], q[1] + controller->radius, q[2]};
+                    for (const cr2::Gimmick& g : field.gimmicks()) {
+                        if (g.kind != cr2::Gimmick::Event || g.check || !g.touches(qa, controller->radius * 2)) continue;
+                        const auto st = script->gimmicks().find(g.id);
+                        if (st == script->gimmicks().end() || st->second.event) boxed = true;
+                    }
+                    if (boxed) break;
+                }
+                if (boxed) continue;
                 ex.target = "wander", ex.goal = at, ex.reach = 0.03f, ex.tapIt = false, ex.reachPlan = 0.02f, ex.path = path, ex.at = 0;
                 ex.since = ex.clock, ex.stillSince = ex.clock, ex.last = controller->position();
                 return true;
@@ -9041,6 +9053,12 @@ struct Viewer {
                 const float half = std::max(std::max(g.jointScale[0], g.jointScale[2]) / 100.0f, 0.04f);
                 if (actionKind(g.name) == 3 ? ex.taps[g.name] < 3 * int(act->spots.size()) : !ex.tried.count({ex.key, g.name}))
                     c.push_back({actionKind(g.name) == 3 && ex.taps[g.name] > 0 ? 7 : 1, 0, g.name, at, half * 0.5f, false, half * 0.8f});
+                continue;
+            }
+            if (ex.needChar >= 0 && g.name.rfind("c007_check", 0) == 0 && here.rfind("t01", 0) == 0 && shown && ex.taps[g.name] >= 3)
+                ex.needChar = -1, exploreLog("  (the party not to be changed now)");
+            if (ex.needChar >= 0 && g.name.rfind("c007_check", 0) == 0 && here.rfind("t01", 0) == 0 && shown && ex.taps[g.name] < 3) { // (the party's: a character wanted)
+                c.push_back({0, 0, g.name, at, g.checkLength() * 0.7f, true, g.checkLength() * 0.8f});
                 continue;
             }
             if ((!isDoor && ex.tried.count({ex.key, g.name})) || ex.taps[g.name] >= 2 || !enabled || ex.blocked.count({ex.key, here + ":" + g.name})) continue;
@@ -9133,6 +9151,17 @@ struct Viewer {
                 if (!to.empty() && to != node && !firstStep.count(to)) firstStep[to] = k.name, open.push_back(to);
             }
         std::string go;
+        if (ex.needChar >= 0) { // (a character wanted: to the town, where the party is changed)
+            std::map<std::string, std::string> step = firstStep;
+            std::deque<std::string> queue = open;
+            while (!queue.empty() && go.empty()) {
+                const std::string m = queue.front();
+                queue.pop_front();
+                if (m.rfind("t0101", 0) == 0) go = step[m];
+                for (const auto& [way, to] : ex.links[m])
+                    if (!step.count(to) && to != node && !ex.cutOff[m].count(way)) step[to] = step[m], queue.push_back(to);
+            }
+        }
         for (int pass = 0; pass < 2 && go.empty(); ++pass) {
             std::map<std::string, std::string> step = firstStep;
             std::deque<std::string> queue = open;
@@ -9241,10 +9270,22 @@ struct Viewer {
             if (saveStage == 1) return saveAnswer(true);
             if (campOpen) return campPress(100);
             if (mapOpen) return void(mapOpen = false);
-            if (shop.stage) return shopKey(SDLK_BACKSPACE);
+            if (shop.stage) return exploreShop();
             if (pub.stage) return pubKey(SDLK_BACKSPACE);
             if (library.stage) return libraryKey(SDLK_BACKSPACE);
-            if (party.stage) return partyKey(SDLK_BACKSPACE);
+            if (party.stage) { // (the pair: the one a touch action wants taken in)
+                const std::vector<int> c = partyChoices();
+                const auto at = std::find(c.begin(), c.end(), ex.needChar);
+                if (party.stage == 1) return partyTap(at == c.end() ? 100 : 25);
+                if (party.stage == 2) return partyTap(at == c.end() ? 100 : game.flag(0x3fa) || game.party[0] == 0 ? 2 : 1);
+                if (at == c.end()) return partyTap(100);
+                exploreLog("  party: character " + std::to_string(ex.needChar + 1) + " taken in");
+                ex.needChar = -1;
+                for (auto it = ex.blocked.begin(); it != ex.blocked.end();) it = it->first == ex.key ? ex.blocked.erase(it) : std::next(it);
+                for (auto it = ex.tried.begin(); it != ex.tried.end();) it = it->first == ex.key ? ex.tried.erase(it) : std::next(it);
+                ex.leftOn.clear(), ex.cutOff.clear(), ex.visited.clear(), ex.retried.erase(ex.key);
+                return partyTap(7000 + int(at - c.begin()));
+            }
             return;
         }
         if (battleMode && gameOver.stage == 1 && battleClock - gameOver.start > 1.2f && ex.clock >= ex.nextTap) { // (lost: on)
@@ -9309,8 +9350,14 @@ struct Viewer {
                 exploreLog("  the leader changed, for " + name);
                 return startChange();
             }
+            const int need = actionCharacter(actionMark.kind);
+            if (!actionMark.able && aimed && need >= 0 && game.party[0] != need && game.party[1] != need && ex.needChar != need &&
+                game.flag(1011 + need) && game.flag(1010)) { // (one who has joined, the party to be had: else a later visit's)
+                ex.needChar = need; // (not in the pair: the party to change, in the town)
+                exploreLog("  " + name + " wants character " + std::to_string(need + 1) + ", not in the pair");
+            }
         }
-        if (sprintAt() >= 0 && ex.clock >= ex.nextTap) {
+        if (sprintAt() >= 0 && ex.clock >= ex.nextTap && ex.target == "sprint:" + field.gimmicks()[size_t(sprintAt())].name) { // (only one it meant to take)
             ex.nextTap = ex.clock + 1.0;
             ex.sprintUsed[field.gimmicks()[size_t(sprintAt())].name] = ex.clock;
             if (ex.target.rfind("sprint:", 0) == 0) ex.target.clear();
@@ -9362,7 +9409,7 @@ struct Viewer {
         if (!ex.tapIt && ex.target.rfind("exit:", 0) != 0) { // (an event box: touched as the game touches it)
             const float at[3] = {p[0], p[1], p[2]};
             for (const cr2::Gimmick& g : field.gimmicks())
-                if (g.name == ex.target && g.touches(at, controller->radius)) {
+                if (g.name == ex.target && g.kind == cr2::Gimmick::Event && g.touches(at, controller->radius)) { // (a touch action's mark: done above)
                     if (!insideEvents.count(g.name)) { // (the field looks once an update: in until it has seen it)
                         if (ex.touchingSince < 0) ex.touchingSince = ex.clock;
                         if (ex.clock - ex.touchingSince < 0.5) break;
@@ -10026,6 +10073,51 @@ struct Viewer {
                 shop.stage = 3, shop.at = uiClock;
             }
         }
+    }
+    // The explorer's shopping (--explore), as a player stocks up: for each of the pair the best
+    // weapon, armour and accessory sold that it can wear and that beats what it has (by what they
+    // add, all told), then healing items - the strongest the Oz buys, up to 10 - and revivals, up
+    // to 3, from what is left; then out
+    void exploreShop() {
+        const int rank = shopRank();
+        auto worth = [&](const cr2::BattleData::Item* it) {
+            if (!it) return -1;
+            int w = it->hp / 10 + it->mp / 5;
+            for (int k = 0; k < 5; ++k) w += it->param[k];
+            return w;
+        };
+        auto buy = [&](int id, int n) {
+            const cr2::BattleData::Item* it = battleData.item(id);
+            if (!it || n <= 0) return;
+            n = std::min(n, 99 - game.itemCount[id]);
+            if (it->price > 0) n = std::min(n, game.oz / it->price);
+            if (n <= 0) return;
+            game.itemCount[id] = static_cast<short>(game.itemCount[id] + n), game.oz -= it->price * n;
+            exploreLog("  shop: bought " + std::to_string(n) + " of item " + std::to_string(id) + " - " + std::to_string(game.oz) + " Oz left");
+        };
+        for (int ch : game.party)
+            for (int slot = 0; ch >= 0 && ch < 9 && slot < 3; ++slot) {
+                int best = 0, bestWorth = worth(game.equip[ch][slot] > 0 ? battleData.item(game.equip[ch][slot]) : nullptr);
+                for (int id = 1; id < 300; ++id) {
+                    const cr2::BattleData::Item* it = battleData.item(id);
+                    if (!it || it->type != slot + 1 || it->shopRank > rank || it->price <= 0 || it->price > game.oz || !(it->wearers >> ch & 1)) continue;
+                    if (worth(it) > bestWorth) best = id, bestWorth = worth(it);
+                }
+                if (best && spareCount(best) == 0) buy(best, 1);
+            }
+        auto kindOf = [&](const cr2::BattleData::Item* it) { const cr2::BattleData::Command* c = it ? battleData.command(it->command) : nullptr; return c ? c->kind : -1; };
+        int heal = 0, revive = 0;
+        for (int id = 1; id < 300; ++id) {
+            const cr2::BattleData::Item* it = battleData.item(id);
+            if (!it || it->type != 0 || !it->battle || it->shopRank > rank || it->price <= 0) continue;
+            const int k = kindOf(it);
+            if ((k == 24 || k == 25) && (!revive || it->price < battleData.item(revive)->price)) revive = id;
+            else if (k >= 18 && k <= 23 && it->hp > 0 && it->price * 10 <= game.oz && (!heal || it->hp > battleData.item(heal)->hp)) heal = id;
+        }
+        if (heal) buy(heal, 10 - game.itemCount[heal]);
+        if (revive) buy(revive, 3 - game.itemCount[revive]);
+        exploreOutfit(); // (what was bought, worn)
+        shopClose();
     }
     void shopKey(SDL_Keycode k) {
         if (shop.stage == 1 || shop.stage == 2) {

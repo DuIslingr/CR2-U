@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.21)
 project(CR2U LANGUAGES C CXX)
+if(WIN32)
+    enable_language(RC) # (the .exe's icon: cmake/app-icon.cmake)
+endif()
+if(APPLE)
+    enable_language(OBJCXX) # (MetalFX's upscaler: gfx/vk_metalfx.mm)
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -293,7 +299,6 @@ set(VIEWER_SOURCES src/viewer/main.cpp src/viewer/audio.cpp src/gfx/gl.cpp src/g
 if(CR_VULKAN)
     list(APPEND VIEWER_SOURCES src/gfx/vk_fsr3.cpp src/gfx/vk_dlss.cpp)
     if(APPLE) # (MetalFX's upscaler: Objective-C++)
-        enable_language(OBJCXX)
         list(APPEND VIEWER_SOURCES src/gfx/vk_metalfx.mm)
         set_source_files_properties(src/gfx/vk_metalfx.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
         include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/apple-vulkan.cmake)
@@ -319,6 +324,8 @@ target_link_libraries(cr2view PRIVATE cr2core SDL3::SDL3)
 set_target_properties(cr2view PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME "Chaos Rings II"
     MACOSX_BUNDLE_GUI_IDENTIFIER "local.preservation.chaosrings2")
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/app-icon.cmake)
+cr_app_icon(cr2view chaosrings2)
 add_dependencies(cr2view cr_glsl)
 target_include_directories(cr2view PRIVATE ${GLSL_OUT})
 if(CR_VULKAN)

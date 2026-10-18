@@ -1,7 +1,18 @@
-# CR2-U v0.1.0
+# CR2-U v0.1.1
 
-A from-scratch reimplementation of *Chaos Rings II* (iOS / Vita / Android), first release: builds
-for Windows, macOS, Linux and Android. Opened with no arguments it starts at the game's title screen.
+A from-scratch reimplementation of *Chaos Rings II* (iOS / Vita / Android): builds for Windows,
+macOS, Linux and Android. A hotfix over v0.1.0.
+
+**Fixed in this release**
+- Opened with no arguments, v0.1.0 stopped on the title's logo; it now goes on to the title screen
+  and the game.
+- Random encounters were missing from the field: they now happen as in the original - each map's
+  area, steps and chance read from your copy's executable, the monsters drawn by the area's weights,
+  fought on the area's map and music.
+- The field menu's encounters switch is now kept in the save (a save made while a scene had them
+  off no longer leaves them off).
+- A controller plays as the Vita does (○ / × / △ / □, L / R, START, the D-pad and stick; Options,
+  Game, "Swap ○ and ×").
 
 | File | Platform |
 |---|---|
@@ -17,7 +28,7 @@ for Windows, macOS, Linux and Android. Opened with no arguments it starts at the
 APK, or the iPad 2.1.0's `ChaosRings2enHD.app` (or the unpacked `.ipa`). If none is found it says
 where it looked.
 
-**In this release:** the game from its title screen; the Options window's new **Graphics** button
+**Also in it (from v0.1.0):** the game from its title screen; the Options window's new **Graphics** button
 (or G / Tab) with display, resolution, VSync, frame rate, renderer, upscaler (FSR 3.1 / DLSS /
 MetalFX), MSAA, anisotropic filtering, texture filtering and HD textures, kept in `settings.ini`;
 HD textures you make yourself (`cr2view --export-textures`, then `tools/hd_textures.py`).

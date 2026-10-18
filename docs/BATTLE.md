@@ -387,7 +387,9 @@ second's own pre-action, the third none; with 410 the two one pair this turn (+0
 the pair's (ActionAttackStandby: +0x54), the second with it - its own action none, the two's
 Speed meaned for the order and their power together, as the party's pair. Couplings 47 .. 51 and
 305 .. 309 (the shadows); over 40 seeds a pair in 6, 10, 4, 1 and 0 of them for 47 .. 51.
-Left out: command 363 taking motion `bg01` and shot 6 once a monster chooses it.
+Once a monster chooses command 363 (Amon's, monster 175), SetActionCommand writes motion `bg01`
+and +0x40 6 into the command's data. Those are the values its data already holds, so it changes
+nothing.
 
 The battle's start (BtlCalc::StartState, at StepBattleIn's set-up, BtlWork +0x14): 1 the party
 first - BtlRand(100) under 10 with the party's mean level less the monsters' levels added up under

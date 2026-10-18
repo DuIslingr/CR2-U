@@ -41,6 +41,7 @@ public:
                                      // squared; GetMonsterSP; GetMonsterOZ: + 10 a level)
         int sopia = 0, sopiaLevel = 0; // +0x18 the sopia it may leave, +0x52 the level it must be at
         int drops[3] = {}, rareDrops[3] = {}; // +0xb4, +0xba: by its level - under 20, under 40, more
+        int steals[3] = {}, rareSteals[3] = {}; // +0xa8, +0xae: what Steal Item takes, the same way (none: +0xa8 0)
         int level = 0;      // +0x3b its own (0: the party's, BtlWork::SetupEnemy)
         int resist[7] = {0, 0, 0, 0, 0, 0, 0}; // +0x3c: elements 1..5, physical, magic (1 weak, 2 resists)
         int stateResist[5] = {0, 0, 0, 0, 0};  // +0x43

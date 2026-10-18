@@ -3683,6 +3683,8 @@ struct Viewer {
             if (first)
                 for (const auto& [id, who] : e.notes) // (the announcements: on the banner, in turn - BtlAnnounce)
                     announceQueue.push_back(formatAnnounce(announce(id), {battleRules->fighter(who).name}));
+            if (first && e.stealNote) // (CheckSteal's: after the rest)
+                announceQueue.push_back(e.stealNote == 63 ? formatAnnounce(announce(63), {messageText("itemname", e.stolen)}) : announce(e.stealNote));
             if (e.hit && !restore && !statusOnly) playMotion(bu, "bd01", battleClock);
             // its sounds (BtlSound::PlayHitSE: the command's +0x74 - -1 one of 12..14 -, 15 on a
             // critical, none on a miss or a block; PlayVoiceAttack - the actor's 11 a blow, 12 a

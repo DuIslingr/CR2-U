@@ -1054,6 +1054,8 @@ void BattleRules::doAction(std::vector<Event>& out) {
         !doer.hasState(21))
         for (int f : {nextAction().actor, isPairAction(nextAction().actor) ? fighters_[size_t(nextAction().actor)].partner : -1})
             if (f >= 0 && fighters_[size_t(f)].alive) fighters_[size_t(f)].element = done->attachSelf == 4 ? 0 : done->attachSelf;
+    // (PostCommandAction: CheckSteal - the pair's once)
+    if (done && done->kind == 29 && out.size() > first && !out[first].failed) steal(nextAction(), out, first);
     for (size_t k = first; k < out.size(); ++k) // (BtlActionCtrl::ActionDeadEvent: each downed)
         if (out[k].defeated) {
             commandActor_ = out[k].target;
@@ -1227,6 +1229,60 @@ void BattleRules::checkDrops(const Fighter& monster, const BattleData::Monster& 
     const int s = m.sopia;
     if (s > 0 && s < 32 && monster.level >= m.sopiaLevel && !(sopiaOwned_ >> s & 1) && !sopiaDrops_[s] && rand_.below(100) < kChance[i])
         sopiaDrops_[s] = true;
+}
+
+// BtlActionCtrl::CheckSteal (a command of kind 29 done): of its two targets, in an order BtlRand(100)
+// under 50 keeps, each monster struck - not blocked - while nothing has been taken: one with
+// nothing (+0xa8 0) or stolen from already "nothing"; else the Luck apart (the actor's, a pair's
+// mean, less the target's: past -101 / -50 / -1 / 49 / 100) 40 .. 90 in 100, +20 with skill (5, 1)
+// on either, takes: the rare one 45 in 90 with RareGetter (3, 4) on either, else 30 - by its level
+// as the drops -, short of 99 had; a miss "Steal failed!"
+void BattleRules::steal(const Order& o, std::vector<Event>& out, size_t first) {
+    std::vector<int> targets;
+    for (size_t k = first; k < out.size(); ++k)
+        if (std::find(targets.begin(), targets.end(), out[k].target) == targets.end() && targets.size() < 2) targets.push_back(out[k].target);
+    while (targets.size() < 2) targets.push_back(-1);
+    if (rand_.below(100) >= 50) std::swap(targets[0], targets[1]);
+    unsigned flags = 0;
+    int item = 0;
+    const Fighter& a = fighters_[size_t(o.actor)];
+    const bool pair = isPairAction(o.actor);
+    for (int t : targets) {
+        if (t < 2 || flags & 0x20) continue;
+        Fighter& tf = fighters_[size_t(t)];
+        const BattleData::Monster* m = tf.monster;
+        const Event* ev = nullptr;
+        for (size_t k = first; k < out.size(); ++k)
+            if (out[k].target == t) ev = &out[k];
+        if (!m || !ev || !ev->hit || ev->blocked) continue;
+        if (m->steals[0] == 0) tf.stolen = true;
+        flags &= ~0xc0u;
+        if (!tf.stolen) {
+            int luck = param(o.actor, 4);
+            if (pair) luck = (luck + param(a.partner, 4)) / 2;
+            static const int kThresholds[5] = {-101, -50, -1, 49, 100}, kChance[6] = {40, 50, 60, 70, 80, 90};
+            int i = 0;
+            while (i < 5 && kThresholds[i] < luck - param(t, 4)) ++i; // (CheckResult)
+            const bool thief = a.has(5, 1) || (pair && fighters_[size_t(a.partner)].has(5, 1)); // (HasPair 5, 1)
+            if (rand_.below(100) >= kChance[i] + (thief ? 20 : 0)) {
+                flags |= 0x80;
+                continue;
+            }
+            tf.stolen = true;
+            const bool rare = (fighters_[0].present && fighters_[0].has(3, 4)) || (fighters_[1].present && fighters_[1].has(3, 4));
+            const int band = tf.level < 40 ? tf.level / 20 : 2;
+            const int got = rand_.below(90) < (rare ? 45 : 30) ? m->rareSteals[band] : m->steals[band];
+            if (got > 0 && got < 300 && itemCount(got) < 99) {
+                ++items_[got], item = got, flags |= 0x20;
+                continue;
+            }
+        }
+        flags |= 0x40;
+    }
+    Event& e = out[first];
+    if (flags & 0x20) e.stealNote = 63, e.stolen = item;
+    else if (flags & 0x40) e.stealNote = 64;
+    else if (flags & 0x80) e.stealNote = 65;
 }
 
 // BtlCalc::BadStatus: whether bad state k (0 poison, 1 blind, 2 seal, 3 the action's cancel, 4 the

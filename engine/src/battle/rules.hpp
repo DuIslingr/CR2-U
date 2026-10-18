@@ -62,6 +62,7 @@ struct Fighter {
     };
     mutable std::vector<State> states;
     bool canceled = false; // (+0xf7a: its action this turn cancelled)
+    bool stolen = false; // (+0xf8c: a monster stolen from, or with nothing to steal)
     unsigned usedSlots = 0; // (+0xfc0: a monster's choices taken this turn - BtlUtilSituation::ClearEnemyAction)
     bool hasState(int id) const {
         for (const State& s : states)
@@ -150,6 +151,9 @@ public:
         // the announcements it makes (BtlAnnounce: announcebattle's numbers, each with the one
         // it names - BtlActionCtrl::CalcStatus's, the turn's end)
         std::vector<std::pair<int, int>> notes;
+        // a steal's (BtlActionCtrl::CheckSteal, on the action's first): its announcement - 63 "Stole
+        // %s!" (the item, `stolen`), 64 "Nothing to steal!", 65 "Steal failed!" - after the rest
+        int stealNote = 0, stolen = 0;
     };
     // One turn: the party solo (each its order) or a pair (the first order the pair's), the
     // monsters' own choices, all in their order. Returns the events.
@@ -316,6 +320,7 @@ private:
     bool sopiaDrops_[32] = {};
     uint32_t sopiaOwned_ = 0;
     void checkDrops(const Fighter& monster, const BattleData::Monster& m);
+    void steal(const Order& o, std::vector<Event>& out, size_t first);
     short items_[300] = {};
     bool switches_[6] = {false, true, true, true, true, true}; // (BtlWork::InitializeVariables: 42 off, 43..47 on)
     struct Scripted {

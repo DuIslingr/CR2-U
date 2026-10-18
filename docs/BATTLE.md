@@ -265,6 +265,20 @@ pair out over 1 s and hides them, ActionAdventStandby (the status windows off, t
 scene, ActionAdventCleanup (its effects gone, the pair shown at full opacity, the windows back).
 A tap skips a scene while its skip is on (SetSkipEnable; BtlMain::IsEnabled(0x104)): not here.
 
+## Stealing (BtlActionCtrl::CheckSteal)
+
+Steal Item (command 72, kind 29: a blow, then PostCommandAction's CheckSteal; sopia 13's first
+level, 18's second): of its two targets, in the order BtlRand(100) under 50 keeps, each monster
+struck (+0xf78) and not blocked (+0xf7b), while nothing has been taken this action: one with
+nothing (its +0xa8 0) is marked stolen from (+0xf8c); one stolen from already "Nothing to steal!"
+(announcement 64); else the Luck apart - the actor's (a pair's mean) less the target's, past
+-101 / -50 / -1 / 49 / 100 (BtlCalc::CheckResult) - gives 40, 50, 60, 70, 80 or 90 in 100, +20
+with skill (5, 1) on either of a pair; a miss "Steal failed!" (65). Taken: the rare one (+0xae)
+BtlRand(90) under 45 with RareGetter (3, 4) on either of the party, else 30, else the common one
+(+0xa8), each by the monster's level as the drops (under 20, under 40, more); added to the items
+had short of 99 - "Stole %s!" (63, the item's name) -, else "Nothing to steal!". BtlAnnounce
+shows the first of those, after the action's own. 199 of the 274 monsters carry something.
+
 ## The monsters' choice (BtlEnemy)
 
 A monster record holds ten commands (+0x58 s16), each with a condition (+0x6c u8), a target rule

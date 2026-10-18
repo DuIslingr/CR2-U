@@ -5141,10 +5141,12 @@ struct Viewer {
     } titleMenu;
     std::unique_ptr<cr2::EventRuntime> titleEvents; // (title.nut's calls)
     double playSeconds = 0;                         // (the save's play time, cr3_savedata +0x10 / 20)
-    static bool saveExists(const char* file) {
+    static bool saveExists(const char* file) { // (an empty one: DeleteCont's - none)
         std::FILE* f = std::fopen(savePath(file).c_str(), "rb");
-        if (f) std::fclose(f);
-        return f != nullptr;
+        if (!f) return false;
+        const bool some = std::fgetc(f) != EOF;
+        std::fclose(f);
+        return some;
     }
     // a save's flags, its time and play time (its extras)
     struct SaveInfo {
@@ -5155,6 +5157,7 @@ struct Viewer {
     };
     static SaveInfo saveInfo(const char* file) {
         SaveInfo s;
+        if (!saveExists(file)) return s;
         std::FILE* f = std::fopen(savePath(file).c_str(), "rb");
         if (!f) return s;
         std::string text;

@@ -12,10 +12,15 @@ void bindGameState(ScriptVM& vm, GameState& state) {
     vm.setNative("Cr3Flag", "Set", [&state](NativeCall& c) { state.setFlag(c.integer(0), true); });
     vm.setNative("Cr3Flag", "Clear", [&state](NativeCall& c) { state.setFlag(c.integer(0), false); });
     vm.setNative("Cr3Flag", "Check", [&state](NativeCall& c) { c.result(state.flag(c.integer(0))); });
-    vm.setNative("Cr3Work", "Set", [&state](NativeCall& c) { state.work[c.integer(0)] = c.integer(1); });
+    // (Cr3Work is the global work: Cr3BindWork's Set / Get are Cr3UtilGlobalWorkSet / Get - 32
+    // values, others ignored, read as 0)
+    vm.setNative("Cr3Work", "Set", [&state](NativeCall& c) {
+        const int k = c.integer(0);
+        if (k >= 0 && k < 32) state.globalWork[k] = c.integer(1);
+    });
     vm.setNative("Cr3Work", "Get", [&state](NativeCall& c) {
-        const auto it = state.work.find(c.integer(0));
-        c.result(it == state.work.end() ? 0 : it->second);
+        const int k = c.integer(0);
+        c.result(k >= 0 && k < 32 ? state.globalWork[k] : 0);
     });
     GameState::Next& next = state.next;
     // FldUtilSetVistaFuncName: the event, and that a vista is to come; its map ("null": none)
@@ -128,7 +133,6 @@ std::string GameState::save(const std::map<std::string, std::string>& extra) con
     for (size_t k = 0; k < flags.size(); ++k)
         if (flags[k]) o << ' ' << k;
     o << '\n';
-    for (const auto& [k, v] : work) o << "work " << k << ' ' << v << '\n';
     o << "party " << party[0] << ' ' << party[1] << '\n';
     o << "active " << active << ' ' << int(changeEnable) << ' ' << int(tabEnable) << '\n';
     for (int s = 0; s < 3; ++s) o << "pairs " << s << ' ' << partySets[s][0] << ' ' << partySets[s][1] << '\n';
@@ -163,7 +167,8 @@ bool GameState::load(const std::string& text, std::map<std::string, std::string>
         if (error) *error = "not a CR2-U save";
         return false;
     }
-    flags.clear(), work.clear();
+    flags.clear();
+    std::vector<std::pair<int, int>> oldWork;
     for (short& n : itemCount) n = 0;
     while (std::getline(in, line)) {
         std::istringstream l(line);
@@ -173,7 +178,7 @@ bool GameState::load(const std::string& text, std::map<std::string, std::string>
             for (int n; l >> n;) setFlag(n, true);
         } else if (key == "work") {
             int k = 0, v = 0;
-            if (l >> k >> v) work[k] = v;
+            if (l >> k >> v && k >= 0 && k < 32) oldWork.push_back({k, v}); // (an older save's: the same values, set after)
         } else if (key == "party") {
             l >> party[0] >> party[1];
         } else if (key == "active") {
@@ -219,6 +224,7 @@ bool GameState::load(const std::string& text, std::map<std::string, std::string>
             (*extra)[key] = rest;
         }
     }
+    for (const auto& [k, v] : oldWork) globalWork[k] = v;
     itemsReady = equipReady = sopiaReady = true; // (a new game's set-up not over it)
     return true;
 }

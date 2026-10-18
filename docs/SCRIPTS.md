@@ -32,7 +32,7 @@ through a helper call Ghidra prints without its template argument - `Cr3Sound.Pl
 | `Cr3System` | 40 | dungeon / area changes, battles, Oz, items, Sopia, the party |
 | `Cr3Save` | 7 | saving |
 | `Cr3Flag` | 3 | `Set` / `Clear` / `Check` |
-| `Cr3Work` | 2 | variables |
+| `Cr3Work` | 2 | `Set` / `Get`: the global work (Cr3UtilGlobalWorkSet / Get - cr3_global_work, 32 values, saved; others ignored, read as 0) |
 | `Cr3Sound` | 9 | BGM, sound effects, voices |
 | `Cr3Fade` | 6 | fades |
 | `Cr3Touch` | 1 | touch |

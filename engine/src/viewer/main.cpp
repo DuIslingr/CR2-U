@@ -2293,6 +2293,9 @@ struct Viewer {
     cr2::BattleData battleData;
     cr2::BattleSetup battle;
     ViewFigure battleMap;
+    ViewFigure specialMap;        // (BtlMap +0x13c: d1154b, Darwin's third awakening's)
+    bool specialMapShown = false; // (+0x144)
+    float specialMapStart = 0;
     struct Ramp { // (a value from `from` to `to` over `time` s from `start`: StartAlphaAnimation's)
         float from = 1, to = 1, start = 0, time = 0;
         float at(float t) const {
@@ -2491,6 +2494,7 @@ struct Viewer {
 
     void poseBattle() {
         pose(battleMap, battleClock);
+        if (!specialMap.meshes.empty()) pose(specialMap, battleClock - specialMapStart); // (its animation from its making)
         poseBattleShow();
         const float mc = mapColour.at(battleClock);
         for (int c = 0; c < 3; ++c) battleMap.tint[c] = mc;
@@ -2957,6 +2961,21 @@ struct Viewer {
         setBattleCamera(battle.startCamera);
         showEnd = battleClock + 3.0f;
         SDL_Log("fight: %s", mode == 2 ? "pair" : "solo");
+    }
+
+    // a battledpos joint's place (BtlModel::GetPosition(dpos, name))
+    bool dposPosition(const char* name, float* out) {
+        static cr2::Skeleton dpos;
+        static std::vector<cr2::Mat34> w;
+        if (w.empty()) {
+            std::vector<uint8_t> d;
+            if (!archive.read("battledpos.skel", d) || !cr2::parseSkeleton(d, dpos)) return false;
+            w = dpos.world(dpos.basePose);
+        }
+        const int j = dpos.joint(cr2::nameHash(name));
+        if (j < 0 || size_t(j) >= w.size()) return false;
+        for (int c = 0; c < 3; ++c) out[c] = w[size_t(j)].m[c * 4 + 3];
+        return true;
     }
 
     // the party's places for its formation (BtlUtil::SetPairPosRot)
@@ -4057,7 +4076,71 @@ struct Viewer {
         case kSpecialSetSkipEnable: // (ActionSpecialSetSkipEnable: its "enable")
             scene.skippable = st.i[0] != 0;
             break;
-        default: break; // (WaitTime; the few scenes' own offsets)
+        case kSpecialDarwin3Standby: // (BtlMap::LoadSpecialMap: d1154b, not yet drawn)
+            if (specialMap.meshes.empty()) {
+                std::string err;
+                const float keep = time;
+                if (!loadFigure("d1154b.geom", specialMap, &err)) SDL_Log("d1154b: %s", err.c_str());
+                time = keep;
+            }
+            specialMapStart = battleClock;
+            break;
+        case kSpecialGlassFragment: // (the screen's breaking left out; then d1154b drawn)
+            specialMapShown = !specialMap.meshes.empty();
+            break;
+        case kSpecialDarwin3ResetMap:
+            specialMapShown = false;
+            break;
+        case kSpecialDarwin3DarwinOffset:   // (Darwin by the one struck: its place, its figure's offset)
+        case kSpecialDarwin3CameraOffset: { // (the camera's place by the same)
+            BattleUnit* tu = unitOf(scene.target);
+            if (!tu) break;
+            std::string key = tu->figure;
+            const bool flip = scene.target >= 2 && !key.empty() && key[0] == 'j'; // (a monster with a party figure: m5..)
+            if (flip && st.op == kSpecialDarwin3DarwinOffset && key.size() >= 2) key[0] = 'm', key[1] = '5';
+            const float* off = darwinFigureOffset(key);
+            if (!off) break;
+            if (st.op == kSpecialDarwin3DarwinOffset) {
+                if (actorUnit)
+                    for (int c = 0; c < 3; ++c) actorUnit->fig.place.m[c * 4 + 3] = tu->home.m[c * 4 + 3] + off[c] * 0.01f;
+            } else {
+                const bool paired = battleRules->fighter(scene.target).partner >= 0;
+                for (int c = 0; c < 3; ++c) {
+                    const float from = paired ? tu->home.m[c * 4 + 3] : battleCameraPlace.m[c * 4 + 3];
+                    battleCameraPlace.m[c * 4 + 3] = from + (flip ? -off[c] : off[c]) * 0.01f;
+                }
+            }
+            break;
+        }
+        case kSpecialDarwin3CameraOffset2: { // (the camera at the size pattern's offset, Darwin moved from his place by it)
+            if (scene.target < 0) break;
+            const int key = scene.target < 2 ? (battleRules->fighter(scene.target).partner >= 0 ? 14 : 13) : battle.pattern;
+            const float* off = darwinPatternOffset(key);
+            if (!off) break;
+            const float o[3] = {-off[0] * 0.01f, off[1] * 0.01f, -off[2] * 0.01f};
+            for (int c = 0; c < 3; ++c) battleCameraPlace.m[c * 4 + 3] = o[c];
+            if (actorUnit)
+                for (int c = 0; c < 3; ++c) actorUnit->fig.place.m[c * 4 + 3] = actorUnit->home.m[c * 4 + 3] + o[c];
+            break;
+        }
+        case kSpecialLesica1Standby: // (back at its place, its first pose; its partner - 1 - itself, or 5 - itself - hidden)
+        case kSpecialLesica2Standby: {
+            for (Move& m : showMoves) m.active = false;
+            if (actorUnit) actorUnit->fig.place = actorUnit->home;
+            if (BattleUnit* p = unitOf(scene.actor < 2 ? 1 - scene.actor : 5 - scene.actor);
+                p && battleRules->fighter(scene.actor < 2 ? 1 - scene.actor : 5 - scene.actor).alive)
+                p->sceneHidden = true;
+            break;
+        }
+        case kSpecialRuleFixPosition: { // (the party paired - BtlWork +0x523 -: the camera's place and the effect at dPos_pSoloC)
+            float p[3];
+            if (battleRules->fighter(0).partner < 0 || !dposPosition("dPos_pSoloC", p)) break;
+            for (int c = 0; c < 3; ++c) battleCameraPlace.m[c * 4 + 3] = p[c];
+            if (SceneEffect* fx = sceneEffect(4))
+                for (int c = 0; c < 3; ++c) fx->place.m[c * 4 + 3] = p[c];
+            break;
+        }
+        default: break; // (WaitTime)
         }
     }
     void updateScene() {
@@ -4107,6 +4190,7 @@ struct Viewer {
         sceneCameras.clear();
         for (BattleUnit& u : battleUnits) u.sceneHidden = false, u.alpha = Ramp(), u.colour = Ramp();
         battleMapHidden = false, mapColour = Ramp();
+        specialMapShown = false;
         battleFade = BattleFade();
         for (Move& m : showMoves) m.active = false;
         if (!scene.hits && showIndex < showActions.size()) { // (one without a hit of its own)
@@ -4229,7 +4313,7 @@ struct Viewer {
                 d.placed = true;
                 if (!battleUi(d.at, d.x, d.y)) d.start = -100; // (behind it: not shown)
             }
-        if (!battleMapHidden) drawFigure(battleMap, vp.data());
+        if (!battleMapHidden) drawFigure(specialMapShown ? specialMap : battleMap, vp.data()); // (BtlMap::Draw: d1154b in its place)
         for (const BattleUnit& u : battleUnits)
             if (!u.hidden && !u.sceneHidden) drawFigure(u.fig, vp.data());
         drawEffects(cw, vp);

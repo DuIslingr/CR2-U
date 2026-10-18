@@ -39,6 +39,16 @@ enum SpecialOp : short {
     kSpecialPlaySE = 22,      // i: id (-1 the launch's, -2 the hit's, -3 the shot's, -4 the post's); f: delay
     kSpecialPlayEventSE = 23, // i: id (a clip); f: delay
     kSpecialFade = 24,        // i: mode (0 in from white, 1 out to white, 2 in from black, 3 out to black), frames
+    // the few scenes' own (no arguments)
+    kSpecialDarwin3Standby = 25,      // Darwin's third awakening: its map, d1154b, made (BtlMap::LoadSpecialMap)
+    kSpecialDarwin3DarwinOffset = 26, // Darwin put by the one struck (its dpos, the pair's if paired) and its figure's offset
+    kSpecialDarwin3CameraOffset = 27, // the camera's place moved by the same table's offset
+    kSpecialDarwin3CameraOffset2 = 28, // the camera's place the size pattern's offset, Darwin moved from his by it
+    kSpecialDarwin3ResetMap = 29,     // the map d1154b no longer drawn (SetRenderSpecialMap false)
+    kSpecialLesica1Standby = 30,      // the one acting back at its place, its first pose, its partner hidden
+    kSpecialLesica2Standby = 31,
+    kSpecialRuleFixPosition = 32,
+    kSpecialGlassFragment = 33,       // the screen breaking away (BtlMain::PostEffectGlassFragments), d1154b drawn
     kSpecialSetSkipEnable = 34,
 };
 
@@ -76,5 +86,19 @@ const EffectSetting& effectSetting(const std::string& name);
 
 // BtlTposTable: the joints a tpos / an effect's locator names (9: the model's own place)
 const char* tposJoint(int tpos);
+
+// Darwin's third awakening's offsets (BtlActionTable, in hundredths: tools/gen_darwin_table.py):
+// by the one struck's figure (its first four characters; a monster's `j` figure as `m5..`), and
+// by the monsters' size pattern (13 / 14 one of the party, solo / paired); null: none
+struct DarwinOffset {
+    const char* name;
+    float v[3];
+};
+struct DarwinPatternOffset {
+    int key;
+    float v[3];
+};
+const float* darwinFigureOffset(const std::string& figure);
+const float* darwinPatternOffset(int key);
 
 } // namespace cr2

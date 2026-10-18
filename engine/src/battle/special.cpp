@@ -9,6 +9,7 @@ namespace {
 
 #include "battle/specialtable.inc"
 #include "battle/effecttable.inc"
+#include "battle/darwintable.inc"
 
 } // namespace
 
@@ -29,6 +30,18 @@ const EffectSetting& effectSetting(const std::string& name) {
     for (const EffectSetting& e : kEffectSettings)
         if (e.name && name == e.name) return e;
     return kEffectSettings[0]; // ("common")
+}
+
+const float* darwinFigureOffset(const std::string& figure) {
+    for (const DarwinOffset& e : kDarwinFigureOffsets) // (GetAwakeDawinLv3Offset: the first four characters' hash)
+        if (e.name && figure.compare(0, 4, e.name, 0, 4) == 0 && figure.size() >= 4) return e.v;
+    return nullptr;
+}
+
+const float* darwinPatternOffset(int key) {
+    for (const DarwinPatternOffset& e : kDarwinPatternOffsets)
+        if (e.key == key) return e.v;
+    return nullptr;
 }
 
 const char* tposJoint(int tpos) {

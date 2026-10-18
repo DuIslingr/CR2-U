@@ -865,10 +865,10 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
         e.hit = hit(o.actor, t, *c);
         if (e.hit) {
             // CheckSkillAutoGuard: at a quarter of its HP or under, not defending, its skill 1, 0
-            // guards it a turn (state 4) at 20% (40% in its side's turn break) - "Auto Defend"
+            // guards that blow (state 4) at 20% (40% in its side's turn break) - "Auto Defend"
             const int chance = breakBonus(t) ? 20 : 10;
             if (!tf.guarding && tf.hp * 100 / std::max(tf.maxHp, 1) <= 25 && tf.has(1, 0) && int(rand_.below(100)) < chance * 2)
-                tf.addState(4, 1, 0), e.notes.push_back({0x57, t});
+                tf.addState(4, 1, 0), e.autoGuard = true, e.notes.push_back({0x57, t});
             // CheckAttackBlock / CheckMagicBlock: a blow on one with state 31, either on one with
             // skill 5, 11 (a full guard), else by its blocking skill (1, 3 / 1, 4: 10%, 20% in its
             // side's turn break) unless the command gets through (+0x4e bit 6) - no damage
@@ -900,6 +900,9 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
         }
         moveGauge(e, *c);
         chargeFor(e, *c, t == targets.front());
+        // (CheckThrowBack, as the blow lands: an auto guard's state 4 cleared - it guards that
+        // blow alone; +0xf7f is the action's, ClearCommandResult)
+        if (e.autoGuard) tf.clearState(4);
         out.push_back(e);
     }
 }

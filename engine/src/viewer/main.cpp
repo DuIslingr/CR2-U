@@ -2518,7 +2518,20 @@ struct Viewer {
     }
     float motionLength(BattleUnit& u, const std::string& suffix) { return useMotion(u, suffix) ? u.fig.anim.duration() : 0.0f; }
     void playMotion(BattleUnit& u, const std::string& suffix, float at, const std::string& then = "bb01") {
-        u.motion = suffix, u.then = u.guarding && then == "bb01" ? "bg01" : then, u.motionStart = at, u.loop = false, u.hold = false;
+        u.motion = suffix, u.then = then == "bb01" ? stanceOf(u) : then, u.motionStart = at, u.loop = false, u.hold = false;
+    }
+    // a fighter's stance: bg01 guarding (Defend), bx02 in War's Executioner's Pose (state 37 -
+    // ActionSopiaLaunch: bx01, then bx02), else bb01
+    std::string stanceOf(const BattleUnit& u) const {
+        if (u.guarding) return "bg01";
+        const int f = fighterOfUnit(u);
+        if (f >= 0 && battleRules && battleRules->fighter(f).hasState(37) && battleRules->fighter(f).alive) return "bx02";
+        return "bb01";
+    }
+    int fighterOfUnit(const BattleUnit& u) const {
+        for (int f = 0; f < 5; ++f)
+            if (fighterUnit[f] >= 0 && size_t(fighterUnit[f]) < battleUnits.size() && &battleUnits[size_t(fighterUnit[f])] == &u) return f;
+        return -1;
     }
 
     void poseBattle() {
@@ -3812,6 +3825,23 @@ struct Viewer {
     // an action's hits landing (the targets' damage motion, the sounds, the hit's effect, the
     // numbers); a special scene's later hits (`first` false) the blows alone
     std::vector<int> groupShown; // (the sides a group's effect has had this action)
+    // A blow's reaction (BtlActionCtrl::CheckThrowBack): one of the party blocking it, or any one
+    // guarded by Auto Defend, bg01 once; one guarding (Defend) bg02 - where its table has it - back
+    // to bg01; in time stopped (21) none; in the Executioner's Pose (37) bx03, back to bx02; else
+    // bd01 (a monster blocking it: no damage, none)
+    void throwBack(BattleUnit& bu, const cr2::BattleRules::Event& e) {
+        if (e.blocked && e.target < 2 && !bu.guarding) return playMotion(bu, "bg01", battleClock);
+        if (e.autoGuard) return playMotion(bu, "bg01", battleClock);
+        if (e.damage <= 0 && e.blocked) return;
+        if (bu.guarding) {
+            if (motionLength(bu, "bg02") > 0) playMotion(bu, "bg02", battleClock);
+            return;
+        }
+        const cr2::Fighter& f = battleRules->fighter(e.target);
+        if (f.hasState(21)) return;
+        if (f.hasState(37) && f.alive) return playMotion(bu, "bx03", battleClock);
+        playMotion(bu, "bd01", battleClock);
+    }
     void landHits(const ShowAction& a, bool first) {
         if (first) groupShown.clear();
         for (const auto& e : a.hits) {
@@ -3826,7 +3856,7 @@ struct Viewer {
                     announceQueue.push_back(formatAnnounce(announce(id), {battleRules->fighter(who).name}));
             if (first && e.stealNote) // (CheckSteal's: after the rest)
                 announceQueue.push_back(e.stealNote == 63 ? formatAnnounce(announce(63), {messageText("itemname", e.stolen)}) : announce(e.stealNote));
-            if (e.hit && !restore && !statusOnly) playMotion(bu, "bd01", battleClock);
+            if (e.hit && !restore && !statusOnly) throwBack(bu, e);
             // its sounds (BtlSound::PlayHitSE: the command's +0x74 - -1 one of 12..14 -, 15 on a
             // critical, none on a miss or a block; PlayVoiceAttack - the actor's 11 a blow, 12 a
             // critical, 13 a kill, 15 the battle's last, 14 nothing done -; the one struck's

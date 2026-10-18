@@ -596,7 +596,7 @@ halves the damage taken; 38..40 double the result's EXP / SP / Oz.
   its partner - unless the command pierces (+0x4e bit 3) turns back on the caster and its partner
   (the caster's side for one on all), a use of it on each holding it.
 - The blocks (BtlActionCtrl::CalcDamage, after a hit): CheckSkillAutoGuard - at a quarter of its HP
-  or under, not defending, skill 1, 0 guards it a turn (state 4) at 20% (40% in its side's turn
+  or under, not defending, skill 1, 0 guards that blow (state 4, cleared by CheckThrowBack) at 20% (40% in its side's turn
   break), "Auto Defend"; CheckAttackBlock - a blow on one with 31 or skill 5, 11 (full guard), or
   its skill 1, 3 at 10% (20%) unless +0x4e bit 6; CheckMagicBlock - a sopia on one with 5, 11, or
   skill 1, 4 at 10% (20%) unless bit 6: no critical, no damage ("Neutralized physical / magical
@@ -624,8 +624,20 @@ AnnouncementWindowMenu), 1.5 s each (announcebattle's ids, the records from 1): 
 %s!" on a monster, "%s has been poisoned!" on the party, "Poison does not affect %s!" - one of them
 (ShowAnnounceStatus1: the first of poison, blind, seal, state 3; none after a cancel), "%s is hit
 with status effects!" for more than one of poison, blind and seal -, the seals' and time's
-(ShowAnnounceStatus3), the parameters' and the special states'. Not yet: 37's motions
-(CheckThrowBack).
+(ShowAnnounceStatus3), the parameters' and the special states'.
+
+A blow's reaction (CheckThrowBack, as it lands):
+- One of the party blocking it (+0xf7b), not defending: `bg01` once, then the stance.
+- Auto Defend (+0xf7f): `bg01` once, and its state 4 is cleared, so it guards that blow alone.
+  The flag is the action's (ClearCommandResult).
+- No damage: nothing.
+- Defending: `bg02`, where the motion table has it, back to `bg01`.
+- Time stopped (21): nothing.
+- State 37: `bx03`, back to `bx02`.
+- Otherwise: `bd01`.
+
+The `bx01` commands (Executioner's Pose, the dragons' charging, ...) set their stance to `bx02`
+(ActionSopiaLaunch: SetNextNextMotion 20) while state 37 holds. A defender's stance is `bg01`.
 
 ## The result (BtlResult)
 

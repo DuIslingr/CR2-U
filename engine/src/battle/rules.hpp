@@ -145,6 +145,7 @@ public:
         // ActionRevive*: a quarter of its most HP)
         bool counter = false; // (its action a counter)
         bool blocked = false; // (CheckAttackBlock / CheckMagicBlock: no damage, +0xf7b)
+        bool autoGuard = false; // (CheckSkillAutoGuard: state 4 for this blow, +0xf7f)
         bool failed = false;  // (its action not done: sealed, or short of MP - ActionDontAction)
         bool regenerated = false;
         int regenHp = 0;

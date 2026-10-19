@@ -83,10 +83,37 @@ std::string resolveArchive(const std::string& path) {
 std::string defaultArchive(const std::vector<std::string>& places) {
     std::error_code ec;
     if (const char* env = std::getenv("CR2_DATA"); env && *env) return resolveArchive(env);
-    for (std::string base : places) {
+    // a folder, then the folders below it (two deep, sorted)
+    auto below = [&](const std::string& dir) {
+        std::vector<std::string> out{dir};
+        std::vector<std::string> one;
+        for (const fs::directory_entry& e : fs::directory_iterator(dir, ec))
+            if (e.is_directory(ec)) one.push_back(e.path().string());
+        std::sort(one.begin(), one.end());
+        for (const std::string& a : one) {
+            out.push_back(a);
+            std::vector<std::string> two;
+            for (const fs::directory_entry& e : fs::directory_iterator(a, ec))
+                if (e.is_directory(ec)) two.push_back(e.path().string());
+            std::sort(two.begin(), two.end());
+            out.insert(out.end(), two.begin(), two.end());
+        }
+        return out;
+    };
+    for (const char* kind : {"vita", "android", "ios"})
+        for (std::string base : places) {
+            if (base.empty()) continue;
+            if (base.back() != '/' && base.back() != '\\') base += '/';
+            if (!fs::is_directory(base + kind, ec)) continue;
+            for (const std::string& d : below(base + kind)) {
+                const std::string a = resolveArchive(d);
+                if (fs::is_regular_file(a, ec)) return a;
+            }
+        }
+    for (std::string base : places) { // (the older places)
         if (base.empty()) continue;
         if (base.back() != '/' && base.back() != '\\') base += '/';
-        for (const char* sub : {"vita", "android", "ipad", "PCSG00498", "CR2", "ChaosRings2enHD.app", "Payload", "data", ""}) {
+        for (const char* sub : {"ipad", "PCSG00498", "CR2", "ChaosRings2enHD.app", "Payload", "data", ""}) {
             const std::string a = resolveArchive(*sub ? base + sub : base);
             if (fs::is_regular_file(a, ec)) return a;
         }

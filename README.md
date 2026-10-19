@@ -25,9 +25,7 @@ Not affiliated with or endorsed by Square Enix or Media.Vision.
 cd engine
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
 ninja -C build
-build/cr2view --data "<path to>/PCSG00498" --title
-build/cr2view --data "<folder with main.212.com.square_enix.chaosrings2gp.obb and the APK>" --title
-build/cr2view --data "<path to>/ChaosRings2enHD.app" --title
+build/cr2view
 ```
 
 C++17, SDL3 (downloaded and built by CMake when it isn't installed) and FreeType; Vulkan 1.3 by
@@ -36,20 +34,82 @@ default, OpenGL 3.3 / ES 3.0 with `--renderer opengl` or when Vulkan can't start
 and the tools.
 
 Opened with no arguments at all (a double-click, Android's launcher) it starts the game at its
-title screen, the data looked for in `CR2_DATA`, then a folder named `vita/`, `android/` or `ipad/`
-(or a release's own: `PCSG00498/`, `CR2/`, `ChaosRings2enHD.app/`, `Payload/`) beside the executable,
-beside the AppImage or the `.app`, or in the current directory - and if none is there it says where
-it looked. Any of these works as the game:
-
-| Your copy | How |
-|---|---|
-| PS Vita PCSG00498 | `--data <its PCSG00498 folder>` (or `CR2/`, or the archive itself): `CR2/resources/CRDB.psp2.mvgl`, the maps' table from `eboot.bin`, the text in its font (`CR2/resources/font/TBGoPro-Bold.otf`); `Sound.psp2/` |
-| Android 2.1.2 (`com.square_enix.chaosrings2gp`) | `--data <folder>` holding `main.212.com.square_enix.chaosrings2gp.obb` and its APK (or the APK unpacked there): the maps' table from the APK's `lib/armeabi-v7a/libChaosRings2.so`, the text in its own font (`assets/00001`), read from inside the APK |
-| iPad 2.1.0 (`ChaosRings2enHD.app`) | `--data <the .app or the unpacked .ipa>`: `CRDB.ios.mvgl`, `Sound.ios/sound/`, the maps' table from its executable |
+title screen, your copy found in the game folder - for this build `engine/build/`, or the folder
+you start it from - as `vita/`, `android/` or `ios/` ([Your copy](#your-copy)). Any of the three
+releases works as the game: the Vita's PCSG00498 (the maps' table from its `eboot.bin`, the text in
+its font `CR2/resources/font/TBGoPro-Bold.otf`), the Android 2.1.2 (the maps' table from the APK's
+`lib/armeabi-v7a/libChaosRings2.so`, its font `assets/00001`, read from inside the APK) or the iPad
+2.1.0 (the maps' table from its executable).
 
 Saves and settings go to the profile folder (`~/.local/share/DuIslingr/CR2-U/` on Linux): CR2-U's
-own save (`save1.txt`, the continue data `cont.txt`), `settings.ini`, and `hd-textures/`. The game's
+own save (`save1.txt`, the continue data `cont.txt`) and `settings.ini`. The game's
 own saves are read and written too (`--game-save game.dat`, `cr2tool save-import` / `save-export`).
+
+## Your copy
+
+Nothing has to be given on the command line: put your copy in the **game folder** and start the
+program - it finds it by itself. The game folder is:
+
+| Platform | The game folder |
+|---|---|
+| Windows, Linux | the folder holding `cr2view.exe` / `cr2view` |
+| Linux AppImage | the folder holding the `.AppImage` |
+| macOS | the folder holding `cr2view.app` (its `Contents/Resources/` works too) |
+| Android | `Android/data/local.preservation.chaosrings2/files/` on the shared storage (copy your files there over USB) |
+
+(then the working directory too). In it, a folder for each release you have - any one is enough:
+
+```
+<game folder>/
+├── cr2view                          (or cr2view.exe, cr2view.app, the .AppImage)
+├── ios/
+│   └── ChaosRings2enHD.app/            the iPad 2.1.0's .app: CRDB.ios.mvgl, Sound.ios/, its executable (the maps' table)
+│                                       - or Payload/ChaosRings2enHD.app/ (the .ipa unpacked as it is)
+├── android/
+│   ├── main.212.com.square_enix.chaosrings2gp.obb
+│   └── <the 2.1.2 APK>.apk             (the maps' table and the font are read from inside it)
+├── vita/
+│   └── PCSG00498/                      the installed title: CR2/resources/CRDB.psp2.mvgl, Sound.psp2/, eboot.bin
+└── textures/
+    ├── export/                         written by --export-textures: the pictures to upscale (<hash>.crraw)
+    └── hd/                             read by the game: the upscaled pictures (<hash>.crhd)
+```
+
+A release's folder may hold the release itself or have it one or two folders down, as above
+(`ios/Payload/....app`, `vita/PCSG00xxx/`), so a copy can be dropped in as it was unpacked or
+installed; the names of the folders below `ios/`, `android/` and `vita/` don't matter. A Vita copy
+has to be the installed, decrypted title (an encrypted NoNpDrm dump: install it first, e.g. with
+Vita3K). The release downloads come with these folders made, each with a `README.txt` saying what
+goes in it.
+
+CR2-U plays one release at a time: with several, **the first of `vita/`, `android/`, `ios/`** (the
+same order as CR1:U and CRO-U take one alone); `--data` picks another.
+
+If nothing is found the program says where it looked. The older places still work: `ipad/`, `PCSG00498/`, `CR2/`, `ChaosRings2enHD.app/`, `Payload/` or `data/` straight in the game folder.
+To use a copy elsewhere: `--data <a release: its folder, archive, OBB>` (or `CR2_DATA`). Settings and saves go to the profile folder
+(`~/.local/share/DuIslingr/CR2-U/` on Linux; the same folders under `%APPDATA%\` on Windows and
+`~/Library/Application Support/` on macOS), not the game folder. All four ports (CR1:U, CRO-U, CR2-U, CR3-U) look for their copies the same way.
+
+## HD textures
+
+Upscaled textures you make yourself, from your own copy - waifu2x or Real-ESRGAN, drawn in place of
+the originals:
+
+1. `cr2view --export-textures` writes every picture the game draws to `<game folder>/textures/export/`
+   (`<hash>.crraw`; the profile folder's `textures/export/` if the game folder can't be written;
+   `--export-textures <folder>` elsewhere). Each release exports its own pictures.
+2. `python3 tools/hd_textures.py <game folder>` upscales them into `<game folder>/textures/hd/`
+   (`<hash>.crhd`): waifu2x (`waifu2x-ncnn-vulkan` on the PATH, or `--waifu2x <it>`) for the
+   lossless and block-compressed pictures, Real-ESRGAN (`--esrgan <the folder with
+   realesrgan-ncnn-vulkan and models/>`) for the 16-bit ones - or `--engine waifu2x` for all. It
+   needs Python 3 with NumPy and Pillow; `--help` lists the rest (`--scale`, `--noise`, `--only` ...).
+3. Start the game: with `textures/hd/` there, HD Textures is on by itself (Options, Graphics, HD Textures switches
+   it; `--no-hd-textures` for a run without). One `textures/hd/` can hold every release's.
+
+`CR2_HD_TEXTURES=<folder>` reads them from elsewhere; the older `hd-textures/` beside the program or in
+the profile folder is still read while there is no `textures/hd/`. The `tools/hd_textures.py` is the
+same in all four ports. Personal use: the outputs are made from the game's art - keep them out of
+anything shared.
 
 ## Platforms
 
@@ -59,12 +119,12 @@ a universal macOS `.app` and an APK. The Windows build is checked under Wine (Vu
 same frames as Linux's); macOS and Android are built in CI but not yet played on a real machine -
 MetalFX, in particular, is compiled but untested.
 
-| Platform | Build | Renderer | The data (besides `--data` and `CR2_DATA`) |
+| Platform | Build | Renderer | The game folder (its `vita/`, `android/`, `ios/`, `textures/`) |
 |---|---|---|---|
-| Linux | `cmake -S engine -B build -G Ninja && ninja -C build` | Vulkan, OpenGL 3.3; FSR 3.1, DLSS (with the SDK) | `vita/`, `android/` or `ipad/` beside `cr2view` |
-| Windows 10+ (x64) | MSVC and Ninja from a Developer prompt, the [Vulkan SDK](https://vulkan.lunarg.com/) for Vulkan - or from Linux with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw): `-DCMAKE_TOOLCHAIN_FILE=engine/cmake/llvm-mingw-x86_64.cmake` (runs under Wine). SDL3, zlib and FreeType are built by CMake | Vulkan, OpenGL 3.3; FSR 3.1, DLSS (MSVC, with the SDK) | the same, beside `cr2view.exe` |
-| macOS 11+ (Apple silicon and Intel) | Xcode's command-line tools, Ninja and the [Vulkan SDK](https://vulkan.lunarg.com/) (MoltenVK, copied into the `.app`); add `"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"` for both | Vulkan (MoltenVK), OpenGL 3.3; FSR 3.1, MetalFX (macOS 13+) | the same, beside `cr2view.app` or in its `Contents/Resources/` |
-| Android 7+ (arm64, x86-64) | the Android SDK and NDK: `git clone -b release-3.2.0 https://github.com/libsdl-org/SDL android/SDL`, then `gradle assembleRelease` in `android/` | OpenGL ES 3.0 | `vita/`, `android/` or `ipad/` in `Android/data/local.preservation.chaosrings2/files/` on the shared storage (copy it there over USB) |
+| Linux | `cmake -S engine -B build -G Ninja && ninja -C build` | Vulkan, OpenGL 3.3; FSR 3.1, DLSS (with the SDK) | the folder holding `cr2view`, or the AppImage |
+| Windows 10+ (x64) | MSVC and Ninja from a Developer prompt, the [Vulkan SDK](https://vulkan.lunarg.com/) for Vulkan - or from Linux with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw): `-DCMAKE_TOOLCHAIN_FILE=engine/cmake/llvm-mingw-x86_64.cmake` (runs under Wine). SDL3, zlib and FreeType are built by CMake | Vulkan, OpenGL 3.3; FSR 3.1, DLSS (MSVC, with the SDK) | the folder holding `cr2view.exe` |
+| macOS 11+ (Apple silicon and Intel) | Xcode's command-line tools, Ninja and the [Vulkan SDK](https://vulkan.lunarg.com/) (MoltenVK, copied into the `.app`); add `"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"` for both | Vulkan (MoltenVK), OpenGL 3.3; FSR 3.1, MetalFX (macOS 13+) | the folder holding `cr2view.app` (or its `Contents/Resources/`) |
+| Android 7+ (arm64, x86-64) | the Android SDK and NDK: `git clone -b release-3.2.0 https://github.com/libsdl-org/SDL android/SDL`, then `gradle assembleRelease` in `android/` | OpenGL ES 3.0 | `Android/data/local.preservation.chaosrings2/files/` on the shared storage (copy your files there over USB) |
 
 The text falls back on the system's fonts where the release's own is missing: Noto CJK on Linux,
 Malgun Gothic and Microsoft YaHei on Windows, Apple SD Gothic Neo and PingFang on macOS.
@@ -133,10 +193,10 @@ release's named code and a reference playthrough (`docs/STATUS.md` has each part
 - **Presentation**: 60 frames a second over the game's own 20; the options' **Graphics** button (or
   G / Tab there) opens CR2-U's own list - display mode, resolution, VSync, frame rate, renderer,
   FSR 3.1 / DLSS / MetalFX and their modes, sharpness, MSAA, anisotropic and texture filtering, HD
-  textures - kept in `settings.ini`, the command line's flags over it. HD textures you make yourself,
-  as CR1:U's: `cr2view --export-textures <folder>`, then `tools/hd_textures.py` (waifu2x or
-  Real-ESRGAN) into `hd-textures/` (or beside the executable, or `CR2_HD_TEXTURES`); each replacement
-  is found by the original's pixels, so every release can have its own in the same folder
+  textures - kept in `settings.ini`, the command line's flags over it. HD textures you make yourself
+  ([HD textures](#hd-textures)): `cr2view --export-textures`, then `tools/hd_textures.py` (waifu2x
+  or Real-ESRGAN) into `textures/hd/`; each replacement is found by the original's pixels, so every
+  release can have its own in the same folder
 - **Testing**: `cr2tool play all` plays every event to its end in all three releases (no native
   stubbed), `cr2tool fieldscript` / `walk` / `exits` / `battle` / `fight` check every map and
   encounter, `cr2view --capture` renders any moment and `--input` drives the menus

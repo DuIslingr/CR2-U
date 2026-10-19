@@ -18,10 +18,13 @@ namespace cr2 {
 // its CR2 folder), an unpacked .ipa (Payload/ChaosRings2enHD.app/CRDB.ios.mvgl)
 std::string resolveArchive(const std::string& path);
 
-// With no --data: CR2_DATA, else the first copy found in one of `places` (each a folder: beside
-// the executable, the working directory, ...) - its vita/, android/ or ipad/, a release's own
-// folder there (PCSG00498, CR2, ChaosRings2enHD.app, Payload, data), else the place itself (each
-// as resolveArchive takes a folder). Empty: none found
+// With no --data: CR2_DATA, else the first copy found in one of `places` (the game folders: beside
+// the executable, the .app or the AppImage, the working directory) - its vita/, then android/,
+// then ios/, each the release's folder or one up to two folders below it (vita/PCSG00498,
+// ios/Payload/ChaosRings2enHD.app); then the older places: ipad/, a release's own folder there
+// (PCSG00498, CR2, ChaosRings2enHD.app, Payload, data), the place itself (each as resolveArchive
+// takes a folder). Empty: none found. The layout is the same in all four ports (CR1:U's
+// platform/paths.hpp)
 std::string defaultArchive(const std::vector<std::string>& places);
 std::string defaultArchive(const std::string& baseDir);
 

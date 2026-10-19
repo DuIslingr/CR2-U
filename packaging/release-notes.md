@@ -1,9 +1,16 @@
-# CR2-U v0.1.1
+# CR2-U v0.2.0
 
 A from-scratch reimplementation of *Chaos Rings II* (iOS / Vita / Android): builds for Windows,
-macOS, Linux and Android. A hotfix over v0.1.0.
+macOS, Linux and Android.
 
-**Fixed in this release**
+**New in this release: your copy found by itself.** Put it in the folder holding the program, in
+a folder named after its release - `ios/`, `android/` or `vita/` (these come made in the download,
+each with a `README.txt` saying what goes in it) - and start the program: nothing to set. HD textures
+the same way: `--export-textures` writes to `textures/export/`, `tools/hd_textures.py <the game
+folder>` upscales into `textures/hd/`, and the game turns them on by itself. The same layout in all
+the Chaos Rings ports; the older places still work.
+
+**Fixed since v0.1.0** (v0.1.1's)
 - Opened with no arguments, v0.1.0 stopped on the title's logo; it now goes on to the title screen
   and the game.
 - Random encounters were missing from the field: they now happen as in the original - each map's

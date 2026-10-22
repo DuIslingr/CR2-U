@@ -146,6 +146,7 @@ public:
         bool flag = false;   // +0x04 (BtlWork +0x18: no first-time tutorials)
         int resultKind = 0;  // +0x15 (3: no victory fanfare - BtlResult)
         int voice = 0;       // +0x18 the start's voice (a Cr3VoiceTable kind; 0: BtlSound::PlayVoiceBattleIn's by the levels)
+        int victoryVoice = 0; // +0x1a the victory's (a Cr3VoiceTable kind; 0: PlayVoiceVictory's by how it went)
         int monsters[3] = {0, 0, 0}; // +0x08 (0: none)
     };
 

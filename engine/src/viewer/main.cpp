@@ -3521,6 +3521,13 @@ struct Viewer {
         const int clip = cr2::SoundData::voiceClip(battleUnits[size_t(u)].figure, kind);
         if (clip >= 0) voiceJobs.push_back({battleClock + delay, clip});
     }
+    // BtlSound::PlayVoiceRandomPlayer: one of the party standing (both: either, evenly) says it
+    void partyVoice(int kind, bool tableKind = false, float delay = 0) {
+        const bool a = battleRules->fighter(0).alive, b = battleRules->fighter(1).present && battleRules->fighter(1).alive;
+        const int who = a && b ? (int(boxRandom() % 100) > 49 ? 1 : 0) : a ? 0 : b ? 1 : -1;
+        if (who >= 0) battleVoice(who, kind, delay, tableKind);
+    }
+    int partyDeaths = 0, lastPartyActor = 0; // (BtlWork fighters' +0x48e, the deaths so far; +0x16, the last of the party to act)
     std::vector<VoiceJob> seJobs; // (BtlSound::CreatePlaySEJob: an effect's clip later)
     void updateBattleSounds() {
         for (size_t k = 0; k < seJobs.size();)
@@ -3785,6 +3792,7 @@ struct Viewer {
         battleFight = mode;
         glassRng.seed(seed); // (the game's lrand48: seeded by the clock)
         battleRules = std::make_unique<cr2::BattleRules>(battleData, seed);
+        partyDeaths = 0, lastPartyActor = 0;
         std::string err;
         int party[2] = {0, 0};
         for (size_t k = 0; k < battle.party.size() && k < 2; ++k) party[k] = battle.party[k].id;
@@ -3880,11 +3888,18 @@ struct Viewer {
                 // encounter's +0x15 is 3; the victory voice, kind 22)
                 const cr2::BattleData::Coupling* cp = battleData.coupling(battle.coupling);
                 if (!cp || cp->resultKind != 3) audio.stopBgm(20), pendingBgm = 15, pendingBgmAt = battleClock + 1.1f;
-                for (int k = 0; k < 2; ++k)
-                    if (battleRules->fighter(k).alive) {
-                        battleVoice(k, 22, 1.2f);
-                        break;
-                    }
+                // (PlayVoiceVictory, after FixTodome: the last of the party to act - else the other
+                // standing - says the coupling's victory voice (+0x1a), else 22 after a hard one - one of
+                // the party down at some time, or alone under 25% HP -, else 21; 24 / 23 the same in an
+                // event's battle (BtlWork +0x18))
+                const int sp = battleRules->fighter(lastPartyActor).alive ? lastPartyActor : 1 - lastPartyActor;
+                if (battleRules->fighter(sp).alive) {
+                    const cr2::Fighter& f0 = battleRules->fighter(0);
+                    const bool hard = partyDeaths > 0 || (!battleRules->fighter(1).present && f0.hp * 100 / std::max(f0.maxHp, 1) < 25);
+                    const bool event = cp && cp->flag;
+                    if (cp && cp->victoryVoice > 0) battleVoice(sp, cp->victoryVoice, 1.2f, true);
+                    else battleVoice(sp, event ? (hard ? 24 : 23) : (hard ? 22 : 21), 1.2f);
+                }
             } else if (!battleRules->exited() && battleRules->outcome() == 2) { // (BtlGameover: 18)
                 audio.stopBgm(20), pendingBgm = 18, pendingBgmAt = battleClock + 1.1f;
                 beginGameOver();
@@ -3924,9 +3939,7 @@ struct Viewer {
                 }
                 party /= std::max(np, 1), mons /= std::max(nm, 1);
                 const int kind = battleRules->advantage() == 1 ? 19 : battleRules->advantage() == 2 ? 20 : mons > party + 4 ? 17 : mons < party - 4 ? 18 : 16;
-                const bool a = battleRules->fighter(0).alive, b = battleRules->fighter(1).present && battleRules->fighter(1).alive;
-                const int who = a && b ? (int(boxRandom() % 100) > 49 ? 1 : 0) : a ? 0 : b ? 1 : -1;
-                if (who >= 0) cp && cp->voice > 0 ? battleVoice(who, cp->voice, 0, true) : battleVoice(who, kind);
+                cp && cp->voice > 0 ? partyVoice(cp->voice, true) : partyVoice(kind);
             }
             break;
         case BattleStep::TurnBegin:
@@ -3977,6 +3990,9 @@ struct Viewer {
                 if (commandInput.escape()) { // (BtlCommand::StepEscapeLoop: away after 2 s, else the turn the monsters')
                     const bool away = battleRules->tryEscape();
                     SDL_Log("escape: %s", away ? "got away" : "failed");
+                    // (StepEscapeLoop: announcement 4 / 5, PlayVoiceEscapeSucceeded / Failed - voices 1 / 2)
+                    announceQueue.clear(), commandShown = announce(away ? 4 : 5), commandShownStart = announceAt = battleClock;
+                    partyVoice(away ? 1 : 2);
                     showEnd = battleClock + (away ? 2.0f : 1.0f);
                     if (away) {
                         battleStep = BattleStep::Over;
@@ -4593,6 +4609,7 @@ struct Viewer {
         damageShown.push_back(ds);
     }
     void beginShowAction(const ShowAction& a) {
+        if (a.actor == 0 || a.actor == 1) lastPartyActor = a.actor;
         showStart = battleClock, showHitDone = false;
         const cr2::BattleData::Command* c = battleData.command(a.command);
         if (c && c->voice > 0) battleVoice(a.actor, c->voice, float(c->voiceDelay) * 0.05f, true); // (PlayVoiceCommand: +0x68 after +0x6a)
@@ -4843,10 +4860,14 @@ struct Viewer {
                 if (&e == &a.hits.front())
                     battleVoice(e.actor, !e.hit || e.blocked ? 14 : e.defeated ? (battleRules->outcome() == 1 ? 15 : 13) : e.critical ? 12 : e.damage > 0 ? 11 : 14);
                 const cr2::Fighter& tf = battleRules->fighter(e.target);
-                if (e.hit && !e.blocked)
-                    battleVoice(e.target, e.defeated ? 5 : e.damage <= 0 ? 7 : tf.hp * 100 / std::max(tf.maxHp, 1) < 26 ? 4 : 3, 0.5f);
-            } else if (restore && first) {
-                battleVoice(e.target, e.revived ? 10 : 8, 0.3f);
+                if (e.defeated && e.target < 2) ++partyDeaths;
+                // (CheckDead: the party both down - the game over's 6, but in couplings 221 / 271 nothing)
+                const bool wiped = e.defeated && e.target < 2 && !battleRules->fighter(0).alive && !(battleRules->fighter(1).present && battleRules->fighter(1).alive);
+                if (e.hit && !e.blocked && !(wiped && (battle.coupling == 221 || battle.coupling == 271)))
+                    battleVoice(e.target, wiped ? 6 : e.defeated ? 5 : e.damage <= 0 ? 7 : tf.hp * 100 / std::max(tf.maxHp, 1) < 26 ? 4 : 3, 0.5f);
+            } else if (restore && first && a.command != 0x90) { // (Restore: revived 10; healed to full 9, else 8 - none for command 0x90's)
+                const cr2::Fighter& rf = battleRules->fighter(e.target);
+                battleVoice(e.target, e.revived ? 10 : rf.hp * 100 / std::max(rf.maxHp, 1) > 99 ? 9 : 8, 0.3f);
             }
             if (!first) continue;
             if (e.revived) bu.hidden = false;

@@ -504,8 +504,13 @@ A message's commands: `\f` the page ends, `\n` the next line, `\c` the line is c
 digit the line's colour (1 red, 2 (0, 0.8, 1), 3 green, 4 (1, 0.8, 0), 5 magenta, 6 white, 7
 black; else white), `\d` and 3 digits the speaker's tag (one of 21: `d001`..`d007`, `d101`..`d103`,
 `d301`..`d312`, `d407`, `d509`, `d510`, `d999` - its index picks the name from the window's name
-data), `\w` digits a wait, `\@` a wait mark (each page gets one at its end), `\*` the message
-ends, `\m` a page flag, `\\` a backslash.
+data), `\w` digits a pause in the typing of that many 1/20 s (it goes on by itself; a tap
+doesn't cut it), `\@` a pause till a tap (`EvtWindowPage::NextBlock`, `EvtWindow::UpdatePage`;
+`ReadPage` adds one to each page's end, so a page always waits for a tap - but for `\*`'s), `\*`
+the message ends: its last page ends it once typed (and past its pauses), with no tap and no cursor
+(`\m\w40\*`-like lines go by themselves), `\m` no fast-forward for the message (`ShowMessage`
+turns the window's skip buttons off), `\\` a backslash. English has 135 `\@`, nearly all at a page's
+end, and 143 `\w` (1 to 200, most 20 to 60).
 
 The fonts: Android's APK carries TypeBank Gothic Pro Bold and Regular (`assets/00000`, `00001`:
 CFF OpenType), the Vita's `CR2/resources/font` the same Bold plus DynaFont faces for Chinese and

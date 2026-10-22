@@ -1,6 +1,7 @@
 #include "assets/text.hpp"
 
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 
 namespace cr2 {
@@ -45,6 +46,19 @@ ParsedMessage parseMessage(const std::string& t) {
     ParsedMessage out;
     TextPage page;
     TextLine line;
+    const auto typed = [&] { // (the page's code points so far)
+        int n = 0;
+        for (unsigned char c : line.text) n += (c & 0xc0) != 0x80;
+        for (const TextLine& l : page.lines)
+            for (unsigned char c : l.text) n += (c & 0xc0) != 0x80;
+        return n;
+    };
+    const auto endPage = [&] {
+        page.lines.push_back(line), line = TextLine();
+        const int n = typed();
+        while (!page.stops.empty() && page.stops.back().wait == 0 && page.stops.back().at >= n) page.stops.pop_back();
+        out.pages.push_back(page), page = TextPage();
+    };
     for (size_t i = 0; i < t.size();) {
         const char ch = t[i];
         if (ch == '\\' && i + 1 < t.size()) {
@@ -53,8 +67,7 @@ ParsedMessage parseMessage(const std::string& t) {
             if (c == 'n') {
                 page.lines.push_back(line), line = TextLine();
             } else if (c == 'f') {
-                page.lines.push_back(line), out.pages.push_back(page);
-                page = TextPage(), line = TextLine();
+                endPage();
             } else if (c == 'c') {
                 line.centred = true;
             } else if (c == '#' && i < t.size() && std::isdigit(static_cast<unsigned char>(t[i]))) {
@@ -67,20 +80,26 @@ ParsedMessage parseMessage(const std::string& t) {
                     if (tag == kTags[s]) out.speaker = s;
                 i = k;
             } else if (c == 'w') {
-                while (i < t.size() && std::isdigit(static_cast<unsigned char>(t[i]))) ++i;
+                size_t k = i;
+                while (k < t.size() && std::isdigit(static_cast<unsigned char>(t[k]))) ++k;
+                if (const int n = k > i ? std::atoi(t.substr(i, k - i).c_str()) : 0; n > 0) page.stops.push_back({typed(), n});
+                i = k;
+            } else if (c == '@') {
+                page.stops.push_back({typed(), 0});
+            } else if (c == 'm') {
+                out.noSkip = true;
             } else if (c == '*') {
+                out.ends = true;
                 break;
             } else if (c == '\\') {
                 line.text += '\\';
             }
-            // (\@, \m: marks for the window)
             continue;
         }
         if (ch != '\r' && ch != '\n') line.text += ch;
         ++i;
     }
-    if (!line.text.empty() || !page.lines.empty()) page.lines.push_back(line);
-    if (!page.lines.empty()) out.pages.push_back(page);
+    if (!line.text.empty() || !page.lines.empty()) endPage();
     return out;
 }
 

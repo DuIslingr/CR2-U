@@ -5955,7 +5955,7 @@ struct Viewer {
         // the page cursor, looping, once the page is typed
         float cx, cy;
         ViewFigure& cursor = wl.cursorJoint.compare(0, 16, "call_msgCsr_loop") == 0 ? conversationCursor : pageCursor;
-        if (ev->typed() && !cursor.meshes.empty() && !wl.cursorJoint.empty() && windowJoint(wl, wl.cursorJoint, cx, cy)) {
+        if (ev->awaitingTap() && !cursor.meshes.empty() && !wl.cursorJoint.empty() && windowJoint(wl, wl.cursorJoint, cx, cy)) {
             cursor.place = cr2::Mat34();
             cursor.place.m[3] = cx, cursor.place.m[7] = cy;
             pose(cursor, time);
@@ -7597,6 +7597,7 @@ struct Viewer {
         if (!scriptSaves) return;
         if (kind == 0) writeSave();
         else if (kind == 1) writeSave("cont.txt");
+        else if (kind == 3) writeSystem(); // (SaveSystem: the system data at once)
         else if (std::FILE* f = std::fopen(savePath("cont.txt").c_str(), "wb")) std::fclose(f); // (DeleteCont: none to continue)
     }
     bool writeSave(const char* file = "save1.txt") {

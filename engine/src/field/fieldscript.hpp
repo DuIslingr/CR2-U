@@ -155,7 +155,7 @@ public:
     // Save_ContData - SaveCont, each area's entry: the continue data -, Delete_ContData; the system
     // data's and the Commits nothing here): what saves them (0 the game, 1 the continue data, 2 the
     // continue data gone) - the viewer's
-    std::function<void(int)> onSave;
+    std::function<void(int)> onSave; // 0 SaveGame, 1 SaveCont, 2 DeleteCont, 3 SaveSystem
     const std::map<int, Resident>& residents() const { return residents_; }
     int introDungeon() const { return introDungeon_; }
     int introTick() const { return introTick_; }

@@ -85,9 +85,12 @@ public:
     const ParsedMessage& message() const { return parsed_; }
     int page() const { return page_; }
     // the page's characters shown so far (its lines' code points in turn): MenuText types a line
-    // a character an update (EvtWindow::UpdatePage: speed 1, unless skipping); typed() - all of it
+    // a character an update (EvtWindow::UpdatePage: speed 1, unless skipping); typed() - all of it,
+    // its stops passed
     int revealed() const { return revealed_; }
     bool typed() const;
+    // typed (but for a \* message's end, which goes by itself), or held at a tap mark: the cursor shows
+    bool awaitingTap() const;
     std::string speakerName() const; // the speaker's name tag (name data), "" none
     int messagesSet() const { return messagesSet_; } // (SetMessages since the start: checks)
     // the scene waits for the player's slash (VistaEvent.ExecutionStart)
@@ -120,7 +123,7 @@ public:
     bool skipButtonShown() const { return skipButton_; }
     bool skipHeld() const { return fastForward && skipButton_; }
     bool fastForwardShown() const {
-        return message_ > 0 && messageWindow_ >= 0 && messageWindow_ <= 6 && !skipOff_.count(messageWindow_);
+        return message_ > 0 && messageWindow_ >= 0 && messageWindow_ <= 6 && !skipOff_.count(messageWindow_) && !parsed_.noSkip;
     }
     bool yesNoShown() const { return yesNoShown_; }
     float yesNoAge() const { return yesNoAge_; }
@@ -191,6 +194,11 @@ private:
     std::vector<std::pair<int, std::string>> cutInImages_; // (id, image: the first of an id counts)
     int messageWindow_ = Vista;
     int message_ = 0, page_ = 0, revealed_ = 0, messagesSet_ = 0;
+    size_t stop_ = 0;     // the page's next stop (TextStop)
+    float stopTime_ = 0;  // (at a \w stop: its time so far)
+    const TextStop* held() const; // the stop the typing waits at, else null
+    void showWhole();             // the page typed whole, its stops passed
+    bool ending() const;          // a \* message's last page typed: it ends
     float pageTime_ = 0;
     ParsedMessage parsed_;
     bool execution_ = false, executionEnd_ = false;

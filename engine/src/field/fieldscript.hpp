@@ -72,6 +72,7 @@ public:
     float quakeOffset() const { return quake_.on ? quake_.offset : 0.0f; }
     bool running() const { return vm_ && vm_->waiting(); }
     bool hasFunction(const std::string& f) const { return vm_ && vm_->hasFunction(f); }
+    std::vector<std::string> functions() const { return vm_ ? vm_->functions() : std::vector<std::string>(); }
     // ticks until the script finishes (its pages turning by themselves) and the fade or camera
     // slide it started settles, at most `maxUpdates`
     bool runToEnd(int maxUpdates = 20 * 60 * 10);

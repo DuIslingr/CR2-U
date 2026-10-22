@@ -357,6 +357,21 @@ bool ScriptVM::hasFunction(const std::string& function) const {
     return found;
 }
 
+std::vector<std::string> ScriptVM::functions() const {
+    std::vector<std::string> out;
+    const SQInteger top = sq_gettop(vm_);
+    sq_pushroottable(vm_);
+    sq_pushnull(vm_);
+    while (SQ_SUCCEEDED(sq_next(vm_, -2))) { // key at -2, value at -1
+        const SQChar* k = nullptr;
+        if (sq_gettype(vm_, -1) == OT_CLOSURE && SQ_SUCCEEDED(sq_getstring(vm_, -2, &k)) && k) out.push_back(k);
+        sq_pop(vm_, 2);
+    }
+    sq_settop(vm_, top);
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
 std::string ScriptVM::findFunction(const std::string& name) const {
     const auto lower = [](std::string t) {
         for (char& c : t) c = char(std::tolower(static_cast<unsigned char>(c)));

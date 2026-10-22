@@ -27,9 +27,12 @@
 //   cr2tool exits <archive> <executable>             every map's exits: the map each leads to (the
 //                                                    pop point's first five letters) is there and
 //                                                    has that point
-//   cr2tool fieldscript <archive> <executable> [map] every map's entry (its dungeon script's
-//                                                    evt000, a new game's state): runs or not, the
-//                                                    gimmicks it shows, the stub natives it reached
+//   cr2tool fieldscript <archive> <executable> [map] [--all-flags]
+//                                                    every map's entry (its dungeon script's evt000,
+//                                                    a new game's state - or every flag set): runs or
+//                                                    not, the gimmicks it shows; its event boxes',
+//                                                    things to tap's, the other gimmicks' and evt
+//                                                    functions run to their end; the stubs reached
 //   cr2tool event <archive> <script> [function]     an event's timeline: its native calls frame by
 //                                                    frame (the waits met at once)
 //   cr2tool play <archive> <event | all>             an event played by the runtime (event/
@@ -45,6 +48,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -126,7 +130,7 @@ int usage() {
                  "cr2tool shaders <archive>\n"
                  "cr2tool walk <archive> <executable> [map]\n"
                  "cr2tool exits <archive> <executable>\n"
-                 "cr2tool fieldscript <archive> <executable> [map]\n"
+                 "cr2tool fieldscript <archive> <executable> [map] [--all-flags]\n"
                  "cr2tool event <archive> <script> [function]\n"
                  "cr2tool play <archive> <event | all>\n"
                  "cr2tool battle <archive> <coupling | all>\n"
@@ -512,20 +516,33 @@ bool readTable(const char* path, const char* binary, std::vector<cr2::MapInfo>& 
     return false;
 }
 
+// fieldscript's state: a new game's (every flag clear), or with --all-flags every story flag set
+// (the scripts' other branches: what's past each check)
+bool gAllFlags = false;
+cr2::GameState fieldState() {
+    cr2::GameState s;
+    if (gAllFlags) s.flags.assign(10000, true);
+    return s;
+}
+
 int fieldScripts(const char* path, const char* binary, const char* only) {
     cr2::MvglArchive a;
     std::vector<cr2::MapInfo> table;
     if (!openArchive(a, path) || !readTable(path, binary, table)) return 1;
     size_t maps = 0, ran = 0, npcs = 0, npcsShown = 0;
     size_t events = 0, reserved = 0, eventBoxes = 0, eventFunctions = 0, faded = 0;
-    size_t taps = 0, tapFunctions = 0, tapsEnded = 0, tapsTalking = 0;
+    size_t taps = 0, tapFunctions = 0, tapsEnded = 0, tapsTalking = 0, boxesEnded = 0, boxesTalking = 0, hidden = 0, hiddenEnded = 0, hiddenTalking = 0;
     std::map<std::string, int> stubs;
+    std::map<std::string, std::string> firstMap;   // the dungeon's script -> its first map (the rest's sweep)
+    std::map<std::string, std::set<std::string>> called; // the dungeon's script -> the functions run above
     for (const cr2::MapInfo& info : table) {
         if (only && info.name != only) continue;
         cr2::FieldMap f;
         if (!f.load(a, info)) continue;
         ++maps;
-        cr2::GameState state; // (a new game's: every flag clear)
+        const std::string dungeon = info.name.substr(0, 3);
+        firstMap.emplace(dungeon, info.name);
+        cr2::GameState state = fieldState();
         cr2::FieldScript script(a, state);
         // (to its end: an area's set-up may play an event, its pages turning by themselves)
         bool ok = script.enter(info.name, f.gimmicks());
@@ -545,12 +562,31 @@ int fieldScripts(const char* path, const char* binary, const char* only) {
             if (only) std::printf("  next: vista %s (%s), battle %d, pop point %s\n", state.next.vistaFunction.c_str(),
                                   state.next.vistaMap.c_str(), state.next.battle, state.next.popPoint.c_str());
         }
-        for (const cr2::Gimmick& g : f.gimmicks()) // (the event boxes' functions: in the script?)
-            if (g.kind == cr2::Gimmick::Event) {
-                ++eventBoxes;
-                if (script.hasFunction(g.function)) ++eventFunctions;
-                else if (only) std::printf("  event box %s: no function %s\n", g.name.c_str(), g.function.c_str());
+        // the event boxes' functions: in the script, and (walked into on the area as its entry left it)
+        // played to their end
+        for (const cr2::Gimmick& g : f.gimmicks()) {
+            if (g.kind != cr2::Gimmick::Event) continue;
+            ++eventBoxes;
+            if (!script.hasFunction(g.function)) {
+                if (only) std::printf("  event box %s: no function %s\n", g.name.c_str(), g.function.c_str());
+                continue;
             }
+            ++eventFunctions;
+            if (!ok) continue;
+            called[dungeon].insert(g.function);
+            cr2::GameState boxState = state;
+            cr2::FieldScript boxScript(a, boxState);
+            bool ended = boxScript.enter(info.name, f.gimmicks()) && boxScript.runToEnd();
+            const int before = boxScript.events().messagesSet();
+            ended = ended && boxScript.call(g.function) && boxScript.runToEnd();
+            boxesEnded += ended;
+            const int said = boxScript.events().messagesSet() - before;
+            boxesTalking += said > 0;
+            if (only || !ended)
+                std::printf("  %s: event box %s - %s: %d messages, %s\n", info.name.c_str(), g.name.c_str(), g.function.c_str(), said,
+                            ended ? "ran to its end" : boxScript.error().empty() ? "still running" : boxScript.error().c_str());
+            for (const auto& [k, n] : boxScript.stubCalls()) stubs[k] += n;
+        }
         // what the leader could tap there now (a _check gimmick shown, its event on): its function
         // called on the area as its entry left it, played to its end
         for (const cr2::Gimmick& g : f.gimmicks()) {
@@ -563,6 +599,7 @@ int fieldScripts(const char* path, const char* binary, const char* only) {
                 continue;
             }
             ++tapFunctions;
+            called[dungeon].insert(g.function);
             cr2::GameState tapState = state;
             cr2::FieldScript tapScript(a, tapState);
             bool tapped = tapScript.enter(info.name, f.gimmicks()) && tapScript.runToEnd();
@@ -576,6 +613,24 @@ int fieldScripts(const char* path, const char* binary, const char* only) {
                             g.position[1], g.position[2], g.function.c_str(), said, tapped ? "ran to its end" : tapScript.error().empty() ? "still running" : tapScript.error().c_str());
             for (const auto& [k, n] : tapScript.stubCalls()) stubs[k] += n;
         }
+        // the rest of the gimmicks' functions (hidden by a new game's flags: NPCs, things to tap later),
+        // called the same way
+        for (const cr2::Gimmick& g : f.gimmicks()) {
+            if (!ok || g.function.empty() || called[dungeon].count(g.function) || !script.hasFunction(g.function)) continue;
+            called[dungeon].insert(g.function);
+            ++hidden;
+            cr2::GameState hState = state;
+            cr2::FieldScript hScript(a, hState);
+            bool ended = hScript.enter(info.name, f.gimmicks()) && hScript.runToEnd();
+            const int before = hScript.events().messagesSet();
+            ended = ended && hScript.call(g.function) && hScript.runToEnd();
+            hiddenEnded += ended;
+            hiddenTalking += hScript.events().messagesSet() > before;
+            if (only || !ended)
+                std::printf("  %s: %s - %s: %s\n", info.name.c_str(), g.name.c_str(), g.function.c_str(),
+                            ended ? "ran to its end" : hScript.error().empty() ? "still running" : hScript.error().c_str());
+            for (const auto& [k, n] : hScript.stubCalls()) stubs[k] += n;
+        }
         std::string shown;
         for (const cr2::Gimmick& g : f.gimmicks()) {
             if (g.kind != cr2::Gimmick::Npc) continue;
@@ -586,7 +641,37 @@ int fieldScripts(const char* path, const char* binary, const char* only) {
                                     shown.c_str());
         for (const auto& [k, n] : script.stubCalls()) stubs[k] += n;
     }
-    std::printf("%zu event boxes, %zu with their function in the dungeon's script\n", eventBoxes, eventFunctions);
+    // the scripts' other evt functions (traps, hidden gimmicks', an event's parts, what other events
+    // call) - none run above -, each called on its dungeon's first map: they run to their end?
+    size_t rest = 0, restEnded = 0, restTalking = 0;
+    for (const auto& [dungeon, mapName] : firstMap) {
+        cr2::FieldMap f;
+        cr2::MapInfo info;
+        for (const cr2::MapInfo& m : table)
+            if (m.name == mapName) info = m;
+        if (!f.load(a, info)) continue;
+        cr2::GameState state = fieldState();
+        cr2::FieldScript script(a, state);
+        if (!script.enter(info.name, f.gimmicks()) || !script.runToEnd()) continue;
+        for (const std::string& fn : script.functions()) {
+            if (fn.size() < 6 || fn.compare(0, 3, "evt") != 0 || fn == "evt000" || called[dungeon].count(fn)) continue;
+            ++rest;
+            cr2::GameState s2 = fieldState();
+            cr2::FieldScript sc(a, s2);
+            bool ended = sc.enter(info.name, f.gimmicks()) && sc.runToEnd();
+            const int before = sc.events().messagesSet();
+            ended = ended && sc.call(fn) && sc.runToEnd();
+            restEnded += ended;
+            restTalking += sc.events().messagesSet() > before;
+            if (only || !ended)
+                std::printf("  %s: %s - %s\n", info.name.c_str(), fn.c_str(), ended ? "ran to its end" : sc.error().empty() ? "still running" : sc.error().c_str());
+            for (const auto& [k, n] : sc.stubCalls()) stubs[k] += n;
+        }
+    }
+    std::printf("%zu other gimmicks' functions (hidden in a new game), %zu ran to their end, %zu said something\n", hidden, hiddenEnded, hiddenTalking);
+    std::printf("%zu other evt functions (on their dungeon's first map), %zu ran to their end, %zu said something\n", rest, restEnded, restTalking);
+    std::printf("%zu event boxes, %zu with their function in the dungeon's script, %zu ran to their end, %zu said something\n", eventBoxes,
+                eventFunctions, boxesEnded, boxesTalking);
     std::printf("%zu things to tap (a new game's), %zu with their function, %zu ran to their end, %zu said something\n", taps, tapFunctions,
                 tapsEnded, tapsTalking);
     std::printf("%zu maps: evt000 ran to its end on %zu (%zu waiting on the way, %zu reserving what comes next, %zu leaving a fade); NPCs %zu, shown %zu (a new game's flags)\n",
@@ -1291,7 +1376,10 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[1], "play") && argc > 3) return play(argv[2], argv[3]);
     if (!std::strcmp(argv[1], "exits") && argc > 3) return exits(argv[2], argv[3]);
     if (!std::strcmp(argv[1], "nav") && argc > 2) return nav(argv[2], argc > 3 ? argv[3] : "-", argc > 4 ? argv[4] : nullptr);
-    if (!std::strcmp(argv[1], "fieldscript") && argc > 3) return fieldScripts(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
+    if (!std::strcmp(argv[1], "fieldscript") && argc > 3) {
+        gAllFlags = argc > 4 && !std::strcmp(argv[argc - 1], "--all-flags");
+        return fieldScripts(argv[2], argv[3], argc > 4 + gAllFlags ? argv[4] : nullptr);
+    }
     if (!std::strcmp(argv[1], "walk") && argc > 3) return walk(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "images")) return images(argv[2], argc > 3 ? argv[3] : nullptr, argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "battle") && argc > 3) return battles(argv[2], argv[3]);

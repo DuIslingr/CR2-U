@@ -65,6 +65,8 @@ public:
     bool waiting() const;
     bool resume();
     bool hasFunction(const std::string& function) const;
+    // the root table's functions (the script's own and the natives' closures), by name
+    std::vector<std::string> functions() const;
     // a root-table function's name matching `name` but for case ("" when none)
     std::string findFunction(const std::string& name) const;
 

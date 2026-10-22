@@ -3800,6 +3800,7 @@ struct Viewer {
         glassRng.seed(seed); // (the game's lrand48: seeded by the clock)
         battleRules = std::make_unique<cr2::BattleRules>(battleData, seed);
         partyDeaths = 0, lastPartyActor = 0;
+        battleWipeAt = battleClock; // (StepBattleIn's FadeIn(3, 20): the wipe off the battle)
         std::string err;
         int party[2] = {0, 0};
         for (size_t k = 0; k < battle.party.size() && k < 2; ++k) party[k] = battle.party[k].id;
@@ -5718,7 +5719,7 @@ struct Viewer {
         if (eventDrawingReady) return;
         eventDrawingReady = true;
         // the fades' colours (InterfaceMain's fade windows: the figures fadeb, fadew, fadef, their
-        // material's DiffuseColor); the encounter's wipe black
+        // material's DiffuseColor); type 3, the encounter's wipe, is drawEncountWipe's
         const char* fades[3] = {"fadeb", "fadew", "fadef"};
         for (int k = 0; k < 3; ++k) {
             std::vector<uint8_t> d;
@@ -10970,6 +10971,24 @@ struct Viewer {
             drawFigure(h.fig, view.data());
         }
     }
+    // Cr3Fade's type 3 (FadeWindowMenu 0x14): not a fade but the encounter's wipe - `encount`, its
+    // streaked edge (hud_encount) on a panel 2.048 wide, encount_in sliding it over the screen from
+    // the right (a FadeOut: the field's encounter, Cr3FadeOut(3, 20)), encount_out on off to the
+    // left (a FadeIn: every battle's start, BtlMainCtrl::StepBattleIn's FadeIn(3, 20)); `p` 0..1
+    float battleWipeAt = -1;
+    void drawEncountWipe(float p, bool cover) {
+        Mat4 camera = cr2::mat4Identity();
+        camera[14] = -0.881f;
+        const Mat4 view = cr2::mat4Multiply(uiProjection(screenW, screenH), camera);
+        UiFig& u = uiFig("encount");
+        const char* anim = cover ? "encount_in" : "encount_out";
+        poseUi(u, anim, 0);
+        const float d = u.fig.animLoaded ? u.fig.anim.duration() : 0.25f;
+        u.fig.place = cr2::Mat34();
+        poseUi(u, anim, std::clamp(p, 0.0f, 1.0f) * d);
+        dev->clearDepth();
+        drawFigure(u.fig, view.data());
+    }
     void drawEventUi() {
         dev->clearDepth(); // (the scene's depths behind all of it: a near camera's ground too)
         if (credits.stage) return drawCredits();
@@ -10990,12 +11009,8 @@ struct Viewer {
                 dev->drawQuad(white, kScreen, id.data(), rgba);
             }
         }
-        if (fieldMode && !battleMode && encount.fadeAt >= 0 && white.id) { // (an encounter's: Cr3FadeOut(3, 20) to black)
-            static const float kScreen[24] = {-1, -1, 0, 0, 1, -1, 1, 0, 1, 1, 1, 1, -1, -1, 0, 0, 1, 1, 1, 1, -1, 1, 0, 1};
-            const Mat4 id = cr2::mat4Identity();
-            const float rgba[4] = {0, 0, 0, std::clamp((uiClock - encount.fadeAt) / 1.0f, 0.0f, 1.0f)};
-            dev->drawQuad(white, kScreen, id.data(), rgba);
-        }
+        if (fieldMode && !battleMode && encount.fadeAt >= 0) drawEncountWipe((uiClock - encount.fadeAt) / 1.0f, true); // (an encounter's: Cr3FadeOut(3, 20))
+        if (battleMode && battleWipeAt >= 0 && battleClock - battleWipeAt < 1.0f) drawEncountWipe((battleClock - battleWipeAt) / 1.0f, false);
         cr2::EventRuntime* ev = activeEvents();
         if (!ev || !eventDrawingReady) return;
         struct YesNoLast { // (the buttons over everything else the event shows)

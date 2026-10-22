@@ -1923,6 +1923,7 @@ struct Viewer {
                                 const float keep = time;
                                 loadAnim(g, size_t(a - g.anims.begin()));
                                 time = keep;
+                                g.absolute = false; // (SetAnime / SetEventAnim: slot 1, a motion)
                             }
                         }
                         pose(g, float(script->ticks() - st->second.motionTick) * cr2::EventRuntime::kTick + fieldClock, st->second.motionLoop);
@@ -2245,6 +2246,8 @@ struct Viewer {
             t.scale[0] = t.scale[1] = t.scale[2] = gm.scale;
             g.place = t.matrix();
             if (!loadFigure(gm.figure + ".geom", g, &err)) continue;
+            // (FldObject / FldEffect: their own animator alone in slot 0 - over the base pose, not a motion)
+            g.absolute = gm.kind == cr2::Gimmick::Object || gm.kind == cr2::Gimmick::Effect;
             if (gm.kind == cr2::Gimmick::Npc) playMotion(g, "fn01");
             if (gm.kind == cr2::Gimmick::Box) playMotion(g, game.boxes.isOpen(gm.boxKind, gm.boxNumber) ? "fn02" : "fn01"); // (FldBox: closed fn01, open fn02)
             gimmicks.push_back(std::move(g));

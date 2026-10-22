@@ -7048,7 +7048,10 @@ struct Viewer {
             }
             drawFigure(b.fig, view.data());
             float x, y;
-            if (uiJoint(b, "typeS_L00", x, y)) drawUiText(r.name, 24, x, y, w, h, true, r.selectable ? 1.0f : 0.5f);
+            // (ScrollListItem::SetStringDataReal: its slot 00's size 2 less in English, French, German,
+            // Spanish - Cr3UtilOptionLanguage 1..4 -, then SetTextRender's 4 less)
+            const float rowSize = optionLanguage >= 1 && optionLanguage <= 4 ? 22.0f : 24.0f;
+            if (uiJoint(b, "typeS_L00", x, y)) drawUiText(r.name, rowSize, x, y, w, h, true, r.selectable ? 1.0f : 0.5f);
             if (r.number >= 0 && uiJoint(b, "call_dotNum_id01", x, y)) drawDigits(r.number, 90, 4, x, y, uiProjection(w, h), r.selectable ? 1.0f : 0.5f);
             if (r.icon > 0 && uiJoint(b, "call_mainIcon_id11", x, y)) {
                 UiFig& ic = uiFig("mainicon_id");

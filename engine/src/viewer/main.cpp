@@ -726,6 +726,7 @@ struct Viewer {
     void startUnlock(int gimmick) {
         keyLock.gimmick = gimmick, keyLock.orlando = true;
         keyLock.stage = 1, keyLock.stageAt = uiClock, keyLock.spread = 0, keyLock.pressing = false;
+        audio.playSe(0x157, false); // (CheckTouchEventExec_Tap: FldUnlock's start)
         SDL_Log("%s: the lock of %s", field.info().name.c_str(), field.gimmicks()[size_t(gimmick)].id.c_str());
     }
     void unlockEnd(bool success) {
@@ -927,6 +928,7 @@ struct Viewer {
             SDL_Log("%s: %s - its game isn't in yet", field.info().name.c_str(), g.name.c_str());
             return;
         }
+        if (actionMark.kind != 1) audio.playSe(0x157, false); // (FldMain::CheckTouchEventExec_Tap: the abilities' start, not a sprint's)
         actionMark.startedAt = uiClock;
         SDL_Log("%s: %s started - %zu spots", field.info().name.c_str(), g.name.c_str(), spots.size());
     }
@@ -1461,6 +1463,10 @@ struct Viewer {
         playMotion(fig, !leaderMotion.empty() ? leaderMotion.c_str() : speed == 0 ? "fn01" : run ? "ff02" : "ff01");
         if (!exitTo.empty()) {
             SDL_Log("exit %s", exitTo.c_str());
+            // FldMain::CollisionEventExec: SE 0x152 leaving or entering a sky map (the table's +0x15 -
+            // FldMap +0x79, IsCommonMap of where it goes)
+            const auto to = std::find_if(table.begin(), table.end(), [&](const cr2::MapInfo& m) { return m.name == exitTo.substr(0, 5); });
+            if (field.info().sharedBackground || (to != table.end() && to->sharedBackground)) audio.playSe(0x152, false);
             enterMap(exitTo.substr(0, 5), exitTo);
             return;
         }
@@ -4142,8 +4148,11 @@ struct Viewer {
         int exp = 0, sp = 0, oz = 0;
         ResultMember member[2];
         std::vector<std::string> messages; // (once the EXP is in)
+        std::vector<int> messageSe;        // (each one's SE as it shows: BtlResult::Update's by its kind)
         int message = -1;                  // (the one shown; -1 "Victory!")
         float messageAt = 0;
+        int loopSe = -1, levelShown[2] = {0, 0}; // (the transfer's SE 0xc5, looping; the levels chimed for)
+        bool counting = false, counted = false;
     } result;
     static constexpr float kTransfer = 2.0f; // (ProcessLvup's 60 frames at 30 a second)
     // the battle's announcements (BtlAnnounceData, message\announcebattle.dat: u32 the records'
@@ -4183,8 +4192,8 @@ struct Viewer {
             const ResultNow n = resultNow(r);
             const int up = n.level - r.level;
             const std::string name = messageText("charaname", r.id);
-            if (up == 1) out.push_back(formatAnnounce(announce(0x11), {name}));
-            else if (up > 1) out.push_back(formatAnnounce(announce(0x12), {name, std::to_string(up)}));
+            if (up == 1) out.push_back(formatAnnounce(announce(0x11), {name})), result.messageSe.push_back(0xc3); // (ProcessLvup1 / 2: SE 0xc3)
+            else if (up > 1) out.push_back(formatAnnounce(announce(0x12), {name, std::to_string(up)})), result.messageSe.push_back(0xc3);
             game.level[r.ch] = n.level, game.exp[r.ch] = n.exp;
         }
         // CheckSpUp: each sopia the party carries (once), its SP, a level each time it passes its
@@ -4206,22 +4215,25 @@ struct Viewer {
                         const int cmd = so->commands[l];
                         out.push_back(formatAnnounce(announce(cmd > 0 ? 0x16 : 0x17),
                                                      {messageText("sopianame", s), cmd > 0 ? messageText("commandname", cmd) : messageText("autoskillname", so->skills[l])}));
+                        result.messageSe.push_back(0xc4); // (CheckSpUp's kind 1)
                     }
                     game.sopiaLevel[s] = static_cast<signed char>(level);
                 }
         }
-        if (result.oz > 0) out.push_back(formatAnnounce(announce(0xf), {std::to_string(result.oz)}));
+        if (result.oz > 0) out.push_back(formatAnnounce(announce(0xf), {std::to_string(result.oz)})), result.messageSe.push_back(0xc1); // (CheckOz: 2)
         game.oz = std::min(game.oz + result.oz, 99999999);
         for (int id = 1; id < 300; ++id) {
             const int n = battleRules->dropped(id);
             if (n <= 0) continue;
             out.push_back(n == 1 ? formatAnnounce(announce(0x14), {messageText("itemname", id)})
                                  : formatAnnounce(announce(0x15), {messageText("itemname", id), std::to_string(n)}));
+            result.messageSe.push_back(0xc1); // (CheckDropItem: 3)
             game.itemCount[id] = static_cast<short>(std::min(game.itemCount[id] + n, 99));
         }
         for (int s = 1; s < 32; ++s)
             if (battleRules->sopiaDropped(s)) { // (Cr3UtilGetSopia: had, at level 1)
                 out.push_back(formatAnnounce(announce(0x13), {messageText("sopianame", s)}));
+                result.messageSe.push_back(0xc2); // (CheckDropSopia: 4)
                 game.sopiaOwned |= 1u << s, game.sopiaLevel[s] = 1, game.sopiaExp[s] = 0;
             }
         for (const std::string& s : out) SDL_Log("result: %s", s.c_str());
@@ -4510,11 +4522,34 @@ struct Viewer {
             result.transferEnd = result.transferStart + kTransfer;
         } else if (result.stage == 3) {
             if (tapped && battleClock < result.transferEnd) result.transferStart = result.transferEnd = battleClock; // (all at once)
+            // (ProcessLvup: SE 0xc5 looping while the EXP goes in and the HP back - when there's any -,
+            // 0xc3 each level a member passes - CheckLvUp)
+            if (!result.counting && !result.counted && battleClock >= result.transferStart) {
+                result.counting = true;
+                bool any = false;
+                for (int k = 0; k < 2; ++k) {
+                    const ResultMember& r = result.member[k];
+                    result.levelShown[k] = r.level;
+                    any = any || (r.ch >= 0 && (r.gain > 0 || r.hp0 < r.hpMax));
+                }
+                if (any && battleClock < result.transferEnd) result.loopSe = audio.playSe(0xc5, true);
+            }
+            if (result.counting) {
+                for (int k = 0; k < 2; ++k)
+                    if (result.member[k].ch >= 0 && resultNow(result.member[k]).level > result.levelShown[k])
+                        result.levelShown[k] = resultNow(result.member[k]).level, audio.playSe(0xc3, false);
+                if (battleClock >= result.transferEnd) {
+                    if (result.loopSe >= 0) audio.stopSe(result.loopSe, 0);
+                    result.loopSe = -1, result.counting = false, result.counted = true;
+                }
+            }
             else if (battleClock >= result.transferEnd && result.message < 0 && (tapped || battleClock - result.transferEnd > 5.0f)) {
                 finishResult();
                 result.message = 0, result.messageAt = battleClock;
+                if (!result.messageSe.empty()) audio.playSe(result.messageSe[0], false);
             } else if (result.message >= 0 && (tapped || battleClock - result.messageAt > 3.0f)) {
                 ++result.message, result.messageAt = battleClock;
+                if (size_t(result.message) < result.messageSe.size()) audio.playSe(result.messageSe[size_t(result.message)], false);
             }
             if (result.message >= int(result.messages.size()) && result.message >= 0) {
                 result.stage = 4;
@@ -6428,7 +6463,10 @@ struct Viewer {
     bool titleClick(float fx, float fy) {
         if (titleRunning()) return titleEvents->advance(), true;
         if (titleMenu.stage == 9) return fieldClick(fx, fy);
-        if (titleMenu.stage == 3) return titleMenu.tapped = true;
+        if (titleMenu.stage == 3) { // (GameTitleMenu::TouchGestureTap: SE 0xb2, then Update's 0xb4)
+            if (!titleMenu.tapped) audio.playSe(0xb2, false);
+            return titleMenu.tapped = true;
+        }
         const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
         const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
         for (const TapRect& r : tapRects)

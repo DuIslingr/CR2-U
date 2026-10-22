@@ -8091,7 +8091,37 @@ struct Viewer {
         optionsOpen = optionsAsk = false, manualStage = 0, manualEvents.reset();
         SDL_Log("camp: closed");
     }
+    // a sopia's commands and skills by its levels (SetSopiaListItem - CampSopiaListMenu's detail,
+    // CampEquipmentListMenu's mode 8): a command its icon and cost (cost_id 12 "MP" and its MP, an
+    // awakening's 13 and its level), an auto skill its icon, a level not reached "???" greyed
+    std::vector<ListRow> sopiaSkillRows(int s) {
+        std::vector<ListRow> rows;
+        const cr2::BattleData::Sopia* so = battleData.sopia(s);
+        if (!so) return rows;
+        const int level = std::max(int(game.sopiaLevel[s]), 1);
+        for (int l = 0; l < 5; ++l) {
+            ListRow r;
+            r.id = 600 + l, r.number = -1;
+            if (l >= level) {
+                r.name = menuName(0x3d), r.selectable = false;
+            } else if (const cr2::BattleData::Command* c = so->commands[l] > 0 ? battleData.command(so->commands[l]) : nullptr) {
+                r.name = messageText("commandname", so->commands[l]), r.icon = c->icon, r.help = c->text[1];
+                r.cost = c->awaken == 0 ? 12 : 13, r.number = c->awaken == 0 ? c->mp : std::min(c->awaken, 3);
+            } else if (const cr2::BattleData::AutoSkill* a = so->skills[l] > 0 ? battleData.autoSkill(so->skills[l]) : nullptr) {
+                r.name = messageText("autoskillname", so->skills[l]), r.icon = a->icon;
+            } else continue;
+            rows.push_back(r);
+        }
+        return rows;
+    }
+    int campSopiaDetail = 0, campSopiaPrevCursor = 0; // (CampSopiaListMenu: a sopia picked - its detail list)
+    void campSopiaPick(int s) {
+        if (campList != 18 || campSopiaDetail || s <= 0 || s >= 32) return;
+        audio.playSe(0xb4, false); // (Update_Sopia step 5)
+        campSopiaDetail = s, campSopiaPrevCursor = campCursor, campCursor = 0, campStart = uiClock;
+    }
     std::vector<ListRow> campRows() {
+        if (campList == 18 && campSopiaDetail) return sopiaSkillRows(campSopiaDetail);
         std::vector<ListRow> rows;
         if (campList == 16) {
             static const int kCampItems[] = {4, 5, 6, 7, 36, 37, 38, 39, 40, 41}; // (Cr3UtilUseItemByCamp: 4, and the library's list)
@@ -8149,7 +8179,7 @@ struct Viewer {
             const std::vector<ListRow> rows = campRows();
             listRows = rows;
             const int focused = rows.empty() ? -1 : rows[size_t(std::clamp(campCursor, 0, int(rows.size()) - 1))].id;
-            if (campList == 18) drawSopiaWindows(focused, t, view, proj, w, h); // (InterfaceMain 0xf / 0x10: its windows beside it)
+            if (campList == 18) drawSopiaWindows(campSopiaDetail ? campSopiaDetail : focused, t, view, proj, w, h); // (InterfaceMain 0xf / 0x10: its windows beside it)
             drawSkillList(rows, focused, t, view, w, h, campList == 16 ? 7 : 9, -1);
             return;
         }
@@ -9062,7 +9092,8 @@ struct Viewer {
         }
         if (id == 100) {
             audio.playSe(0xb5, false);
-            if (campList) campList = 0, campCursor = 0, campStart = uiClock;
+            if (campList == 18 && campSopiaDetail) campSopiaDetail = 0, campCursor = campSopiaPrevCursor, campStart = uiClock; // (the detail: back to the list)
+            else if (campList) campList = 0, campCursor = 0, campStart = uiClock;
             else closeCamp();
             return;
         }
@@ -9076,7 +9107,7 @@ struct Viewer {
             return;
         }
         if (id == 16 || id == 18) {
-            campList = id, campCategory = 0, campCursor = 0, campStart = uiClock;
+            campList = id, campCategory = 0, campCursor = 0, campStart = uiClock, campSopiaDetail = 0;
             SDL_Log("camp: %s - %zu", id == 16 ? "items" : "sopia", campRows().size());
         } else if (id == 20) {
             optionsOpen = true, optionsStart = uiClock; // (CampOptionMenu)
@@ -9126,9 +9157,12 @@ struct Viewer {
             else if (k == SDLK_DOWN) campCursor = (campCursor + 1) % n;
             else if (k == SDLK_LEFT || k == SDLK_RIGHT) { // (the items' two categories)
                 if (campList == 16) campCategory = 1 - campCategory, campCursor = 0;
-            } else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && campList == 16) {
+            } else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && (campList == 16 || campList == 18)) {
                 const std::vector<ListRow> rows = campRows();
-                if (!rows.empty()) campPickItem(rows[size_t(std::clamp(campCursor, 0, int(rows.size()) - 1))].id);
+                if (!rows.empty()) {
+                    const int id = rows[size_t(std::clamp(campCursor, 0, int(rows.size()) - 1))].id;
+                    campList == 16 ? campPickItem(id) : campSopiaPick(id);
+                }
             }
             return;
         }
@@ -9190,6 +9224,7 @@ struct Viewer {
                 else if (campOpen && campList == 17 && r.id >= 1000 && r.id < 5000) campEquipCursor = r.id - 1000;
                 else if (campOpen && campList && r.id >= 1000 && r.id < 5000) campCursor = r.id - 1000; // (a row: the focus)
                 else if (campOpen && campList == 16 && r.id > 0 && r.id < 1000) campPickItem(r.id); // (the focused row: picked)
+                else if (campOpen && campList == 18 && r.id > 0 && r.id < 32) campSopiaPick(r.id);
                 else if (campOpen && r.id >= 0) campPress(r.id);
                 return true;
             }

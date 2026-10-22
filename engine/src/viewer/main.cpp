@@ -10584,7 +10584,7 @@ struct Viewer {
                     drawStatusB(ch, b.maxHp - a.maxHp, b.maxMp - a.maxMp, t, view, proj);
                     drawCapacity(ch, change, t, view, proj, w, h);
                 }
-                drawSkillList(rows, rows[size_t(shop.focus)].id, t, view, w, h, -1, -1);
+                drawSkillList(rows, rows[size_t(shop.focus)].id, t, view, w, h, -1, 5); // (Shop*ListMenu::SetListItemParam: cost_id 5 by the price)
             }
         } else if (shop.stage == 4) {
             const cr2::BattleData::Item* it = battleData.item(shop.item);

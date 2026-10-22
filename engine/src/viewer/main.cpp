@@ -6343,7 +6343,8 @@ struct Viewer {
         // (DotNumParamPackTable: tools/gen_dotnum_table.py -> gfx/dotnumtable.inc)
         for (const auto& g : kDotNum) dotNumGlyphs.push_back({g[0], g[1], g[2], g[3], g[4], g[5]});
     }
-    void drawDigits(int value, int set, int digits, float x, float y, const Mat4& proj, float alpha = 1, float scale = 1, bool zeros = false) {
+    // (`skip`: the places left empty on the right first - DotNumId2::SetOZNumber's start)
+    void drawDigits(int value, int set, int digits, float x, float y, const Mat4& proj, float alpha = 1, float scale = 1, bool zeros = false, int skip = 0) {
         loadDotNum();
         cr2::Texture* tex = texture("hud_dotnum", false);
         if (!tex) return;
@@ -6354,7 +6355,7 @@ struct Viewer {
             if (size_t(set + d) >= dotNumGlyphs.size()) continue;
             const Glyph& g = dotNumGlyphs[size_t(set + d)];
             const float w = g.w / 1000.0f * scale, h = g.h / 1000.0f * scale;
-            const float cx = x - float(i) * w;
+            const float cx = x - float(i + skip) * w;
             const float x0 = cx - w / 2, x1 = cx + w / 2, y0 = y - h / 2, y1 = y + h / 2;
             const float v[24] = {x0, y0, g.u0, g.v1, x1, y0, g.u1, g.v1, x1, y1, g.u1, g.v0,
                                  x0, y0, g.u0, g.v1, x1, y1, g.u1, g.v0, x0, y1, g.u0, g.v0};
@@ -6990,6 +6991,7 @@ struct Viewer {
         int seal = -1; // (ScrollListItem::SetIcon 2: seal_id at call_seal_id12 - 2 "new")
         bool sopiaIcon = false; // (SetIcon 3: `icon` a frame of sopia_id, not mainIcon_id)
         int cost = -1;          // (SetIcon 1: its own cost_id frame - a sopia's level + 6 -, else the list's)
+        bool price = false;     // (the shops': its number an OZ price - ScrollListItem::SetOZNumbers)
     };
     // a sopia's row icon (CampSopiaListMenu::SetSopiaList, CampEquipmentListMenu): a human's (its
     // +0x10 0) sopia_id at GetHumanSopiaIconNumber's frame - 1, 4, 3, 2 by its kind (+0x11) -, a
@@ -7063,7 +7065,8 @@ struct Viewer {
             // Spanish - Cr3UtilOptionLanguage 1..4 -, then SetTextRender's 4 less)
             const float rowSize = optionLanguage >= 1 && optionLanguage <= 4 ? 22.0f : 24.0f;
             if (uiJoint(b, "typeS_L00", x, y)) drawUiText(r.name, rowSize, x, y, w, h, true, r.selectable ? 1.0f : 0.5f);
-            if (r.number >= 0 && uiJoint(b, "call_dotNum_id01", x, y)) drawDigits(r.number, 90, 4, x, y, uiProjection(w, h), r.selectable ? 1.0f : 0.5f);
+            if (r.number >= 0 && uiJoint(b, "call_dotNum_id01", x, y)) // (a price: SetOZNumbers' 3 places on, for its "/OZ")
+                drawDigits(r.number, 90, r.price ? 7 : 4, x, y, uiProjection(w, h), r.selectable ? 1.0f : 0.5f, 1, false, r.price ? 3 : 0);
             if (r.icon > 0 && r.sopiaIcon && uiJoint(b, "call_mainIcon_id11", x, y)) { // (SetIcon 3: sopia_id at the main icon's place)
                 UiFig& ic = uiFig("sopia_id");
                 ic.fig.place = cr2::Mat34();
@@ -10363,6 +10366,7 @@ struct Viewer {
             if (shop.kind > 0 && !(it->wearers >> ch & 1)) continue;
             ListRow r;
             r.id = id, r.name = it->name[1], r.icon = it->icon, r.help = it->text[1]; // (ChangeHelpText: Cr3UtilGetItemHelpText)
+            r.price = true;
             if (shop.buy) {
                 if (it->shopRank > rank) continue;
                 r.number = it->price, r.selectable = game.oz >= it->price && game.itemCount[id] < 99;

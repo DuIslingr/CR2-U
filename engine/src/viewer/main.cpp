@@ -9903,21 +9903,30 @@ struct Viewer {
             for (int i = 0; i < 4; ++i)
                 if (game.flag(kChapterFlags[i])) {
                     ListRow r;
-                    r.id = kChapters[i], r.name = menuName(14 + i), r.number = -1;
+                    r.id = kChapters[i], r.name = menuName(14 + i), r.number = -1, r.icon = 1; // (SetChapterList: SetIcon 0, 1)
                     rows.push_back(r);
                 }
         } else if (world.stage == 1) {
+            // (SetMapList: SetIcon 0, 1; a dungeon's stars - cost_id at 1 + how many of its three
+            // flags are set, the table at 0x534480, its thirteenth row running on into the next -;
+            // its seal_id 3 once its flag at 0x534578 is)
+            static const int kStars[13][3] = {{0, 0, 0}, {1533, 1777, 1137}, {1540, 1613, 1140}, {1547, 1628, 1138}, {1553, 1647, 1139},
+                                              {1696, 1153, 1131}, {1572, 1152, 1134}, {1579, 1154, 1133}, {1701, 1151, 1132}, {0, 0, 0},
+                                              {0, 0, 0}, {0, 0, 0}, {1041, 1049, 1046}};
+            static const int kSeals[13] = {0, 1079, 1076, 1077, 1078, 1074, 1073, 1075, 1072, 1080, 0, 0, 0};
             for (int i = 0; i < 13; ++i)
                 if (game.flag(kFlags[i])) {
                     ListRow r;
-                    r.id = kDungeons[i], r.name = menuName(kDungeons[i]), r.number = -1;
+                    r.id = kDungeons[i], r.name = menuName(kDungeons[i]), r.number = -1, r.icon = 1;
+                    if (kStars[i][0]) r.cost = 1 + game.flag(kStars[i][0]) + game.flag(kStars[i][1]) + game.flag(kStars[i][2]);
+                    if (kSeals[i] && game.flag(kSeals[i])) r.seal = 3;
                     rows.push_back(r);
                 }
         } else {
             for (int k = 1; k <= 11; ++k)
                 if (kLevelFlags[k - 1] == 0 || game.flag(kLevelFlags[k - 1])) {
                     ListRow r;
-                    r.id = k, r.name = menuName(0x14 + k), r.number = -1;
+                    r.id = k, r.name = menuName(0x14 + k), r.number = -1, r.icon = 1; // (SetLevelList: SetIcon 0)
                     rows.push_back(r);
                 }
         }

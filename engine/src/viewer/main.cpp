@@ -8226,7 +8226,7 @@ struct Viewer {
         poseUi(oz, "ozwin_io", t);
         drawFigure(oz.fig, view.data());
         if (uiJoint(oz, "call_status_fr13", x, y)) drawStatusSign(13, x, y, proj);
-        if (uiJoint(oz, "call_dotNum_id07", x, y)) drawDigits(std::clamp(game.oz, 0, 9999999), 110, 7, x, y, proj);
+        if (uiJoint(oz, "call_dotNum_id01", x, y)) drawDigits(std::clamp(game.oz, 0, 9999999), 110, 7, x, y, proj); // (id01 the ones, id07 the millions)
         UiFig& tw = uiFig("timewin_io");
         tw.fig.place = cr2::Mat34();
         poseUi(tw, "timewin_io", t);
@@ -10616,14 +10616,14 @@ struct Viewer {
             if (face) vm.texture = face;
         }
         if (shop.stage <= 2) drawFigure(cut.fig, view.data());
-        { // (OzViewWindowMenu)
+        { // (OzViewWindowMenu 0x53 - SetOzWindowParameter(true), the shop's: ozWinBlk_io, hud_shpOzWin, its sign 4)
             float x, y;
-            UiFig& oz = uiFig("ozwin_io");
+            UiFig& oz = uiFig("ozwinblk_io");
             oz.fig.place = cr2::Mat34();
-            poseUi(oz, "ozwin_io", t);
+            poseUi(oz, "ozwinblk_io", t);
             drawFigure(oz.fig, view.data());
-            if (uiJoint(oz, "call_status_fr13", x, y)) drawStatusSign(13, x, y, proj);
-            if (uiJoint(oz, "call_dotNum_id07", x, y)) drawDigits(std::clamp(game.oz, 0, 9999999), 110, 7, x, y, proj);
+            if (uiJoint(oz, "call_status_fr04", x, y)) drawStatusSign(4, x, y, proj);
+            if (uiJoint(oz, "call_dotNum_id01", x, y)) drawDigits(std::clamp(game.oz, 0, 9999999), 110, 7, x, y, proj); // (id01 the ones, id07 the millions)
         }
         auto back = [&] {
             UiFig& bk = uiFig("btlback");

@@ -211,7 +211,13 @@ material's textures `m<its number>a01` / `b01` / `c01` / `d01`, and their normal
 resident effects (FldEffectResident: fifteen made with the field - eff030, eff031, eff041, eff042,
 eff046, eff047, eff048, eff051, eff052, eff056, eff057, eff061, eff062, eff066, eff032) play on the
 leader or a gimmick (`Cr3FieldMapEffectResident.SetPosRot(n, target)`, `SetScale`, `Play(n)`: the
-warp's `WarpEffect` - effect 1 on the player). The saves (Cr3Save): `SaveCont` - each area's
+warp's `WarpEffect` - effect 1 on the player); each its animator alone in slot 0 (CreateModel's
+BindAnimator(figure, 0, ...)), so posed over its base pose, not as a motion - their bases hide most
+joints at scale 0. Footsteps (FldPlayer::Update, SetSEAndEffect): walking one each 12th update,
+running each 7th, from the move's start; the floor's surface under DummyEP04 (a ray from 1 above to
+1 below), `se00`..`se10`, plays one of its two SEs (0x166..0x181, the table at 0x53ad0c) and may
+start a ground effect there (FldGroundEffect: eff001, 002, 004 .. 007, five of each at once, played
+once from the start, posed the same way). The saves (Cr3Save): `SaveCont` - each area's
 `Field_FadeIn`, the continue data - writes CR2-U's `cont.txt`, `SaveGame` its `save1.txt` (as the
 field's Save), `DeleteCont` empties the continue data (a real save made); `--continue` takes the
 continue data first. Only a game being played saves (`--play` / `--continue`, not a capture).

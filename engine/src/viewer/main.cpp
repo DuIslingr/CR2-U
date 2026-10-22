@@ -1365,8 +1365,69 @@ struct Viewer {
         }
     }
 
+    // FldPlayer::Update's steps: walking one each 12th update (0.6 s), running each 7th, counted from
+    // the move's start (FldPlayer +0x28). SetSEAndEffect: the floor's surface under DummyEP04 (a ray
+    // from 1 above to 1 below: FldUtilGetFldMapMaterialName), "seNN", plays one of its two SEs at
+    // random (the table at 0x53ad0c) and starts its ground effect there (FldGroundEffect: eff001,
+    // 002, 004 .. 007, five of each at once, its animator once from its start, unturned)
+    int stepState = 0, stepCount = 0;
+    float groundClock = 0; // (the field's time: walk()'s)
+    struct GroundFx {
+        bool on = false;
+        float at = 0, p[3] = {0, 0, 0};
+    };
+    GroundFx groundFx[6][5];
+    std::map<int, ViewFigure> groundFigs; // (kind x 5 + slot)
+    void stepUpdate(int moving) { // (0 standing, 1 walking, 2 running)
+        if (moving != stepState) return void((stepState = moving, stepCount = 0));
+        if (moving == 0 || ++stepCount <= (moving == 1 ? 11 : 6)) return;
+        stepCount = 0;
+        static const int kSteps[11][3] = {{358, 359, 1}, {361, 362, 2}, {364, 365, -1}, {367, 368, 3}, {370, 371, 4}, {373, 374, 1},
+                                          {376, 377, -1}, {379, 380, 0}, {382, 383, -1}, {384, 385, 4}, {358, 359, 5}};
+        float p[3] = {player[0], player[1], player[2]};
+        cr2::Mat34 ep;
+        if (jointPlace(fig, "DummyEP04", ep)) // (its offset from the figure's place, where the leader is now)
+            p[0] += ep.m[3] - fig.place.m[3], p[1] += ep.m[7] - fig.place.m[7], p[2] += ep.m[11] - fig.place.m[11];
+        const std::string surface = field.collision().surfaceBelow({p[0], p[1] + 1, p[2]}, 2);
+        if (surface.size() < 4 || surface.find("se") == std::string::npos) return;
+        const int n = std::atoi(surface.substr(2, 2).c_str());
+        if (n < 0 || n > 10) return;
+        audio.playSe(kSteps[n][boxRandom() % 2], false);
+        if (kSteps[n][2] < 0) return;
+        for (GroundFx& g : groundFx[kSteps[n][2]])
+            if (!g.on) {
+                g.on = true, g.at = groundClock, std::memcpy(g.p, p, sizeof p);
+                break;
+            }
+    }
+    void drawGroundFx(const float* mvp) {
+        static const char* const kFigures[6] = {"eff001", "eff002", "eff004", "eff005", "eff006", "eff007"};
+        for (int k = 0; k < 6; ++k)
+            for (int i = 0; i < 5; ++i) {
+                GroundFx& g = groundFx[k][i];
+                if (!g.on) continue;
+                ViewFigure& f = groundFigs[k * 5 + i];
+                std::string err;
+                if (f.meshes.empty() && f.name.empty() && !loadFigure(std::string(kFigures[k]) + ".geom", f, &err)) {
+                    SDL_Log("ground effect %s: %s", kFigures[k], err.c_str());
+                    f.name = "-";
+                }
+                const float t = groundClock - g.at;
+                if (f.meshes.empty() || !f.animLoaded || t > f.anim.duration()) {
+                    g.on = false; // (played out)
+                    continue;
+                }
+                f.place = cr2::Mat34();
+                f.place.m[3] = g.p[0], f.place.m[7] = g.p[1], f.place.m[11] = g.p[2];
+                f.absolute = true; // (its animator alone in slot 0)
+                pose(f, t, false);
+                drawFigure(f, mvp);
+            }
+    }
+
     void walk(float dt, float sx, float sy, bool run) {
         if (!controller) return;
+        groundClock += dt;
         cr2::Vec3 right, forward;
         field.groundAxes(right, forward);
         cr2::Vec3 dir{right[0] * sx + forward[0] * sy, 0, right[2] * sx + forward[2] * sy};
@@ -1384,6 +1445,7 @@ struct Viewer {
             playerCur[0] = p[0], playerCur[1] = p[1] - 0.02f, playerCur[2] = p[2];
             if (++substep < cr2::CharacterController::kSubsteps) continue;
             substep = 0;
+            stepUpdate(speed == 0 ? 0 : run ? 2 : 1);
             // an exit: the area changes to the map its pop point names (FldMain::ChangeAreaExecute)
             const std::string exit = field.exitTouched(p, controller->radius);
             if (exit.empty()) exitsArmed = true;
@@ -2061,6 +2123,7 @@ struct Viewer {
             if (shown(3)) drawFigure(mapFigure, fr.scene.data());
             for (const ViewFigure& g : gimmicks) drawFigure(g, fr.scene.data());
             drawResidents(fr.scene.data());
+            drawGroundFx(fr.scene.data());
             // an event's scene in the field (EvtScene in FldMain: its models among the field's
             // figures, through the field's camera), the leader unless the script hid it
             if (script && script->events().sceneShown()) {
@@ -2137,6 +2200,7 @@ struct Viewer {
             f.place.m[0] = c * r.scale[0], f.place.m[2] = sn * r.scale[2], f.place.m[5] = r.scale[1];
             f.place.m[8] = -sn * r.scale[0], f.place.m[10] = c * r.scale[2];
             f.place.m[3] = p[0], f.place.m[7] = p[1], f.place.m[11] = p[2];
+            f.absolute = true; // (FldEffectResident::CreateModel: BindAnimator(figure, 0, ...) alone)
             pose(f, t, false);
             drawFigure(f, mvp);
         }

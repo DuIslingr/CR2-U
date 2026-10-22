@@ -3535,6 +3535,23 @@ struct Viewer {
         if (who >= 0) battleVoice(who, kind, delay, tableKind);
     }
     int partyDeaths = 0, lastPartyActor = 0;
+    // (CharaStatusWindowMenu / BMenu::Initialize: the name plate by the option's language - Japanese
+    // pcNameJP_id, the two Chineses pcNameCHN1 / 2_id, Korean pcNameKOR_id, all at campwin's
+    // call_pcNameJP_id..22; else - English, French, German, Spanish - pcNameEN_id at ..21; the
+    // character's frame the same in each)
+    struct NamePlate {
+        std::string figure, joint; // (the joint's start: + the place's digits + its end)
+        std::string end = "21"; // (campwin's: call_pcNameEN_id021, call_pcNameJP_id022 ...)
+    };
+    NamePlate namePlate() const {
+        switch (optionLanguage) {
+        case 0: return {"pcnamejp_id", "call_pcNameJP_id", "22"};
+        case 5: return {"pcnamechn1_id", "call_pcNameJP_id", "22"};
+        case 6: return {"pcnamechn2_id", "call_pcNameJP_id", "22"};
+        case 7: return {"pcnamekor_id", "call_pcNameJP_id", "22"};
+        default: return {"pcnameen_id", "call_pcNameEN_id", "21"};
+        }
+    }
     int faceState[2] = {0, 0};          // (the HUD's faces: 0 as they are, 1 choosing, 2 down)
     float faceStateAt[2] = {0, 0}; // (BtlWork fighters' +0x48e, the deaths so far; +0x16, the last of the party to act)
     std::vector<VoiceJob> seJobs; // (BtlSound::CreatePlaySEJob: an effect's clip later)
@@ -7482,7 +7499,10 @@ struct Viewer {
                 drawFigure(face->fig, view.data());
             }
             const std::string p = one ? "90" : b; // (the lone one's joints: id9021, fr9001 ...)
-            at("call_pcNameEN_id" + p + "21", "pcnameen_id", float(r.id) / 20.0f);
+            {
+                const NamePlate np = namePlate();
+                at(np.joint + p + np.end, np.figure, float(r.id) / 20.0f);
+            }
             for (int s : {1, 2, 3, 7})
                 if (uiJoint(win, "call_status_fr" + p + "0" + std::to_string(s), x, y)) drawStatusSign(s, x, y, proj);
             const float dx = k == 0 ? 0.0f : 0.01f;
@@ -8316,7 +8336,8 @@ struct Viewer {
             for (ViewMesh& vm : face->fig.meshes) vm.texture = texture("cmpFaceC00" + std::to_string(id)), vm.extraMap = texture("cmpFaceA00" + std::to_string(id));
             drawFigure(face->fig, view.data());
         }
-        if (UiFig* n = at("call_pcNameEN_id9021", "pcnameen_id", float(id) / 20.0f)) drawFigure(n->fig, view.data());
+        const NamePlate np = namePlate();
+        if (UiFig* n = at(np.joint + "90" + np.end, np.figure, float(id) / 20.0f)) drawFigure(n->fig, view.data());
         float x, y;
         for (int s : {1, 2, 3, 7})
             if (uiJoint(win, "call_status_fr900" + std::to_string(s), x, y)) drawStatusSign(s, x, y, proj);

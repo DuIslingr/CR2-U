@@ -192,6 +192,7 @@ public:
 #endif
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+        SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8); // (the field's stencil masks: render states 0x85..0x88)
         window_ = window;
         ctx_ = SDL_GL_CreateContext(window);
         if (!ctx_ || !gl::load()) {
@@ -340,7 +341,8 @@ public:
         gl::Viewport(0, 0, w, h);
         gl::ClearColor(0, 0, 0, 1);
         gl::DepthMask(GL_TRUE);
-        gl::Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        gl::StencilMask(0xff);
+        gl::Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
     }
 
     void endFrame(bool present) override {
@@ -354,10 +356,12 @@ public:
 
     void clearDepth() override {
         gl::DepthMask(GL_TRUE);
-        gl::Clear(GL_DEPTH_BUFFER_BIT);
+        gl::StencilMask(0xff);
+        gl::Clear(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
     }
 
     void setColorWrite(bool on) override {
+        colorWrite_ = on;
         const GLboolean v = on ? GL_TRUE : GL_FALSE;
         gl::ColorMask(v, v, v, v);
     }
@@ -413,9 +417,24 @@ public:
         if (st.depthTest) gl::Enable(GL_DEPTH_TEST);
         else gl::Disable(GL_DEPTH_TEST);
         gl::DepthMask(st.depthWrite ? GL_TRUE : GL_FALSE);
+        const GLboolean colour = colorWrite_ && st.colorWrite ? GL_TRUE : GL_FALSE;
+        gl::ColorMask(colour, colour, colour, colour);
+        if (st.stencilTest) {
+            gl::Enable(GL_STENCIL_TEST);
+            gl::StencilFunc(st.stencilFunc, st.stencilRef, st.stencilMask);
+            gl::StencilMask(st.stencilWrite);
+            gl::StencilOp(st.stencilOps[0], st.stencilOps[1], st.stencilOps[2]);
+        }
+        if (st.polygonOffset) {
+            gl::Enable(GL_POLYGON_OFFSET_FILL);
+            gl::PolygonOffset(st.offsetFactor, st.offsetUnits);
+        }
         gl::BindVertexArray(mesh.vao);
         gl::DrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_INT, nullptr);
         gl::DepthMask(GL_TRUE);
+        if (!st.colorWrite) gl::ColorMask(colorWrite_, colorWrite_, colorWrite_, colorWrite_);
+        if (st.stencilTest) gl::Disable(GL_STENCIL_TEST);
+        if (st.polygonOffset) gl::Disable(GL_POLYGON_OFFSET_FILL);
     }
 
     bool readPixels(std::vector<uint8_t>& rgba, int& w, int& h) override {
@@ -474,6 +493,7 @@ private:
     unsigned meshProgram_ = 0, ubo_ = 0;
     int uMvp_ = -1, uAlphaRef_ = -1, uMeshColor_ = -1, uTexMode_ = -1, uAlphaTex_ = -1, uLight_ = -1;
     int drawableW_ = 0, drawableH_ = 0;
+    bool colorWrite_ = true; // (setColorWrite: the props' depth-only pass)
     std::unordered_set<unsigned> mipmapped_; // textures uploaded with a mip chain
     TextureFiltering filtering_;
     // A mipmapped texture's filtering (bound): GL_TEXTURE_MAX_ANISOTROPY (GL 4.6 /

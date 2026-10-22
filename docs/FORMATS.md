@@ -191,6 +191,14 @@ a material leaves out keep the defaults: no alpha test, no blending, back faces 
 and writes on. The textures' alpha is not transparency unless the material tests or blends (the
 characters' carries other data).
 
+The stencil and colour-mask states are used by eight fields' figures (d0203f, d0209f, d1123f,
+d1125f, d1130f, d1133f, d1135f, d1140f): materials 0 and 1 write no colour or depth and count into
+the stencil (func ALWAYS ref 3, op INCR / DECR on a pass), material 2 blends its layer only where
+the stencil is 1 (func EQUAL ref 1 mask 3) - the halls' light and shadow. Polygon offset: six
+effects (eff259, eff270..272, eff281, eff322) drawn just over the ground. Both renderers need a
+stencil buffer for them (GL: 8 bits; Vulkan: D32S8 or D24S8, the upscaled scene's too except under
+MetalFX).
+
 ### Lights
 
 A figure can carry lights (`Figure::SetupLights`, `RenderContaindLights`): +0 u32 the joint

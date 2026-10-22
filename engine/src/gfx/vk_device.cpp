@@ -507,6 +507,7 @@ public:
         ri.colorAttachmentCount = 1;
         ri.pColorAttachments = &color;
         ri.pDepthAttachment = &depth;
+        if (depthAspect_ & VK_IMAGE_ASPECT_STENCIL_BIT) ri.pStencilAttachment = &depth;
         vkCmdBeginRendering(cmd_, &ri);
         startPass(targetW_, targetH_);
         inScene_ = false;
@@ -518,7 +519,7 @@ public:
         for (VkImage img : {sceneColor_, sceneMotion_, sceneReactive_})
             barrier(cmd_, img, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                     kColorWrites, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, before, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
-        barrier(cmd_, sceneDepth_, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+        barrier(cmd_, sceneDepth_, sceneDepthAspect_, VK_IMAGE_LAYOUT_UNDEFINED,
                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
                 VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, before, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
         VkRenderingAttachmentInfo colors[3] = {};
@@ -532,17 +533,20 @@ public:
             colors[i].clearValue.color = {{0, 0, 0, i == 0 ? 1.0f : 0.0f}};
         }
         VkRenderingAttachmentInfo depth{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-        depth.imageView = sceneDepthView_;
+        depth.imageView = sceneDepthAttachView_;
         depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         depth.clearValue.depthStencil = {1.0f, 0};
+        VkRenderingAttachmentInfo stencil = depth;
+        stencil.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
         ri.renderArea = {{0, 0}, {uint32_t(sceneW_), uint32_t(sceneH_)}};
         ri.layerCount = 1;
         ri.colorAttachmentCount = 3;
         ri.pColorAttachments = colors;
         ri.pDepthAttachment = &depth;
+        if (sceneDepthAspect_ & VK_IMAGE_ASPECT_STENCIL_BIT) ri.pStencilAttachment = &stencil;
         vkCmdBeginRendering(cmd_, &ri);
         inScene_ = true;
         startPass(sceneW_, sceneH_);
@@ -578,7 +582,7 @@ public:
             barrier(cmd_, img, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
                     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-        barrier(cmd_, sceneDepth_, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        barrier(cmd_, sceneDepth_, sceneDepthAspect_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
                 VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
         barrier(cmd_, colorImage_, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, kColorWrites,
@@ -612,7 +616,7 @@ public:
         } else if (active_ == Upscaler::Dlss) {
             DlssInputs in;
             in.color = {sceneColor_, sceneColorView_, kColorFormat};
-            in.depth = {sceneDepth_, sceneDepthView_, VK_FORMAT_D32_SFLOAT};
+            in.depth = {sceneDepth_, sceneDepthView_, sceneDepthFormat_};
             in.motion = {sceneMotion_, sceneMotionView_, kMotionFormat};
             in.output = {colorImage_, colorView_, kColorFormat};
             in.renderW = sceneW_;
@@ -792,13 +796,39 @@ public:
     void clearDepth() override {
         if (!cmd_) return;
         VkClearAttachment ca{};
-        ca.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        ca.aspectMask = inScene_ ? sceneDepthAspect_ : depthAspect_; // (the stencil with it)
         ca.clearValue.depthStencil = {1.0f, 0};
         const VkClearRect rect{{{0, 0}, {uint32_t(passW_), uint32_t(passH_)}}, 0, 1};
         vkCmdClearAttachments(cmd_, 1, &ca, 1, &rect);
     }
 
     void setColorWrite(bool on) override { colorWrite_ = on; }
+
+    // A material's stencil and polygon offset (GL's codes; DrawState), off where the pass has no stencil
+    void setStencilAndBias(const DrawState& st) {
+        auto compare = [](uint16_t f) { return f >= 0x200 && f <= 0x207 ? VkCompareOp(f - 0x200) : VK_COMPARE_OP_ALWAYS; };
+        auto op = [](uint16_t o) {
+            switch (o) {
+            case 0: return VK_STENCIL_OP_ZERO;
+            case 0x1e01: return VK_STENCIL_OP_REPLACE;
+            case 0x1e02: return VK_STENCIL_OP_INCREMENT_AND_CLAMP;
+            case 0x1e03: return VK_STENCIL_OP_DECREMENT_AND_CLAMP;
+            case 0x150a: return VK_STENCIL_OP_INVERT;
+            case 0x8507: return VK_STENCIL_OP_INCREMENT_AND_WRAP;
+            case 0x8508: return VK_STENCIL_OP_DECREMENT_AND_WRAP;
+            default: return VK_STENCIL_OP_KEEP;
+            }
+        };
+        const bool stencil = st.stencilTest && ((inScene_ ? sceneDepthAspect_ : depthAspect_) & VK_IMAGE_ASPECT_STENCIL_BIT);
+        vkCmdSetStencilTestEnable(cmd_, stencil ? VK_TRUE : VK_FALSE);
+        vkCmdSetStencilOp(cmd_, VK_STENCIL_FACE_FRONT_AND_BACK, op(st.stencilOps[0]), op(st.stencilOps[2]), op(st.stencilOps[1]),
+                          compare(st.stencilFunc));
+        vkCmdSetStencilCompareMask(cmd_, VK_STENCIL_FACE_FRONT_AND_BACK, st.stencilMask);
+        vkCmdSetStencilWriteMask(cmd_, VK_STENCIL_FACE_FRONT_AND_BACK, st.stencilWrite);
+        vkCmdSetStencilReference(cmd_, VK_STENCIL_FACE_FRONT_AND_BACK, st.stencilRef);
+        vkCmdSetDepthBiasEnable(cmd_, st.polygonOffset ? VK_TRUE : VK_FALSE);
+        vkCmdSetDepthBias(cmd_, st.polygonOffset ? st.offsetUnits : 0.0f, 0.0f, st.polygonOffset ? st.offsetFactor : 0.0f);
+    }
     void setQuadAdditive(bool on) override { quadAdditive_ = on; }
     bool quadAdditive_ = false;
 
@@ -813,6 +843,7 @@ public:
         vkCmdSetDepthTestEnable(cmd_, VK_FALSE);
         vkCmdSetDepthWriteEnable(cmd_, VK_FALSE);
         vkCmdSetDepthCompareOp(cmd_, VK_COMPARE_OP_LESS_OR_EQUAL);
+        setStencilAndBias(DrawState());
         ScenePushConstants pc{};
         toVulkanClip(proj, pc.base.matrix);
         std::memcpy(pc.base.color, rgba, sizeof pc.base.color);
@@ -844,7 +875,7 @@ public:
             vb = rec.dynBuffer;
             voff = rec.dynOffset;
         }
-        uint32_t key = colorWrite_ ? 1u : 0u;
+        uint32_t key = colorWrite_ && st.colorWrite ? 1u : 0u;
         if (st.blend) key |= 2u | uint32_t(std::min<uint8_t>(st.blendSrc, 8)) << 4 | uint32_t(std::min<uint8_t>(st.blendDst, 7)) << 8;
         if (inScene_) key |= kScenePipeline | (st.depthWrite ? kSceneDepthWrite : 0u);
         bind(meshPipeline(key));
@@ -853,6 +884,7 @@ public:
         vkCmdSetDepthTestEnable(cmd_, st.depthTest ? VK_TRUE : VK_FALSE);
         vkCmdSetDepthWriteEnable(cmd_, st.depthWrite ? VK_TRUE : VK_FALSE);
         vkCmdSetDepthCompareOp(cmd_, VK_COMPARE_OP_LESS_OR_EQUAL);
+        setStencilAndBias(st);
         ScenePushConstants pc{};
         toVulkanClip(mvp, pc.base.matrix);
         std::memcpy(pc.base.color, sh.color, sizeof pc.base.color);
@@ -1149,8 +1181,9 @@ private:
         if (!ok(vkAllocateCommandBuffers(device_, &ai, &uploadCmd_))) return false;
         VkFenceCreateInfo fi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
         if (!ok(vkCreateFence(device_, &fi, nullptr, &uploadFence_))) return false;
-        // Depth: D32 where it can be an attachment, else D24S8
-        for (VkFormat fmt : {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT_S8_UINT}) {
+        // Depth with a stencil (the field's stencil masks: render states 0x85..0x88) where it can be an
+        // attachment, else D32 alone (the masks then left to the stencil-less fallback)
+        for (VkFormat fmt : {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT}) {
             VkFormatProperties fp;
             vkGetPhysicalDeviceFormatProperties(gpu_, fmt, &fp);
             if (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
@@ -1160,6 +1193,16 @@ private:
                 break;
             }
         }
+        // The upscaled scene's depth: the same where the upscalers can sample it (not for MetalFX's
+        // textures: D32 there), else D32 without the stencil
+#ifndef __APPLE__
+        if (depthAspect_ & VK_IMAGE_ASPECT_STENCIL_BIT) {
+            VkFormatProperties fp;
+            vkGetPhysicalDeviceFormatProperties(gpu_, depthFormat_, &fp);
+            if (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)
+                sceneDepthFormat_ = depthFormat_, sceneDepthAspect_ = depthAspect_;
+        }
+#endif
         // Descriptors: one combined image sampler per set, cached per (texture, sampler), for sets
         // 0 (the colour), 2 (normal map), 3 (CLUT / light map); set 1 the Material block, a
         // dynamic uniform buffer (one set per frame, an offset per draw)
@@ -1324,7 +1367,10 @@ private:
         const VkDynamicState dyn[] = {VK_DYNAMIC_STATE_VIEWPORT,          VK_DYNAMIC_STATE_SCISSOR,
                                       VK_DYNAMIC_STATE_CULL_MODE,         VK_DYNAMIC_STATE_FRONT_FACE,
                                       VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE, VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE,
-                                      VK_DYNAMIC_STATE_DEPTH_COMPARE_OP};
+                                      VK_DYNAMIC_STATE_DEPTH_COMPARE_OP,  VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE,
+                                      VK_DYNAMIC_STATE_STENCIL_OP,        VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK,
+                                      VK_DYNAMIC_STATE_STENCIL_WRITE_MASK, VK_DYNAMIC_STATE_STENCIL_REFERENCE,
+                                      VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE, VK_DYNAMIC_STATE_DEPTH_BIAS};
         VkPipelineDynamicStateCreateInfo dy{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
         dy.dynamicStateCount = uint32_t(sizeof dyn / sizeof dyn[0]);
         dy.pDynamicStates = dyn;
@@ -1332,8 +1378,8 @@ private:
         const VkFormat colorFormats[3] = {kColorFormat, kMotionFormat, kReactiveFormat};
         rci.colorAttachmentCount = scene ? 3 : 1;
         rci.pColorAttachmentFormats = colorFormats;
-        rci.depthAttachmentFormat = depthFormat_;
-        if (depthAspect_ & VK_IMAGE_ASPECT_STENCIL_BIT) rci.stencilAttachmentFormat = depthFormat_;
+        rci.depthAttachmentFormat = scene ? sceneDepthFormat_ : depthFormat_;
+        if ((scene ? sceneDepthAspect_ : depthAspect_) & VK_IMAGE_ASPECT_STENCIL_BIT) rci.stencilAttachmentFormat = rci.depthAttachmentFormat;
         VkGraphicsPipelineCreateInfo pi{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
         pi.pNext = &rci;
         pi.stageCount = 2;
@@ -1752,7 +1798,7 @@ private:
             msColorView_ = makeView(msColorImage_, kColorFormat, VK_IMAGE_ASPECT_COLOR_BIT);
         }
         createImage(w, h, depthFormat_, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImage_, depthMem_, samples_);
-        depthView_ = makeView(depthImage_, depthFormat_, depthAspect_ & VK_IMAGE_ASPECT_DEPTH_BIT);
+        depthView_ = makeView(depthImage_, depthFormat_, depthAspect_); // (an attachment: depth and stencil)
         haveFrame_ = false;
     }
 
@@ -1782,16 +1828,17 @@ private:
         createImage(w, h, kColorFormat, use | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, sceneColor_, sceneColorMem_);
         createImage(w, h, kMotionFormat, use, sceneMotion_, sceneMotionMem_);
         createImage(w, h, kReactiveFormat, use, sceneReactive_, sceneReactiveMem_);
-        createImage(w, h, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        createImage(w, h, sceneDepthFormat_, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                     sceneDepth_, sceneDepthMem_);
         sceneColorView_ = makeView(sceneColor_, kColorFormat, VK_IMAGE_ASPECT_COLOR_BIT);
         sceneMotionView_ = makeView(sceneMotion_, kMotionFormat, VK_IMAGE_ASPECT_COLOR_BIT);
         sceneReactiveView_ = makeView(sceneReactive_, kReactiveFormat, VK_IMAGE_ASPECT_COLOR_BIT);
-        sceneDepthView_ = makeView(sceneDepth_, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT);
+        sceneDepthView_ = makeView(sceneDepth_, sceneDepthFormat_, VK_IMAGE_ASPECT_DEPTH_BIT); // (the upscalers': depth alone)
+        sceneDepthAttachView_ = makeView(sceneDepth_, sceneDepthFormat_, sceneDepthAspect_);
     }
 
     void destroySceneTarget() {
-        for (VkImageView* v : {&sceneColorView_, &sceneMotionView_, &sceneReactiveView_, &sceneDepthView_}) {
+        for (VkImageView* v : {&sceneColorView_, &sceneMotionView_, &sceneReactiveView_, &sceneDepthView_, &sceneDepthAttachView_}) {
             if (*v) vkDestroyImageView(device_, *v, nullptr);
             *v = VK_NULL_HANDLE;
         }
@@ -1893,6 +1940,8 @@ private:
     VkCommandBuffer uploadCmd_ = VK_NULL_HANDLE, cmd_ = VK_NULL_HANDLE;
     VkFence uploadFence_ = VK_NULL_HANDLE;
     VkFormat depthFormat_ = VK_FORMAT_D32_SFLOAT;
+    VkImageAspectFlags sceneDepthAspect_ = VK_IMAGE_ASPECT_DEPTH_BIT;
+    VkFormat sceneDepthFormat_ = VK_FORMAT_D32_SFLOAT; // (the upscaled scene's: with the stencil where it can be sampled)
     VkImageAspectFlags depthAspect_ = VK_IMAGE_ASPECT_DEPTH_BIT;
     VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE, uboLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool pool_ = VK_NULL_HANDLE;
@@ -1992,6 +2041,7 @@ private:
     int sceneW_ = 0, sceneH_ = 0;
     VkImage sceneColor_ = VK_NULL_HANDLE, sceneDepth_ = VK_NULL_HANDLE, sceneMotion_ = VK_NULL_HANDLE,
             sceneReactive_ = VK_NULL_HANDLE;
+    VkImageView sceneDepthAttachView_ = VK_NULL_HANDLE;
     VkImageView sceneColorView_ = VK_NULL_HANDLE, sceneDepthView_ = VK_NULL_HANDLE, sceneMotionView_ = VK_NULL_HANDLE,
                 sceneReactiveView_ = VK_NULL_HANDLE;
     Alloc sceneColorMem_, sceneDepthMem_, sceneMotionMem_, sceneReactiveMem_;

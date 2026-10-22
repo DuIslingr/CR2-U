@@ -1877,6 +1877,28 @@ struct Viewer {
             st.depthWrite = v != 0;
             m.material.state(0x81, 1, v);
             st.depthTest = v != 0;
+            // colour_mask (0x84), the stencil (0x85 func ref mask, 0x86 write mask, 0x87 sfail dpfail
+            // dppass, 0x88 enable) and polygon_offset (0x82 factor units, 0x83 enable): eight fields'
+            // masks (d0203f, d1123f ...: two shells counting into the stencil unseen, then a layer
+            // where it is 1) and six effects drawn just above the ground
+            uint32_t mask[4] = {1, 1, 1, 1};
+            for (int c = 0; c < 4; ++c) m.material.state(0x84, 1, mask[c], c);
+            st.colorWrite = mask[0] || mask[1] || mask[2] || mask[3];
+            if (m.material.state(0x88, 0, v) && v) {
+                st.stencilTest = true;
+                uint32_t f = 0x207, ref = 0, fm = 0xff, wm = 0xff, op[3] = {0x1e00, 0x1e00, 0x1e00};
+                m.material.state(0x85, 0x207, f, 0), m.material.state(0x85, 0, ref, 1), m.material.state(0x85, 0xff, fm, 2);
+                m.material.state(0x86, 0xff, wm, 0);
+                for (int k = 0; k < 3; ++k) m.material.state(0x87, 0x1e00, op[k], k);
+                st.stencilFunc = uint16_t(f), st.stencilRef = uint8_t(ref), st.stencilMask = uint8_t(fm), st.stencilWrite = uint8_t(wm);
+                for (int k = 0; k < 3; ++k) st.stencilOps[k] = uint16_t(op[k]);
+            }
+            if (m.material.state(0x83, 0, v) && v) {
+                uint32_t fb = 0, ub = 0;
+                m.material.state(0x82, 0, fb, 0), m.material.state(0x82, 0, ub, 1);
+                st.polygonOffset = true;
+                std::memcpy(&st.offsetFactor, &fb, 4), std::memcpy(&st.offsetUnits, &ub, 4);
+            }
             // each texture with its own sampler (the material's texture entries)
             st.sampling = cr2::sampling(m.material.sampler(0x32));
             sh.texMode = m.texture ? 4 : -1; // (the built-in Figure shaders: modulate the vertex colour)

@@ -51,6 +51,19 @@ struct DrawState {
     uint8_t blendSrc = 4, blendDst = 5;
     uint8_t cull = 0;                   // 0 none, 1 front, 2 back
     bool depthTest = true, depthWrite = true;
+    // the material's colour_mask (render state 0x84: a stencil mask's shells write none of it)
+    bool colorWrite = true;
+    // stencil_test_enable / _func / _mask / _op (0x85..0x88): GL's codes - the function (0x200 NEVER ..
+    // 0x207 ALWAYS) against the reference under `stencilMask`, `stencilWrite` the bits written, the
+    // operations on a stencil fail / depth fail / pass (0 ZERO, 0x1e00 KEEP, 0x1e01 REPLACE,
+    // 0x1e02 INCR, 0x1e03 DECR, 0x150a INVERT, 0x8507 INCR_WRAP, 0x8508 DECR_WRAP)
+    bool stencilTest = false;
+    uint16_t stencilFunc = 0x207;
+    uint8_t stencilRef = 0, stencilMask = 0xff, stencilWrite = 0xff;
+    uint16_t stencilOps[3] = {0x1e00, 0x1e00, 0x1e00};
+    // polygon_offset (0x82: factor, units) with polygon_offset_fill_enable (0x83)
+    bool polygonOffset = false;
+    float offsetFactor = 0, offsetUnits = 0;
     Sampling sampling; // the texture's
 };
 

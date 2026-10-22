@@ -62,7 +62,9 @@ struct GeomMaterial {
     // render states (kind 100; RenderContext's table): id -> 4 GL values. 0x78 alpha_func (func,
     // ref as a float), 0x79 alpha_test_enable, 0x7a blend_func (src, dst), 0x7b blend_equation,
     // 0x7c blend_enable, 0x7d cull_face, 0x7e cull_face_enable, 0x7f depth_func, 0x80 depth_mask,
-    // 0x81 depth_test_enable, ... 0x88; those absent keep the defaults (alpha test and blending
+    // 0x81 depth_test_enable, 0x82 polygon_offset (factor, units), 0x83 polygon_offset_fill_enable, 0x84
+    // color_mask, 0x85 stencil_func (func, ref, mask), 0x86 stencil_mask, 0x87 stencil_op (sfail, dpfail,
+    // dppass), 0x88 stencil_test_enable; those absent keep the defaults (alpha test and blending
     // off, back faces culled, depth test and writes on)
     std::map<int, std::array<uint32_t, 4>> states;
     bool state(int id, uint32_t fallback, uint32_t& value, int k = 0) const {

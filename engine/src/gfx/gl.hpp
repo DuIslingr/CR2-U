@@ -66,6 +66,10 @@
     X(void, DepthFunc, (GLenum func)) \
     X(void, DepthMask, (GLboolean flag)) \
     X(void, ColorMask, (GLboolean r, GLboolean g, GLboolean b, GLboolean a)) \
+    X(void, StencilFunc, (GLenum func, GLint ref, GLuint mask)) \
+    X(void, StencilMask, (GLuint mask)) \
+    X(void, StencilOp, (GLenum sfail, GLenum dpfail, GLenum dppass)) \
+    X(void, PolygonOffset, (GLfloat factor, GLfloat units)) \
     X(void, CullFace, (GLenum mode)) \
     X(void, FrontFace, (GLenum mode)) \
     X(void, Uniform1f, (GLint loc, GLfloat v)) \

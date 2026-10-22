@@ -608,6 +608,53 @@ struct Viewer {
 
     // A tap (Return, a click): the vista's page; the field's - its event's page, else the nearest
     // balloon's function (FldMain::CheckTouchEventExec_Tap, EventExecute), the leader turned to it
+    // The touch releases' walk (FldMain::PlayerMove, FldController): a finger put down on the field
+    // with nothing else under it, dragged - the move is the line from where it went down to where
+    // it is (FldPlayer::Update: as fractions of the screen's width and height, under 0.02 standing,
+    // under 0.05 walking, else running); let go without moving, it's the leader's tap (on its
+    // release, as FldMain's tap event). The stick shows once it moves or after 0.5 s held (FldController
+    // ::Update): moveWin where it went down, moveCsr towards the finger - at most 128 away (x 2048,
+    // the interface's units).
+    struct WalkDrag {
+        bool down = false, moved = false;
+        float fx0 = 0, fy0 = 0, fx = 0, fy = 0, at = 0;
+    } walkDrag;
+    bool walkStart(float fx, float fy) {
+        if (!fieldTabShown() || fieldTabOpen) return false;
+        walkDrag = WalkDrag();
+        walkDrag.down = true, walkDrag.fx0 = walkDrag.fx = fx, walkDrag.fy0 = walkDrag.fy = fy, walkDrag.at = uiClock;
+        return true;
+    }
+    void walkMove(float fx, float fy) {
+        walkDrag.fx = fx, walkDrag.fy = fy;
+        if (std::hypot(fx - walkDrag.fx0, fy - walkDrag.fy0) > 0.01f) walkDrag.moved = true;
+    }
+    void walkEnd() {
+        if (walkDrag.down && !walkDrag.moved) tap();
+        walkDrag = WalkDrag();
+    }
+    bool walkStick(float& sx, float& sy, bool& run) const {
+        if (!walkDrag.down || !fieldTabShown()) return false;
+        const float dx = walkDrag.fx - walkDrag.fx0, dy = walkDrag.fy0 - walkDrag.fy, len = std::hypot(dx, dy);
+        if (len < 0.02f) return false;
+        sx = dx / len, sy = dy / len, run = len >= 0.05f;
+        return true;
+    }
+    void drawWalkStick(const Mat4& view) {
+        if (!walkDrag.down || (!walkDrag.moved && uiClock - walkDrag.at <= 0.5f)) return;
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        const float x0 = (walkDrag.fx0 - 0.5f) * float(screenW) / k, y0 = (0.5f - walkDrag.fy0) * float(screenH) / k;
+        const float x1 = (walkDrag.fx - 0.5f) * float(screenW) / k, y1 = (0.5f - walkDrag.fy) * float(screenH) / k;
+        const float len = std::hypot(x1 - x0, y1 - y0), reach = std::min(len, 128.0f / 2048.0f);
+        const float cx = len > 0 ? x0 + (x1 - x0) / len * reach : x0, cy = len > 0 ? y0 + (y1 - y0) / len * reach : y0;
+        for (auto [name, x, y] : {std::tuple<const char*, float, float>{"movewin", x0, y0}, {"movecsr", cx, cy}}) {
+            UiFig& u = uiFig(name);
+            u.fig.place = cr2::Mat34(); // (before the pose: the skinning places the vertices)
+            u.fig.place.m[3] = x, u.fig.place.m[7] = y;
+            poseUi(u, name, uiClock, true);
+            drawFigure(u.fig, view.data());
+        }
+    }
     void tap() {
         if (titleMenu.stage) return titleTap();
         if (vslash.stage) return; // (the slash: a swipe, not a tap)
@@ -10511,6 +10558,7 @@ struct Viewer {
             tapRects.clear();
             if (game.tabEnable) drawFieldTab(view); // (Cr3TabMenu.SetEnable)
             drawChangeButton(view);
+            drawWalkStick(view);
         }
         // the battery (BatteryWindowMenu: with the camp, the shop, the pub - Set*Parameter's
         // SetBatteryWindowParameter -, and in the field once its level is under 20%, looked at
@@ -10911,6 +10959,7 @@ std::vector<std::string> dataPlaces() {
 int main(int argc, char** argv) {
     std::string data, model, capture, animName, renderer = "vulkan", lights = "d0101c", fieldName, at = "defaultPos", binary;
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
+    float drag[5] = {0, 0, 0, 0, 0};               // --drag x0,y0,x1,y1,s: then a finger's drag that long (the screen's fractions; held for the capture)
     bool tapAfter = false, mute = false, forceAudio = false;
     int hdArg = -1;        // --hd-textures / --no-hd-textures (-1: the settings')
     std::string exploreDir, choicesArg; // --explore <folder> [--choices yes,no,...] [--hours h]: the game played by itself
@@ -10961,6 +11010,7 @@ int main(int argc, char** argv) {
         else if (a == "--at" && next) at = next, ++i;
         else if (a == "--binary" && next) binary = next, ++i;
         else if (a == "--walk" && next) std::sscanf(next, "%f,%f,%f", &walkX, &walkY, &walkSeconds), ++i;
+        else if (a == "--drag" && next) std::sscanf(next, "%f,%f,%f,%f,%f", &drag[0], &drag[1], &drag[2], &drag[3], &drag[4]), ++i;
         else if (a == "--event" && next) eventName = next, ++i;
         else if (a == "--battle" && next) battleId = std::atoi(next), ++i;
         else if (a == "--skip-battles") skipBattlesOpt = true;
@@ -11340,6 +11390,17 @@ int main(int argc, char** argv) {
         for (float t = 0; v.fieldMode && t < walkSeconds; t += 1.0f / 60.0f) v.walk(1.0f / 60.0f, walkX, walkY, true);
     }
     if (v.fieldMode && walkSeconds > 0) SDL_Log("after --walk: %s at (%.3f %.3f %.3f)", v.field.info().name.c_str(), v.player[0], v.player[1], v.player[2]);
+    if (drag[4] > 0 && v.walkStart(drag[0], drag[1])) {
+        v.walkMove(drag[2], drag[3]);
+        for (float t = 0; t < drag[4]; t += 1.0f / 60.0f) {
+            float sx = 0, sy = 0;
+            bool run = false;
+            v.walkStick(sx, sy, run);
+            if (v.playMode) v.advance(1.0f / 60.0f, sx, sy, run);
+            else v.walk(1.0f / 60.0f, sx, sy, run);
+        }
+        SDL_Log("after --drag: %s at (%.3f %.3f %.3f)", v.field.info().name.c_str(), v.player[0], v.player[1], v.player[2]);
+    }
     v.time = startTime;
     v.pose();
     SDL_Log("%s%s", v.status.c_str(), v.animStatus().c_str());
@@ -11493,6 +11554,36 @@ int main(int argc, char** argv) {
             const float ox = (float(pw) - sw * k) * 0.5f, oy = (float(ph) - sh * k) * 0.5f;
             fx = (px - ox) / (sw * k), fy = (py - oy) / (sh * k);
         };
+        // CR2_MOUSE_SCRIPT (tests): the mouse's button and moves at their times, at the game screen's
+        // fractions - "1:down=0.5,0.6 1.2:move=0.6,0.6 3:up"
+        std::vector<PadStep> mouseScript;
+        if (const char* ms = SDL_getenv("CR2_MOUSE_SCRIPT")) {
+            std::string all = ms;
+            for (size_t at = 0; at < all.size();) {
+                const size_t sp = std::min(all.find(' ', at), all.size());
+                const std::string t = all.substr(at, sp - at);
+                if (const size_t c = t.find(':'); c != std::string::npos) mouseScript.push_back({float(std::atof(t.c_str())), t.substr(c + 1)});
+                at = sp + 1;
+            }
+        }
+        float mouseX = 0, mouseY = 0;
+        auto pushMouse = [&](const std::string& w) { // (the inverse of screenFraction, as window coordinates)
+            if (const size_t eq = w.find('='); eq != std::string::npos) {
+                int ww = 1, wh = 1, pw = 1, ph = 1;
+                SDL_GetWindowSize(win, &ww, &wh);
+                SDL_GetWindowSizeInPixels(win, &pw, &ph);
+                const float sw = float(v.screenW), sh = float(v.screenH), k = std::min(float(pw) / sw, float(ph) / sh);
+                const float fx = float(std::atof(w.c_str() + eq + 1)), fy = float(std::atof(w.c_str() + w.find(',') + 1));
+                mouseX = ((float(pw) - sw * k) * 0.5f + fx * sw * k) * float(ww) / float(std::max(pw, 1));
+                mouseY = ((float(ph) - sh * k) * 0.5f + fy * sh * k) * float(wh) / float(std::max(ph, 1));
+            }
+            SDL_Event m{};
+            m.type = w.rfind("down", 0) == 0 ? SDL_EVENT_MOUSE_BUTTON_DOWN : w.rfind("up", 0) == 0 ? SDL_EVENT_MOUSE_BUTTON_UP : SDL_EVENT_MOUSE_MOTION;
+            if (m.type == SDL_EVENT_MOUSE_MOTION) m.motion.x = mouseX, m.motion.y = mouseY, m.motion.windowID = SDL_GetWindowID(win);
+            else m.button.x = mouseX, m.button.y = mouseY, m.button.button = SDL_BUTTON_LEFT, m.button.down = m.type == SDL_EVENT_MOUSE_BUTTON_DOWN, m.button.windowID = SDL_GetWindowID(win);
+            SDL_PushEvent(&m);
+            SDL_Log("test mouse: %s", w.c_str());
+        };
         Uint64 last = SDL_GetTicksNS();
         // --fps (the settings' Frame Rate): each frame starts no sooner than its slot (the display's
         // vsync may hold it longer)
@@ -11642,11 +11733,13 @@ int main(int argc, char** argv) {
                     else if (v.fieldMode && !v.eventMode && v.mystic.stage) v.mysticPointer(fx, fy);
                     else if (v.fieldMode && !v.eventMode && (v.sprintTap(fx, fy) || v.actionTap(fx, fy))) {}
                     else if (v.fieldMode && !v.eventMode && v.fieldClick(fx, fy)) {
+                    } else if (v.fieldMode && !v.eventMode && v.walkStart(fx, fy)) { // (a walk, or the tap on its release)
                     } else if (v.eventMode || v.fieldMode || v.battleMode) v.tap();
                 }
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
                     dragging = false;
                     v.fastHeld = false;
+                    if (v.walkDrag.down) v.walkEnd();
                     if (v.fieldMode && v.keyLock.stage == 1) v.unlockPointer(0, 0, 2);
                     if (v.vslash.stage == 1) {
                         float fx, fy;
@@ -11658,6 +11751,10 @@ int main(int argc, char** argv) {
                         screenFraction(e.button.x, e.button.y, fx, fy);
                         v.aimPointer(fx, fy, 2);
                     }
+                } else if (e.type == SDL_EVENT_MOUSE_MOTION && dragging && v.walkDrag.down) {
+                    float fx, fy;
+                    screenFraction(e.motion.x, e.motion.y, fx, fy);
+                    v.walkMove(fx, fy);
                 } else if (e.type == SDL_EVENT_MOUSE_MOTION && dragging && v.fieldMode && (v.keyLock.stage == 1 || v.iai.stage == 2 || v.aim.stage == 2)) {
                     float fx, fy;
                     screenFraction(e.motion.x, e.motion.y, fx, fy);
@@ -11697,6 +11794,10 @@ int main(int argc, char** argv) {
             }
             const Uint64 now = SDL_GetTicksNS();
             const float dt = float(double(now - last) / 1e9);
+            while (!mouseScript.empty() && mouseScript.front().at <= float(double(now - started) / 1e9)) { // (CR2_MOUSE_SCRIPT's)
+                pushMouse(mouseScript.front().what);
+                mouseScript.erase(mouseScript.begin());
+            }
             if (testPad) { // (CR2_PAD_SCRIPT's steps, by the seconds since the window opened)
                 static const std::map<std::string, SDL_GamepadButton> kButtons = {
                     {"east", SDL_GAMEPAD_BUTTON_EAST}, {"south", SDL_GAMEPAD_BUTTON_SOUTH}, {"north", SDL_GAMEPAD_BUTTON_NORTH},
@@ -11759,6 +11860,7 @@ int main(int argc, char** argv) {
                     if (ax != 0 || ay != 0) sx = ax, sy = ay, run = std::hypot(ax, ay) >= 0.75f;
                     else if (dx != 0 || dy != 0) sx = dx, sy = dy, run = true;
                 }
+                if (sx == 0 && sy == 0) v.walkStick(sx, sy, run); // (the mouse's, a finger's drag)
                 v.advance(dt, sx, sy, run);
             }
             if (v.fig.animLoaded && v.time > v.fig.anim.duration()) v.time = std::fmod(v.time, std::max(v.fig.anim.duration(), 0.05f));

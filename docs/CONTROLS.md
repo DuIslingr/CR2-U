@@ -41,3 +41,11 @@ the fast-forward. △ opens the field's tab - the port's own, as a controller ha
 touch releases have no cursor of the keyboard's either (the title's buttons and questions, the
 shop's first two menus, the party's), the keys and the controller now move a focus over the buttons
 in the game's own focused look. `CR2_PAD_SCRIPT` (tests) drives a virtual controller.
+
+On the field the mouse (or a finger) walks as the touch releases' do (FldMain::PlayerMove,
+FldPlayer::Update): put down where nothing else takes it and dragged, the leader goes along the line
+from where it went down to where it is - under 2% of the screen (its width and height) standing,
+under 5% walking, else running; let go without moving, it is the leader's tap. The stick
+(FldController: `moveWin` where it went down, `moveCsr` towards the finger, at most 128 / 2048 of
+the interface's units away) shows once it moves or after 0.5 s. `CR2_MOUSE_SCRIPT` (tests) drives
+the mouse; `--drag x0,y0,x1,y1,s` drags before a capture.

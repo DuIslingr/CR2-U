@@ -2128,7 +2128,12 @@ struct Viewer {
             if (shown(0)) drawLayer(field.backgroundImage(), fr.background);
             if (shown(2)) drawLayer(field.midgroundImage(), fr.midground);
             if (shown(3)) drawFigure(mapFigure, fr.scene.data());
-            for (const ViewFigure& g : gimmicks) drawFigure(g, fr.scene.data());
+            // (FldNPC / FldBox: their FldShadow at the figure's place - an NPC's on while it's shown,
+            // FldUtilSetGimmickVisible's SetShadowVisible; a box's always)
+            for (size_t k = 0; k < gimmicks.size(); ++k) {
+                if (k < gimmickShadow.size() && gimmickShadow[k]) drawShadow(gimmicks[k].place, fr.scene.data());
+                drawFigure(gimmicks[k], fr.scene.data());
+            }
             drawResidents(fr.scene.data());
             drawGroundFx(fr.scene.data());
             // an event's scene in the field (EvtScene in FldMain: its models among the field's
@@ -2222,6 +2227,7 @@ struct Viewer {
     };
     std::vector<Facing> gimmickFace; // (each one's turn: ChangeDirection)
     std::vector<int> gimmickColor;   // (the colours each wears: ChangeModelColor's, -1 its own)
+    std::vector<bool> gimmickShadow; // (an NPC's or a box's: its FldShadow)
     Facing leaderFace;
     // where a turn's target is ("player", else a gimmick's id or name)
     bool gimmickTarget(const std::string& target, float& x, float& z) const {
@@ -2242,7 +2248,7 @@ struct Viewer {
         shownGimmicks = want;
         std::string err;
         for (ViewFigure& g : gimmicks) unload(g);
-        gimmicks.clear(), gimmickIds.clear(), gimmickSerial.clear(), gimmickFace.clear(), gimmickColor.clear();
+        gimmicks.clear(), gimmickIds.clear(), gimmickSerial.clear(), gimmickFace.clear(), gimmickColor.clear(), gimmickShadow.clear();
         for (const cr2::Gimmick& gm : field.gimmicks()) {
             if (gm.figure.empty() || !archive.contains(gm.figure + ".geom") || !script->visible(gm)) continue;
             ViewFigure g;
@@ -2258,6 +2264,7 @@ struct Viewer {
             if (gm.kind == cr2::Gimmick::Box) playMotion(g, game.boxes.isOpen(gm.boxKind, gm.boxNumber) ? "fn02" : "fn01"); // (FldBox: closed fn01, open fn02)
             gimmicks.push_back(std::move(g));
             gimmickIds.push_back(gm.id), gimmickSerial.push_back(0), gimmickColor.push_back(-1);
+            gimmickShadow.push_back(gm.kind == cr2::Gimmick::Npc || gm.kind == cr2::Gimmick::Box);
             Facing fc; // (its joint's yaw)
             fc.yaw = std::atan2(g.place.m[2], g.place.m[0]);
             gimmickFace.push_back(fc);

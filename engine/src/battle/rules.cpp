@@ -168,6 +168,9 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
                 }
         }
         if (attach) f.element = attach;
+        // (InitializePlayer: +0xf8d 1; BtlWork: skill 5, 8 the state 33 - back up once - from the start)
+        f.firstCrit = 1;
+        if (f.has(5, 8)) f.addState(33, 0, 1);
         levels += f.level, ++count;
     }
     // BtlWork::CheckChargeSkill: the charge at 100 when the first standing has the skill (5, 4)
@@ -293,6 +296,17 @@ bool BattleRules::critical(int actor, int target, const BattleData::Command& c) 
     if (c.magic == 1 && !hasPair(2, 4)) return false;
     if (!(c.specials >> 8 & 1)) return false;
     if (c.specials >> 9 & 1) return true;
+    // skill 2, 1: the first attack able to strike critically does (+0xf8d 1, or 2 within the action
+    // it struck in), the actor's own else its partner's in a pair
+    if ((a.firstCrit == 1 || a.firstCrit == 2) && a.has(2, 1)) return a.firstCrit = 2, true;
+    if (isPairAction(actor)) {
+        const Fighter& p = fighters_[size_t(a.partner)];
+        if ((p.firstCrit == 1 || p.firstCrit == 2) && p.has(2, 1)) {
+            p.firstCrit = 2;
+            if (a.firstCrit == 1) a.firstCrit = 2;
+            return true;
+        }
+    }
     // state 32 (the actor's, or its partner's in a pair): sure, a use
     if (a.hasState(32)) return a.useState(32), true;
     if (isPairAction(actor) && fighters_[size_t(a.partner)].hasState(32)) return fighters_[size_t(a.partner)].useState(32), true;
@@ -1057,6 +1071,11 @@ void BattleRules::doAction(std::vector<Event>& out) {
         !doer.hasState(21))
         for (int f : {nextAction().actor, isPairAction(nextAction().actor) ? fighters_[size_t(nextAction().actor)].partner : -1})
             if (f >= 0 && fighters_[size_t(f)].alive) fighters_[size_t(f)].element = done->attachSelf == 4 ? 0 : done->attachSelf;
+    // (PostCommandAction: CheckFirstAttack - a sure first critical struck, spent; its partner's too)
+    if (Fighter& f = fighters_[size_t(nextAction().actor)]; f.firstCrit == 2) {
+        f.firstCrit = 0;
+        if (isPairAction(nextAction().actor)) fighters_[size_t(f.partner)].firstCrit = 0;
+    }
     // (PostCommandAction: CheckSteal - the pair's once)
     if (done && done->kind == 29 && out.size() > first && !out[first].failed) steal(nextAction(), out, first);
     for (size_t k = first; k < out.size(); ++k) // (BtlActionCtrl::ActionDeadEvent: each downed)

@@ -43,7 +43,9 @@ and takes them back after it, so in the forest (222) he has no element. A fighte
 (BtlWork::SetupPlayerSkill, +0xfba) is that of the first of its five sopia with one (a sopia's
 +0x16: Orlando's 2 wind), else none; each sopia gives its auto skills (+0x22, one a level) up to
 its level, and those that lend an element (an auto skill's +0x34, GetAutoSkillAttach) set it in
-its place if they agree on one.
+its place if they agree on one. Skill 5, 8 gives state 33 from the start (once downed, back with a
+quarter of its HP). Skills 0, 7 / 0, 8 / 4, 0 (HasPowerMagicDouble, HasPowerItemDouble,
+HasEncountEncounter; auto skills 29 and 42 set the last two) are never asked in the game.
 
 A monster's level is its own (+0x3b), else near the party's mean (BtlWork::SetupEnemy): within
 the dungeon level's band (cr3_common_data[0] d: d x 10 + 1 .. (d + 1) x 10), from mean - 5 to mean
@@ -90,6 +92,8 @@ level; parameter n = +0x20 + 2n + level x a table's (0x535d90; 0x535d84 for the 
   attacker's Speed (plus its partner's in a pair action) less the target's fifth parameter: up to
   -101 60%, -50 70%, -1 80%, 49 90%, 100 95%, more 99% (kind 15 75%; blinded - state 1 - half).
 - Critical (BtlCalc::Critical), only with special 8 (magic: with pair skill 4): special 9 always;
+  skill 2, 1 the party's first such attack that hits (+0xf8d: 1 from InitializePlayer, 2 within
+  the action, 0 after it - PostCommandAction's CheckFirstAttack; the actor's, else its pair partner's);
   else by the fifth parameters' difference (each side a pair's mean), the same steps to 5, 10, 15,
   20, 25, 50 - times 100 / 256 - percent; +10 with pair skill 2, +50 in state 11 (spent). A
   critical adds 50 (100 with pair skill 3) to the command's power (CommandY).

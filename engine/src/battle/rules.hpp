@@ -56,13 +56,14 @@ struct Fighter {
     // turns left (0 for good) and the uses left (0 none counted) - 0 poison, 1 blind, 2 seal, 3 (a
     // turn's), 5..12 raised and 13..20 lowered parameters (Attack, Magic, Defense, Speed, Luck,
     // three more), 21 time stopped, 22..25 attack / sopia / defend / items sealed, 26.. special
-    // (30 provoking, 32 sure to strike critically, 35 revived once, 38..40 EXP / SP / Oz doubled)
+    // (30 provoking, 32 sure to strike critically, 33 back up once when downed, 35 revived once, 38..40 EXP / SP / Oz doubled)
     struct State {
         int id = 0, turns = 0, count = 0;
     };
     mutable std::vector<State> states;
     bool canceled = false; // (+0xf7a: its action this turn cancelled)
     bool stolen = false; // (+0xf8c: a monster stolen from, or with nothing to steal)
+    mutable int firstCrit = 0; // (+0xf8d: the party's 1 from the start, 2 its sure first critical struck this action, 0 after)
     unsigned usedSlots = 0; // (+0xfc0: a monster's choices taken this turn - BtlUtilSituation::ClearEnemyAction)
     bool hasState(int id) const {
         for (const State& s : states)

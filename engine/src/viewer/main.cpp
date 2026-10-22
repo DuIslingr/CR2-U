@@ -3940,6 +3940,7 @@ struct Viewer {
                                        [this](int f) { return game.flag(f); },
                                        [this](int s) { return s >= 0 && s < 32 ? int(game.sopiaLevel[s]) : 0; });
                     choosing = true;
+                    battleSe(1); // (BtlCommand::StepGetsetFirst)
                     placeParty(false); // (the choosing in the solo places: BtlCommand's)
                     menuChanged();
                     inputNext = battleClock + 0.4f;
@@ -4013,7 +4014,7 @@ struct Viewer {
                 for (int f = 0; f < 2; ++f) setGuard(f, false), dropGuardObject(f); // (BtlTurnEnd: DeleteAll; the stance back)
                 if (announceQueue.empty()) commandShown.clear(); // (BtlTurnEnd: ClearAnnounce)
                 for (const cr2::BattleRules::Event& e : battleRules->turnEndEvents()) { // (BtlTurnEnd: the poison's, the pools')
-                    if (e.damage > 0) showNumber(e.target, e.damage, 20);
+                    if (e.damage > 0) showNumber(e.target, e.damage, 20), battleSe(0x13); // (BtlTurnEnd: the poison's SE)
                     if (e.heal > 0) showNumber(e.target, e.heal, 50);
                     if (e.healMp > 0) showNumber(e.target, e.healMp, 60);
                     SDL_Log("    %s: %d poison, %d HP back, %d MP back", battleRules->fighter(e.target).name.c_str(), e.damage, e.heal, e.healMp);
@@ -4127,6 +4128,7 @@ struct Viewer {
             if (size_t(dj) < w.size()) at[0] = w[size_t(dj)].m[3], at[1] = w[size_t(dj)].m[7], at[2] = w[size_t(dj)].m[11];
         }
         spawnEffect("eff216", at);
+        battleVoice(f, 10), battleSe(0x8b); // (ActionReviveMain: PlayVoiceRevive, SE 0x8b)
         SDL_Log("    %s revived: %d HP", battleRules->fighter(f).name.c_str(), battleRules->fighter(f).hp);
         showEnd = battleClock + std::max(motionLength(bu, "bh01"), 1.0f) + 0.3f;
     }

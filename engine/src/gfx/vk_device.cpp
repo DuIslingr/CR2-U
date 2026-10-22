@@ -876,7 +876,9 @@ public:
             voff = rec.dynOffset;
         }
         uint32_t key = colorWrite_ && st.colorWrite ? 1u : 0u;
-        if (st.blend) key |= 2u | uint32_t(std::min<uint8_t>(st.blendSrc, 8)) << 4 | uint32_t(std::min<uint8_t>(st.blendDst, 7)) << 8;
+        if (st.blend)
+            key |= 2u | uint32_t(std::min<uint8_t>(st.blendSrc, 8)) << 4 | uint32_t(std::min<uint8_t>(st.blendDst, 7)) << 8 |
+                   uint32_t(std::min<uint8_t>(st.blendOp, 4)) << 12;
         if (inScene_) key |= kScenePipeline | (st.depthWrite ? kSceneDepthWrite : 0u);
         bind(meshPipeline(key));
         vkCmdSetCullMode(cmd_, st.cull == 0 ? VK_CULL_MODE_NONE : st.cull == 1 ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_BACK_BIT);
@@ -1344,7 +1346,9 @@ private:
             att.blendEnable = VK_TRUE;
             att.srcColorBlendFactor = att.srcAlphaBlendFactor = kSrc[std::min<uint32_t>(key >> 4 & 15, 8)];
             att.dstColorBlendFactor = att.dstAlphaBlendFactor = kDst[std::min<uint32_t>(key >> 8 & 15, 7)];
-            att.colorBlendOp = att.alphaBlendOp = VK_BLEND_OP_ADD;
+            static const VkBlendOp kOps[5] = {VK_BLEND_OP_ADD, VK_BLEND_OP_SUBTRACT, VK_BLEND_OP_REVERSE_SUBTRACT, VK_BLEND_OP_MIN,
+                                              VK_BLEND_OP_MAX};
+            att.colorBlendOp = att.alphaBlendOp = kOps[std::min<uint32_t>(key >> 12 & 7, 4)];
         }
         // Scene: solid surfaces - opaque, or blended but writing depth (the game blends most
         // of its models) - write their motion; see-through ones (blended, no depth) the reactive

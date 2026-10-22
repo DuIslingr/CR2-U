@@ -405,6 +405,8 @@ public:
         if (st.blend) {
             gl::Enable(GL_BLEND);
             gl::BlendFunc(kBlendSrc[st.blendSrc < 9 ? st.blendSrc : 4], kBlendDst[st.blendDst < 8 ? st.blendDst : 5]);
+            static const GLenum kOps[5] = {GL_FUNC_ADD, GL_FUNC_SUBTRACT, GL_FUNC_REVERSE_SUBTRACT, GL_MIN, GL_MAX};
+            if (st.blendOp) gl::BlendEquation(kOps[st.blendOp < 5 ? st.blendOp : 0]);
         } else {
             gl::Disable(GL_BLEND);
         }
@@ -435,6 +437,7 @@ public:
         if (!st.colorWrite) gl::ColorMask(colorWrite_, colorWrite_, colorWrite_, colorWrite_);
         if (st.stencilTest) gl::Disable(GL_STENCIL_TEST);
         if (st.polygonOffset) gl::Disable(GL_POLYGON_OFFSET_FILL);
+        if (st.blend && st.blendOp) gl::BlendEquation(GL_FUNC_ADD);
     }
 
     bool readPixels(std::vector<uint8_t>& rgba, int& w, int& h) override {

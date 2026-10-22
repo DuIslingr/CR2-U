@@ -194,7 +194,8 @@ characters' carries other data).
 The stencil and colour-mask states are used by eight fields' figures (d0203f, d0209f, d1123f,
 d1125f, d1130f, d1133f, d1135f, d1140f): materials 0 and 1 write no colour or depth and count into
 the stencil (func ALWAYS ref 3, op INCR / DECR on a pass), material 2 blends its layer only where
-the stencil is 1 (func EQUAL ref 1 mask 3) - the halls' light and shadow. Polygon offset: six
+the stencil is 1 (func EQUAL ref 1 mask 3) - the halls' light and shadow. Blend equation 0x800b (REVERSE_SUBTRACT, with src alpha / one) in 62 materials of
+49 effects: their dark parts, taken off the frame. Polygon offset: six
 effects (eff259, eff270..272, eff281, eff322) drawn just over the ground. Both renderers need a
 stencil buffer for them (GL: 8 bits; Vulkan: D32S8 or D24S8, the upscaled scene's too except under
 MetalFX).

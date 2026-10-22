@@ -1870,6 +1870,8 @@ struct Viewer {
             m.material.state(0x7a, kGlOneMinusSrcAlpha, v2, 1);
             st.blendSrc = cr2::blendCode(v, false);
             st.blendDst = cr2::blendCode(v2, true);
+            m.material.state(0x7b, 0x8006, v); // blend_equation
+            st.blendOp = v == 0x800a ? 1 : v == 0x800b ? 2 : v == 0x8007 ? 3 : v == 0x8008 ? 4 : 0;
             m.material.state(0x7e, 1, v);
             m.material.state(0x7d, kGlBack, v2);
             st.cull = v && !SDL_getenv("CR2_NO_CULL") ? (v2 == kGlFront ? 1 : 2) : 0;
@@ -5350,6 +5352,28 @@ struct Viewer {
         }
         if (!battleMapHidden) drawFigure(specialMapShown ? specialMap : battleMap, vp.data()); // (BtlMap::Draw: d1154b in its place)
         if (!battleMapHidden && !mapEffect.meshes.empty()) drawFigure(mapEffect, vp.data());
+        // BtlShadow (BtlMain::CreatePlayer / CreateMonster: obj001 for each, its target's DummyEP04;
+        // Pose / Draw): at the unit's place and turn, 0.0002 up, scaled as that joint is in the
+        // world (Cr3GetScaleFromFigure), drawn while the unit shows fully opaque
+        const uint32_t ep04 = cr2::nameHash("DummyEP04");
+        for (const BattleUnit& u : battleUnits) {
+            if (u.hidden || u.sceneHidden || u.fig.tint[3] <= 0.9999f || u.fig.posed.empty()) continue;
+            float scale[3] = {1, 1, 1};
+            if (const int j = u.fig.skeleton.joint(ep04); j >= 0) {
+                const std::vector<cr2::Mat34> w = u.fig.skeleton.world(u.fig.posed, u.fig.place);
+                if (size_t(j) < w.size())
+                    for (int c = 0; c < 3; ++c)
+                        scale[c] = std::sqrt(w[size_t(j)].m[c] * w[size_t(j)].m[c] + w[size_t(j)].m[4 + c] * w[size_t(j)].m[4 + c] +
+                                             w[size_t(j)].m[8 + c] * w[size_t(j)].m[8 + c]);
+            }
+            cr2::Mat34 at = u.fig.place;
+            for (int c = 0; c < 3; ++c) { // (the place's turn alone, then the joint's scale)
+                const float l = std::sqrt(at.m[c] * at.m[c] + at.m[4 + c] * at.m[4 + c] + at.m[8 + c] * at.m[8 + c]);
+                for (int r = 0; r < 3; ++r) at.m[r * 4 + c] *= l > 0 ? scale[c] / l : 0.0f;
+            }
+            at.m[7] += 0.0002f;
+            drawShadow(at, vp.data());
+        }
         for (const BattleUnit& u : battleUnits)
             if (!u.hidden && !u.sceneHidden) drawFigure(u.fig, vp.data());
         drawEffects(cw, vp);

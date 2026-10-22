@@ -6988,7 +6988,17 @@ struct Viewer {
         bool selectable = true;
         std::string help; // (the command's or item's text: "\\n" between its lines)
         int seal = -1; // (ScrollListItem::SetIcon 2: seal_id at call_seal_id12 - 2 "new")
+        bool sopiaIcon = false; // (SetIcon 3: `icon` a frame of sopia_id, not mainIcon_id)
     };
+    // a sopia's row icon (CampSopiaListMenu::SetSopiaList, CampEquipmentListMenu): a human's (its
+    // +0x10 0) sopia_id at GetHumanSopiaIconNumber's frame - 1, 4, 3, 2 by its kind (+0x11) -, a
+    // monster's mainIcon_id at GetMonsterSopiaIconNumber's - 65, 68, 67, 66
+    static void sopiaRowIcon(const cr2::BattleData::Sopia& so, ListRow& r) {
+        static const int kHuman[4] = {1, 4, 3, 2}, kMonster[4] = {65, 68, 67, 66};
+        const int k = so.kind - 1;
+        r.sopiaIcon = so.growth == 0;
+        r.icon = k >= 0 && k < 4 ? (r.sopiaIcon ? kHuman[k] : kMonster[k]) : 0;
+    }
     // the rows centred on the focused one (ScrollListMenu::PartsPose: two either side shown; the
     // row's own place the one above it), the list's tab (ListTag: tabWin_io, its tabName_id at
     // call_tabName_id posed at the list's frame / 20 s)
@@ -7053,7 +7063,13 @@ struct Viewer {
             const float rowSize = optionLanguage >= 1 && optionLanguage <= 4 ? 22.0f : 24.0f;
             if (uiJoint(b, "typeS_L00", x, y)) drawUiText(r.name, rowSize, x, y, w, h, true, r.selectable ? 1.0f : 0.5f);
             if (r.number >= 0 && uiJoint(b, "call_dotNum_id01", x, y)) drawDigits(r.number, 90, 4, x, y, uiProjection(w, h), r.selectable ? 1.0f : 0.5f);
-            if (r.icon > 0 && uiJoint(b, "call_mainIcon_id11", x, y)) {
+            if (r.icon > 0 && r.sopiaIcon && uiJoint(b, "call_mainIcon_id11", x, y)) { // (SetIcon 3: sopia_id at the main icon's place)
+                UiFig& ic = uiFig("sopia_id");
+                ic.fig.place = cr2::Mat34();
+                ic.fig.place.m[3] = x, ic.fig.place.m[7] = y;
+                poseUi(ic, "sopia_id", float(r.icon) / 20.0f);
+                drawFigure(ic.fig, view.data());
+            } else if (r.icon > 0 && uiJoint(b, "call_mainIcon_id11", x, y)) {
                 UiFig& ic = uiFig("mainicon_id");
                 ic.fig.place = cr2::Mat34();
                 ic.fig.place.m[3] = x, ic.fig.place.m[7] = y;
@@ -8089,7 +8105,11 @@ struct Viewer {
         } else if (campList == 18) {
             for (int id = 1; id < 32; ++id)
                 if (game.sopiaOwned >> id & 1u)
-                    if (const cr2::BattleData::Sopia* so = battleData.sopia(id)) rows.push_back({id, so->name[1], -1, 0, true, ""});
+                    if (const cr2::BattleData::Sopia* so = battleData.sopia(id)) {
+                        ListRow r{id, so->name[1], -1, 0, true, ""};
+                        sopiaRowIcon(*so, r);
+                        rows.push_back(r);
+                    }
         }
         return rows;
     }
@@ -8590,6 +8610,7 @@ struct Viewer {
         std::string name;
         bool selectable = true, worn = false;
         int sopia = 0; // (what the sopia windows show for it)
+        int item = 0;  // (the view's row of what's worn: its icon - SetEquipmentList's)
     };
     std::string menuName(int id) { return messageText("announcemenuname", id); }
     std::vector<EquipRow> equipRows() {
@@ -8611,9 +8632,9 @@ struct Viewer {
             return false;
         };
         if (campEquipMode == 0) {
-            rows.push_back({301, itemName(eq[0])});
-            rows.push_back({302, itemName(eq[1])});
-            if (eq[2] > 0) rows.push_back({303, itemName(eq[2])});
+            rows.push_back({301, itemName(eq[0]), true, false, 0, eq[0]});
+            rows.push_back({302, itemName(eq[1]), true, false, 0, eq[1]});
+            if (eq[2] > 0) rows.push_back({303, itemName(eq[2]), true, false, 0, eq[2]});
             else rows.push_back({303, menuName(0x4b), owns(3)});
             rows.push_back({0, sopiaName(eq[3]), false, false, eq[3]});
             if (ch == 0) rows.push_back({304, eq[4] > 0 ? sopiaName(eq[4]) : menuName(0x4d), eq[4] > 0 || !humanSopia().empty(), false, eq[4]});
@@ -8842,6 +8863,10 @@ struct Viewer {
             lr.id = r.id, lr.name = r.name, lr.number = -1, lr.selectable = r.selectable;
             if (r.id > 0 && r.id < 300)
                 if (const cr2::BattleData::Item* it = battleData.item(r.id)) lr.icon = it->icon, lr.help = it->text[1];
+            if (r.item > 0)
+                if (const cr2::BattleData::Item* it = battleData.item(r.item)) lr.icon = it->icon;
+            if (r.sopia > 0) // (SetEquipmentList / SetHumanSopiaList: a sopia's row its icon)
+                if (const cr2::BattleData::Sopia* so = battleData.sopia(r.sopia)) sopiaRowIcon(*so, lr);
             list.push_back(lr);
         }
         listRows = list;

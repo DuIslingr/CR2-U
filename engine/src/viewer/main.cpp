@@ -1352,7 +1352,7 @@ struct Viewer {
             if (!game.flag(0x7f7)) audio.stopBgm(20);
             return;
         }
-        if (uiClock - encount.fadeAt < 1.0f + 0.15f) return; // (the fade's 20 updates, then the field's three)
+        if (uiClock - encount.fadeAt < kWipeSeconds + 0.15f) return; // (the wipe's end - WaitFadeFinish -, then the field's three)
         int party[2];
         for (int k = 0; k < 2; ++k) party[k] = game.party[k] >= 0 ? game.party[k] + 1 : 0;
         const int id = encount.coupling, area = encount.area;
@@ -10975,6 +10975,9 @@ struct Viewer {
     // streaked edge (hud_encount) on a panel 2.048 wide, encount_in sliding it over the screen from
     // the right (a FadeOut: the field's encounter, Cr3FadeOut(3, 20)), encount_out on off to the
     // left (a FadeIn: every battle's start, BtlMainCtrl::StepBattleIn's FadeIn(3, 20)); `p` 0..1
+    // (its animators at 10 / frames speed - FadeWindowMenu::SetParamNumber 3 -: 0.25 s at 0.5, the
+    // reference's half a second)
+    static constexpr float kWipeSeconds = 0.5f;
     float battleWipeAt = -1;
     void drawEncountWipe(float p, bool cover) {
         Mat4 camera = cr2::mat4Identity();
@@ -11009,8 +11012,8 @@ struct Viewer {
                 dev->drawQuad(white, kScreen, id.data(), rgba);
             }
         }
-        if (fieldMode && !battleMode && encount.fadeAt >= 0) drawEncountWipe((uiClock - encount.fadeAt) / 1.0f, true); // (an encounter's: Cr3FadeOut(3, 20))
-        if (battleMode && battleWipeAt >= 0 && battleClock - battleWipeAt < 1.0f) drawEncountWipe((battleClock - battleWipeAt) / 1.0f, false);
+        if (fieldMode && !battleMode && encount.fadeAt >= 0) drawEncountWipe((uiClock - encount.fadeAt) / kWipeSeconds, true); // (an encounter's: Cr3FadeOut(3, 20))
+        if (battleMode && battleWipeAt >= 0 && battleClock - battleWipeAt < kWipeSeconds) drawEncountWipe((battleClock - battleWipeAt) / kWipeSeconds, false);
         cr2::EventRuntime* ev = activeEvents();
         if (!ev || !eventDrawingReady) return;
         struct YesNoLast { // (the buttons over everything else the event shows)

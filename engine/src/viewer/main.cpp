@@ -6989,6 +6989,7 @@ struct Viewer {
         std::string help; // (the command's or item's text: "\\n" between its lines)
         int seal = -1; // (ScrollListItem::SetIcon 2: seal_id at call_seal_id12 - 2 "new")
         bool sopiaIcon = false; // (SetIcon 3: `icon` a frame of sopia_id, not mainIcon_id)
+        int cost = -1;          // (SetIcon 1: its own cost_id frame - a sopia's level + 6 -, else the list's)
     };
     // a sopia's row icon (CampSopiaListMenu::SetSopiaList, CampEquipmentListMenu): a human's (its
     // +0x10 0) sopia_id at GetHumanSopiaIconNumber's frame - 1, 4, 3, 2 by its kind (+0x11) -, a
@@ -7083,11 +7084,12 @@ struct Viewer {
                 poseUi(se, "seal_id", float(r.seal) / 20.0f);
                 drawFigure(se.fig, view.data());
             }
-            if (costIcon >= 0 && uiJoint(b, "call_cost_id13", x, y)) { // (the number's mark: "MP" ...)
+            const int cost = r.cost >= 0 ? r.cost : costIcon;
+            if (cost >= 0 && uiJoint(b, "call_cost_id13", x, y)) { // (the number's mark: "MP" ...)
                 UiFig& co = uiFig("cost_id");
                 co.fig.place = cr2::Mat34();
                 co.fig.place.m[3] = x, co.fig.place.m[7] = y;
-                poseUi(co, "cost_id", float(costIcon) / 20.0f);
+                poseUi(co, "cost_id", float(cost) / 20.0f);
                 drawFigure(co.fig, view.data());
             }
             if (k == fi && uiJoint(b, "call_sBtnSlct14", x, y)) {
@@ -8108,6 +8110,7 @@ struct Viewer {
                     if (const cr2::BattleData::Sopia* so = battleData.sopia(id)) {
                         ListRow r{id, so->name[1], -1, 0, true, ""};
                         sopiaRowIcon(*so, r);
+                        r.cost = std::max(int(game.sopiaLevel[id]), 1) + 6; // (SetSopiaList: SetIcon 1, its level + 6)
                         rows.push_back(r);
                     }
         }
@@ -8866,7 +8869,10 @@ struct Viewer {
             if (r.item > 0)
                 if (const cr2::BattleData::Item* it = battleData.item(r.item)) lr.icon = it->icon;
             if (r.sopia > 0) // (SetEquipmentList / SetHumanSopiaList: a sopia's row its icon)
-                if (const cr2::BattleData::Sopia* so = battleData.sopia(r.sopia)) sopiaRowIcon(*so, lr);
+                if (const cr2::BattleData::Sopia* so = battleData.sopia(r.sopia)) {
+                    sopiaRowIcon(*so, lr);
+                    if (r.id >= 400) lr.cost = std::max(int(game.sopiaLevel[r.sopia]), 1) + 6; // (Set*SopiaList: SetIcon 1, its level + 6)
+                }
             list.push_back(lr);
         }
         listRows = list;

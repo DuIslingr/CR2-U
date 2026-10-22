@@ -4829,6 +4829,10 @@ struct Viewer {
     }
     void landHits(const ShowAction& a, bool first) {
         if (first) groupShown.clear();
+        // (BtlSound's batches: the targets' cries queued by tag - SetVoiceTagFromData -, then at the
+        // hit's end (BtlActionCtrl::Hit) the deaths' one at random when it wins, the game over's one
+        // when it loses (the deaths' dropped), else all; the heals' one at random)
+        std::vector<std::pair<int, int>> deaths, overs, heals; // (fighter, kind)
         for (const auto& e : a.hits) {
             const int u = fighterUnit[e.target];
             if (u < 0) continue;
@@ -4863,11 +4867,16 @@ struct Viewer {
                 if (e.defeated && e.target < 2) ++partyDeaths;
                 // (CheckDead: the party both down - the game over's 6, but in couplings 221 / 271 nothing)
                 const bool wiped = e.defeated && e.target < 2 && !battleRules->fighter(0).alive && !(battleRules->fighter(1).present && battleRules->fighter(1).alive);
-                if (e.hit && !e.blocked && !(wiped && (battle.coupling == 221 || battle.coupling == 271)))
-                    battleVoice(e.target, wiped ? 6 : e.defeated ? 5 : e.damage <= 0 ? 7 : tf.hp * 100 / std::max(tf.maxHp, 1) < 26 ? 4 : 3, 0.5f);
+                if (e.hit && !e.blocked && !(wiped && (battle.coupling == 221 || battle.coupling == 271))) {
+                    const int kind = wiped ? 6 : e.defeated ? 5 : e.damage <= 0 ? 7 : tf.hp * 100 / std::max(tf.maxHp, 1) < 26 ? 4 : 3;
+                    if (kind == 5) deaths.push_back({e.target, kind});
+                    else if (kind == 6) overs.push_back({e.target, kind});
+                    else battleVoice(e.target, kind, 0.5f);
+                }
             } else if (restore && first && a.command != 0x90) { // (Restore: revived 10; healed to full 9, else 8 - none for command 0x90's)
                 const cr2::Fighter& rf = battleRules->fighter(e.target);
-                battleVoice(e.target, e.revived ? 10 : rf.hp * 100 / std::max(rf.maxHp, 1) > 99 ? 9 : 8, 0.3f);
+                if (e.revived) battleVoice(e.target, 10, 0.3f);
+                else heals.push_back({e.target, rf.hp * 100 / std::max(rf.maxHp, 1) > 99 ? 9 : 8});
             }
             if (!first) continue;
             if (e.revived) bu.hidden = false;
@@ -4918,6 +4927,17 @@ struct Viewer {
                 SDL_Log("    %s -> %s: %s (%.1f s)", battleRules->fighter(e.actor).name.c_str(), battleRules->fighter(e.target).name.c_str(), what.c_str(), battleClock);
             }
         }
+        auto one = [&](const std::vector<std::pair<int, int>>& v, float delay) {
+            if (!v.empty()) {
+                const auto& [f, kind] = v[boxRandom() % v.size()];
+                battleVoice(f, kind, delay);
+            }
+        };
+        if (battleRules->outcome() == 1) one(deaths, 0.5f);
+        else if (battleRules->outcome() == 2) one(overs, 0.5f);
+        else
+            for (const auto& [f, kind] : deaths) battleVoice(f, kind, 0.5f);
+        one(heals, 0.3f);
     }
 
     // The special scenes - the awakenings, the advents, the monsters' specials (BtlActionCtrl::

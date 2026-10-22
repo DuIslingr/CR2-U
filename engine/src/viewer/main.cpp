@@ -8610,6 +8610,11 @@ struct Viewer {
     // set; monster: +0x10 1 - one of another's taken from them after a question, announce 0x8a);
     // "Remove" (0x53) when the place holds one. A choice: Cr3UtilChangeEquipItem / Sopia (199).
     int campEquipChar = 0, campEquipMode = 0, campEquipCursor = 0;
+    // (the sopia lists' change button - ScrollListMenu::CreateCampChangeButton, changeBtn: its io,
+    // then changeBtn_lp looping - by a focused sopia; tapped, mode 8 that sopia's commands and
+    // skills - SetSopiaListItem -, Back to where it was)
+    int campEquipViewSopia = 0, campEquipPrevMode = 0, campEquipPrevCursor = 0;
+    float campChangeAt = -1;
     int campTakeSopia = 0, campTakeFrom = -1; // (a sopia another wears, asked for)
     struct EquipRow {
         int id = 0; // (300 + the mode a view row opens; an item; 400 + a sopia; 399 Remove)
@@ -8673,6 +8678,20 @@ struct Viewer {
                 rows.push_back({400 + s, so->name[1], !mine, mine, s});
             }
             if (eq[campEquipMode] > 0) rows.push_back({399, menuName(0x53)});
+        } else if (campEquipMode == 8) { // (SetSopiaListItem(sopia, true): by its levels - those not reached "???", greyed)
+            const cr2::BattleData::Sopia* so = battleData.sopia(campEquipViewSopia);
+            const int level = std::max(int(game.sopiaLevel[campEquipViewSopia]), 1);
+            for (int l = 0; so && l < 5; ++l) {
+                if (l >= level) {
+                    rows.push_back({0, menuName(0x3d), false});
+                    continue;
+                }
+                EquipRow r{0, so->commands[l] > 0 ? messageText("commandname", so->commands[l]) : messageText("autoskillname", so->skills[l])};
+                if (so->commands[l] > 0) r.command = so->commands[l];
+                else if (so->skills[l] > 0) r.autoSkill = so->skills[l];
+                else continue;
+                rows.push_back(r);
+            }
         } else if (campEquipMode == 9) { // (SetSkillList: what the equipment and the sopia give)
             auto command = [&](int c) { EquipRow r{0, messageText("commandname", c)}; r.command = c; rows.push_back(r); };
             auto skill = [&](int a) { EquipRow r{0, messageText("autoskillname", a)}; r.autoSkill = a; rows.push_back(r); };
@@ -8689,6 +8708,8 @@ struct Viewer {
                         else if (so->skills[l] > 0) skill(so->skills[l]);
                     }
         }
+        if (campEquipMode >= 8) // (the views' rows told apart: the focus is by id)
+            for (size_t k = 0; k < rows.size(); ++k) rows[k].id = 600 + int(k);
         return rows;
     }
     // Darwin's human sopia choices (SetHumanSopiaList: the character sopia had, the n-th past the first with flag 0xbe1 + n)
@@ -8704,6 +8725,7 @@ struct Viewer {
         return out;
     }
     void campEquipPick(int id) {
+        if (campEquipMode >= 8) return; // (a sopia's skills, the skill view: to read)
         const std::vector<EquipRow> rows = equipRows();
         const auto r = std::find_if(rows.begin(), rows.end(), [&](const EquipRow& x) { return x.id == id && x.selectable; });
         if (r == rows.end()) return;
@@ -8801,8 +8823,17 @@ struct Viewer {
     void campEquipBack() {
         audio.playSe(0xb5, false);
         if (campTakeSopia) return campTakeAnswer(false);
-        if (campEquipMode) campEquipMode = 0, campEquipCursor = 0, campStart = uiClock;
+        if (campEquipMode == 8) campEquipMode = campEquipPrevMode, campEquipCursor = campEquipPrevCursor, campStart = uiClock;
+        else if (campEquipMode) campEquipMode = 0, campEquipCursor = 0, campStart = uiClock;
         else campList = 0, campCursor = 0, campStart = uiClock;
+    }
+    void campEquipView() { // (the change button tapped: Update_*Sopia's step 0xe)
+        const std::vector<EquipRow> rows = equipRows();
+        if (campEquipMode < 4 || campEquipMode > 7 || campEquipCursor >= int(rows.size()) || rows[size_t(campEquipCursor)].sopia <= 0) return;
+        audio.playSe(0xb4, false);
+        campEquipViewSopia = rows[size_t(campEquipCursor)].sopia;
+        campEquipPrevMode = campEquipMode, campEquipPrevCursor = campEquipCursor;
+        campEquipMode = 8, campEquipCursor = 0, campStart = uiClock;
     }
     void campEquipChange(int dir) { // (another character: the eye buttons, Left / Right)
         const std::vector<int> chars = validChars();
@@ -8820,7 +8851,8 @@ struct Viewer {
         // the right: the sopia's windows for a sopia, else the character's with the change the focused item makes
         const bool sopiaShown = focused && (campEquipMode == 0 ? (focused->id == 0 && focused->sopia > 0) || (focused->id >= 304 && focused->id <= 307)
                                                                : campEquipMode >= 4 && campEquipMode <= 7);
-        if (sopiaShown) drawSopiaWindows(focused->sopia, t, view, proj, w, h);
+        if (campEquipMode == 8) drawSopiaWindows(campEquipViewSopia, t, view, proj, w, h);
+        else if (sopiaShown) drawSopiaWindows(focused->sopia, t, view, proj, w, h);
         else {
             int change[5] = {0, 0, 0, 0, 0}, hpChange = 0, mpChange = 0;
             if (campEquipMode >= 1 && campEquipMode <= 3 && focused && focused->id != 0) { // (SetEquipStatusParamerter)
@@ -8890,6 +8922,19 @@ struct Viewer {
         listRows = list;
         static const int kTabs[10] = {-1, 1, 3, 5, 9, 9, 9, 9, 9, 9};
         drawSkillList(list, focused ? focused->id : -1, t, view, w, h, kTabs[std::clamp(campEquipMode, 0, 9)], -1);
+        if (campEquipMode >= 4 && campEquipMode <= 7 && focused && focused->sopia > 0) { // (CreateCampChangeButton)
+            if (campChangeAt < 0) campChangeAt = campStart; // (with the list: its io as the list comes in)
+            UiFig& cb = uiFig("changebtn");
+            cb.fig.place = cr2::Mat34();
+            const float ct = uiClock - campChangeAt;
+            poseUi(cb, "changebtn_io", 0);
+            const float io = cb.fig.animLoaded ? cb.fig.anim.duration() : 0.0f;
+            if (ct < io) poseUi(cb, "changebtn_io", ct);
+            else poseUi(cb, "changebtn_lp", ct - io, true);
+            drawFigure(cb.fig, view.data());
+            float sx, sy, ex, ey;
+            if (uiJoint(cb, "tapAreaS01", sx, sy) && uiJoint(cb, "tapAreaE01", ex, ey)) tapRects.push_back({7350, sx, sy, ex, ey});
+        } else campChangeAt = -1;
         if (campTakeSopia) {
             const std::string who = menuName(0x29 + campTakeFrom);
             drawAsk(formatAnnounce(announce(0x8a), {who}), uiClock - campUseStart, view, w, h, 7201, 7202);
@@ -9011,6 +9056,7 @@ struct Viewer {
             if (id == 100) campEquipBack();
             else if (campTakeSopia && (id == 7201 || id == 7202)) campTakeAnswer(id == 7201);
             else if (id >= 7300 && id < 7310 && !campEquipMode) { if (id - 7300 != campEquipChar) audio.playSe(0xb7, false); campEquipChar = id - 7300; }
+            else if (id == 7350) campEquipView();
             else if (id >= 300 && id < 500) campEquipPick(id);
             return;
         }
@@ -9070,6 +9116,7 @@ struct Viewer {
             if (k == SDLK_UP) campEquipCursor = (campEquipCursor + n - 1) % n;
             else if (k == SDLK_DOWN) campEquipCursor = (campEquipCursor + 1) % n;
             else if (k == SDLK_LEFT || k == SDLK_RIGHT) campEquipChange(k == SDLK_LEFT ? -1 : 1);
+            else if (k == SDLK_TAB) campEquipView(); // (the change button - a controller's triangle)
             else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && !rows.empty()) campEquipPick(rows[size_t(std::clamp(campEquipCursor, 0, n - 1))].id);
             return;
         }
@@ -9172,6 +9219,7 @@ struct Viewer {
         else if (t == "pub") campPress(202);
         else if (t == "equip") campPress(17);
         else if (t == "sopia") campPress(18);
+        else if (t == "view" && campList == 17) campKey(SDLK_TAB); // (the change button)
         else if (t == "options") campPress(20);
         else if (t == "category") campCategory = 1 - campCategory, campCursor = 0;
         else if (t.size() > 1 && t[0] == 'u' && std::isdigit(static_cast<unsigned char>(t[1]))) campPickItem(std::atoi(t.c_str() + 1)); // (an item used: uNNN)
@@ -11571,7 +11619,7 @@ int main(int argc, char** argv) {
     // (the test's story flags and sopia levels: before the field's entry or the battle runs)
     for (int f : flagsArg) v.game.setFlag(f, true);
     for (const auto& [id, level] : sopiaArg)
-        if (id >= 0 && id < 32) v.game.sopiaLevel[id] = static_cast<signed char>(level);
+        if (id >= 0 && id < 32) v.game.sopiaLevel[id] = static_cast<signed char>(level), v.game.sopiaOwned |= 1u << id; // (had, at that level)
     for (const auto& [id, n] : itemArg)
         if (id > 0 && id < 300) v.game.itemCount[id] = static_cast<short>(n);
     for (const auto& [c, slot, item] : equipArg)

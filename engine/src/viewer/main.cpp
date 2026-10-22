@@ -3911,6 +3911,23 @@ struct Viewer {
             }
             if (battleRules->advantage()) SDL_Log("start: %s", battleRules->advantage() == 1 ? "the party first" : "the monsters' assault");
             battleRules->script("Battle_Start");
+            // (BtlSound::PlayVoiceBattleIn, with flag 0xbeb: the coupling's own voice, else 19 the party
+            // first, 20 the assault, else by the means of the levels - the monsters' over the party's
+            // by more than 4, 17; under by more than 4, 18; else 16 -, said by one standing at random)
+            if (game.flag(0xbeb)) {
+                const cr2::BattleData::Coupling* cp = battleData.coupling(battle.coupling);
+                int party = 0, np = 0, mons = 0, nm = 0;
+                for (int f = 0; f < 5; ++f) {
+                    const cr2::Fighter& x = battleRules->fighter(f);
+                    if (!x.present) continue;
+                    (f < 2 ? party : mons) += x.level, ++(f < 2 ? np : nm);
+                }
+                party /= std::max(np, 1), mons /= std::max(nm, 1);
+                const int kind = battleRules->advantage() == 1 ? 19 : battleRules->advantage() == 2 ? 20 : mons > party + 4 ? 17 : mons < party - 4 ? 18 : 16;
+                const bool a = battleRules->fighter(0).alive, b = battleRules->fighter(1).present && battleRules->fighter(1).alive;
+                const int who = a && b ? (int(boxRandom() % 100) > 49 ? 1 : 0) : a ? 0 : b ? 1 : -1;
+                if (who >= 0) cp && cp->voice > 0 ? battleVoice(who, cp->voice, 0, true) : battleVoice(who, kind);
+            }
             break;
         case BattleStep::TurnBegin:
             // (StepBattleIn: the start's announcement up its time before the first turn)

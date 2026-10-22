@@ -118,6 +118,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         c.music = s16(d, o), c.map = s16(d, o + 2);
         c.flag = d[o + 4] != 0;
         c.resultKind = d[o + 0x15];
+        c.voice = d[o + 0x18] | d[o + 0x19] << 8;
         for (int k = 0; k < 3; ++k) c.monsters[k] = s16(d, o + 8 + size_t(k) * 2);
         couplings_.push_back(c);
     }

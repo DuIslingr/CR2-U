@@ -145,6 +145,7 @@ public:
         int map = 0;         // +0x02 the battle map, from 1 (BtlMapTable)
         bool flag = false;   // +0x04 (BtlWork +0x18: no first-time tutorials)
         int resultKind = 0;  // +0x15 (3: no victory fanfare - BtlResult)
+        int voice = 0;       // +0x18 the start's voice (a Cr3VoiceTable kind; 0: BtlSound::PlayVoiceBattleIn's by the levels)
         int monsters[3] = {0, 0, 0}; // +0x08 (0: none)
     };
 

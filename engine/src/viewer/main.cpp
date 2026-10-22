@@ -3534,7 +3534,9 @@ struct Viewer {
         const int who = a && b ? (int(boxRandom() % 100) > 49 ? 1 : 0) : a ? 0 : b ? 1 : -1;
         if (who >= 0) battleVoice(who, kind, delay, tableKind);
     }
-    int partyDeaths = 0, lastPartyActor = 0; // (BtlWork fighters' +0x48e, the deaths so far; +0x16, the last of the party to act)
+    int partyDeaths = 0, lastPartyActor = 0;
+    int faceState[2] = {0, 0};          // (the HUD's faces: 0 as they are, 1 choosing, 2 down)
+    float faceStateAt[2] = {0, 0}; // (BtlWork fighters' +0x48e, the deaths so far; +0x16, the last of the party to act)
     std::vector<VoiceJob> seJobs; // (BtlSound::CreatePlaySEJob: an effect's clip later)
     void updateBattleSounds() {
         for (size_t k = 0; k < seJobs.size();)
@@ -7639,7 +7641,16 @@ struct Viewer {
                     vm.texture = texture("btlFaceC00" + id);
                     vm.extraMap = texture("btlFaceA00" + id);
                 }
+                // (BattleStatusMenu::Update: its animator by GetMenuSelecter - btlFace_slct while it
+                // chooses, the DiffuseColor up to +0.5 and back over 2 s from its change; at no HP
+                // btlFace_dark, -0.5; else pc01win, as it is)
+                const int state = hp < 1 ? 2 : choosing && (commandInput.menu() == cr2::CommandInput::Menu::First ? k == 0 : commandInput.pairTurn() || commandInput.actor() == k) ? 1 : 0;
+                if (state != faceState[k]) faceState[k] = state, faceStateAt[k] = battleClock;
+                const float ph = std::fmod(std::max(battleClock - faceStateAt[k], 0.0f), 2.0f);
+                const float add = state == 2 ? -0.5f : state == 1 ? 0.5f * (1.0f - std::fabs(ph - 1.0f)) : 0.0f;
+                for (int ch = 0; ch < 3; ++ch) c->fig.tint[ch] = 1.0f + add;
                 drawFigure(c->fig, view.data());
+                for (int ch = 0; ch < 3; ++ch) c->fig.tint[ch] = 1.0f;
             }
             // the labels (call_status_fr01 "HP", fr02 "MP")
             for (int id = 1; id <= 2; ++id) {

@@ -176,7 +176,7 @@ bool BattleData::parse(const std::vector<uint8_t>& d, std::string* error) {
         for (int k = 0; k < 7; ++k) a.resist[k] = d[o + 0x17 + size_t(k)];
         for (int k = 0; k < 5; ++k) a.stateResist[k] = d[o + 0x1e + size_t(k)];
         for (int k = 0; k < 7; ++k) a.groups[k] = uint16_t(s16(d, o + 0x26 + size_t(k) * 2));
-        a.attach = static_cast<signed char>(d[o + 0x34]);
+        a.attach = static_cast<signed char>(d[o + 0x34]), a.icon = static_cast<signed char>(d[o + 0x35]);
         autoSkills_.push_back(a);
     }
     for (int i = 0, n = s16(d, 0x44); i < n; ++i) {

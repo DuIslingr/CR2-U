@@ -8614,6 +8614,7 @@ struct Viewer {
         bool selectable = true, worn = false;
         int sopia = 0; // (what the sopia windows show for it)
         int item = 0;  // (the view's row of what's worn: its icon - SetEquipmentList's)
+        int command = 0, autoSkill = 0; // (SetSkillList's rows: their icons, the command's cost)
     };
     std::string menuName(int id) { return messageText("announcemenuname", id); }
     std::vector<EquipRow> equipRows() {
@@ -8670,17 +8671,19 @@ struct Viewer {
             }
             if (eq[campEquipMode] > 0) rows.push_back({399, menuName(0x53)});
         } else if (campEquipMode == 9) { // (SetSkillList: what the equipment and the sopia give)
+            auto command = [&](int c) { EquipRow r{0, messageText("commandname", c)}; r.command = c; rows.push_back(r); };
+            auto skill = [&](int a) { EquipRow r{0, messageText("autoskillname", a)}; r.autoSkill = a; rows.push_back(r); };
             for (int e = 0; e < 3; ++e)
                 if (const cr2::BattleData::Item* it = eq[e] > 0 ? battleData.item(eq[e]) : nullptr) {
-                    if (it->command > 0) rows.push_back({0, messageText("commandname", it->command), true});
+                    if (it->command > 0) command(it->command);
                     for (int s : it->skills)
-                        if (s > 0) rows.push_back({0, messageText("autoskillname", s), true});
+                        if (s > 0) skill(s);
                 }
             for (int k = 3; k < 8; ++k)
                 if (const cr2::BattleData::Sopia* so = eq[k] > 0 ? battleData.sopia(eq[k]) : nullptr)
                     for (int l = 0; l < std::min(int(game.sopiaLevel[eq[k]]), 5); ++l) {
-                        if (so->commands[l] > 0) rows.push_back({0, messageText("commandname", so->commands[l]), true});
-                        else if (so->skills[l] > 0) rows.push_back({0, messageText("autoskillname", so->skills[l]), true});
+                        if (so->commands[l] > 0) command(so->commands[l]);
+                        else if (so->skills[l] > 0) skill(so->skills[l]);
                     }
         }
         return rows;
@@ -8868,6 +8871,12 @@ struct Viewer {
                 if (const cr2::BattleData::Item* it = battleData.item(r.id)) lr.icon = it->icon, lr.help = it->text[1];
             if (r.item > 0)
                 if (const cr2::BattleData::Item* it = battleData.item(r.item)) lr.icon = it->icon;
+            // (SetCommandListItem: the command's icon, its cost - not an awakening (+0x48 0) cost_id 12
+            // "MP" and its MP (+0x42), else 13 "Charge Lv." and its level (Cr3UtilGetCommandCost);
+            // SetSkillList: an auto skill's icon, +0x35)
+            if (const cr2::BattleData::Command* c = r.command > 0 ? battleData.command(r.command) : nullptr)
+                lr.icon = c->icon, lr.cost = c->awaken == 0 ? 12 : 13, lr.number = c->awaken == 0 ? c->mp : std::min(c->awaken, 3), lr.help = c->text[1];
+            if (const cr2::BattleData::AutoSkill* a = r.autoSkill > 0 ? battleData.autoSkill(r.autoSkill) : nullptr) lr.icon = a->icon;
             if (r.sopia > 0) // (SetEquipmentList / SetHumanSopiaList: a sopia's row its icon)
                 if (const cr2::BattleData::Sopia* so = battleData.sopia(r.sopia)) {
                     sopiaRowIcon(*so, lr);

@@ -137,6 +137,7 @@ public:
         int resist[7] = {}, stateResist[5] = {}; // +0x17, +0x1e
         unsigned groups[7] = {}; // +0x26..+0x32: the fighter's skill bits (+0xfac..+0xfb8)
         int attach = 0;          // +0x34 the element it lends (GetAutoSkillAttach; 0 none)
+        int icon = 0;            // +0x35 its icon (mainIcon_id's frame: CampEquipmentListMenu::SetSkillList)
     };
     // an encounter (GetCouplingDataPointer, from 1; FldEncount::SetBattle)
     struct Coupling {

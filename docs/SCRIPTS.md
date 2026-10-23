@@ -347,7 +347,9 @@ the other of the two), at their price (+0x24), greyed past the Oz or held 99; to
 at +0x28 (an equipment's greyed with none spare of those worn); then how many (CampChooseQuantityMenu:
 `shopNum_io`, 1 .. the Oz's worth or 99 less those held - the spare ones to sell; `pliceNum_io`
 the whole price) and the question (announce 0x70 / 0x71: the count held): yes - the items and
-the Oz (SE 200). An equipment list shows its character's windows (SetCharaStatusParamerter /
+the Oz (SE 200); equipment bought then asks "Equip %s?" (ShopCutInPiupiuMenu 0x12 -> 0x14,
+announce 0x72): yes - Cr3UtilChangeEquipItem on the list's character in the kind's place,
+Cr3UtilAdjustment, SE 199; no - 0xb4. An equipment list shows its character's windows (SetCharaStatusParamerter /
 SetItemStatusParamerter: CharaStatusWindowB and the capacity window, with the change the focused
 one makes worn), Left / Right going through every joined character (CharaChange); every list
 shows the focused item's help. With the kinds, ShopSecondMenu shows the buy / sell sign

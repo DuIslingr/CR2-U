@@ -10296,11 +10296,12 @@ struct Viewer {
     // / the spare ones; pliceNum_io the whole price) and the System window's question (announce 0x70 /
     // 0x71: the item, those held): yes - the items and the Oz (SE 200).
     struct Shop {
-        int stage = 0; // 0 shut, 1 buy / sell / talk, 2 the kinds, 3 the list, 4 how many and the question
+        int stage = 0; // 0 shut, 1 buy / sell / talk, 2 the kinds, 3 the list, 4 how many and the question,
+                       // 5 equipment bought: "Equip %s?" (ShopCutInPiupiuMenu 0x12 -> 0x14, announce 0x72)
         bool buy = true;
         int kind = 0;     // (0 items, 1 weapons, 2 armour, 3 accessories)
         int focus = 0, item = 0, count = 1, who = 0;
-        float at = 0;
+        float at = 0, askAt = 0;
     } shop;
     // The pub (ReservePUB - FldMain step 0xd, FldPUB; InterfaceMain::SetPubParameter: PubTitleMenu's
     // `menu` on menuPub_io, PubTopMenu, PubMainMenu's pubGirls_io): the board (posterBtn) - a
@@ -10580,9 +10581,20 @@ struct Viewer {
                     game.oz = std::clamp(game.oz, 0, 9999999);
                     audio.playSe(200, false);
                     SDL_Log("shop: %s %d of %s - %d Oz now", shop.buy ? "bought" : "sold", shop.count, it->name[1].c_str(), game.oz);
+                    if (shop.buy && shop.kind > 0) return (void)(shop.stage = 5, shop.askAt = uiClock); // (0x12: the question)
                 } else audio.playSe(0xb4, false);
                 shop.stage = 3, shop.at = uiClock;
             }
+        } else if (shop.stage == 5 && (id == 7801 || id == 7802)) { // (0x14: Cr3UtilChangeEquipItem on the list's character, Cr3UtilAdjustment - 199; no, 0xb4)
+            if (id == 7801) {
+                const std::vector<int> chars = shopChars();
+                const int ch = chars[size_t(std::clamp(shop.who, 0, int(chars.size()) - 1))];
+                game.equip[ch][shop.kind - 1] = static_cast<short>(shop.item);
+                clampMp(ch);
+                audio.playSe(199, false);
+                SDL_Log("shop: %d wears %d", ch + 1, shop.item);
+            } else audio.playSe(0xb4, false);
+            shop.stage = 3;
         }
     }
     // The explorer's shopping (--explore), as a player stocks up: for each of the pair the best
@@ -10638,6 +10650,11 @@ struct Viewer {
                 if (shop.stage == 1 && i < 3) shopTap(kFirst[i]);
                 else if (shop.stage == 2) shopTap(kKinds[i]);
             } else if (k == SDLK_BACKSPACE) shopTap(100);
+            return;
+        }
+        if (shop.stage == 5) {
+            if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) shopTap(7801);
+            else if (k == SDLK_BACKSPACE || k == SDLK_N) shopTap(7802);
             return;
         }
         if (shop.stage == 4) {
@@ -10733,7 +10750,7 @@ struct Viewer {
             drawFigure(mode.fig, view.data());
             back();
         }
-        else if (shop.stage == 3) {
+        else if (shop.stage == 3 || shop.stage == 5) {
             const std::vector<ListRow> rows = shopRows();
             if (rows.empty()) back();
             else { // (its own back: scrlBack, 100)
@@ -10753,6 +10770,8 @@ struct Viewer {
                 }
                 drawSkillList(rows, rows[size_t(shop.focus)].id, t, view, w, h, -1, 5); // (Shop*ListMenu::SetListItemParam: cost_id 5 by the price)
             }
+            if (const cr2::BattleData::Item* it = shop.stage == 5 ? battleData.item(shop.item) : nullptr)
+                drawAsk(formatAnnounce(announce(0x72), {it->name[1]}), uiClock - shop.askAt, view, w, h, 7801, 7802);
         } else if (shop.stage == 4) {
             const cr2::BattleData::Item* it = battleData.item(shop.item);
             UiFig& num = uiFig("shopnum_io");

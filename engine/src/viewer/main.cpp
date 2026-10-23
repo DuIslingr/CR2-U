@@ -7064,6 +7064,7 @@ struct Viewer {
         bool sopiaIcon = false; // (SetIcon 3: `icon` a frame of sopia_id, not mainIcon_id)
         int cost = -1;          // (SetIcon 1: its own cost_id frame - a sopia's level + 6 -, else the list's)
         bool price = false;     // (the shops': its number an OZ price - ScrollListItem::SetOZNumbers)
+        bool lacking = false;   // (BattleSkillListMenu: its MP / charge more than there is - SetNumbers' set 100, red)
     };
     // a sopia's row icon (CampSopiaListMenu::SetSopiaList, CampEquipmentListMenu): a human's (its
     // +0x10 0) sopia_id at GetHumanSopiaIconNumber's frame - 1, 4, 3, 2 by its kind (+0x11) -, a
@@ -7138,7 +7139,7 @@ struct Viewer {
             const float rowSize = optionLanguage >= 1 && optionLanguage <= 4 ? 22.0f : 24.0f;
             if (uiJoint(b, "typeS_L00", x, y)) drawUiText(r.name, rowSize, x, y, w, h, true, r.selectable ? 1.0f : 0.5f);
             if (r.number >= 0 && uiJoint(b, "call_dotNum_id01", x, y)) // (a price: SetOZNumbers' 3 places on, for its "/OZ")
-                drawDigits(r.number, 90, r.price ? 7 : 4, x, y, uiProjection(w, h), r.selectable ? 1.0f : 0.5f, 1, false, r.price ? 3 : 0);
+                drawDigits(r.number, r.lacking ? 100 : 90, r.price ? 7 : 4, x, y, uiProjection(w, h), r.selectable || r.lacking ? 1.0f : 0.5f, 1, false, r.price ? 3 : 0);
             if (r.icon > 0 && r.sopiaIcon && uiJoint(b, "call_mainIcon_id11", x, y)) { // (SetIcon 3: sopia_id at the main icon's place)
                 UiFig& ic = uiFig("sopia_id");
                 ic.fig.place = cr2::Mat34();
@@ -7521,11 +7522,13 @@ struct Viewer {
                 for (const auto& a : commandInput.awakenings()) {
                     const cr2::BattleData::Command* c = battleData.command(a.command);
                     rows.push_back({a.command, c ? commandName(a.command) : "?", a.level, c ? c->icon : 70, a.selectable, c ? commandHelp(a.command) : ""});
+                    rows.back().lacking = a.lacking;
                 }
             else
                 for (const auto& sc : commandInput.sopiaCommands()) {
                     const cr2::BattleData::Command* c = battleData.command(sc.command);
                     rows.push_back({sc.command, c ? commandName(sc.command) : "?", sc.mp, c ? c->icon : 0, sc.selectable, c ? commandHelp(sc.command) : ""});
+                    rows.back().lacking = sc.lacking;
                 }
             listRows = rows;
             const bool sopia = commandInput.menu() == CI::Menu::Sopia;

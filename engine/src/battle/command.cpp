@@ -74,6 +74,7 @@ std::vector<CommandInput::SopiaCommand> CommandInput::sopiaCommands() const {
                 sc.command = id;
                 sc.mp = r.useMp(pair_ ? 0 : actor_, pair_ ? 1 : -1, c->mp);
                 sc.selectable = r.fighter(pair_ ? 0 : actor_).mp >= sc.mp && (!pair_ || r.fighter(1).mp >= sc.mp);
+                sc.lacking = !sc.selectable;
                 const bool partnerDown = !r.fighter(1 - actor_).alive && r.fighter(1 - actor_).present;
                 if ((c->kind == 24 || c->kind == 25) && !pair_ && !partnerDown) sc.selectable = false;
                 out.push_back(sc);
@@ -168,6 +169,7 @@ std::vector<CommandInput::Awakening> CommandInput::awakeningsOf(int fighter) con
         Awakening a;
         a.command = e.command, a.level = c ? c->awaken : 1, a.cost = awakeCost(a.level);
         a.selectable = a.cost + reserved() <= rules_->charge();
+        a.lacking = !a.selectable;
         out.push_back(a);
     }
     return out;

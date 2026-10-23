@@ -34,6 +34,7 @@ public:
     struct SopiaCommand {
         int command = 0, mp = 0;
         bool selectable = false;
+        bool lacking = false; // (its MP more than there is: the list's red digits)
     };
     std::vector<SopiaCommand> sopiaCommands() const;
     bool pickSopia(int command);
@@ -50,6 +51,7 @@ public:
     struct Awakening {
         int command = 0, level = 1, cost = 100;
         bool selectable = false;
+        bool lacking = false; // (its charge more than there is)
     };
     std::vector<Awakening> awakenings() const;
     bool pickAwakening(int command);

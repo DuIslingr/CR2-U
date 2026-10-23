@@ -3948,7 +3948,7 @@ struct Viewer {
             // (StepBattleIn: the start's announcement - the leader's name; 91 a party of one)
             if (battleRules->advantage() == 1) {
                 const bool solo = !battleRules->fighter(1).present;
-                announceQueue.push_back(formatAnnounce(announce(solo ? 91 : 1), {battleRules->fighter(0).name}));
+                announceQueue.push_back(formatAnnounce(announce(solo ? 91 : 1), {fighterName(0)}));
             } else if (battleRules->advantage() == 2) {
                 announceQueue.push_back(announce(2));
             }
@@ -4224,6 +4224,25 @@ struct Viewer {
     // itemname (by number, from 1)
     std::map<std::string, std::vector<uint8_t>> messageFiles;
     std::string announce(int id) { return messageText("announcebattle", id); }
+    // the names and help in the option's language (Cr3UtilGetItemName / ItemHelpText, GetCommandName /
+    // HelpText, GetSopiaName / HelpText, GetAutoSkillHelpText; GameMain's CharaName, MonsterName):
+    // message\itemname, itemhelp, commandname, commandhelp, sopianame, sopiahelp, autoskillhelp,
+    // charaname, monstername by number - battledata's English where one has none
+    std::string localText(const char* file, int id, const std::string& fallback) {
+        std::string t = messageText(file, id);
+        return t.empty() ? fallback : t;
+    }
+    std::string itemName(int id) { const cr2::BattleData::Item* it = battleData.item(id); return localText("itemname", id, it ? it->name[1] : ""); }
+    std::string itemHelp(int id) { const cr2::BattleData::Item* it = battleData.item(id); return localText("itemhelp", id, it ? it->text[1] : ""); }
+    std::string commandName(int id) { const cr2::BattleData::Command* c = battleData.command(id); return localText("commandname", id, c ? c->name[1] : ""); }
+    std::string commandHelp(int id) { const cr2::BattleData::Command* c = battleData.command(id); return localText("commandhelp", id, c ? c->text[1] : ""); }
+    std::string sopiaName(int id) { const cr2::BattleData::Sopia* so = battleData.sopia(id); return localText("sopianame", id, so ? so->name[1] : ""); }
+    std::string sopiaHelp(int id) { return messageText("sopiahelp", id); }
+    std::string autoSkillHelp(int id) { return messageText("autoskillhelp", id); }
+    std::string fighterName(int i) {
+        const cr2::Fighter& f = battleRules->fighter(i);
+        return localText(f.side == 0 ? "charaname" : "monstername", f.id, f.name);
+    }
     std::string messageText(const std::string& file, int id) {
         std::vector<uint8_t>& d = messageFiles[file];
         if (d.empty() && !archive.read("message\\" + file + ".dat", d)) return {};
@@ -4501,7 +4520,7 @@ struct Viewer {
         setBattleCamera("Cam_Lose_SoloPair_00");
         battleCameraLoop = true;
         const bool alone = !battleRules->fighter(1).present;
-        commandShown = formatAnnounce(announce(alone ? 0x5c : 7), {battleRules->fighter(0).name});
+        commandShown = formatAnnounce(announce(alone ? 0x5c : 7), {fighterName(0)});
         commandShownStart = battleClock, announceHeld = true;
         SDL_Log("game over%s", gameOver.over ? "" : " (none yet: back to the field)");
     }
@@ -4787,7 +4806,7 @@ struct Viewer {
         if (c)
             SDL_Log("  %s%s%s: %s", battleRules->fighter(a.actor).name.c_str(), a.partner >= 0 ? " + " : "",
                     a.partner >= 0 ? battleRules->fighter(a.partner).name.c_str() : "", c->name[1].c_str());
-        if (c) commandShown = c->name[1], commandShownStart = battleClock;
+        if (c) commandShown = commandName(c->id), commandShownStart = battleClock;
         if (!a.hits.empty() && a.hits.front().counter) commandShown = announce(0x47), commandShownStart = battleClock; // ("Counter")
     }
 
@@ -4870,7 +4889,7 @@ struct Viewer {
             const bool statusOnly = e.failed || (sc && (sc->kind == 1 || sc->kind == 3 || sc->kind == 26 || sc->kind == 28)); // (no number, no blow)
             if (first)
                 for (const auto& [id, who] : e.notes) // (the announcements: on the banner, in turn - BtlAnnounce)
-                    announceQueue.push_back(formatAnnounce(announce(id), {battleRules->fighter(who).name}));
+                    announceQueue.push_back(formatAnnounce(announce(id), {fighterName(who)}));
             if (first && e.stealNote) // (CheckSteal's: after the rest)
                 announceQueue.push_back(e.stealNote == 63 ? formatAnnounce(announce(63), {messageText("itemname", e.stolen)}) : announce(e.stealNote));
             if (e.hit && !restore && !statusOnly) throwBack(bu, e);
@@ -7437,7 +7456,7 @@ struct Viewer {
             for (int k = 0; k < n; ++k) {
                 const int f = commandInput.targets()[size_t(k)];
                 ids.push_back(first + k);
-                names[first + k] = battleRules->fighter(f).name;
+                names[first + k] = fighterName(f);
             }
             buttonLook = [&](int id) { return commandInput.targets()[size_t(id - first)] == cursor ? 2 : 1; };
             buttonFighter = [&](int id) { return commandInput.targets()[size_t(id - first)]; };
@@ -7449,7 +7468,7 @@ struct Viewer {
             std::vector<ListRow> rows;
             for (const auto& e : commandInput.items()) {
                 const cr2::BattleData::Item* it = battleData.item(e.item);
-                rows.push_back({e.item, it ? it->name[1] : "?", e.count, it ? it->icon : 0, e.selectable, it ? it->text[1] : ""});
+                rows.push_back({e.item, it ? itemName(e.item) : "?", e.count, it ? it->icon : 0, e.selectable, it ? itemHelp(e.item) : ""});
             }
             listRows = rows;
             drawSkillList(rows, cursor, t, view, w, h, 7, -1);
@@ -7460,7 +7479,7 @@ struct Viewer {
             std::vector<ListRow> rows;
             for (const auto& a : commandInput.advents()) {
                 const cr2::BattleData::Command* c = a.command > 0 ? battleData.command(a.command) : nullptr;
-                rows.push_back({a.command, c ? c->name[1] : "-", a.level, c ? c->icon : 71, a.selectable, c ? c->text[1] : ""});
+                rows.push_back({a.command, c ? commandName(a.command) : "-", a.level, c ? c->icon : 71, a.selectable, c ? commandHelp(a.command) : ""});
             }
             listRows = rows;
             drawSkillList(rows, cursor, t, view, w, h, 13, 13);
@@ -7472,12 +7491,12 @@ struct Viewer {
             if (commandInput.menu() == CI::Menu::Awake)
                 for (const auto& a : commandInput.awakenings()) {
                     const cr2::BattleData::Command* c = battleData.command(a.command);
-                    rows.push_back({a.command, c ? c->name[1] : "?", a.level, c ? c->icon : 70, a.selectable, c ? c->text[1] : ""});
+                    rows.push_back({a.command, c ? commandName(a.command) : "?", a.level, c ? c->icon : 70, a.selectable, c ? commandHelp(a.command) : ""});
                 }
             else
                 for (const auto& sc : commandInput.sopiaCommands()) {
                     const cr2::BattleData::Command* c = battleData.command(sc.command);
-                    rows.push_back({sc.command, c ? c->name[1] : "?", sc.mp, c ? c->icon : 0, sc.selectable, c ? c->text[1] : ""});
+                    rows.push_back({sc.command, c ? commandName(sc.command) : "?", sc.mp, c ? c->icon : 0, sc.selectable, c ? commandHelp(sc.command) : ""});
                 }
             listRows = rows;
             const bool sopia = commandInput.menu() == CI::Menu::Sopia;
@@ -8142,10 +8161,10 @@ struct Viewer {
             if (l >= level) {
                 r.name = menuName(0x3d), r.selectable = false;
             } else if (const cr2::BattleData::Command* c = so->commands[l] > 0 ? battleData.command(so->commands[l]) : nullptr) {
-                r.name = messageText("commandname", so->commands[l]), r.icon = c->icon, r.help = c->text[1];
+                r.name = commandName(so->commands[l]), r.icon = c->icon, r.help = commandHelp(so->commands[l]);
                 r.cost = c->awaken == 0 ? 12 : 13, r.number = c->awaken == 0 ? c->mp : std::min(c->awaken, 3);
             } else if (const cr2::BattleData::AutoSkill* a = so->skills[l] > 0 ? battleData.autoSkill(so->skills[l]) : nullptr) {
-                r.name = messageText("autoskillname", so->skills[l]), r.icon = a->icon;
+                r.name = messageText("autoskillname", so->skills[l]), r.icon = a->icon, r.help = autoSkillHelp(so->skills[l]); // (ChangeSopiaDetailHelpText)
             } else continue;
             rows.push_back(r);
         }
@@ -8169,7 +8188,7 @@ struct Viewer {
                 const bool inCategory = campCategory == 0 ? it->type <= 1 : it->type == 4; // (CategoryCheck)
                 if (!inCategory) return;
                 const bool usable = std::find(std::begin(kCampItems), std::end(kCampItems), id) != std::end(kCampItems) && !(id == 36 && game.flag(0x3e9));
-                rows.push_back({id, it->name[1], n, it->icon, usable, it->text[1]});
+                rows.push_back({id, itemName(id), n, it->icon, usable, itemHelp(id)});
             };
             add(36);
             for (int id = 1; id < 300; ++id)
@@ -8178,7 +8197,7 @@ struct Viewer {
             for (int id = 1; id < 32; ++id)
                 if (game.sopiaOwned >> id & 1u)
                     if (const cr2::BattleData::Sopia* so = battleData.sopia(id)) {
-                        ListRow r{id, so->name[1], -1, 0, true, ""};
+                        ListRow r{id, sopiaName(id), -1, 0, true, sopiaHelp(id)}; // (ChangeSopiaHelpText)
                         sopiaRowIcon(*so, r);
                         r.cost = std::max(int(game.sopiaLevel[id]), 1) + 6; // (SetSopiaList: SetIcon 1, its level + 6)
                         rows.push_back(r);
@@ -8558,7 +8577,7 @@ struct Viewer {
     void drawItemUse(const Mat4& view, const Mat4& proj, int w, int h) {
         const float t = uiClock - campUseStart;
         const cr2::BattleData::Item* it = battleData.item(campItem);
-        const std::string name = it ? it->name[1] : "";
+        const std::string name = it ? itemName(campItem) : "";
         if (campUse == 3) return drawAsk(formatAnnounce(announce(0x73), {name}), t, view, w, h, 7201, 7202);
         const std::vector<int> chars = validChars();
         campFace = std::clamp(campFace, 0, std::max(int(chars.size()) - 1, 0));
@@ -8664,7 +8683,7 @@ struct Viewer {
                 for (ViewMesh& vm : pic.fig.meshes) vm.texture = tex;
             drawFigure(pic.fig, view.data());
         }
-        if (uiJoint(sw, "typeM_C2", x, y)) drawUiText(so->name[1], 24, x, y, w, h);
+        if (uiJoint(sw, "typeM_C2", x, y)) drawUiText(sopiaName(so->id), 24, x, y, w, h);
         if (uiJoint(sw, "call_cost_id", x, y)) {
             UiFig& co = uiFig("cost_id");
             co.fig.place = cr2::Mat34();
@@ -8727,8 +8746,6 @@ struct Viewer {
         std::vector<EquipRow> rows;
         const int ch = campEquipChar;
         const short* eq = game.equip[ch];
-        auto itemName = [&](int id) { const cr2::BattleData::Item* it = battleData.item(id); return it ? it->name[1] : std::string(); };
-        auto sopiaName = [&](int id) { const cr2::BattleData::Sopia* so = battleData.sopia(id); return so ? so->name[1] : std::string(); };
         auto owns = [&](int type) {
             for (int id = 1; id < 300; ++id)
                 if (const cr2::BattleData::Item* it = game.itemCount[id] > 0 ? battleData.item(id) : nullptr)
@@ -8759,7 +8776,7 @@ struct Viewer {
                 int free = game.itemCount[id]; // (Cr3UtilGetNotEquippedItemNumber)
                 for (int c : validChars())
                     for (int e = 0; e < 3; ++e) free -= game.equip[c][e] == id;
-                EquipRow r{id, it->name[1]};
+                EquipRow r{id, itemName(id)};
                 r.worn = eq[slot] == id;
                 r.selectable = !r.worn && free > 0;
                 rows.push_back(r);
@@ -8773,7 +8790,7 @@ struct Viewer {
                 const cr2::BattleData::Sopia* so = game.sopiaOwned >> s & 1u ? battleData.sopia(s) : nullptr;
                 if (!so || so->growth != 1) continue;
                 const bool mine = eq[5] == s || eq[6] == s || eq[7] == s;
-                rows.push_back({400 + s, so->name[1], !mine, mine, s});
+                rows.push_back({400 + s, sopiaName(s), !mine, mine, s});
             }
             if (eq[campEquipMode] > 0) rows.push_back({399, menuName(0x53)});
         } else if (campEquipMode == 8) { // (SetSopiaListItem(sopia, true): by its levels - those not reached "???", greyed)
@@ -9001,14 +9018,14 @@ struct Viewer {
             ListRow lr;
             lr.id = r.id, lr.name = r.name, lr.number = -1, lr.selectable = r.selectable;
             if (r.id > 0 && r.id < 300)
-                if (const cr2::BattleData::Item* it = battleData.item(r.id)) lr.icon = it->icon, lr.help = it->text[1];
+                if (const cr2::BattleData::Item* it = battleData.item(r.id)) lr.icon = it->icon, lr.help = itemHelp(r.id);
             if (r.item > 0)
                 if (const cr2::BattleData::Item* it = battleData.item(r.item)) lr.icon = it->icon;
             // (SetCommandListItem: the command's icon, its cost - not an awakening (+0x48 0) cost_id 12
             // "MP" and its MP (+0x42), else 13 "Charge Lv." and its level (Cr3UtilGetCommandCost);
             // SetSkillList: an auto skill's icon, +0x35)
             if (const cr2::BattleData::Command* c = r.command > 0 ? battleData.command(r.command) : nullptr)
-                lr.icon = c->icon, lr.cost = c->awaken == 0 ? 12 : 13, lr.number = c->awaken == 0 ? c->mp : std::min(c->awaken, 3), lr.help = c->text[1];
+                lr.icon = c->icon, lr.cost = c->awaken == 0 ? 12 : 13, lr.number = c->awaken == 0 ? c->mp : std::min(c->awaken, 3), lr.help = commandHelp(c->id);
             if (const cr2::BattleData::AutoSkill* a = r.autoSkill > 0 ? battleData.autoSkill(r.autoSkill) : nullptr) lr.icon = a->icon;
             if (r.sopia > 0) // (SetEquipmentList / SetHumanSopiaList: a sopia's row its icon)
                 if (const cr2::BattleData::Sopia* so = battleData.sopia(r.sopia)) {
@@ -10520,7 +10537,7 @@ struct Viewer {
             if (!it || it->type != shop.kind) continue;
             if (shop.kind > 0 && !(it->wearers >> ch & 1)) continue;
             ListRow r;
-            r.id = id, r.name = it->name[1], r.icon = it->icon, r.help = it->text[1]; // (ChangeHelpText: Cr3UtilGetItemHelpText)
+            r.id = id, r.name = itemName(id), r.icon = it->icon, r.help = itemHelp(id); // (ChangeHelpText: Cr3UtilGetItemHelpText)
             r.price = true;
             if (shop.buy) {
                 if (it->shopRank > rank) continue;
@@ -10771,7 +10788,7 @@ struct Viewer {
                 drawSkillList(rows, rows[size_t(shop.focus)].id, t, view, w, h, -1, 5); // (Shop*ListMenu::SetListItemParam: cost_id 5 by the price)
             }
             if (const cr2::BattleData::Item* it = shop.stage == 5 ? battleData.item(shop.item) : nullptr)
-                drawAsk(formatAnnounce(announce(0x72), {it->name[1]}), uiClock - shop.askAt, view, w, h, 7801, 7802);
+                drawAsk(formatAnnounce(announce(0x72), {itemName(shop.item)}), uiClock - shop.askAt, view, w, h, 7801, 7802);
         } else if (shop.stage == 4) {
             const cr2::BattleData::Item* it = battleData.item(shop.item);
             UiFig& num = uiFig("shopnum_io");
@@ -10797,7 +10814,7 @@ struct Viewer {
             }
             if (it) { // (Cr3UtilSPrint: the name for %s; DPrint: the count held for %d)
                 std::string q = announce(shop.buy ? 0x70 : 0x71);
-                if (size_t at = q.find("%s"); at != std::string::npos) q.replace(at, 2, it->name[1]);
+                if (size_t at = q.find("%s"); at != std::string::npos) q.replace(at, 2, itemName(shop.item));
                 if (size_t at = q.find("%d"); at != std::string::npos) q.replace(at, 2, std::to_string(game.itemCount[shop.item]));
                 drawAsk(q, t, view, w, h, 7801, 7802);
             }

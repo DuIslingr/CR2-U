@@ -8858,21 +8858,56 @@ struct Viewer {
                 else continue;
                 rows.push_back(r);
             }
-        } else if (campEquipMode == 9) { // (SetSkillList: what the equipment and the sopia give)
-            auto command = [&](int c) { EquipRow r{0, messageText("commandname", c)}; r.command = c; rows.push_back(r); };
+        } else if (campEquipMode == 9) {
+            // CampEquipmentListMenu::SetSkillList, in its order: the character's awakenings (+0x38, +0x3a,
+            // +0x3c - and character 5's 0x83 after the first) whose flag is set (Cr3UtilAwakeUseCheck,
+            // 0x5be044), the advents of its first sopia and Darwin's human one (Cr3UtilAdventUseCheck,
+            // 0x5be088), those two sopia's commands and skills, the three pieces of equipment's, the
+            // monster sopia's, then the sopia's combination's auto skill
+            static const short kAwake[16][2] = {{121, 3001}, {122, 3002}, {123, 3003}, {124, 3004}, {125, 3005}, {126, 3006},
+                                                {127, 3007}, {128, 3008}, {129, 3009}, {130, 3010}, {131, 3010}, {142, 3011},
+                                                {132, 3012}, {133, 3013}, {134, 3014}, {135, 3015}};
+            static const short kAdvent[6][4] = {{136, 391, 392, 3016}, {137, 393, 394, 3017}, {138, 395, 396, 3018},
+                                                {139, 397, 398, 3019}, {140, 399, 400, 3020}, {141, 141, 141, 3021}};
+            auto awake = [&](int c) {
+                for (const auto& a : kAwake)
+                    if (a[0] == c) return game.flag(a[1]);
+                return false;
+            };
+            auto advent = [&](int c) {
+                for (const auto& a : kAdvent)
+                    if (a[0] == c || a[1] == c || a[2] == c) return game.flag(a[3]);
+                return false;
+            };
+            auto command = [&](int c) { EquipRow r{0, commandName(c)}; r.command = c; rows.push_back(r); };
             auto skill = [&](int a) { EquipRow r{0, messageText("autoskillname", a)}; r.autoSkill = a; rows.push_back(r); };
+            auto sopiaRows = [&](int s) { // (SetSopiaListItem: each level reached, its command or its auto skill)
+                if (const cr2::BattleData::Sopia* so = s > 0 ? battleData.sopia(s) : nullptr)
+                    for (int l = 0; l < std::min(int(game.sopiaLevel[s]), 5); ++l) {
+                        if (so->commands[l] > 0) command(so->commands[l]);
+                        else if (so->skills[l] > 0) skill(so->skills[l]);
+                    }
+            };
+            if (const cr2::BattleData::Character* cd = battleData.character(ch + 1))
+                for (int k = 0; k < 3; ++k) {
+                    if (cd->specials[k] > 0 && awake(cd->specials[k])) command(cd->specials[k]);
+                    if (k == 0 && ch + 1 == 5 && awake(0x83)) command(0x83);
+                }
+            for (int k : {3, 4})
+                if (k == 3 || ch == 0)
+                    if (const cr2::BattleData::Sopia* so = eq[k] > 0 ? battleData.sopia(eq[k]) : nullptr; so && so->advent > 0 && advent(so->advent)) command(so->advent);
+            sopiaRows(eq[3]);
+            if (ch == 0) sopiaRows(eq[4]);
             for (int e = 0; e < 3; ++e)
                 if (const cr2::BattleData::Item* it = eq[e] > 0 ? battleData.item(eq[e]) : nullptr) {
                     if (it->command > 0) command(it->command);
                     for (int s : it->skills)
                         if (s > 0) skill(s);
                 }
-            for (int k = 3; k < 8; ++k)
-                if (const cr2::BattleData::Sopia* so = eq[k] > 0 ? battleData.sopia(eq[k]) : nullptr)
-                    for (int l = 0; l < std::min(int(game.sopiaLevel[eq[k]]), 5); ++l) {
-                        if (so->commands[l] > 0) command(so->commands[l]);
-                        else if (so->skills[l] > 0) skill(so->skills[l]);
-                    }
+            for (int k = 5; k < 8; ++k) sopiaRows(eq[k]);
+            int all[8];
+            for (int e = 0; e < 8; ++e) all[e] = eq[e];
+            if (const int combo = cr2::BattleRules::sopiaCombo(battleData, all, game.itemCount); combo > 0) skill(combo);
         }
         if (campEquipMode >= 8) // (the views' rows told apart: the focus is by id)
             for (size_t k = 0; k < rows.size(); ++k) rows[k].id = 600 + int(k);

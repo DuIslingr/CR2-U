@@ -8305,6 +8305,12 @@ struct Viewer {
         if (campLink == 201) return drawScenarios(view, proj, w, h);
         if (campLink == 202) return drawPubRequest(view, w, h);
         const float t = uiClock - campStart;
+        if (campList) { // (CampTitleMenu's "Camp" held over the camp's lists - the reference video's - until EndCampTitle)
+            UiFig& title = uiFig("menu");
+            title.fig.place = cr2::Mat34();
+            poseUi(title, "menucamp_io", 10.0f);
+            drawFigure(title.fig, view.data());
+        }
         if (campList == 17) return drawEquipment(view, proj, w, h);
         if (campList) { // (the list, its tab - the items' 7, the sopia's 9 - and its own back)
             const std::vector<ListRow> rows = campRows();
@@ -9145,6 +9151,7 @@ struct Viewer {
             ListRow lr;
             lr.id = r.id, lr.name = r.name, lr.number = -1, lr.selectable = r.selectable;
             lr.worn = r.worn && campEquipMode >= 1 && campEquipMode <= 7; // (Update_Weapon ..: the one worn named yellow)
+            if (campEquipMode == 0 && r.id >= 301 && r.id <= 307 && (r.item > 0 || r.sopia > 0)) lr.worn = true; // (SetEquipmentList: what is worn yellow)
             if (r.id > 0 && r.id < 300)
                 if (const cr2::BattleData::Item* it = battleData.item(r.id)) lr.icon = it->icon, lr.help = itemHelp(r.id);
             if (r.item > 0)

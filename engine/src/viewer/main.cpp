@@ -4471,9 +4471,13 @@ struct Viewer {
             r.level = r.ch >= 0 && r.ch < 9 && game.level[r.ch] > 0 ? game.level[r.ch] : f.level;
             r.exp0 = r.ch >= 0 && r.ch < 9 ? game.exp[r.ch] : cr2::levelExp(r.level);
             r.gain = f.alive ? result.exp : result.exp * 50 / 100; // (CheckLvUp: the downed half)
+            r.gain = std::clamp(r.gain, 0, std::max(cr2::levelExp(maxLevel()) - r.exp0, 0)); // (no more than the most level's EXP)
             r.hp0 = f.alive ? f.hp : 0, r.hpMax = f.maxHp, r.mp = f.mp, r.mpMax = f.maxMp;
         }
     }
+    // Cr3UtilGetMaxCharaLevel: the most level - 100, 150 with flag 3038, 200 with flag 3039 (the
+    // EXP gained stops at its level's: BtlResult::CheckLvUp; the windows' next none at it)
+    int maxLevel() const { return game.flag(3039) ? 200 : game.flag(3038) ? 150 : 100; }
     // a member's EXP, level, next and HP as the window has them now
     struct ResultNow {
         int exp, level, next, percent, hp;
@@ -4485,10 +4489,11 @@ struct Viewer {
         ResultNow n;
         n.exp = r.exp0 + int(float(r.gain) * p);
         n.level = std::max(r.level, 1);
-        while (n.level < 200 && cr2::levelExp(n.level + 1) <= n.exp) ++n.level;
+        const int most = maxLevel();
+        while (n.level < most && cr2::levelExp(n.level + 1) <= n.exp) ++n.level;
         const int lo = cr2::levelExp(n.level), hi = cr2::levelExp(n.level + 1);
-        n.next = n.level >= 200 ? 0 : hi - n.exp;
-        n.percent = n.level >= 200 || hi <= lo ? 0 : (n.exp - lo) * 100 / (hi - lo);
+        n.next = n.level >= most ? 0 : hi - n.exp;
+        n.percent = n.level >= most || hi <= lo ? 0 : (n.exp - lo) * 100 / (hi - lo);
         n.hp = r.hp0 + int(float(r.hpMax - r.hp0) * p);
         return n;
     }
@@ -8215,8 +8220,8 @@ struct Viewer {
         r.hp = r.hpMax; // (Cr3RestorePlayerHP after each battle)
         r.mp = game.mp[ch] < 0 ? r.mpMax : std::min(game.mp[ch], r.mpMax);
         const int lo = cr2::levelExp(r.level), hi = cr2::levelExp(r.level + 1);
-        r.next = r.level >= 200 ? 0 : hi - game.exp[ch];
-        r.percent = r.level >= 200 || hi <= lo ? 0 : std::clamp((game.exp[ch] - lo) * 100 / (hi - lo), 0, 100);
+        r.next = r.level >= maxLevel() ? 0 : hi - game.exp[ch];
+        r.percent = r.level >= maxLevel() || hi <= lo ? 0 : std::clamp((game.exp[ch] - lo) * 100 / (hi - lo), 0, 100);
         return r;
     }
     void drawCamp(const Mat4& view, const Mat4& proj, int w, int h) {

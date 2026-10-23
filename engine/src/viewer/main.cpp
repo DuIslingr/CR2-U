@@ -3555,6 +3555,9 @@ struct Viewer {
     void battleVoice(int f, int kind, float delay = 0, bool tableKind = false) {
         const int u = f >= 0 && f < 5 ? fighterUnit[f] : -1;
         if (u < 0) return;
+        // (BtlSound::PlayVoiceRequest: none for the monster m309 while flag 3053 is set -
+        // battle_234's and battle_265's Battle_Start set it)
+        if (f >= 2 && battleUnits[size_t(u)].figure == "m309" && game.flag(3053)) return;
         if (!tableKind) {
             const std::array<int, 3>* choices = battleData.voice(kind);
             if (!choices) return;

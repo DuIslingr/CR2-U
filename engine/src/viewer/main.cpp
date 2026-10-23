@@ -2841,7 +2841,7 @@ struct Viewer {
                 if (float(i) > risen) break;
                 const float y = jy - float(i) * lineH;
                 if (y >= 0.4f || !creditsLineShown(i)) continue;
-                drawUiText(staffLines[i], i >= 438 && i < 534 ? 18.0f : 28.0f, jx, y, screenW, screenH, true); // (SetTextRender: the size + 4, or - 6, drawn 4 less; typeS_L: from the joint)
+                drawBorderedText(staffLines[i], i >= 438 && i < 534 ? 18.0f : 28.0f, jx, y, screenW, screenH, true); // (SetTextRender: the size + 4, or - 6, drawn 4 less; typeS_L: from the joint)
             }
         }
         fastRect.id = 0;
@@ -6930,16 +6930,22 @@ struct Viewer {
     }
     // (its width, UI units: 0 none drawn)
     float uiTextTint[3] = {1, 1, 1}; // (a colour over the text drawn: SetStringData's own, as the worn equipment's yellow)
+    // (the text drawn bordered: MenuText::Initialize's 1 / 2 - the lists' rows, the circle buttons'
+    // names, the pub's texts, the staff roll -, TextRenderer::SetBorderingEnable 2 on Android and
+    // the Vita - 1 on the iPad -: the shadow 2 texture pixels, 0.002, and the line placed 0.002 left
+    // and up, MenuText::SetPosition)
+    bool uiTextBorder = false;
     float drawUiText(const std::string& text, float size, float x, float y, int w, int h, bool left = false, float shade = 1, float maxWidth = 0) {
         if (text.empty() || !font.loaded()) return 0;
         const float k = std::min(float(w) / 0.96f, float(h) / 0.64f);
         const int px = std::max(1, int(size / 1000.0f * k + 0.5f));
-        const std::string key = text + "\n" + std::to_string(px);
+        const int border = uiTextBorder ? std::max(1, int(0.002f * k + 0.5f)) : 0;
+        const std::string key = text + "\n" + std::to_string(px) + (border ? "b" + std::to_string(border) : "");
         auto it = uiTexts.find(key);
         if (it == uiTexts.end()) {
             TextQuad q;
             int tw = 0, th = 0;
-            cr2::Image img = font.render(text, px, tw, th);
+            cr2::Image img = font.render(text, px, tw, th, nullptr, border);
             if (img.rgba.empty()) return 0;
             q.tex = dev->upload(img);
             const float unitsPerPx = size / 1000.0f / float(px);
@@ -6948,11 +6954,18 @@ struct Viewer {
         }
         const TextQuad& q = it->second;
         const float qw = maxWidth > 0 ? std::min(q.w, maxWidth) : q.w;
+        if (border) x -= 0.002f, y += 0.002f;
         const float x0 = left ? x : x - qw / 2, x1 = x0 + qw, y0 = y - q.h / 2, y1 = y + q.h / 2;
         const float v[24] = {x0, y0, 0, 1, x1, y0, 1, 1, x1, y1, 1, 0, x0, y0, 0, 1, x1, y1, 1, 0, x0, y1, 0, 0};
         const float rgba[4] = {shade * uiTextTint[0], shade * uiTextTint[1], shade * uiTextTint[2], 1};
         dev->drawQuad(q.tex, v, uiProjection(w, h).data(), rgba);
         return qw;
+    }
+    template <typename... A> float drawBorderedText(A&&... a) {
+        uiTextBorder = true;
+        const float r = drawUiText(std::forward<A>(a)...);
+        uiTextBorder = false;
+        return r;
     }
 
     // The battle's HUD: the party's windows (BattleStatusMenu: pc01win / pc02win, their HP and MP
@@ -7023,7 +7036,7 @@ struct Viewer {
             if (uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) tapRects.push_back({n, sx, sy, ex, ey});
             const auto lt = labels.find(n);
             float tx, ty;
-            if (lt != labels.end() && w > 0 && uiJoint(c, "typeM_C01", tx, ty)) drawUiText(lt->second, 24, tx, ty, w, h);
+            if (lt != labels.end() && w > 0 && uiJoint(c, "typeM_C01", tx, ty)) drawBorderedText(lt->second, 24, tx, ty, w, h);
             float ax, ay;
             if (buttonLevel && w > 0 && uiJoint(c, "call_dotNum_id30", ax, ay)) drawDigits(buttonLevel(n), 120, 3, ax, ay, uiProjection(w, h));
             if (buttonFighter) { // a target's (CircleBtn::SetLevelNumbers / SetHPGauge)
@@ -7145,7 +7158,7 @@ struct Viewer {
             // Spanish - Cr3UtilOptionLanguage 1..4 -, then SetTextRender's 4 less)
             const float rowSize = optionLanguage >= 1 && optionLanguage <= 4 ? 22.0f : 24.0f;
             if (r.worn) uiTextTint[2] = 0;
-            if (uiJoint(b, "typeS_L00", x, y)) drawUiText(r.name, rowSize, x, y, w, h, true, r.selectable || r.worn ? 1.0f : 0.5f);
+            if (uiJoint(b, "typeS_L00", x, y)) drawBorderedText(r.name, rowSize, x, y, w, h, true, r.selectable || r.worn ? 1.0f : 0.5f);
             uiTextTint[2] = 1;
             if (r.number >= 0 && uiJoint(b, "call_dotNum_id01", x, y)) // (a price: SetOZNumbers' 3 places on, for its "/OZ")
                 drawDigits(r.number, r.lacking ? 100 : 90, r.price ? 7 : 4, x, y, uiProjection(w, h), r.selectable || r.lacking ? 1.0f : 0.5f, 1, false, r.price ? 3 : 0);
@@ -9269,7 +9282,7 @@ struct Viewer {
         for (int line = 1; line <= 8 && from <= text.size(); ++line) {
             const size_t at = text.find("\\n", from);
             if (uiJoint(win, "typeS_L0" + std::to_string(line), x, y))
-                drawUiText(text.substr(from, at == std::string::npos ? std::string::npos : at - from), 22, x, y, w, h, true);
+                drawBorderedText(text.substr(from, at == std::string::npos ? std::string::npos : at - from), 22, x, y, w, h, true);
             if (at == std::string::npos) break;
             from = at + 2;
         }
@@ -9281,7 +9294,7 @@ struct Viewer {
         help.fig.place = cr2::Mat34();
         poseUi(help, "camphelp_io", t);
         drawFigure(help.fig, view.data());
-        if (uiJoint(help, "typeM_L01", x, y)) drawUiText(messageText("pubtxt", req), 24, x, y, w, h, true);
+        if (uiJoint(help, "typeM_L01", x, y)) drawBorderedText(messageText("pubtxt", req), 24, x, y, w, h, true);
         UiFig& bk = uiFig("btlback");
         bk.fig.place = cr2::Mat34();
         poseUi(bk, "btlback_in", t);
@@ -10563,7 +10576,7 @@ struct Viewer {
         };
         auto help = [&](int id) {
             UiFig& hp = part("camphelp_io", "camphelp_io");
-            if (uiJoint(hp, "typeM_L01", x, y)) drawUiText(messageText("pubtxt", id), 24, x, y, w, h, true);
+            if (uiJoint(hp, "typeM_L01", x, y)) drawBorderedText(messageText("pubtxt", id), 24, x, y, w, h, true);
         };
         const std::vector<int> posters = pubPosters();
         if (pub.stage == 1) {
@@ -10636,7 +10649,7 @@ struct Viewer {
             for (int line = 1; line <= 8 && from <= text.size(); ++line) {
                 const size_t at = text.find("\\n", from);
                 if (uiJoint(win, "typeS_L0" + std::to_string(line), x, y))
-                    drawUiText(text.substr(from, at == std::string::npos ? std::string::npos : at - from), 22, x, y, w, h, true);
+                    drawBorderedText(text.substr(from, at == std::string::npos ? std::string::npos : at - from), 22, x, y, w, h, true);
                 if (at == std::string::npos) break;
                 from = at + 2;
             }
@@ -11140,7 +11153,7 @@ struct Viewer {
             poseUi(help, "camphelp_io", t);
             drawFigure(help.fig, view.data());
             float x, y;
-            if (uiJoint(help, "typeM_L01", x, y)) drawUiText(announce(0x86), 24, x, y, w, h, true);
+            if (uiJoint(help, "typeM_L01", x, y)) drawBorderedText(announce(0x86), 24, x, y, w, h, true);
             back();
         }
         buttonLook = keepLook;

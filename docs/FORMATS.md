@@ -519,7 +519,12 @@ Android draws text in Java (`local.mediav.Text2Bitmap`): white, antialiased, the
 index - 0 `00000` (Bold: Japanese), 1 `00001` (Regular: English), 2 the system's (the other
 languages; MenuText::SetTextRender: the option's language 0 / 1, else 2) - into a bitmap the
 advance's width (plus twice a stroke) by the font's top-to-bottom extent, the baseline (size - 1)
-from its top.
+from its top. Bordered text (MenuText::Initialize's 1 or 2 - the lists' rows, the circle buttons'
+names, the pub's texts, the party's help, the staff roll -: TextRenderer::SetBorderingEnable, 2 on
+Android and the Vita, 1 on the iPad) has under it getShadowBitmap's: the line again filled and
+stroked that wide, at x = the stroke, in a bitmap twice the stroke wider; the two make one
+luminance-alpha texture - the shadow black, the line's pixels grey by their coverage - placed the
+stroke's 0.001 a pixel left and up (MenuText::SetPosition).
 
 ## The interface
 

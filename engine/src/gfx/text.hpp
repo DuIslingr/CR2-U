@@ -34,8 +34,12 @@ public:
 
     // one line of UTF-8 at `sizePx` (rows top first): white, the coverage in alpha. Empty when the
     // text draws nothing. `width` / `height` the bitmap's (Text2Bitmap's measureText / font metrics)
-    // `penX` (optional): each code point's left edge in the bitmap, and the end (size + 1)
-    Image render(const std::string& utf8, int sizePx, int& width, int& height, std::vector<float>* penX = nullptr);
+    // `penX` (optional): each code point's left edge in the bitmap, and the end (size + 1).
+    // `border` px (TextRenderer::SetBorderingEnable - getShadowBitmap): under it the line again
+    // filled and stroked that wide, black, `border` to the right, the bitmap 2 x `border` wider;
+    // the line's pixels grey by their coverage over it, as TextRenderer's luminance-alpha texture
+    Image render(const std::string& utf8, int sizePx, int& width, int& height, std::vector<float>* penX = nullptr,
+                 int border = 0);
 
     // the first of the candidates that loads (empty ones skipped)
     static std::string firstFont(const std::vector<std::string>& candidates);

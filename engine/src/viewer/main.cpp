@@ -8275,7 +8275,7 @@ struct Viewer {
             const std::vector<ListRow> rows = campRows();
             listRows = rows;
             const int focused = rows.empty() ? -1 : rows[size_t(std::clamp(campCursor, 0, int(rows.size()) - 1))].id;
-            if (campList == 18) drawSopiaWindows(campSopiaDetail ? campSopiaDetail : focused, t, view, proj, w, h); // (InterfaceMain 0xf / 0x10: its windows beside it)
+            if (campList == 18) drawSopiaWindows(campSopiaDetail ? campSopiaDetail : focused, t, view, proj, w, h, campSopiaDetail != 0); // (InterfaceMain 0xf / 0x10: its windows beside it)
             drawSkillList(rows, focused, t, view, w, h, campList == 16 ? 7 : 9, -1);
             return;
         }
@@ -8708,7 +8708,9 @@ struct Viewer {
     // its name at typeM_C2, its level (cost_id at the level + 6 / 20 s), its kind's sign (kinds 1 2
     // 3 4 -> 2 1 4 3), the next level's bar and EXP (cmpNxBar_per; 5 at the most); CampSopiaSkillMenu,
     // skillWin_io: its five levels' command or auto skill - "???" (menu name 0x3d) past its level)
-    void drawSopiaWindows(int sopia, float t, const Mat4& view, const Mat4& proj, int w, int h) {
+    // `detail`: a sopia picked, its skills listed (Update_SopiaDetail: SetParamNumber 3 shows its
+    // picture, 4 on leaving hides it - none over the list)
+    void drawSopiaWindows(int sopia, float t, const Mat4& view, const Mat4& proj, int w, int h, bool detail = false) {
         const cr2::BattleData::Sopia* so = sopia > 0 ? battleData.sopia(sopia) : nullptr;
         UiFig& sw = uiFig("sopiawin_io");
         sw.fig.place = cr2::Mat34();
@@ -8724,7 +8726,7 @@ struct Viewer {
         if (uiJoint(sw, "call_status_fr03", x, y)) drawStatusSign(3, x, y, proj);
         if (!so) return;
         const int level = sopia < 32 ? std::max(int(game.sopiaLevel[sopia]), 0) : 1;
-        if (uiJoint(sw, "call_sopiaPic", x, y)) {
+        if (detail && uiJoint(sw, "call_sopiaPic", x, y)) {
             const int n = sopia == 26 ? 301 : sopia == 27 ? 303 : sopia == 28 ? 305 : sopia == 29 ? 307 : sopia > 7 ? sopia + 193 : sopia;
             char tn[24];
             std::snprintf(tn, sizeof tn, "sopiaPic_%03d", n);
@@ -9054,7 +9056,7 @@ struct Viewer {
         // the right: the sopia's windows for a sopia, else the character's with the change the focused item makes
         const bool sopiaShown = focused && (campEquipMode == 0 ? (focused->id == 0 && focused->sopia > 0) || (focused->id >= 304 && focused->id <= 307)
                                                                : campEquipMode >= 4 && campEquipMode <= 7);
-        if (campEquipMode == 8) drawSopiaWindows(campEquipViewSopia, t, view, proj, w, h);
+        if (campEquipMode == 8) drawSopiaWindows(campEquipViewSopia, t, view, proj, w, h, true);
         else if (sopiaShown) drawSopiaWindows(focused->sopia, t, view, proj, w, h);
         else {
             int change[5] = {0, 0, 0, 0, 0}, hpChange = 0, mpChange = 0;

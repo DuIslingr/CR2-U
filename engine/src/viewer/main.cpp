@@ -6365,7 +6365,13 @@ struct Viewer {
             loadAnim(u.fig, size_t(it - u.fig.anims.begin()));
             time = keep;
         }
+        // (the interface's camera, not the scene's: its billboards - mainicon_id's, cost_id's,
+        // sopia_id's quads - face the screen; posed under a battle's camera they turned edge-on)
+        const cr2::Mat34 keepView = poseView;
+        poseView = cr2::Mat34();
+        poseView.m[11] = 0.881f; // (camera[14] = -0.881: the eye 0.881 in front)
         pose(u.fig, t, loop);
+        poseView = keepView;
     }
     // the right edge of a posed figure's meshes (UI units: their vertices as last posed)
     static float uiRight(const UiFig& u) {

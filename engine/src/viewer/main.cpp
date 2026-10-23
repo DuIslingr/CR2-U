@@ -1936,6 +1936,22 @@ struct Viewer {
                         continue;
                     }
                 }
+                if (k < gimmickFidget.size() && gimmickFidget[k].party) {
+                    Fidget& fd = gimmickFidget[k];
+                    if (!fd.playing && uiClock >= fd.due) {
+                        if (game.flag(1930)) fd.due = INFINITY;
+                        else fd.playing = true, fd.start = uiClock, playMotion(g, "fn02");
+                    }
+                    if (fd.playing) {
+                        const float t = uiClock - fd.start;
+                        if (g.animLoaded && t < g.anim.duration()) {
+                            pose(g, t, false);
+                            continue;
+                        }
+                        fd.playing = false, fd.due = uiClock + fidgetWait();
+                        playMotion(g, "fn01");
+                    }
+                }
                 pose(g, time);
             }
             if (script) fig.tint[3] = script->playerAlpha();
@@ -2228,6 +2244,15 @@ struct Viewer {
     std::vector<Facing> gimmickFace; // (each one's turn: ChangeDirection)
     std::vector<int> gimmickColor;   // (the colours each wears: ChangeModelColor's, -1 its own)
     std::vector<bool> gimmickShadow; // (an NPC's or a box's: its FldShadow)
+    // FldNPC::CheckIdleAnime: an NPC that is one of the party (c001 .. c006) plays its fn02 once
+    // each 400 .. 1399 frames (lrand48 % 1000 + 400, 30 a second), then its fn01 again - none once
+    // flag 1930 is on as its time comes (its counter run past)
+    struct Fidget {
+        bool party = false, playing = false;
+        float due = 0, start = 0;
+    };
+    std::vector<Fidget> gimmickFidget;
+    float fidgetWait() { return float(encountRandom() % 1000 + 400) / 30.0f; }
     Facing leaderFace;
     // where a turn's target is ("player", else a gimmick's id or name)
     bool gimmickTarget(const std::string& target, float& x, float& z) const {
@@ -2248,7 +2273,7 @@ struct Viewer {
         shownGimmicks = want;
         std::string err;
         for (ViewFigure& g : gimmicks) unload(g);
-        gimmicks.clear(), gimmickIds.clear(), gimmickSerial.clear(), gimmickFace.clear(), gimmickColor.clear(), gimmickShadow.clear();
+        gimmicks.clear(), gimmickIds.clear(), gimmickSerial.clear(), gimmickFace.clear(), gimmickColor.clear(), gimmickShadow.clear(), gimmickFidget.clear();
         for (const cr2::Gimmick& gm : field.gimmicks()) {
             if (gm.figure.empty() || !archive.contains(gm.figure + ".geom") || !script->visible(gm)) continue;
             ViewFigure g;
@@ -2265,6 +2290,10 @@ struct Viewer {
             gimmicks.push_back(std::move(g));
             gimmickIds.push_back(gm.id), gimmickSerial.push_back(0), gimmickColor.push_back(-1);
             gimmickShadow.push_back(gm.kind == cr2::Gimmick::Npc || gm.kind == cr2::Gimmick::Box);
+            Fidget fd;
+            fd.party = gm.kind == cr2::Gimmick::Npc && gm.figure.size() >= 4 && gm.figure.compare(0, 3, "c00") == 0 && gm.figure[3] >= '1' && gm.figure[3] <= '6';
+            fd.due = uiClock + fidgetWait();
+            gimmickFidget.push_back(fd);
             Facing fc; // (its joint's yaw)
             fc.yaw = std::atan2(g.place.m[2], g.place.m[0]);
             gimmickFace.push_back(fc);

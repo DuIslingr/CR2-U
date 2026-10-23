@@ -3106,7 +3106,7 @@ struct Viewer {
         }
         battleCamera = battle.camera;
         battleClock = 0;
-        battleMode = true;
+        battleMode = true, msgOpen = false, msgCloseAt = -1;
         fieldMode = eventMode = false;
         dev->resetHistory();
         status = "battle " + std::to_string(id) + " in " + battle.map;
@@ -7228,6 +7228,8 @@ struct Viewer {
     // window with announcebattle 0x6d, choice_io's Yes / No - yes to the title, no back)
     bool optionsAsk = false, toTitle = false, optionsWasOpen = false;
     float optionsAskStart = 0;
+    bool msgOpen = false;              // (the battle's announcement window: in)
+    float msgOpenAt = 0, msgCloseAt = -1; // (its in's start; its out's, -1 none)
     // The title's options (interface 0x3d, TitleOptionMenu): OptionMenu's, but its sixth label Reset
     // Data (announcemenuname 0x6b for 0x6c Title Screen - 0x5be150's labels) and that button asks
     // "erase all game data?" (announce 0x6e), then again (0x6f); yes: Cr3Util_Delete_GameData /
@@ -7829,14 +7831,25 @@ struct Viewer {
             drawFigure(bi.fig, view.data());
             if (const char* m = SDL_getenv("CR2_MENU")) drawCommandMenu(std::string("btlbtn") + m + "_io", 10.0f, view, {}); // (debugging)
             if (choosing) drawChoosing(view, w, h);
-            // the command's name
-            if (!commandShown.empty() && (battleClock - commandShownStart < 3.0f || announceHeld)) {
+            // the command's name (BtlAnnounce: the window in once - Show - its text changed for each
+            // announcement after, btlMsg_out as the last one ends - Hide, EndStringDisplay)
+            const bool msgShown = !commandShown.empty() && (battleClock - commandShownStart < 3.0f || announceHeld);
+            if (msgShown && !msgOpen) msgOpen = true, msgOpenAt = commandShownStart;
+            else if (!msgShown && msgOpen)
+                msgOpen = false, msgCloseAt = commandShown.empty() ? battleClock : std::min(battleClock, commandShownStart + 3.0f);
+            if (!msgShown && msgCloseAt < 0 && !commandShown.empty() && !announceHeld && battleClock - commandShownStart - 3.0f < 1.0f)
+                msgCloseAt = commandShownStart + 3.0f; // (its time run out - known from the clock alone)
+            if (msgShown || (msgCloseAt >= 0 && battleClock >= msgCloseAt)) {
                 UiFig& m = uiFig("btlmsg");
                 m.fig.place = cr2::Mat34();
-                poseUi(m, "btlmsg_in", battleClock - commandShownStart);
-                drawFigure(m.fig, view.data());
+                if (msgShown) poseUi(m, "btlmsg_in", battleClock - msgOpenAt);
+                else {
+                    poseUi(m, "btlmsg_out", battleClock - msgCloseAt);
+                    if (!m.fig.animLoaded || battleClock - msgCloseAt >= m.fig.anim.duration()) msgCloseAt = -1;
+                }
+                if (msgShown || msgCloseAt >= 0) drawFigure(m.fig, view.data());
                 float x, y;
-                if (uiJoint(m, "typeM_C01", x, y)) drawUiText(commandShown, 28, x, y, w, h);
+                if (msgShown && uiJoint(m, "typeM_C01", x, y)) drawUiText(commandShown, 28, x, y, w, h);
             }
         }
         // the damage

@@ -1220,6 +1220,7 @@ bool BattleRules::tryEscape() {
     bool sure = break_ == 1;
     for (int k = 0; k < 2; ++k)
         if (fighters_[size_t(k)].alive && fighters_[size_t(k)].has(4, 3)) sure = true;
+    if (advantage_ == 1 && turn_ == 0) sure = true; // (BtlCalc::Escape: the party's first strike, its first turn - +0x14 1, +0x10 0)
     if (!sure) {
         int levels = 0, count = 0, monsters = 0;
         for (int k = 0; k < 5; ++k) {

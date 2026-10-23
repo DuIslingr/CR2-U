@@ -119,6 +119,10 @@ Image TextRasterizer::render(const std::string& utf8, int sizePx, int& width, in
     };
     std::vector<Glyph> glyphs;
     for (uint32_t cp : cps) {
+        if (cp < 0x20) { // (a control character - the real line break after a message's "\n" -: nothing drawn)
+            if (penX) penX->push_back(advance);
+            continue;
+        }
         FT_Face gf = f;
         FT_UInt g = FT_Get_Char_Index(f, cp);
         for (size_t k = 0; !g && k < impl_->fallbacks.size(); ++k) // (the first font without it: a fallback's)

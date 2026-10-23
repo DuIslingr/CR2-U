@@ -8130,7 +8130,8 @@ struct Viewer {
     float fieldTabAt = -10; // (uiClock: when it last began to open or close)
     bool fieldTabShown() const {
         return fieldMode && !eventMode && !battleMode && script && !script->running() && !campOpen && !mapOpen && !saveStage &&
-               keyLock.stage == 0 && changeStage == 0 && !actionRunning() && world.stage == 0 && shop.stage == 0 && party.stage == 0;
+               keyLock.stage == 0 && changeStage == 0 && !actionRunning() && world.stage == 0 && shop.stage == 0 && party.stage == 0 &&
+               library.stage == 0 && pub.stage == 0;
     }
     float fieldTabPose(UiFig& tab) {
         const float d = tab.fig.animLoaded ? tab.fig.anim.duration() : 0.0f;
@@ -11148,7 +11149,9 @@ struct Viewer {
     void drawFieldUi(int w, int h) {
         if (!fieldMode || battleMode || eventMode) return;
         const bool tabShown = fieldTabShown();
-        if (!campOpen && !tabShown && !mapOpen && !saveStage && !world.stage && !shop.stage && !party.stage) return;
+        if (!campOpen && !tabShown && !mapOpen && !saveStage && !world.stage && !shop.stage && !party.stage && library.stage != 1 &&
+            !pub.stage)
+            return;
         const Mat4 proj = uiProjection(w, h);
         Mat4 camera = cr2::mat4Identity();
         camera[14] = -0.881f;

@@ -6899,7 +6899,7 @@ struct Viewer {
     static int elementSign(const cr2::Fighter& f) { return f.element >= 1 && f.element <= 3 ? f.element + 1 : 1; }
     // its states' signs after the element's (GetCharaUIState: 0x536648's states as bits - poison 4,
     // blind 5, seal 6, 12 7, 35 9, 30 10, 29 11, 33 12, raised Attack .. Luck 14..18, lowered 19..23,
-    // time stopped 24; 11 or 32 bit 8 - the sign the bit + 1, in the bits' order)
+    // time stopped 24; 11 or 32 bit 8; skill 5, 9 bit 13 - the sign the bit + 1, in the bits' order)
     static std::vector<int> stateSigns(const cr2::Fighter& f) {
         static const int kStates[19] = {0, 1, 2, 12, 35, 30, 29, 33, 5, 6, 7, 8, 9, 13, 14, 15, 16, 17, 21};
         static const int kBits[19] = {4, 5, 6, 7, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24};
@@ -6907,6 +6907,7 @@ struct Viewer {
         for (int k = 0; k < 19; ++k)
             if (f.hasState(kStates[k])) bits |= 1u << kBits[k];
         if (f.hasState(11) || f.hasState(32)) bits |= 1u << 8;
+        if (f.has(5, 9)) bits |= 1u << 13; // (+0xfb8 bit 9: skill 5, 9 - a monster's flag 1)
         std::vector<int> out;
         for (int b = 4; b < 32; ++b)
             if (bits >> b & 1u) out.push_back(b + 1);

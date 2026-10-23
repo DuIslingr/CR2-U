@@ -1,25 +1,39 @@
-# CR2-U v0.2.0
+# CR2-U v0.3.0
 
 A from-scratch reimplementation of *Chaos Rings II* (iOS / Vita / Android): builds for Windows,
 macOS, Linux and Android.
 
-**New in this release: your copy found by itself.** Put it in the folder holding the program, in
-a folder named after its release - `ios/`, `android/` or `vita/` (these come made in the download,
-each with a `README.txt` saying what goes in it) - and start the program: nothing to set. HD textures
-the same way: `--export-textures` writes to `textures/export/`, `tools/hd_textures.py <the game
-folder>` upscales into `textures/hd/`, and the game turns them on by itself. The same layout in all
-the Chaos Rings ports; the older places still work.
+**New in this release: much closer to the original**, from an audit against the game's code and a
+full playthrough on video.
 
-**Fixed since v0.1.0** (v0.1.1's)
-- Opened with no arguments, v0.1.0 stopped on the title's logo; it now goes on to the title screen
-  and the game.
-- Random encounters were missing from the field: they now happen as in the original - each map's
-  area, steps and chance read from your copy's executable, the monsters drawn by the area's weights,
-  fought on the area's map and music.
-- The field menu's encounters switch is now kept in the save (a save made while a scene had them
-  off no longer leaves them off).
-- A controller plays as the Vita does (○ / × / △ / □, L / R, START, the D-pad and stick; Options,
-  Game, "Swap ○ and ×").
+Battles
+- The monsters' level follows the world select's level (they were always fought at the lowest).
+- First-attack criticals, auto regenerate, state 12's charge bonus, a sure escape on the first turn
+  of a first strike, the Herald's silence; the battle's voices, cries and sound effects as the game
+  queues them; shadows; the encounter's wipe.
+- The HUD: the faces' choosing pulse, the announcement window opening once, a cost there's too
+  little for in red, the lists' icons (they were invisible), the targets' status signs.
+
+The camp, shops and menus
+- Names and help in the option's language; the level cap of 100, 150 or 200 by the story.
+- The camp's lists as the game draws them: icons, rank stars, the worn item in yellow, the switch
+  arrows, the skill and sopia detail views, the New! badges, the Camp title; what a used item
+  raised.
+- The shop: "/OZ" prices, its Oz window, asking to equip what was bought; the world select's icons,
+  stars and seals; the party swap's help; Reset Data in the title's options; the game's own yes / no
+  buttons where it uses them.
+- Lists, circle buttons, the pub and the staff roll have the game's dark text border.
+
+The field and events
+- Walking by dragging; footsteps and ground effects; NPCs' and boxes' shadows; the party's NPCs
+  fidget; objects' own animations; message pauses and self-ending lines.
+
+**Fixed since v0.2.0**
+- The staff roll was garbled with the iPad's or the Vita's data; it now reads their own lines.
+- The library and the pub let the field walk and take taps under them.
+- A pub request's lines began with a box.
+- After some battles the scene that follows played when it shouldn't.
+- The AppImage now runs on any current Linux (built on Ubuntu 22.04, its glibc checked).
 
 | File | Platform |
 |---|---|
@@ -35,7 +49,7 @@ holding the `.app` on macOS, the AppImage's on Linux; on Android
 may hold it as it was unpacked or installed (one or two folders down). With several, the first of `vita/`, `android/`, `ios/` is played. If none is found it
 says where it looked; the README's "Your copy" has the details.
 
-**Also in it (from v0.1.0):** the game from its title screen; the Options window's new **Graphics** button
+**Also in it (from v0.2.0 and before):** your copy found by itself in `ios/`, `android/` or `vita/` beside the program; the game from its title screen; the Options window's new **Graphics** button
 (or G / Tab) with display, resolution, VSync, frame rate, renderer, upscaler (FSR 3.1 / DLSS /
 MetalFX), MSAA, anisotropic filtering, texture filtering and HD textures, kept in `settings.ini`;
 HD textures you make yourself (`cr2view --export-textures` into `textures/export/`, then

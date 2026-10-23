@@ -118,7 +118,8 @@ retextured - moving with the game's own skeleton and animations:
 
 1. `cr2view --export-models` writes every figure to `<game folder>/models/export/` as glTF 2.0
    (`<name>.glb`: its skeleton, meshes, materials, pictures and animations; `--export-models <folder>`
-   elsewhere). Blender (File, Import, glTF 2.0) opens them as they are, animations included.
+   elsewhere; `--no-animations` leaves the animations out for small files). Blender (File, Import,
+   glTF 2.0) opens them as they are, animations included.
 2. Edit it - sculpt, subdivide, rebuild, re-weight, paint - keeping the armature: its bones are named
    `node_<n>...` and the game finds them by that (a new bone goes with its nearest original parent).
    A material keeps the game's render state by its name `cr_mat_<n>...`; give it a picture of your own

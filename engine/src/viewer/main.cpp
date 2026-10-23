@@ -11660,6 +11660,7 @@ int main(int argc, char** argv) {
     bool exportTextures = false;
     bool exportModels = false; // --export-models [dir]: every figure as <figure>.glb (models/export/ in the game folder without one)
     std::string exportModelsDir;
+    bool exportAnimations = true; // --no-animations: --export-models without them (they are for previewing; a character's run to hundreds of MB)
     std::string eventName, vista = "null", fontPath, playFrom, callEntry = "evt000";
     int creditsArg = -1;
     int fightMode = 0;
@@ -11754,6 +11755,7 @@ int main(int argc, char** argv) {
             exportModels = true;
             if (next && next[0] != '-') exportModelsDir = next, ++i;
         }
+        else if (a == "--no-animations") exportAnimations = false;
         else if (a == "--explore" && next) exploreDir = next, ++i;
         else if (a == "--choices" && next) choicesArg = next, ++i;
         else if (a == "--hours" && next) exploreHours = float(std::atof(next)), ++i;
@@ -11915,7 +11917,7 @@ int main(int argc, char** argv) {
                 }
             std::vector<std::unique_ptr<cr2::Animation>> anims;
             for (const auto& a : v.archive.entries()) // (<figure>*.anim: c217.anim, c217e080.anim, ...)
-                if (a.name.size() > 5 && a.name.compare(0, base.size(), base) == 0 && a.name.compare(a.name.size() - 5, 5, ".anim") == 0) {
+                if (exportAnimations && a.name.size() > 5 && a.name.compare(0, base.size(), base) == 0 && a.name.compare(a.name.size() - 5, 5, ".anim") == 0) {
                     auto an = std::make_unique<cr2::Animation>();
                     if (v.archive.read(a.name, d) && an->parse(d) && an->joints() == int(sk.basePose.size()))
                         fe.anims.emplace_back(a.name.substr(0, a.name.size() - 5), an.get()), anims.push_back(std::move(an));

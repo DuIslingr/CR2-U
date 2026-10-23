@@ -7145,7 +7145,7 @@ struct Viewer {
             // Spanish - Cr3UtilOptionLanguage 1..4 -, then SetTextRender's 4 less)
             const float rowSize = optionLanguage >= 1 && optionLanguage <= 4 ? 22.0f : 24.0f;
             if (r.worn) uiTextTint[2] = 0;
-            if (uiJoint(b, "typeS_L00", x, y)) drawUiText(r.name, rowSize, x, y, w, h, true, r.selectable ? 1.0f : 0.5f);
+            if (uiJoint(b, "typeS_L00", x, y)) drawUiText(r.name, rowSize, x, y, w, h, true, r.selectable || r.worn ? 1.0f : 0.5f);
             uiTextTint[2] = 1;
             if (r.number >= 0 && uiJoint(b, "call_dotNum_id01", x, y)) // (a price: SetOZNumbers' 3 places on, for its "/OZ")
                 drawDigits(r.number, r.lacking ? 100 : 90, r.price ? 7 : 4, x, y, uiProjection(w, h), r.selectable || r.lacking ? 1.0f : 0.5f, 1, false, r.price ? 3 : 0);
@@ -9144,6 +9144,7 @@ struct Viewer {
         for (const EquipRow& r : rows) {
             ListRow lr;
             lr.id = r.id, lr.name = r.name, lr.number = -1, lr.selectable = r.selectable;
+            lr.worn = r.worn && campEquipMode >= 1 && campEquipMode <= 7; // (Update_Weapon ..: the one worn named yellow)
             if (r.id > 0 && r.id < 300)
                 if (const cr2::BattleData::Item* it = battleData.item(r.id)) lr.icon = it->icon, lr.help = itemHelp(r.id);
             if (r.item > 0)
@@ -9163,7 +9164,9 @@ struct Viewer {
         }
         listRows = list;
         static const int kTabs[10] = {-1, 1, 3, 5, 9, 9, 9, 9, 9, 9};
+        listSwitch = campEquipMode >= 1 && campEquipMode <= 7; // (Update_Weapon .. Update_MonsterSopia: ListSwitchButtonShow)
         drawSkillList(list, focused ? focused->id : -1, t, view, w, h, kTabs[std::clamp(campEquipMode, 0, 9)], -1);
+        listSwitch = false;
         if (campEquipMode >= 4 && campEquipMode <= 7 && focused && focused->sopia > 0) { // (CreateCampChangeButton)
             if (campChangeAt < 0) campChangeAt = campStart; // (with the list: its io as the list comes in)
             UiFig& cb = uiFig("changebtn");
@@ -9438,6 +9441,7 @@ struct Viewer {
                 else if (saveStage == 1 && (r.id == 7401 || r.id == 7402)) saveAnswer(r.id == 7401);
                 else if (campOpen && optionsTapped(r, x)) {
                 } else if (campOpen && campUse) campUseTap(r.id);
+                else if (campOpen && campList == 17 && (r.id == 6511 || r.id == 6512)) audio.playSe(0xb7, false), campEquipChange(r.id == 6511 ? -1 : 1); // (its arrows: another character)
                 else if (campOpen && campList == 17 && r.id >= 1000 && r.id < 5000) campEquipCursor = r.id - 1000;
                 else if (campOpen && campList && r.id >= 1000 && r.id < 5000) campCursor = r.id - 1000; // (a row: the focus)
                 else if (campOpen && campList == 16 && r.id > 0 && r.id < 1000) campPickItem(r.id); // (the focused row: picked)

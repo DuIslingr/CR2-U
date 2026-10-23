@@ -111,6 +111,27 @@ the profile folder is still read while there is no `textures/hd/`. The `tools/hd
 same in all four ports. Personal use: the outputs are made from the game's art - keep them out of
 anything shared.
 
+## HD models
+
+Models you make or improve yourself, drawn in place of the game's - more detailed, smoother,
+retextured - moving with the game's own skeleton and animations:
+
+1. `cr2view --export-models` writes every figure to `<game folder>/models/export/` as glTF 2.0
+   (`<name>.glb`: its skeleton, meshes, materials, pictures and animations; `--export-models <folder>`
+   elsewhere). Blender (File, Import, glTF 2.0) opens them as they are, animations included.
+2. Edit it - sculpt, subdivide, rebuild, re-weight, paint - keeping the armature: its bones are named
+   `node_<n>...` and the game finds them by that (a new bone goes with its nearest original parent).
+   A material keeps the game's render state by its name `cr_mat_<n>...`; give it a picture of your own
+   (PNG or JPEG, any size, packed in the `.glb`) and that picture replaces the figure's.
+3. Export it from Blender as glTF 2.0 (`.glb`, the defaults) to `models/hd/<figure>.glb` (`c001.glb` for Darwin's `c001`). With HD Models on
+   (Options, Display & Graphics; on by itself) it is drawn instead of the original from the next scene on.
+
+What it reads: triangles, the first UV set and the second and colour set, four weights a vertex; meshes on more than 85 joints are split; normals, and tangents for normal-mapped materials, are worked out when missing; the skin weights come back summing to 1 (the game's own are 255ths). The
+animations in the file are for previewing - the game plays its own. `cr2tool gltfcheck <archive> <figure|all> [file.glb]`
+checks a round trip (the export loaded back: every figure lands exactly on the original in every
+animation). `CR2_HD_MODELS=<folder>` reads them from elsewhere. Personal use: the exports are the
+game's models - keep them, and what you make from them, out of anything shared.
+
 ## Platforms
 
 Every push is built for Linux, Windows, macOS and Android by `.github/workflows/build.yml`; the

@@ -67,6 +67,7 @@
 
 #include "assets/geom.hpp"
 #include "assets/hd_texture.hpp"
+#include "assets/gltf_figure.hpp"
 #include "field/navigation.hpp"
 #include "assets/image.hpp"
 #include "assets/maptable.hpp"
@@ -247,6 +248,12 @@ struct Viewer {
     bool hdTextures = false;
     std::string hdDir;
     int hdLoaded = 0, hdMissing = 0;
+    // HD models (the model bridge, assets/gltf_figure.hpp): replacements for figures' meshes from
+    // modelsDir - CR2_HD_MODELS, else models/hd/ in the game folder - and the pictures they bring
+    bool hdModels = true;
+    std::string modelsDir;
+    int hdModelsLoaded = 0;
+    std::map<std::string, cr2::Image> modelImages; // "gltf\\<figure>\\<n>" -> its pixels (decode's first look)
     std::map<std::string, bool> textureMips; // (each cached texture's mip chain: a reload's)
 
     // CR2-U's own settings - the options' Display & Graphics list (settingsOpen), kept in
@@ -266,6 +273,7 @@ struct Viewer {
         bool sharpTextures = false;
         bool hdTextures = false;
         bool hdSet = false;       // (settings.ini says which: else on when there are HD textures)
+        bool hdModels = true;     // replacement models from models/hd (what loads next)
         bool padSwap = false;     // a controller's: × (south) confirms, ○ (east) goes back - else as the Vita
     } settings;
     bool settingsPersist = false;
@@ -297,6 +305,7 @@ struct Viewer {
             else if (k == "anisotropy") s.anisotropy = v >= 16 ? 16 : v >= 8 ? 8 : v >= 4 ? 4 : v >= 2 ? 2 : 1;
             else if (k == "sharp_textures") s.sharpTextures = v != 0;
             else if (k == "hd_textures") s.hdTextures = v != 0, s.hdSet = true;
+            else if (k == "hd_models") s.hdModels = v != 0;
             else if (k == "pad_swap") s.padSwap = v != 0;
         }
         std::fclose(f);
@@ -308,9 +317,9 @@ struct Viewer {
         const Settings& s = settings;
         std::fprintf(f, "# CR2-U: the options' Display & Graphics (the command line's flags go over these)\n"
                         "display=%d\nresolution=%d\nvsync=%d\nfps=%d\nrenderer=%d\nupscaler=%d\nquality=%d\nsharpness=%d\n"
-                        "msaa=%d\nanisotropy=%d\nsharp_textures=%d\nhd_textures=%d\npad_swap=%d\n",
+                        "msaa=%d\nanisotropy=%d\nsharp_textures=%d\nhd_textures=%d\nhd_models=%d\npad_swap=%d\n",
                      s.display, s.resolution, s.vsync ? 1 : 0, s.fps, s.renderer, s.upscaler, s.quality, s.sharpness, s.msaa,
-                     s.anisotropy, s.sharpTextures ? 1 : 0, s.hdTextures ? 1 : 0, s.padSwap ? 1 : 0);
+                     s.anisotropy, s.sharpTextures ? 1 : 0, s.hdTextures ? 1 : 0, s.hdModels ? 1 : 0, s.padSwap ? 1 : 0);
         std::fclose(f);
     }
     // The settings onto the device, the window and the textures (each only as it changes)
@@ -344,6 +353,7 @@ struct Viewer {
             appliedDisplay = s.display;
         }
         if (s.hdTextures != hdTextures) hdTextures = s.hdTextures, reloadTextures();
+        hdModels = s.hdModels; // (from the next figure loaded)
     }
     // Every cached texture again (HD Textures turned on or off): in place, so what holds one sees the new
     void reloadTextures() {
@@ -462,6 +472,14 @@ struct Viewer {
                             have ? "Upscaled textures (waifu2x / Real-ESRGAN: tools/hd_textures.py) from " + hdDir
                                  : "None in " + hdDir + " yet: cr2view --export-textures, then tools/hd_textures.py",
                             true, [&s](int) { s.hdTextures = !s.hdTextures; }});
+        }
+        {
+            SDL_PathInfo info;
+            const bool have = !modelsDir.empty() && SDL_GetPathInfo(modelsDir.c_str(), &info) && info.type == SDL_PATHTYPE_DIRECTORY;
+            rows.push_back({"HD Models", onOff(s.hdModels),
+                            have ? "Replacement models (glTF) from " + modelsDir + ", in place of the game's - from the next scene on"
+                                 : "None in " + modelsDir + " yet: cr2view --export-models, edit in Blender, save as models/hd/<figure>.glb",
+                            true, [&s](int) { s.hdModels = !s.hdModels; }});
         }
         rows.push_back({"Swap \u25cb and \u00d7", onOff(s.padSwap),
                         s.padSwap ? "A controller's \u00d7 (the bottom button) confirms, \u25cb (the right one) goes back"
@@ -1475,6 +1493,7 @@ struct Viewer {
     }
 
     bool decode(const std::string& name, cr2::Image& img) {
+        if (auto it = modelImages.find(name); it != modelImages.end()) return img = it->second, true; // (an HD model's own)
         std::vector<uint8_t> data;
         std::string err;
         if (archive.read("images\\" + name + ".img", data, &err) && cr2::decodeImg(data, img, &err)) return true;
@@ -1524,6 +1543,35 @@ struct Viewer {
         f.meshes.clear();
     }
 
+    // HD Models: models/hd/<figure>.glb (or .gltf) in place of the figure's meshes - its skeleton,
+    // animations and materials kept (assets/gltf_figure.hpp)
+    void replaceFigure(const std::string& name, cr2::Geom& g) {
+        if (!hdModels || modelsDir.empty() || name.size() < 6) return;
+        const std::string base = name.substr(0, name.size() - 5);
+        for (const char* ext : {".glb", ".gltf"}) {
+            const std::string path = modelsDir + base + ext;
+            if (!SDL_GetPathInfo(path.c_str(), nullptr)) continue;
+            std::vector<uint8_t> d;
+            cr2::Skeleton sk;
+            if (archive.read(base + ".skel", d)) cr2::parseSkeleton(d, sk);
+            std::vector<std::pair<std::string, cr2::Image>> pictures;
+            std::string why;
+            cr2::GltfStats st;
+            if (cr2::applyFigureReplacement(g, sk, path, "gltf\\" + base + "\\", pictures, &why, &st)) {
+                for (auto& [k, img] : pictures) {
+                    modelImages[k] = std::move(img);
+                    textures.erase(k); // (a new picture of the same name: decoded again)
+                }
+                ++hdModelsLoaded;
+                SDL_Log("%s: replaced by %s (%d meshes, %d triangles%s)", name.c_str(), path.c_str(), st.meshes, st.triangles,
+                        pictures.empty() ? "" : ", pictures of its own");
+            } else {
+                SDL_Log("%s: %s left out: %s", name.c_str(), path.c_str(), why.c_str());
+            }
+            return;
+        }
+    }
+
     bool loadFigure(const std::string& name, ViewFigure& f, std::string* err) {
         unload(f);
         const size_t keepAnim = f.animIndex;
@@ -1535,6 +1583,7 @@ struct Viewer {
         std::vector<uint8_t> data;
         cr2::Geom g;
         if (!archive.read(name, data, err) || !cr2::parseGeom(data, g, err)) return false;
+        replaceFigure(name, g);
         static const float kWhite[4] = {1, 1, 1, 1}, kZero[3] = {0, 0, 0};
         for (const cr2::GeomMesh& m : g.meshes) {
             ViewMesh vm;
@@ -11609,6 +11658,8 @@ int main(int argc, char** argv) {
     float exploreHours = 12;
     std::string exportDir; // --export-textures [dir]: every image as <hash>.crraw, for tools/hd_textures.py (textures/export/ in the game folder without one)
     bool exportTextures = false;
+    bool exportModels = false; // --export-models [dir]: every figure as <figure>.glb (models/export/ in the game folder without one)
+    std::string exportModelsDir;
     std::string eventName, vista = "null", fontPath, playFrom, callEntry = "evt000";
     int creditsArg = -1;
     int fightMode = 0;
@@ -11699,6 +11750,10 @@ int main(int argc, char** argv) {
             exportTextures = true;
             if (next && next[0] != '-') exportDir = next, ++i;
         }
+        else if (a == "--export-models") {
+            exportModels = true;
+            if (next && next[0] != '-') exportModelsDir = next, ++i;
+        }
         else if (a == "--explore" && next) exploreDir = next, ++i;
         else if (a == "--choices" && next) choicesArg = next, ++i;
         else if (a == "--hours" && next) exploreHours = float(std::atof(next)), ++i;
@@ -11772,7 +11827,7 @@ int main(int argc, char** argv) {
             titleScreen = true;
             if (resW == 0) resW = 1280, resH = 576;
         }
-        if (capture.empty() && !exportTextures && exploreDir.empty()) {
+        if (capture.empty() && !exportTextures && !exportModels && exploreDir.empty()) {
             v.settingsPersist = true;
             v.loadSettings();
             if (!given("--renderer")) renderer = s.renderer ? "opengl" : "vulkan";
@@ -11819,6 +11874,69 @@ int main(int argc, char** argv) {
         if (!v.hdDir.empty() && v.hdDir.back() != '/' && v.hdDir.back() != '\\') v.hdDir += '/';
         if (bundled && !v.settings.hdSet) v.settings.hdTextures = v.hdTextures = true;
         if (hdArg >= 0) v.settings.hdTextures = v.hdTextures = hdArg == 1;
+    }
+    { // the HD models: models/hd/ in the game folder (CR2_HD_MODELS elsewhere)
+        const char* env = SDL_getenv("CR2_HD_MODELS");
+        v.modelsDir = env && *env ? std::string(env) : gameFolder + "models/hd/";
+        if (!v.modelsDir.empty() && v.modelsDir.back() != '/' && v.modelsDir.back() != '\\') v.modelsDir += '/';
+        v.hdModels = v.settings.hdModels;
+    }
+    if (exportModels) { // every figure as glTF (assets/gltf_figure.hpp): its skeleton, meshes, materials, pictures, animations
+        std::string dir = exportModelsDir.empty() ? gameFolder + "models/export/" : exportModelsDir;
+        if (dir.back() != '/' && dir.back() != '\\') dir += '/';
+        if (!SDL_CreateDirectory(dir.c_str()) && exportModelsDir.empty()) dir = Viewer::savePath("models/export/"), SDL_CreateDirectory(dir.c_str());
+        std::printf("exporting to %s\n", dir.c_str());
+        cr2::ShaderLibrary shaders(v.archive);
+        int written = 0, failed = 0, empty = 0;
+        size_t bytes = 0;
+        for (const auto& e : v.archive.entries()) {
+            if (e.name.size() < 6 || e.name.compare(e.name.size() - 5, 5, ".geom") != 0) continue;
+            const std::string base = e.name.substr(0, e.name.size() - 5);
+            std::vector<uint8_t> d;
+            cr2::Geom g;
+            cr2::Skeleton sk;
+            std::string why;
+            if (!v.archive.read(e.name, d, &why) || !cr2::parseGeom(d, g, &why)) { std::printf("  %s: %s\n", e.name.c_str(), why.c_str()); ++failed; continue; }
+            if (v.archive.read(base + ".skel", d)) cr2::parseSkeleton(d, sk);
+            for (cr2::GeomMesh& m : g.meshes) // (the joints as MatrixPalette's rows, as loadFigure resolves them)
+                if (m.material < g.materials.size()) {
+                    const std::array<uint32_t, 4>& key = g.materials[m.material].shaderKey;
+                    const bool builtIn = !key[0] && !key[1] && !key[2] && !key[3];
+                    m.resolveJoints(builtIn ? (g.version == 0x3c ? 3.0f : 1.0f) : shaders.jointScale(key));
+                }
+            cr2::FigureExport fe;
+            fe.geom = &g, fe.skeleton = &sk;
+            if (v.archive.read(base + ".name", d)) fe.jointNames = cr2::parseJointNames(d), fe.materialNames = cr2::parseMaterialNames(d);
+            for (const cr2::GeomMaterial& m : g.materials)
+                for (const auto& [id, img] : m.textures) {
+                    if (img.empty() || std::any_of(fe.images.begin(), fe.images.end(), [&](const auto& p) { return p.first == img; })) continue;
+                    cr2::Image im;
+                    if (v.decode(img, im)) fe.images.emplace_back(img, std::move(im));
+                }
+            std::vector<std::unique_ptr<cr2::Animation>> anims;
+            for (const auto& a : v.archive.entries()) // (<figure>*.anim: c217.anim, c217e080.anim, ...)
+                if (a.name.size() > 5 && a.name.compare(0, base.size(), base) == 0 && a.name.compare(a.name.size() - 5, 5, ".anim") == 0) {
+                    auto an = std::make_unique<cr2::Animation>();
+                    if (v.archive.read(a.name, d) && an->parse(d) && an->joints() == int(sk.basePose.size()))
+                        fe.anims.emplace_back(a.name.substr(0, a.name.size() - 5), an.get()), anims.push_back(std::move(an));
+                }
+            // (a character's or a monster's motions move over the base pose; a map's or an object's own replace it)
+            fe.absolute = !(base.size() > 1 && (base[0] == 'c' || base[0] == 'm' || base[0] == 'v') && std::isdigit(static_cast<unsigned char>(base[1])));
+            cr2::GltfStats st;
+            if (cr2::exportFigureGlb(fe, dir + base + ".glb", &why, &st)) {
+                ++written, bytes += st.bytes;
+                if (SDL_getenv("CR2_EXPORT_VERBOSE"))
+                    std::printf("  %s: %d meshes, %d triangles, %d pictures, %d animations (%d channels), %zu KB\n", base.c_str(), st.meshes,
+                                st.triangles, st.images, st.animations, st.channels, st.bytes / 1024);
+            } else if (why == "no meshes") {
+                ++empty; // (a figure of lights, cameras or anchors only)
+            } else {
+                std::printf("  %s: %s\n", base.c_str(), why.c_str());
+                ++failed;
+            }
+        }
+        std::printf("%d figures written (%zu MB), %d without meshes, %d failed\n", written, bytes >> 20, empty, failed);
+        return failed && !written ? 1 : 0;
     }
     if (exportTextures) { // (the archive's every image, once each by its pixels: tools/hd_textures.py's input)
         if (exportDir.empty()) exportDir = gameFolder + "textures/export/"; // (else the profile folder's, if that can't be written)

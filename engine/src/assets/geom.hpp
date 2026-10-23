@@ -35,8 +35,10 @@ struct GeomMesh {
     void resolveJoints(float scale);
     std::vector<float> weights;  // blend weights, 4 a vertex, used as stored (no remainder implied)
     std::vector<uint16_t> strip; // the indices as stored (a triangle strip)
+    std::vector<uint32_t> list;  // a replacement's triangle list (assets/gltf_figure.hpp), used instead of the strip
+    bool rows = false;           // its joints already MatrixPalette's rows (a replacement's): resolveJoints leaves them
     // the strip as a triangle list, degenerate triangles dropped, every other one turned so all
-    // keep the strip's winding
+    // keep the strip's winding (a replacement's list as it is)
     std::vector<uint32_t> triangles() const;
 };
 

@@ -43,6 +43,8 @@
 //                                                    GLSL has, and where the key decoder (gfx/
 //                                                    material.cpp) disagrees with it, per bit
 #include <algorithm>
+#include <filesystem>
+#include <memory>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -53,6 +55,7 @@
 #include <vector>
 
 #include "assets/geom.hpp"
+#include "assets/gltf_figure.hpp"
 #include "battle/battledata.hpp"
 #include "battle/glass.hpp"
 #include "script/gamesave.hpp"
@@ -1363,11 +1366,198 @@ int saveExport(const char* path, const char* save, const char* out) {
 
 } // namespace
 
+// gltfcheck <archive> <figure|all> [file.glb]: the model bridge's round trip - the figure exported
+// (or the .glb given, e.g. Blender's re-export) loaded back as its replacement, then both skinned as
+// cr2view skins them (world x inverse bind, the palette's rows) in the base pose and their first
+// animations: each replacement vertex against the original's nearest in the base pose
+int gltfcheck(const char* path, const char* which, const char* glb) {
+    cr2::MvglArchive a;
+    std::string err;
+    if (!a.open(path, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
+    cr2::ShaderLibrary shaders(a);
+    std::vector<std::string> figures;
+    for (const auto& e : a.entries())
+        if (e.name.size() > 5 && e.name.compare(e.name.size() - 5, 5, ".geom") == 0 &&
+            (!std::strcmp(which, "all") || e.name == std::string(which) + ".geom"))
+            figures.push_back(e.name.substr(0, e.name.size() - 5));
+    int checked = 0, bad = 0, skipped = 0;
+    for (const std::string& base : figures) {
+        std::vector<uint8_t> d;
+        cr2::Geom g;
+        cr2::Skeleton sk;
+        if (!a.read(base + ".geom", d) || !cr2::parseGeom(d, g)) continue;
+        if (a.read(base + ".skel", d)) cr2::parseSkeleton(d, sk);
+        size_t tris = 0;
+        for (cr2::GeomMesh& m : g.meshes) {
+            if (m.material < g.materials.size()) {
+                const std::array<uint32_t, 4>& key = g.materials[m.material].shaderKey;
+                const bool builtIn = !key[0] && !key[1] && !key[2] && !key[3];
+                m.resolveJoints(builtIn ? (g.version == 0x3c ? 3.0f : 1.0f) : shaders.jointScale(key));
+            }
+            tris += m.triangles().size() / 3;
+        }
+        if (!tris) { ++skipped; continue; }
+        if (std::getenv("CR2_GLTF_DEBUG"))
+            for (size_t i = 0; i < g.meshes.size(); ++i) {
+                const cr2::GeomMesh& m = g.meshes[i];
+                std::string pal;
+                for (uint32_t j : m.palette) pal += " " + std::to_string(j);
+                std::printf("  mesh %zu: %u vertices, joints %zu weights %zu palette%s (skeleton %zu)\n", i, m.vertexCount, m.joints.size(), m.weights.size(),
+                            pal.c_str(), sk.basePose.size());
+            }
+        if (std::getenv("CR2_GLTF_DEBUG")) { // (the weights' sums as stored)
+            double lo = 9, hi = -9;
+            for (const cr2::GeomMesh& m : g.meshes)
+                for (size_t v = 0; v * 4 + 3 < m.weights.size(); ++v) {
+                    const double t = m.weights[v * 4] + m.weights[v * 4 + 1] + m.weights[v * 4 + 2] + m.weights[v * 4 + 3];
+                    lo = std::min(lo, t), hi = std::max(hi, t);
+                }
+            std::printf("%s: weight sums %.5f .. %.5f\n", base.c_str(), lo, hi);
+        }
+        std::vector<std::unique_ptr<cr2::Animation>> anims;
+        cr2::FigureExport fe;
+        fe.geom = &g, fe.skeleton = &sk;
+        for (const auto& e : a.entries())
+            if (e.name.size() > 5 && e.name.compare(0, base.size(), base) == 0 && e.name.compare(e.name.size() - 5, 5, ".anim") == 0 && anims.size() < 4) {
+                auto an = std::make_unique<cr2::Animation>();
+                if (a.read(e.name, d) && an->parse(d) && an->joints() == int(sk.basePose.size())) fe.anims.emplace_back(e.name, an.get()), anims.push_back(std::move(an));
+            }
+        fe.absolute = !(base.size() > 1 && (base[0] == 'c' || base[0] == 'm' || base[0] == 'v') && std::isdigit(static_cast<unsigned char>(base[1])));
+        std::string file = glb ? glb : (std::filesystem::temp_directory_path() / ("cr2tool_gltfcheck_" + base + ".glb")).string();
+        if (!glb && !cr2::exportFigureGlb(fe, file, &err)) { std::printf("%s: export: %s\n", base.c_str(), err.c_str()); ++bad; continue; }
+        cr2::Geom r = g;
+        std::vector<std::pair<std::string, cr2::Image>> pics;
+        cr2::GltfStats st;
+        std::vector<std::vector<std::pair<int, uint32_t>>> sources;
+        const bool ok = cr2::applyFigureReplacement(r, sk, file, "gltf\\", pics, &err, &st, glb ? nullptr : &sources);
+        if (!glb) std::remove(file.c_str());
+        if (!ok) { std::printf("%s: import: %s\n", base.c_str(), err.c_str()); ++bad; continue; }
+        auto skinAll = [&](const cr2::Geom& geom, const std::vector<cr2::JointTransform>& pose, std::vector<float>& pts, std::vector<float>* uvs,
+                           std::vector<int>* main = nullptr) {
+            pts.clear();
+            if (uvs) uvs->clear();
+            if (main) main->clear();
+            std::vector<cr2::Mat34> skin;
+            if (!pose.empty() && geom.inverseBind.size() == pose.size()) {
+                const std::vector<cr2::Mat34> world = sk.world(pose);
+                for (size_t j = 0; j < world.size(); ++j) skin.push_back(world[j] * geom.inverseBind[j]);
+            }
+            for (const cr2::GeomMesh& m : geom.meshes) {
+                std::vector<const cr2::Mat34*> pal;
+                for (uint32_t j : m.palette) pal.push_back(j < skin.size() ? &skin[j] : nullptr);
+                static const cr2::Mat34 kId;
+                for (uint32_t i = 0; i < m.vertexCount; ++i) {
+                    const float* sp = &m.position[size_t(i) * 3];
+                    float op[3] = {0, 0, 0};
+                    auto add = [&](const cr2::Mat34& M, float w) {
+                        for (int row = 0; row < 3; ++row)
+                            op[row] += w * (M.m[row * 4] * sp[0] + M.m[row * 4 + 1] * sp[1] + M.m[row * 4 + 2] * sp[2] + M.m[row * 4 + 3]);
+                    };
+                    // (the weights as glTF holds them: summing to 1 - the game's are 255ths, 0.996 .. 1)
+                    float sum = 0;
+                    for (int k = 0; k < 4 && !m.weights.empty(); ++k) sum += m.weights[size_t(i) * 4 + size_t(k)];
+                    if (sum <= 0) sum = 1;
+                    if (m.joints.empty()) add(pal.empty() || !pal[0] ? kId : *pal[0], 1.0f);
+                    else
+                        for (int k = 0; k < 4; ++k) {
+                            const float w = m.weights.empty() ? (k == 0 ? 1.0f : 0.0f) : m.weights[size_t(i) * 4 + size_t(k)] / sum;
+                            const size_t slot = m.joints[size_t(i) * 4 + size_t(k)] / 3;
+                            if (w != 0.0f && slot < pal.size() && pal[slot]) add(*pal[slot], w);
+                        }
+                    pts.insert(pts.end(), op, op + 3);
+                    if (main) { // (its heaviest joint: tells stacked vertices apart)
+                        int best = m.palette.empty() ? -1 : int(m.palette[0]);
+                        float bw = -1;
+                        for (int k = 0; k < 4 && !m.joints.empty(); ++k) {
+                            const size_t slot = m.joints[size_t(i) * 4 + size_t(k)] / 3;
+                            const float w = m.weights.empty() ? (k == 0 ? 1.0f : 0.0f) : m.weights[size_t(i) * 4 + size_t(k)];
+                            if (w > bw && slot < m.palette.size()) bw = w, best = int(m.palette[slot]);
+                        }
+                        main->push_back(best);
+                    }
+                    if (uvs) {
+                        if (m.uv.size() >= size_t(i) * 2 + 2) uvs->insert(uvs->end(), &m.uv[size_t(i) * 2], &m.uv[size_t(i) * 2] + 2);
+                        else uvs->insert(uvs->end(), {0.0f, 0.0f});
+                    }
+                }
+            }
+        };
+        std::vector<float> a0, b0, ua, ub;
+        std::vector<int> ja, jb;
+        skinAll(g, sk.basePose, a0, &ua, &ja);
+        skinAll(r, sk.basePose, b0, &ub, &jb);
+        float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+        for (size_t k = 0; k + 2 < a0.size(); k += 3)
+            for (int c = 0; c < 3; ++c) lo[c] = std::min(lo[c], a0[k + size_t(c)]), hi[c] = std::max(hi[c], a0[k + size_t(c)]);
+        const float size = std::max({hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], 1e-6f});
+        const size_t na = a0.size() / 3, nb = b0.size() / 3;
+        std::vector<size_t> match(nb, 0);
+        double restWorst = 0;
+        bool known = !sources.empty(); // (its own round trip: each new vertex's origin known - primitive p is exported mesh p's)
+        if (known) {
+            std::vector<size_t> first; // the exported meshes' first vertices (those with triangles, in order)
+            size_t at = 0;
+            for (const cr2::GeomMesh& m : g.meshes) {
+                if (m.vertexCount && !m.triangles().empty()) first.push_back(at);
+                at += m.vertexCount;
+            }
+            size_t i = 0;
+            for (const auto& mesh : sources)
+                for (const auto& [prim, v] : mesh) {
+                    if (size_t(prim) >= first.size()) { known = false; break; }
+                    match[i++] = first[size_t(prim)] + v;
+                }
+            known = known && i == nb;
+            for (size_t k = 0; k < nb && known; ++k) {
+                double dd = 0;
+                for (int c = 0; c < 3; ++c) dd += double(b0[k * 3 + size_t(c)] - a0[match[k] * 3 + size_t(c)]) * (b0[k * 3 + size_t(c)] - a0[match[k] * 3 + size_t(c)]);
+                restWorst = std::max(restWorst, std::sqrt(dd));
+            }
+        }
+        for (size_t i = 0; i < nb && !known; ++i) {
+            double best = 1e30;
+            for (size_t j = 0; j < na; ++j) {
+                double dd = 0;
+                for (int c = 0; c < 3; ++c) dd += double(b0[i * 3 + size_t(c)] - a0[j * 3 + size_t(c)]) * (b0[i * 3 + size_t(c)] - a0[j * 3 + size_t(c)]);
+                dd += 1e-3 * (double(ub[i * 2] - ua[j * 2]) * (ub[i * 2] - ua[j * 2]) + double(ub[i * 2 + 1] - ua[j * 2 + 1]) * (ub[i * 2 + 1] - ua[j * 2 + 1]));
+                if (dd < best && ja[j] != jb[i]) dd = std::sqrt(dd) + 1e-6; // (another joint's: second choice)
+                if (dd < best) best = dd, match[i] = j;
+            }
+            restWorst = std::max(restWorst, std::sqrt(best));
+        }
+        double worst = 0;
+        std::string at = "base pose";
+        for (const auto& [name, an] : fe.anims)
+            for (float f : {0.0f, float(an->frames() - 1) / 2, float(an->frames() - 1)}) {
+                const std::vector<cr2::JointTransform> p = fe.absolute ? an->poseAbsolute(sk.basePose, f) : an->poseOver(sk.basePose, f);
+                std::vector<float> pa, pb;
+                skinAll(g, p, pa, nullptr);
+                skinAll(r, p, pb, nullptr);
+                for (size_t i = 0; i < nb; ++i) {
+                    double dd = 0;
+                    for (int c = 0; c < 3; ++c) dd += double(pb[i * 3 + size_t(c)] - pa[match[i] * 3 + size_t(c)]) * (pb[i * 3 + size_t(c)] - pa[match[i] * 3 + size_t(c)]);
+                    if (std::sqrt(dd) > worst) worst = std::sqrt(dd), at = name + " at " + std::to_string(int(f));
+                }
+            }
+        const double tolerance = std::max(1e-3 * size, 1e-5); // (a figure all at its origin: a floor)
+        const bool fine = restWorst < tolerance && worst < tolerance;
+        ++checked;
+        if (!fine) ++bad;
+        if (!fine || std::strcmp(which, "all"))
+            std::printf("%s: %d meshes, %d vertices, %d triangles; size %.2f, base pose within %.5f (%.4f%%), %zu animations within %.5f (%.4f%%, %s)%s\n",
+                        base.c_str(), st.meshes, st.vertices, st.triangles, size, restWorst, 100 * restWorst / size, fe.anims.size(), worst,
+                        100 * worst / size, at.c_str(), fine ? "" : "  MISMATCH");
+    }
+    std::printf("%d figures checked, %d with a mismatch, %d without meshes\n", checked, bad, skipped);
+    return bad ? 2 : 0;
+}
+
 int main(int argc, char** argv) {
     if (argc < 3) return usage();
     if (!std::strcmp(argv[1], "check")) return check(argv[2]);
     if (!std::strcmp(argv[1], "scripts")) return scripts(argv[2], argc > 3 ? argv[3] : nullptr);
     if (!std::strcmp(argv[1], "models")) return models(argv[2]);
+    if (!std::strcmp(argv[1], "gltfcheck") && argc > 3) return gltfcheck(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "animations")) return animations(argv[2]);
     if (!std::strcmp(argv[1], "pose") && argc > 5) return pose(argv[2], argv[3], argv[4], float(std::atof(argv[5])));
     if (!std::strcmp(argv[1], "compare-models") && argc > 3) return compareModels(argv[2], argv[3]);

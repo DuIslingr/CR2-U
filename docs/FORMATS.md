@@ -268,6 +268,32 @@ there is none. So `eff267` draws nothing. It is commands 252 .. 255's shot, the 
 dragons and Wyverns, between their launch effect `eff266` and the mark `eff268`. `eff280` is only
 named in the battle effect table. The port draws neither.
 
+## Replacement models (glTF)
+
+The model bridge (`assets/gltf_figure.cpp`). `cr2view --export-models [dir]` writes each figure as
+glTF 2.0 (`.glb`, to `models/export/`): the joints (`node_<i>_<name>` from `<figure>.name`) as TRS -
+their glTF locals the skeleton's worlds undone by the parent's, so the scale compensation folds
+in (a sheared joint, under a scaled parent, keeps only its TRS); the meshes in their bind space as
+stored, skinned with the file's inverse binds, the palette's rows turned back into joints (rigid
+meshes: palette[0], weight 1); normals, tangents (w from the binormal), both UV sets and the
+colours; materials `cr_mat_<i>_<name>` with the colour picture and the normal map (`tex_<image>`),
+DiffuseColor as the base colour, the blend / alpha test / culling states as glTF's; the figure's
+animations sampled at their own rate (motions over the base pose for characters, monsters and
+event models, absolute for the rest).
+
+`models/hd/<figure>.glb` / `.gltf` (`CR2_HD_MODELS` elsewhere) replaces the figure's meshes in
+`loadFigure`: joints by name, each vertex taken into the figure's bind space by its joints'
+(world x inverse bind)^-1 x the file's (world x inverse bind) - none when the file's is the figure's
+or its export's - rigid meshes on their node's joint; normals from the faces and (for a material
+with a normal map) tangents from the UVs where the file has none; meshes of more than 85 joints
+split (palette rows are bytes, 3 a joint); `GeomMesh::list` holds the triangles (no strip) and
+`rows` keeps resolveJoints off. A material named `cr_mat_<i>` is material i; one with a picture
+not named after the figure's own gets a copy of it with that picture (0x32 / 0x35), decoded by
+stb_image and served by `decode` under `gltf\<figure>\<n>`. The game's weights are 255ths
+(sums 0.996 .. 1); glTF's sum to 1. `cr2tool gltfcheck <archive> <figure|all> [file.glb]`: all 1177
+figures with meshes land exactly (weights summed to 1) on the originals in the base pose and
+their first four animations; Darwin through Blender too.
+
 ## Fields
 
 `FldMap::ChangeArea` builds a map from a table in the **executable** (225 records of 0x18 bytes,

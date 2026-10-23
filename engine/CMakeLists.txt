@@ -34,6 +34,7 @@ add_library(cr2core STATIC
     src/assets/maptable.cpp
     src/assets/release.cpp
     src/assets/hd_texture.cpp
+    src/assets/gltf_figure.cpp
     src/assets/text.cpp
     src/field/fieldmap.cpp
     src/field/collision.cpp
@@ -60,6 +61,7 @@ add_library(cr2core STATIC
     src/audio/sounddata.cpp
     src/audio/streams.cpp
     third_party/stb/stb_vorbis.c
+    third_party/gltf_libs.c
 )
 # The iPad's music (AAC in CAF): FAAD2 - the system's when pkg-config finds it, else the copy in
 # third_party/faad2 (FAAD2 2.11.1's libfaad, CR1:U's). CR2_BUNDLED_FAAD2=ON forces the bundled one.
@@ -133,6 +135,10 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libatrac9/src/libatrac9.c)
 endif()
 # stb_vorbis (public domain, vendored - CR1:U's copy): the Android release's music (Ogg Vorbis)
 set_source_files_properties(third_party/stb/stb_vorbis.c PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
+# cgltf 1.13 (MIT), stb_image 2.30 and stb_image_write 1.16 (public domain / MIT), vendored: the
+# model bridge's glTF reading, its pictures' decoding and the exports' PNGs (assets/gltf_figure.cpp)
+set_source_files_properties(third_party/gltf_libs.c PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
+target_include_directories(cr2core SYSTEM PRIVATE third_party)
 target_include_directories(cr2core PUBLIC src)
 target_include_directories(cr2core PRIVATE third_party/hevag) # (the HE-VAG filter table: vgmstream's, ISC)
 target_link_libraries(cr2core PUBLIC squirrel2)

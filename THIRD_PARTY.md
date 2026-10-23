@@ -8,6 +8,8 @@ them in `engine/third_party/`:
 |---|---|---|
 | `fidelityfx/` | AMD FidelityFX SDK 1.1.4's FSR 3.1 GPU passes (as in CR1:U / CRO-U) | MIT (`LICENSE.txt`) |
 | `stb/stb_vorbis.c` | stb_vorbis 1.22 by Sean Barrett (the copy CR1:U vendors) - decodes the Android release's music (Ogg Vorbis) | public domain / MIT (in the file) |
+| `cgltf/` | cgltf 1.13 by Johannes Kuhlmann - reads the HD models (glTF 2.0) | MIT (in the file) |
+| `stb/stb_image.h`, `stb/stb_image_write.h` | stb_image 2.30 (PNG and JPEG only) and stb_image_write 1.16 by Sean Barrett - the HD models' pictures, read and written (`gltf_libs.c` builds them with cgltf) | public domain / MIT (in the files) |
 | `faad2/` | FAAD2 2.11.1's `libfaad` (the copy CR1:U vendors) - decodes the iPad release's music (AAC in CAF) when the system has no FAAD2. Code from FAAD2 is copyright (c) Nero AG, www.nero.com | GPL-2.0-or-later (`COPYING`) |
 | `libatrac9/` | LibAtrac9 by Alex Barney, commit efca2e3 (the copy CR1:U vendors) - decodes the Vita release's music (ATRAC9 in SXD) | MIT (`LICENSE`) |
 | `hevag/` | The HE-VAG prediction filter table from vgmstream (the copy CR1:U vendors) - the Vita release's sound effects | ISC (`COPYING`) |

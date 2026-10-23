@@ -381,6 +381,12 @@ struct Viewer {
 
     // The list's rows: its label and value, its help (the list's window), what Left / Right / a
     // tap does (+1 / -1)
+    // a folder as the settings' help shows it: its last two names (".../models/hd/")
+    static std::string shortDir(const std::string& dir) {
+        size_t at = dir.size() > 1 ? dir.find_last_of("/\\", dir.size() - 2) : std::string::npos;
+        if (at != std::string::npos && at > 0) at = dir.find_last_of("/\\", at - 1);
+        return at == std::string::npos ? dir : "..." + dir.substr(at);
+    }
     struct SettingRow {
         std::string label, value, help;
         bool enabled = true;
@@ -473,16 +479,16 @@ struct Viewer {
             SDL_PathInfo info;
             const bool have = !hdDir.empty() && SDL_GetPathInfo(hdDir.c_str(), &info) && info.type == SDL_PATHTYPE_DIRECTORY;
             rows.push_back({"HD Textures", onOff(s.hdTextures),
-                            have ? "Upscaled textures (waifu2x / Real-ESRGAN: tools/hd_textures.py) from " + hdDir
-                                 : "None in " + hdDir + " yet: cr2view --export-textures, then tools/hd_textures.py",
+                            have ? "Upscaled textures (waifu2x / Real-ESRGAN: tools/hd_textures.py) from " + shortDir(hdDir)
+                                 : "None in " + shortDir(hdDir) + " yet: --export-textures, then tools/hd_textures.py",
                             true, [&s](int) { s.hdTextures = !s.hdTextures; }});
         }
         {
             SDL_PathInfo info;
             const bool have = !modelsDir.empty() && SDL_GetPathInfo(modelsDir.c_str(), &info) && info.type == SDL_PATHTYPE_DIRECTORY;
             rows.push_back({"HD Models", onOff(s.hdModels),
-                            have ? "Replacement models (glTF) from " + modelsDir + ", in place of the game's - from the next scene on"
-                                 : "None in " + modelsDir + " yet: cr2view --export-models, edit in Blender, save as models/hd/<figure>.glb",
+                            have ? "Replacement models (glTF) from " + shortDir(modelsDir) + " - from the next scene on"
+                                 : "None in " + shortDir(modelsDir) + " yet: --export-models, edit, save as models/hd/<figure>.glb",
                             true, [&s](int) { s.hdModels = !s.hdModels; }});
         }
         auto speed = [](int x) { return x > 1 ? std::to_string(x) + "x" : std::string("Off"); };
@@ -7271,10 +7277,30 @@ struct Viewer {
             poseUi(win, "scrlwin_io", t);
             drawFigure(win.fig, view.data());
             // (BattleSkillListMenu::Update: SetStringData - near black, 0.01; within the window)
-            const std::string& s = rows[size_t(fi)].help; // (its break the text's "\\n")
-            const size_t br = s.find("\\n");
+            std::string s = rows[size_t(fi)].help; // (its break the text's "\\n")
             const float right = uiRight(win) - 0.03f;
             float x, y;
+            // (CR2-U's own longer lines - the settings' -: broken at the last word that fits the window)
+            static std::map<std::string, std::string> wrapped; // (by the text and the screen's size)
+            if (s.find("\\n") == std::string::npos && uiJoint(win, "typeS_L01", x, y)) {
+                const std::string key = s + "\n" + std::to_string(w) + "x" + std::to_string(h);
+                auto it = wrapped.find(key);
+                if (it == wrapped.end()) {
+                    std::string out = s;
+                    if (uiTextWidth(s, 26, w, h) > right - x) {
+                        size_t cut = std::string::npos; // (the space whose two lines' wider is the narrowest)
+                        float best = 1e9f;
+                        for (size_t at = s.find(' '); at != std::string::npos; at = s.find(' ', at + 1)) {
+                            const float wider = std::max(uiTextWidth(s.substr(0, at), 26, w, h), uiTextWidth(s.substr(at + 1), 26, w, h));
+                            if (wider < best) best = wider, cut = at;
+                        }
+                        if (cut != std::string::npos) out = s.substr(0, cut) + "\\n" + s.substr(cut + 1);
+                    }
+                    it = wrapped.emplace(key, out).first;
+                }
+                s = it->second;
+            }
+            const size_t br = s.find("\\n");
             if (uiJoint(win, "typeS_L01", x, y)) drawUiText(s.substr(0, br), 26, x, y, w, h, true, 0.01f, right - x);
             if (br != std::string::npos && uiJoint(win, "typeS_L02", x, y)) drawUiText(s.substr(br + 2), 26, x, y, w, h, true, 0.01f, right - x);
         }
@@ -12164,6 +12190,11 @@ int main(int argc, char** argv) {
         }
         for (float t = 0; t < walkSeconds; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, walkX, walkY, true);
         if (tapAfter) v.tap(); // (--tap: then a tap, before --run)
+        if (const char* row = SDL_getenv("CR2_CAPTURE_SETTINGS")) { // (tests: as below, before --run)
+            v.optionsOpen = true, v.campOpen = !v.battleMode;
+            v.openSettings();
+            v.settingsCursor = std::atoi(row);
+        }
         for (float t = 0; t < runSeconds; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, 0, 0, false), catchGlass(); // (--run: on after the walk)
         runSeconds = 0;
         SDL_Log("play: after %.2f s (+ %.2f s walking) %s, %d battles skipped", startTime, walkSeconds,
@@ -12262,6 +12293,11 @@ int main(int argc, char** argv) {
                 catchGlass(); // (the screen caught as it breaks)
                 if (!takeTitle()) return 1; // (a game over's "try again": its save loaded)
             }
+        }
+        if (const char* row = SDL_getenv("CR2_CAPTURE_SETTINGS"); row && !v.settingsOpen) { // (tests: the Display & Graphics list over the camp's options, that row in focus)
+            v.optionsOpen = true, v.campOpen = !v.battleMode;
+            v.openSettings();
+            v.settingsCursor = std::atoi(row);
         }
         for (int k = 0; k < int(runSeconds * 60.0f + 0.5f); ++k) {
             v.time += 1.0f / 60.0f;
@@ -12549,6 +12585,8 @@ int main(int argc, char** argv) {
                     int ww = 1, wh = 1;
                     SDL_GetWindowSize(win, &ww, &wh);
                     v.scrollScenarios(-e.motion.yrel / float(std::max(wh, 1)) * 0.64f);
+                } else if (e.type == SDL_EVENT_MOUSE_WHEEL && v.settingsOpen) { // (the settings' list: a row up / down)
+                    if (e.wheel.y != 0) v.settingsKey(e.wheel.y > 0 ? SDLK_UP : SDLK_DOWN);
                 } else if (e.type == SDL_EVENT_MOUSE_WHEEL && v.campOpen && v.campLink == 201) {
                     v.scrollScenarios(e.wheel.y > 0 ? -0.1f : 0.1f);
                 } else if (e.type == SDL_EVENT_MOUSE_MOTION && dragging && !v.fieldMode) {

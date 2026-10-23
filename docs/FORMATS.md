@@ -451,7 +451,7 @@ name). The skeletons are the same bytes in all three releases.
 | +0x20 | self-relative offset: joint name hashes (u32 each) |
 | +0x24 | self-relative offset: the user channels' names (u32 each): parameter id << 4 \| component (0x330..0x333: DiffuseColor r g b a) |
 | +0x28 | self-relative offset: the user channels' targets (u32 each): a material's hash |
-| +0x40 | the hierarchy: groups of 4 (joint, parent) u16 pairs, parents first (groups padded with repeats); parent & 0x7fff >= 0x4000: a root (the figure's root transform); bit 0x8000 clear: scale compensation |
+| +0x40 | the hierarchy: groups of 4 (joint, parent) u16 pairs, parents first (groups padded with repeats); parent & 0x7fff >= 0x4000: a root (the figure's root transform); bit 0x8000 set: scale compensation - as an animated figure reads it (Figure::Pose's edgeAnimLocalJointsToWorldJoints; the unanimated path, edgeAnimLocalJointsToWorldMatrices3x4, reads it the other way, but every skeleton with a joint under a scaled parent has animations). CR2-U had it the other way until 2026-10-23 (CR3-U found it: the cursors' gmk*csr_loop arrows doubled, effects' glows too big) |
 
 World matrices (`edgeAnimLocalJointsToWorldMatrices3x4`): world = parent world * local, except
 that with compensation the child's rotation and scale use the parent's columns divided by the

@@ -93,7 +93,7 @@ std::vector<Mat34> Skeleton::world(const std::vector<JointTransform>& pose, cons
             w[joint] = root * local;
             continue;
         }
-        if (!(link & 0x8000)) { // scale compensation: the parent's own scale undone (rows of the rotation)
+        if (link & 0x8000) { // scale compensation (Edge's link flag, as an animated figure reads it - edgeAnimLocalJointsToWorldJoints): the parent's own scale undone (rows of the rotation)
             for (int row = 0; row < 3; ++row) {
                 const float s = pose[parent].scale[row];
                 const float inv = s != 0.0f ? 1.0f / s : 0.0f; // (hidden, zero-scaled joints)

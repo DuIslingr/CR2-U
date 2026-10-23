@@ -42,8 +42,11 @@ struct Skeleton {
         uint8_t component = 0;
     };
     std::vector<UserChannel> userChannels;
-    // world matrices for a pose (edgeAnimLocalJointsToWorldMatrices3x4): world = parent * local,
-    // with the parent's own scale undone for the child's rotation unless the link's 0x8000 is set
+    // world matrices for a pose: world = parent * local, with the parent's own scale undone for
+    // the child's rotation where the link's 0x8000 is set - as an animated figure's are
+    // (Figure::Pose: edgeAnimLocalJointsToWorldJoints); a figure with no animation goes through
+    // edgeAnimLocalJointsToWorldMatrices3x4, which reads the flag the other way round, but every
+    // skeleton with a joint under a scaled parent has animations
     std::vector<Mat34> world(const std::vector<JointTransform>& pose, const Mat34& root = Mat34()) const;
 };
 

@@ -2723,13 +2723,18 @@ struct Viewer {
         showActions.clear(), showIndex = 0, regenPending.clear(), regenStarted = false;
         announceQueue.clear(), commandShown.clear();
     }
-    // BtlMain::Exit: a vista reserved goes on to it, else the field (evt100)
+    // BtlMainCtrl::StepBattleOut / Cr3BattleEvent_Exit: with flag 1003 (the event's FlgOn(1003)
+    // before BattleIn and SetVistaEvent) - cleared - on to the vista reserved (mode 2), else the
+    // field (evt100; a vista reserved kept for the field's branch)
     void afterBattle() {
         cr2::GameState::Next& n = game.next;
         battleMode = false;
-        if (n.vista) { // (BtlMain::Exit: a vista reserved goes on to it)
-            n.vista = false;
-            if (startVista(n.vistaFunction, n.vistaMap)) return;
+        if (game.flag(1003)) {
+            game.setFlag(1003, false);
+            if (n.vista) {
+                n.vista = false;
+                if (startVista(n.vistaFunction, n.vistaMap)) return;
+            }
         }
         returnToField(1);
     }

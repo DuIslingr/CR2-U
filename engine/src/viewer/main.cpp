@@ -6829,8 +6829,8 @@ struct Viewer {
         } else if (tm.stage == 7 && tm.ask == 104) {
             drawCalendar(saveInfo("cont.txt"), view, proj, age);
         }
-        if (tm.stage == 7) drawAsk(announce(tm.ask), age, view, screenW, screenH, 7401, 7402);
-        else if (tm.stage == 8 && tm.ask == 108 && uiClock < tm.doneAt - 1.0f) drawAsk(announce(108), age, view, screenW, screenH, 0, 0);
+        if (tm.stage == 7) drawAsk(announce(tm.ask), age, view, screenW, screenH, 7401, 7402, true);
+        else if (tm.stage == 8 && tm.ask == 108 && uiClock < tm.doneAt - 1.0f) drawAsk(announce(108), age, view, screenW, screenH, 0, 0, true);
         if (tm.stage == 8) { // (Cr3FadeOut(0, 20): to black over the last second)
             const float a = std::clamp(1.0f - (tm.doneAt - uiClock), 0.0f, 1.0f);
             const float rgba[4] = {0, 0, 0, a};
@@ -7371,32 +7371,10 @@ struct Viewer {
         listRows = rows;
         drawSkillList(rows, 5000 + manualCursor, uiClock - manualStart, view, w, h, -1, -1);
     }
-    void drawOptionsAsk(const Mat4& view, int w, int h) {
+    void drawOptionsAsk(const Mat4& view, int w, int h) { // (Battle / CampOptionMenu: "return to the title?", the title's window)
         tapRects.clear();
         const float t = uiClock - optionsAskStart;
-        if (optionsReset) return drawAsk(announce(optionsReset == 1 ? 0x6e : 0x6f), t, view, w, h, 3201, 3202);
-        UiFig& win = uiFig("syswin_io");
-        win.fig.place = cr2::Mat34();
-        poseUi(win, "syswin_io", t);
-        drawFigure(win.fig, view.data());
-        float x, y;
-        if (uiJoint(win, "typeM_L01", x, y)) drawUiText(announce(0x6d), 26, x, y, w, h, true);
-        UiFig& ch = uiFig("choice_io");
-        ch.fig.place = cr2::Mat34();
-        poseUi(ch, "choice_io", t);
-        drawFigure(ch.fig, view.data());
-        for (int n : {11, 12}) { // (call_cBtn_fr11 Yes, 12 No: circleBtn_fr at those frames)
-            char jn[24];
-            std::snprintf(jn, sizeof jn, "call_cBtn_fr%d", n);
-            if (!uiJoint(ch, jn, x, y)) continue;
-            UiFig& c = uiFig("circlebtn_fr");
-            c.fig.place = cr2::Mat34();
-            c.fig.place.m[3] = x, c.fig.place.m[7] = y;
-            poseUi(c, "circlebtn_fr", float(n) / 20.0f);
-            drawFigure(c.fig, view.data());
-            float sx, sy, ex, ey;
-            if (uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) tapRects.push_back({n == 11 ? 3201 : 3202, sx, sy, ex, ey});
-        }
+        drawAsk(announce(optionsReset == 1 ? 0x6e : optionsReset == 2 ? 0x6f : 0x6d), t, view, w, h, 3201, 3202, true);
     }
     int optionVolume[3] = {100, 100, 100}, optionFocus = 0; // (0..100: GetOptionWork's time the volume / 20)
     void drawOptions(const Mat4& view, const Mat4& proj, int w, int h) {
@@ -8076,7 +8054,7 @@ struct Viewer {
         for (int k = 0; k < 2; ++k)
             if (game.party[k] >= 0 && game.party[k] < 9) rows[count++] = statusOf(game.party[k]);
         drawStatusWindows(rows, count, t, view, proj);
-        if (saveStage == 1) drawAsk(announce(0x69), t, view, w, h, 7401, 7402);
+        if (saveStage == 1) drawAsk(announce(0x69), t, view, w, h, 7401, 7402, true);
         else {
             UiFig& win = uiFig("syswin_io");
             win.fig.place = cr2::Mat34();
@@ -8439,7 +8417,10 @@ struct Viewer {
             }
         return true; // (the buttons take every tap)
     }
-    void drawAsk(const std::string& message, float t, const Mat4& view, int w, int h, int yes, int no) {
+    // `titleStyle`: InterfaceMain::SetYNChoiceTWindowParameter's (interface 0x3c, TitleYNChoice - the
+    // title's, the options', SaveConfirmationMenu's): its Yes / No at reopenBtn_io's call_circleBtn_fr11
+    // / 12; else SetYNChoiceWindowParameter's (7, BattleYNChoice): choice_io's call_cBtn_fr11 / 12
+    void drawAsk(const std::string& message, float t, const Mat4& view, int w, int h, int yes, int no, bool titleStyle = false) {
         UiFig& win = uiFig("syswin_io");
         win.fig.place = cr2::Mat34();
         poseUi(win, "syswin_io", t);
@@ -8458,13 +8439,14 @@ struct Viewer {
             if (at == std::string::npos) break;
             from = at + 1;
         }
-        UiFig& ch = uiFig("choice_io");
+        const char* buttons = titleStyle ? "reopenbtn_io" : "choice_io";
+        UiFig& ch = uiFig(buttons);
         ch.fig.place = cr2::Mat34();
-        poseUi(ch, "choice_io", t);
+        poseUi(ch, buttons, t);
         drawFigure(ch.fig, view.data());
         for (int n : {11, 12}) {
-            char jn[24];
-            std::snprintf(jn, sizeof jn, "call_cBtn_fr%d", n);
+            char jn[32];
+            std::snprintf(jn, sizeof jn, titleStyle ? "call_circleBtn_fr%d" : "call_cBtn_fr%d", n);
             if (!uiJoint(ch, jn, x, y)) continue;
             UiFig& c = uiFig("circlebtn_fr");
             c.fig.place = cr2::Mat34();

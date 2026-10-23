@@ -10964,6 +10964,12 @@ struct Viewer {
                     drawFigure(sl.fig, view.data());
                 }
             }
+            UiFig& help = uiFig("camphelp_io"); // (SetHelpWindow: CampHelpText, "Please select a character to swap." - announce 0x86)
+            help.fig.place = cr2::Mat34();
+            poseUi(help, "camphelp_io", t);
+            drawFigure(help.fig, view.data());
+            float x, y;
+            if (uiJoint(help, "typeM_L01", x, y)) drawUiText(announce(0x86), 24, x, y, w, h, true);
             back();
         }
         buttonLook = keepLook;

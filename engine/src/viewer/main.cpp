@@ -6540,6 +6540,9 @@ struct Viewer {
         if (titleMenu.stage == 3) titleMenu.tapped = true;
         else if (titleMenu.stage == 7 && (tok == "yes" || tok == "no")) titleAnswer(tok == "yes");
         else if (titleMenu.stage == 9) {
+            static const std::pair<const char*, int> kOptionTaps[] = {{"reset", 3101}, {"manual", 3102}, {"yes", 3201}, {"no", 3202}};
+            for (const auto& [name, id] : kOptionTaps)
+                if (tok == name && (optionsOpen || optionsAsk)) return optionTap(id); // (the options' Reset Data and its questions)
             if (tok == "back") optionsOpen = false, campLink = 0;
         } else
             for (const auto& [name, id] : kButtons)
@@ -7164,6 +7167,27 @@ struct Viewer {
     // window with announcebattle 0x6d, choice_io's Yes / No - yes to the title, no back)
     bool optionsAsk = false, toTitle = false, optionsWasOpen = false;
     float optionsAskStart = 0;
+    // The title's options (interface 0x3d, TitleOptionMenu): OptionMenu's, but its sixth label Reset
+    // Data (announcemenuname 0x6b for 0x6c Title Screen - 0x5be150's labels) and that button asks
+    // "erase all game data?" (announce 0x6e), then again (0x6f); yes: Cr3Util_Delete_GameData /
+    // ContData / SystemData, Cr3OptionData::Init, Cr3UtilInitWork - the options closed, the title's
+    // buttons; no either time, the options again
+    int optionsReset = 0; // (1 the first question, 2 the second)
+    bool titleOptions() const { return titleMenu.stage == 9; }
+    void resetData() {
+        for (const char* file : {"save1.txt", "cont.txt", "system.txt"}) { // (CR2-U keeps the last as <file>.bak)
+            const std::string path = savePath(file), bak = path + ".bak";
+            if (!saveExists(file) && std::strcmp(file, "system.txt") != 0) continue;
+            std::remove(bak.c_str());
+            std::rename(path.c_str(), bak.c_str());
+        }
+        systemRead = true, systemFound = false, systemFlags.clear();
+        std::fill(std::begin(systemOptions), std::end(systemOptions), -1);
+        optionLanguage = 1, optionQuality = 0; // (Cr3OptionData::Init: the volumes full, the language the device's)
+        std::fill(std::begin(optionVolume), std::end(optionVolume), 100);
+        game = cr2::GameState();
+        SDL_Log("options: the game data reset");
+    }
     // OptionMenu::TouchSimpleRelease: the seat's tap areas 1 Title Screen, 2 Manual, 3 / 4 the
     // quality back / on (circle 98 on), 5 / 6 the language back / on (circle 99 on); the question's
     // 3201 yes, 3202 no
@@ -7171,6 +7195,7 @@ struct Viewer {
         switch (id) {
         case 3101:
             optionsOpen = false, optionsAsk = true, optionsAskStart = uiClock;
+            if (titleOptions()) optionsReset = 1;
             break;
         case 3102: // (BattleOptionMenu 4 -> 9 -> 0x22: InstructionsWindowMenu, the tutorials' list)
             optionsOpen = false;
@@ -7182,11 +7207,20 @@ struct Viewer {
         case 3105: optionLanguage = (optionLanguage + 7) % 8; break;
         case 3106: case 4099: optionLanguage = (optionLanguage + 1) % 8; break;
         case 3201: // (8: the music stopped, InterfaceMain to the title, 0x1d)
+            if (optionsReset == 1) { // (TitleOptionMenu 6: the second question)
+                optionsReset = 2, optionsAskStart = uiClock;
+                break;
+            }
+            if (optionsReset == 2) { // (8: the data erased; 10, 2: the options closed)
+                resetData();
+                optionsReset = 0, optionsAsk = false, optionsOpen = false;
+                break;
+            }
             optionsAsk = false, toTitle = true;
             SDL_Log("options: to the title screen");
             break;
         case 3202: // (7: the options again)
-            optionsAsk = false, optionsOpen = true, optionsStart = uiClock;
+            optionsReset = 0, optionsAsk = false, optionsOpen = true, optionsStart = uiClock;
             break;
         default: break;
         }
@@ -7279,6 +7313,7 @@ struct Viewer {
     void drawOptionsAsk(const Mat4& view, int w, int h) {
         tapRects.clear();
         const float t = uiClock - optionsAskStart;
+        if (optionsReset) return drawAsk(announce(optionsReset == 1 ? 0x6e : 0x6f), t, view, w, h, 3201, 3202);
         UiFig& win = uiFig("syswin_io");
         win.fig.place = cr2::Mat34();
         poseUi(win, "syswin_io", t);
@@ -7319,7 +7354,8 @@ struct Viewer {
         for (int k = 0; k < 7; ++k) {
             char jn[16];
             std::snprintf(jn, sizeof jn, "typeM_L%02d", k + 1);
-            if (uiJoint(seat, jn, x, y)) drawUiText(messageText("announcemenuname", kLabels[k]), 26, x, y, w, h, true);
+            const int label = k == 5 && titleOptions() ? 107 : kLabels[k]; // (the title's: Reset Data)
+            if (uiJoint(seat, jn, x, y)) drawUiText(messageText("announcemenuname", label), 26, x, y, w, h, true);
         }
         for (const std::string& j : seat.joints) {
             if (j.rfind("call_vlmBar_per", 0) == 0) {
@@ -8339,14 +8375,18 @@ struct Viewer {
         poseUi(win, "syswin_io", t);
         drawFigure(win.fig, view.data());
         float x, y;
+        // (Cr3UtilNPrint: a line each "\n", typeM_L01 ..; the text's own newline after one - "\n" then
+        // a newline, as 0x6f's and the shop's - a line left empty)
+        std::string text = message;
+        for (size_t at; (at = text.find("\\n")) != std::string::npos;) text.replace(at, 2, "\n");
         size_t from = 0;
-        for (int line = 1; line <= 3 && from <= message.size(); ++line) { // (Cr3UtilNPrint: a line each "\n", typeM_L01 ..)
-            const size_t at = message.find("\\n", from);
+        for (int line = 1; line <= 3 && from <= text.size(); ++line) {
+            const size_t at = text.find('\n', from);
             char jn[16];
             std::snprintf(jn, sizeof jn, "typeM_L%02d", line);
-            if (uiJoint(win, jn, x, y)) drawUiText(message.substr(from, at == std::string::npos ? std::string::npos : at - from), 26, x, y, w, h, true); // (an L joint: from the left)
+            if (uiJoint(win, jn, x, y)) drawUiText(text.substr(from, at == std::string::npos ? std::string::npos : at - from), 26, x, y, w, h, true); // (an L joint: from the left)
             if (at == std::string::npos) break;
-            from = at + 2;
+            from = at + 1;
         }
         UiFig& ch = uiFig("choice_io");
         ch.fig.place = cr2::Mat34();

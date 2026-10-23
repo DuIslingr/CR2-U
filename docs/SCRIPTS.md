@@ -404,7 +404,11 @@ title_loop (looping), 4 title_out (PartsBase::ChangeAnime's index, in r1) - over
 (stretched by aspect / 1.5 past 3:2) with `divabtn_io`, from white (Cr3FadeIn 1), BGM 1; title_in,
 then title_loop until a tap anywhere (SE 0xb4: "Please Touch"), then title_wait brings the buttons
 in - CreateCircleButton at the figure's `call_circleBtn_frNN` (08 Start, 24 Scenarios -
-ScenarioFlowMenu, interface 0x73 -, 20 Options - 0x3d), following their joints and drawn short of x
+ScenarioFlowMenu, interface 0x73 -, 20 Options - 0x3d, TitleOptionMenu: the camp's OptionMenu but
+its sixth button Reset Data (announcemenuname 0x6b for 0x6c, 0x5be150's labels) - "erase all game
+data?" (announce 0x6e) then 0x6f; yes: Cr3Util_Delete_GameData / ContData / SystemData,
+Cr3OptionData::Init, Cr3UtilInitWork, the options closed; CR2-U keeps the files as <name>.bak,
+`--input "tap options reset yes yes"`), following their joints and drawn short of x
 0.67 (title_wait moves them from 0.672 to 0.32; GameTitleMenu::Draw) - and title.nut's `title` runs
 (Versionup_Title's flags; Tutorial_Credit with flag 5). CloseTitleMenu: title_in backwards
 (PartsBase +0x5c bit 2: the animator stepped back). Start: with the continue data (cont.dat; CR2-U's

@@ -6929,6 +6929,7 @@ struct Viewer {
         return float(tw) * (size / 1000.0f / float(px));
     }
     // (its width, UI units: 0 none drawn)
+    float uiTextTint[3] = {1, 1, 1}; // (a colour over the text drawn: SetStringData's own, as the worn equipment's yellow)
     float drawUiText(const std::string& text, float size, float x, float y, int w, int h, bool left = false, float shade = 1, float maxWidth = 0) {
         if (text.empty() || !font.loaded()) return 0;
         const float k = std::min(float(w) / 0.96f, float(h) / 0.64f);
@@ -6949,7 +6950,7 @@ struct Viewer {
         const float qw = maxWidth > 0 ? std::min(q.w, maxWidth) : q.w;
         const float x0 = left ? x : x - qw / 2, x1 = x0 + qw, y0 = y - q.h / 2, y1 = y + q.h / 2;
         const float v[24] = {x0, y0, 0, 1, x1, y0, 1, 1, x1, y1, 1, 0, x0, y0, 0, 1, x1, y1, 1, 0, x0, y1, 0, 0};
-        const float rgba[4] = {shade, shade, shade, 1};
+        const float rgba[4] = {shade * uiTextTint[0], shade * uiTextTint[1], shade * uiTextTint[2], 1};
         dev->drawQuad(q.tex, v, uiProjection(w, h).data(), rgba);
         return qw;
     }
@@ -7065,6 +7066,7 @@ struct Viewer {
         int cost = -1;          // (SetIcon 1: its own cost_id frame - a sopia's level + 6 -, else the list's)
         bool price = false;     // (the shops': its number an OZ price - ScrollListItem::SetOZNumbers)
         bool lacking = false;   // (BattleSkillListMenu: its MP / charge more than there is - SetNumbers' set 100, red)
+        bool worn = false;      // (ShopWepon*ListMenu: the one the character wears - its name yellow, 1 1 0)
     };
     // a sopia's row icon (CampSopiaListMenu::SetSopiaList, CampEquipmentListMenu): a human's (its
     // +0x10 0) sopia_id at GetHumanSopiaIconNumber's frame - 1, 4, 3, 2 by its kind (+0x11) -, a
@@ -7083,6 +7085,11 @@ struct Viewer {
     // (as the frames read). A row's icon is its command's +0x72 - mainicon_id at icon / 20 s, but
     // for two pairs whose frames lie swapped: 28 / 29, and 70 (the awakenings': its frame "Awake",
     // as the reference video shows) / 71 (the advents')
+    // ListTag::SetListTagAnimetion (the shops' equipment: weapons 1 4 6, armour 3 6 2, accessories
+    // 5 2 4 - 0x534ec0 -, its own then the other two kinds' small tabs) / SetListTagAnimetionItem
+    // (the camp's items: 7 16, the jewels 15 8 - 0x534ecc): the tabs after the list's own (-1 none)
+    int listTagExtra[2] = {-1, -1};
+    bool listSwitch = false; // (the list's switch arrows: the shops' equipment - its character -, the camp's items - their category)
     void drawSkillList(const std::vector<ListRow>& rows, int focused, float t, const Mat4& view, int w, int h, int tagFrame, int costIcon) {
         UiFig& bar = uiFig("scrlbar");
         bar.fig.place = cr2::Mat34();
@@ -7137,7 +7144,9 @@ struct Viewer {
             // (ScrollListItem::SetStringDataReal: its slot 00's size 2 less in English, French, German,
             // Spanish - Cr3UtilOptionLanguage 1..4 -, then SetTextRender's 4 less)
             const float rowSize = optionLanguage >= 1 && optionLanguage <= 4 ? 22.0f : 24.0f;
+            if (r.worn) uiTextTint[2] = 0;
             if (uiJoint(b, "typeS_L00", x, y)) drawUiText(r.name, rowSize, x, y, w, h, true, r.selectable ? 1.0f : 0.5f);
+            uiTextTint[2] = 1;
             if (r.number >= 0 && uiJoint(b, "call_dotNum_id01", x, y)) // (a price: SetOZNumbers' 3 places on, for its "/OZ")
                 drawDigits(r.number, r.lacking ? 100 : 90, r.price ? 7 : 4, x, y, uiProjection(w, h), r.selectable || r.lacking ? 1.0f : 0.5f, 1, false, r.price ? 3 : 0);
             if (r.icon > 0 && r.sopiaIcon && uiJoint(b, "call_mainIcon_id11", x, y)) { // (SetIcon 3: sopia_id at the main icon's place)
@@ -7198,12 +7207,35 @@ struct Viewer {
         poseUi(tag, "tabwin_io", t);
         if (tagFrame >= 0) drawFigure(tag.fig, view.data()); // (none for the manual's)
         float x, y;
-        if (tagFrame >= 0 && uiJoint(tag, "call_tabName_id01", x, y)) {
+        for (int k = 0; k < 3 && tagFrame >= 0; ++k) { // (ListTag: its tabName_id at call_tabName_id01 .. 03 - the list's, then the others')
+            const int frame = k == 0 ? tagFrame : listTagExtra[k - 1];
+            char jn[24];
+            std::snprintf(jn, sizeof jn, "call_tabName_id%02d", k + 1);
+            if (frame < 0 || !uiJoint(tag, jn, x, y)) continue;
             UiFig& tn = uiFig("tabname_id");
             tn.fig.place = cr2::Mat34();
             tn.fig.place.m[3] = x, tn.fig.place.m[7] = y;
-            poseUi(tn, "tabname_id", float(tagFrame) / 20.0f);
+            poseUi(tn, "tabname_id", float(frame) / 20.0f);
             drawFigure(tn.fig, view.data());
+            float sx, sy, ex, ey; // (an other's tap area - tapAreaS01 for the second, S02 for the third: 6501, 6502)
+            std::snprintf(jn, sizeof jn, "tapAreaS%02d", k), uiJoint(tag, jn, sx, sy);
+            char je[24];
+            std::snprintf(je, sizeof je, "tapAreaE%02d", k);
+            if (k > 0 && uiJoint(tag, jn, sx, sy) && uiJoint(tag, je, ex, ey)) tapRects.push_back({6500 + k, sx, sy, ex, ey});
+        }
+        if (listSwitch) { // (ScrollListMenu::SetSwitchButton: backCsr - its io, then backCsr_loop - the arrows about Back: tapAreaS01 left 6511, S02 right 6512)
+            UiFig& sw = uiFig("backcsr");
+            sw.fig.place = cr2::Mat34();
+            poseUi(sw, "backcsr_io", t);
+            const float io = sw.fig.animLoaded ? sw.fig.anim.duration() : 0.0f;
+            if (t >= io) poseUi(sw, "backcsr_loop", t - io, true);
+            drawFigure(sw.fig, view.data());
+            for (int k = 1; k <= 2; ++k) {
+                char sa[16], ea[16];
+                std::snprintf(sa, sizeof sa, "tapAreaS%02d", k), std::snprintf(ea, sizeof ea, "tapAreaE%02d", k);
+                float sx, sy, ex, ey;
+                if (uiJoint(sw, sa, sx, sy) && uiJoint(sw, ea, ex, ey)) tapRects.push_back({6510 + k, sx, sy, ex, ey});
+            }
         }
         UiFig& bk = uiFig("scrlback");
         bk.fig.place = cr2::Mat34();
@@ -8279,7 +8311,9 @@ struct Viewer {
             listRows = rows;
             const int focused = rows.empty() ? -1 : rows[size_t(std::clamp(campCursor, 0, int(rows.size()) - 1))].id;
             if (campList == 18) drawSopiaWindows(campSopiaDetail ? campSopiaDetail : focused, t, view, proj, w, h, campSopiaDetail != 0); // (InterfaceMain 0xf / 0x10: its windows beside it)
-            drawSkillList(rows, focused, t, view, w, h, campList == 16 ? 7 : 9, -1);
+            if (campList == 16) listTagExtra[0] = campCategory ? 8 : 16, listSwitch = true; // (CampItemListMenu: SetListTagAnimetionItem by its category; ListSwitchButtonShow)
+            drawSkillList(rows, focused, t, view, w, h, campList == 16 ? (campCategory ? 15 : 7) : 9, -1);
+            listTagExtra[0] = -1, listSwitch = false;
             return;
         }
         UiFig& title = uiFig("menu");
@@ -9398,6 +9432,8 @@ struct Viewer {
         for (const TapRect& r : tapRects)
             if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
                 if (r.id > 6000 && r.id <= 6005) fieldTabTap(r.id - 6000);
+                else if (campOpen && campList == 16 && r.id == 6501) campCategory = 1 - campCategory, campCursor = 0, audio.playSe(0xb4, false); // (the items' other category's tab)
+                else if (campOpen && campList == 16 && (r.id == 6511 || r.id == 6512)) campCategory = 1 - campCategory, campCursor = 0, audio.playSe(0xb7, false); // (its arrows)
                 else if (r.id == 6100) startChange();
                 else if (saveStage == 1 && (r.id == 7401 || r.id == 7402)) saveAnswer(r.id == 7401);
                 else if (campOpen && optionsTapped(r, x)) {
@@ -10631,6 +10667,7 @@ struct Viewer {
             if (shop.kind > 0 && !(it->wearers >> ch & 1)) continue;
             ListRow r;
             r.id = id, r.name = itemName(id), r.icon = it->icon, r.help = itemHelp(id); // (ChangeHelpText: Cr3UtilGetItemHelpText)
+            r.worn = shop.kind > 0 && game.equip[ch][shop.kind - 1] == id; // (Cr3UtilGetEquipItem)
             r.price = true;
             if (shop.buy) {
                 if (it->shopRank > rank) continue;
@@ -10666,6 +10703,13 @@ struct Viewer {
             for (const auto& [b, k] : kKinds)
                 if (id == b) audio.playSe(0xb4, false), shop.kind = k, shop.who = 0, stage(3);
             if (id == 100) audio.playSe(0xb5, false), stage(1);
+        } else if (shop.stage == 3 && (id == 6511 || id == 6512) && shop.kind > 0) { // (the arrows: CharaChange -1 / +1, SE 0xb7)
+            const int c = int(shopChars().size());
+            shop.who = (shop.who + (id == 6512 ? 1 : c - 1)) % std::max(c, 1), shop.focus = 0;
+            audio.playSe(0xb7, false);
+        } else if (shop.stage == 3 && (id == 6501 || id == 6502) && shop.kind > 0) { // (a small tab: that kind's list - its frame / 2)
+            static const int kTabs[4][3] = {{7, -1, -1}, {1, 4, 6}, {3, 6, 2}, {5, 2, 4}};
+            audio.playSe(0xb4, false), shop.kind = kTabs[shop.kind][id - 6500] / 2, shop.focus = 0;
         } else if (shop.stage == 3) {
             const std::vector<ListRow> rows = shopRows();
             if (id >= 1000 && id < 1000 + int(rows.size())) shop.focus = id - 1000;
@@ -10878,7 +10922,12 @@ struct Viewer {
                     drawStatusB(ch, b.maxHp - a.maxHp, b.maxMp - a.maxMp, t, view, proj);
                     drawCapacity(ch, change, t, view, proj, w, h);
                 }
-                drawSkillList(rows, rows[size_t(shop.focus)].id, t, view, w, h, -1, 5); // (Shop*ListMenu::SetListItemParam: cost_id 5 by the price)
+                static const int kTabs[4][3] = {{7, -1, -1}, {1, 4, 6}, {3, 6, 2}, {5, 2, 4}}; // (ShopItem*: SetListTagAnimetionOnly 7)
+                const int* tabs = kTabs[std::clamp(shop.kind, 0, 3)];
+                listTagExtra[0] = tabs[1], listTagExtra[1] = tabs[2];
+                listSwitch = shop.kind > 0; // (ShopWepon*ListMenu: ListSwitchButtonShow - CharaChange)
+                drawSkillList(rows, rows[size_t(shop.focus)].id, t, view, w, h, tabs[0], 5); // (Shop*ListMenu::SetListItemParam: cost_id 5 by the price)
+                listTagExtra[0] = listTagExtra[1] = -1, listSwitch = false;
             }
             if (const cr2::BattleData::Item* it = shop.stage == 5 ? battleData.item(shop.item) : nullptr)
                 drawAsk(formatAnnounce(announce(0x72), {itemName(shop.item)}), uiClock - shop.askAt, view, w, h, 7801, 7802);

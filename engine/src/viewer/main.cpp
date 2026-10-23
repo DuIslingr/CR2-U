@@ -3861,7 +3861,7 @@ struct Viewer {
         std::string err;
         int party[2] = {0, 0};
         for (size_t k = 0; k < battle.party.size() && k < 2; ++k) party[k] = battle.party[k].id;
-        if (!battleRules->start(battle.coupling, party, 0, &err, game.sopiaLevel, game.equip, game.level, game.mp, game.seed, game.itemCount)) {
+        if (!battleRules->start(battle.coupling, party, game.difficulty, &err, game.sopiaLevel, game.equip, game.level, game.mp, game.seed, game.itemCount)) {
             SDL_Log("fight: %s", err.c_str());
             battleRules.reset();
             return;

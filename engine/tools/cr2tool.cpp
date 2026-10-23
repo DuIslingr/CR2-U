@@ -135,7 +135,7 @@ int usage() {
                  "cr2tool play <archive> <event | all>\n"
                  "cr2tool battle <archive> <coupling | all>\n"
                  "cr2tool encounters <archive> [executable]\n"
-                 "cr2tool fight <archive> <coupling> [solo | pair] [seed] [a,b]\n"
+                 "cr2tool fight <archive> <coupling> [solo | pair] [seed] [a,b] [dungeon level 0..10]\n"
                  "cr2tool sound <archive>\n"
                  "cr2tool glass <seeds>\n"
                  "cr2tool save-import <game.dat | cont.dat> [system.dat]  (a CR2-U save on stdout)\n"
@@ -1160,7 +1160,7 @@ int battles(const char* path, const char* which) {
 
 // A battle played by its rules (battle/rules.cpp): the party attacking every turn - solo, each at
 // the first monster standing, or as a pair - the monsters choosing their own, to the end
-int fight(const char* path, int coupling, bool pair, uint32_t seed, const int party[2]) {
+int fight(const char* path, int coupling, bool pair, uint32_t seed, const int party[2], int dungeonLevel) {
     cr2::MvglArchive a;
     if (!openArchive(a, path)) return 1;
     std::vector<uint8_t> d;
@@ -1168,7 +1168,7 @@ int fight(const char* path, int coupling, bool pair, uint32_t seed, const int pa
     cr2::BattleData data;
     if (!a.read("data\\battledata.dat", d, &err) || !data.parse(d, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
     cr2::BattleRules r(data, seed);
-    if (!r.start(coupling, party, 0, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
+    if (!r.start(coupling, party, dungeonLevel, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
     // the battle's script: battle.nut's Battle_Init, the encounter's own then (its calls run to
     // their ends here, the pages turning by themselves)
     cr2::GameState state;
@@ -1387,7 +1387,8 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[1], "fight") && argc > 3) {
         int party[2] = {1, 2};
         if (argc > 6) std::sscanf(argv[6], "%d,%d", &party[0], &party[1]);
-        return fight(argv[2], std::atoi(argv[3]), argc > 4 && !std::strcmp(argv[4], "pair"), argc > 5 ? uint32_t(std::atoi(argv[5])) : 1, party);
+        return fight(argv[2], std::atoi(argv[3]), argc > 4 && !std::strcmp(argv[4], "pair"), argc > 5 ? uint32_t(std::atoi(argv[5])) : 1, party,
+                     argc > 7 ? std::atoi(argv[7]) : 0);
     }
     if (!std::strcmp(argv[1], "run") && argc > 3) return run(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "sound")) return sound(argv[2]);

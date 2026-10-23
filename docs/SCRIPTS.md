@@ -510,7 +510,10 @@ sign 5 or 6, the sopia's combination's name). A tap on another face focuses it (
 focused uses it (0xb4): one used up (+0x2d) asks how many (shopNum_io: tap 01 one fewer, 02 one
 more) and yes / no (announce 0x74: the item, the count had), then Cr3UtilParameterUpByItem - +0x14
 HP, +0x18 MP (at most 9999), +0x1a .. +0x22 to the parameters for good (cr3_player_data +0x1e ..)
-- and Cr3UpdatePlayerData; 0xc6 when it raises MP or a parameter. Emergency Exit (36; not with
+- and Cr3UpdatePlayerData; 0xc6 when it raises MP or a parameter. Then what it raised
+(CheckEndParamUpText) in campHelp_io's window in turn, 3 s each or to a tap: 0x85 MP restored (+0x18),
+0x8d .. 0x91 Attack .. Luck by so much (+0x1a .. +0x22 times the count), with the character's name
+(announcemenuname 0x28 + its number); after the last a second, and back to the list. Emergency Exit (36; not with
 flag 0x3e9) asks (0x73), then FldMain's camp result 2: SE 0x14f, flag 0x3ed, the music out, on to
 t0101_p1.
 

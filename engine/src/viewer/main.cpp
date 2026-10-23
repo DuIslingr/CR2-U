@@ -2522,6 +2522,7 @@ struct Viewer {
         audio.update(dt);
         updateVistaSlash();
         if (optionsWasOpen && !optionsOpen && scriptSaves) writeSystem(); // (OptionMenu's end: Cr3Util_Save_SystemData)
+        if (campOpen) campUseUpdate();
         optionsWasOpen = optionsOpen;
         if (credits.stage) return updateCredits(dt);
         if (titleMenu.stage) return updateTitle(dt);
@@ -8170,7 +8171,7 @@ struct Viewer {
         if (optionsAsk) return drawOptionsAsk(view, w, h);
         if (settingsOpen) return drawSettings(view, w, h);
         if (optionsOpen) return drawOptions(view, proj, w, h);
-        if (campUse) return drawItemUse(view, proj, w, h);
+        if (campUse && campUse != 5) return drawItemUse(view, proj, w, h);
         if (campLink == 201) return drawScenarios(view, proj, w, h);
         if (campLink == 202) return drawPubRequest(view, w, h);
         const float t = uiClock - campStart;
@@ -8441,10 +8442,31 @@ struct Viewer {
     // used up first asks how many (shopNum_io: tap 01 one fewer, 02 one more, 1 .. its count)
     // and Yes / No (announce 0x74); Emergency Exit (36) asks (0x73), then leaves for t0101_p1
     int campItem = 0;  // (the item being used; 0 none)
-    int campUse = 0;   // (1 whom, 2 how many and yes / no, 3 Emergency Exit's yes / no)
+    int campUse = 0;   // (1 whom, 2 how many and yes / no, 3 Emergency Exit's yes / no, 4 what it raised, 5 the second after)
     int campFace = 0;  // (the one focused: its place among validChars)
     int campCount = 1;
     float campUseStart = 0;
+    // what it raised (CharaSelectButtonMenu::CheckEndParamUpText, Update 8): in campHelp_io's window
+    // in turn, 3 s each or to a tap - MP restored (announce 0x85: the item's +0x18), Attack .. Luck
+    // by so much (0x8d..0x91: +0x1a..+0x22, times the count used) - with the character's name
+    // (announcemenuname 0x28 + its number); after the last, a second and back to the list
+    std::vector<std::string> campUpText;
+    size_t campUpShown = 0;
+    float campUpAt = 0;
+    void campUseUpdate() { // (Update 8, 9: each 3 s; after the last, a second, then back to the list)
+        if (campUse == 4 && uiClock - campUpAt >= 3.0f) campUpShown++, campUpAt = uiClock;
+        if (campUse == 4 && campUpShown >= campUpText.size()) campUse = 5, campUseStart = uiClock;
+        if (campUse == 5 && uiClock - campUseStart >= 1.0f) campUse = 0, campItem = 0;
+    }
+    void showRaised(int ch, const cr2::BattleData::Item& it, int n) {
+        const std::string who = menuName(0x28 + ch + 1);
+        campUpText.clear();
+        if (it.mp * n >= 1) campUpText.push_back(formatAnnounce(announce(0x85), {who}));
+        for (int k = 0; k < 5; ++k)
+            if (it.param[k] * n >= 1) campUpText.push_back(formatAnnounce(announce(0x8d + k), {who, std::to_string(it.param[k] * n)}));
+        campUpShown = 0, campUpAt = campUseStart = uiClock;
+        campUse = campUpText.empty() ? 5 : 4;
+    }
     void useItemOn(int ch, int item, int n) { // (Cr3UtilParameterUpByItem, Cr3UpdatePlayerData; PlaySoundMPRecovery)
         const cr2::BattleData::Item* it = battleData.item(item);
         if (!it || n <= 0) return;
@@ -8458,6 +8480,7 @@ struct Viewer {
         for (int k = 0; k < 5; ++k) any = any || it->param[k] != 0;
         if (any) audio.playSe(0xc6, false);
         SDL_Log("camp: %s x%d on %d: MP %d -> %d", it->name[1].c_str(), n, ch + 1, mp0, mp);
+        showRaised(ch, *it, n);
     }
     void campUseTap(int id) {
         const std::vector<int> chars = validChars();
@@ -8469,15 +8492,17 @@ struct Viewer {
             if (k != campFace) { campFace = k, audio.playSe(0xb3, false); return; }
             audio.playSe(0xb4, false);
             if (it && it->usedUp) campUse = 2, campCount = 1, campUseStart = uiClock;
-            else useItemOn(chars[size_t(k)], campItem, 1), campUse = 0;
+            else useItemOn(chars[size_t(k)], campItem, 1);
         } else if (campUse == 2) {
             const int most = std::max(int(game.itemCount[campItem]), 1);
             if (id == 7101) campCount = std::max(campCount - 1, 1);
             else if (id == 7102) campCount = std::min(campCount + 1, most);
             else if (id == 7201) { // (yes: used, its effect)
                 if (campFace < int(chars.size())) useItemOn(chars[size_t(campFace)], campItem, campCount);
-                campUse = 0, campItem = 0;
+                else campUse = 0, campItem = 0;
             } else if (id == 7202) campUse = 1, audio.playSe(0xb5, false);
+        } else if (campUse == 4) {
+            if (id == 7300) campUpShown++, campUpAt = uiClock, campUseUpdate(); // (a tap: the next at once - +0xe4)
         } else if (campUse == 3) {
             if (id == 7201) { // (FldMain: the camp's result 2 - its use)
                 game.itemCount[36] = static_cast<short>(std::max(game.itemCount[36] - 1, 0));
@@ -8498,8 +8523,9 @@ struct Viewer {
         const std::vector<int> chars = validChars();
         campFace = std::clamp(campFace, 0, std::max(int(chars.size()) - 1, 0));
         const int ch = chars.empty() ? 0 : chars[size_t(campFace)];
-        drawStatusB(ch, it ? it->hp : 0, it ? it->mp : 0, t, view, proj);
-        drawCapacity(ch, it ? it->param : nullptr, t, view, proj, w, h);
+        const bool raised = campUse == 4;
+        drawStatusB(ch, raised ? 0 : it ? it->hp : 0, raised ? 0 : it ? it->mp : 0, t, view, proj);
+        drawCapacity(ch, raised ? nullptr : it ? it->param : nullptr, t, view, proj, w, h);
         if (campUse == 2) { // (how many, and the question)
             UiFig& num = uiFig("shopnum_io");
             num.fig.place = cr2::Mat34();
@@ -8530,7 +8556,7 @@ struct Viewer {
                 for (ViewMesh& vm : b.fig.meshes) vm.texture = tex;
             drawFigure(b.fig, view.data());
             float sx, sy, ex, ey;
-            if (uiJoint(b, "tapAreaS01", sx, sy) && uiJoint(b, "tapAreaE01", ex, ey)) tapRects.push_back({7000 + int(k), sx, sy, ex, ey});
+            if (!raised && uiJoint(b, "tapAreaS01", sx, sy) && uiJoint(b, "tapAreaE01", ex, ey)) tapRects.push_back({7000 + int(k), sx, sy, ex, ey});
             if (int(k) == campFace && uiJoint(b, "call_faceSlct", sx, sy)) {
                 UiFig& sl = uiFig("faceslct");
                 sl.fig.place = cr2::Mat34();
@@ -8544,7 +8570,9 @@ struct Viewer {
         poseUi(help, "camphelp_io", t);
         drawFigure(help.fig, view.data());
         float x, y;
-        if (uiJoint(help, "typeM_L01", x, y)) drawUiText(formatAnnounce(announce(0x84), {name}), 24, x, y, w, h, true);
+        if (uiJoint(help, "typeM_L01", x, y))
+            drawUiText(raised ? campUpText[campUpShown] : formatAnnounce(announce(0x84), {name}), 24, x, y, w, h, true);
+        if (raised) return tapRects.push_back({7300, -10, -10, 10, 10}); // (anywhere)
         UiFig& bk = uiFig("btlback");
         bk.fig.place = cr2::Mat34();
         poseUi(bk, "btlback_in", t);
@@ -9121,7 +9149,10 @@ struct Viewer {
         if (optionsKey(k)) return;
         if (campUse) { // (whom: Left / Right, Return; how many: Left / Right, Return yes, Backspace no)
             const int n = std::max(int(validChars().size()), 1);
-            if (campUse == 1) {
+            if (campUse == 4) {
+                if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_BACKSPACE) campUseTap(7300);
+            } else if (campUse == 5) {
+            } else if (campUse == 1) {
                 if (k == SDLK_LEFT || k == SDLK_UP) campUseTap(7000 + (campFace + n - 1) % n);
                 else if (k == SDLK_RIGHT || k == SDLK_DOWN) campUseTap(7000 + (campFace + 1) % n);
                 else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) campUseTap(7000 + campFace);

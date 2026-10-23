@@ -8308,6 +8308,15 @@ struct Viewer {
             if (vm.material.params[0x33].empty()) vm.material.params.erase(0x33);
         }
         drawFigure(lnk.fig, view.data());
+        for (int k = 1; k <= (pub ? 2 : 1); ++k) { // (CampPubLink::Initialize: seal_id - "new" - at call_seal_id0k with flag 0x41c + k: a scenario, a request's news)
+            float sx, sy;
+            if (!game.flag(0x41c + k) || !uiJoint(lnk, "call_seal_id0" + std::to_string(k), sx, sy)) continue;
+            UiFig& se = uiFig("seal_id");
+            se.fig.place = cr2::Mat34();
+            se.fig.place.m[3] = sx, se.fig.place.m[7] = sy;
+            poseUi(se, "seal_id", 0.1f); // (SetParameterDataBase's 0.1 s: frame 2, "New!" - frame 0 is empty)
+            drawFigure(se.fig, view.data());
+        }
         for (int k = 1; k <= (pub ? 2 : 1); ++k) {
             char sa[16], ea[16];
             std::snprintf(sa, sizeof sa, "tapAreaS%02d", k), std::snprintf(ea, sizeof ea, "tapAreaE%02d", k);
@@ -10487,7 +10496,7 @@ struct Viewer {
                 const int id = posters[k];
                 float mx, my;
                 if (id == game.globalWork[7] && uiJoint(p, "call_checkMark", mx, my)) part("checkmark_io", "checkmark_io", mx, my);
-                if (game.flag(1250 + id) && uiJoint(p, "call_seal_id", mx, my)) part("seal_id", "seal_id", mx, my, 0);
+                if (game.flag(1250 + id) && uiJoint(p, "call_seal_id", mx, my)) part("seal_id", "seal_id", mx, my, 0.1f); // (PubTopMenu: 0.1 s - "New!")
                 if (int(k) == pub.focus && uiJoint(p, "call_faceSlct", mx, my)) part("faceslct", "faceslct", mx, my);
             }
             if (!posters.empty()) help(posters[size_t(pub.focus)]);

@@ -253,8 +253,10 @@ another vista - goes to CreditMain; InterfaceMain::SetStaffrollParameter(n + 1):
 interface 0x76 + n): from black (60 frames), the ending's music (0x51e0e8: none, 17, 28, 29), the
 figure end2_BG / end1_BG / end3_BG / end4_BG on its own animation (scaled aspect / 1.5 on a screen
 wider than 3:2), its `typeS_L01` rising. The lines are the executable's (AllTextTextureGeneration:
-544 strings - the four figure names right after them -, 44 .. 49 only with flag 201, 438 .. 533
-smaller), line i i x 0.0322 below the joint, shown once the joint has risen so far, gone above
+Android's 544 strings with the four figure names' pointers right after them, 438 .. 533 - its
+libraries' licences - smaller; the iPad's and the Vita's 438 right after the names', five of them
+in Shift-JIS punctuation the game swaps for UTF-8 copies - 52, 58, 61, 235, 236 -, decoded here;
+44 .. 49 only with flag 201), line i i x 0.0322 below the joint, shown once the joint has risen so far, gone above
 0.4. The speedUp button held runs the figure five times as fast. All shown and the animation
 ended: 120 updates, black over 60 with the music stopped, 62 more, then the field (FldMain::Init
 mode 4: the area's `credit`).

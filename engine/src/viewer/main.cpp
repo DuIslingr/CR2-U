@@ -2807,7 +2807,7 @@ struct Viewer {
             poseUi(f, creditFigure(), credits.animTime);
             if (uiJoint(f, "typeS_L01", x, y)) {
                 if (!credits.started) credits.startY = y, credits.started = true;
-                const bool allIn = (y - credits.startY) / lineH >= float(staffLines.empty() ? 0 : 543);
+                const bool allIn = (y - credits.startY) / lineH >= float(staffLines.empty() ? 0 : staffLines.size() - 1);
                 if (allIn && credits.animTime >= dur) credits.stage = 2, credits.stageTime = 0;
             } else if (credits.animTime >= dur) credits.stage = 2, credits.stageTime = 0;
         } else if (credits.stage == 2 && credits.stageTime >= 120 * cr2::EventRuntime::kTick) {

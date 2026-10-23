@@ -196,9 +196,42 @@ bool androidFile(const std::string& archivePath, const std::string& name, std::v
 }
 
 namespace {
+// Shift-JIS's row 0x81 (its punctuation: the iPad's and the Vita's lines have 「」（）：, which
+// their AllTextTextureGeneration swaps for UTF-8 copies), from 0x8140
+const char* const kSjisRow81[189] = {
+    "　", "、", "。", "，", "．", "・", "：", "；", "？", "！", "゛", "゜", "´", "｀", "¨", "＾", "￣", "＿", "ヽ",
+    "ヾ", "ゝ", "ゞ", "〃", "仝", "々", "〆", "〇", "ー", "―", "‐", "／", "＼", "～", "∥", "｜", "…", "‥", "‘",
+    "’", "“", "”", "（", "）", "〔", "〕", "［", "］", "｛", "｝", "〈", "〉", "《", "》", "「", "」", "『", "』",
+    "【", "】", "＋", "－", "±", "×", "", "÷", "＝", "≠", "＜", "＞", "≦", "≧", "∞", "∴", "♂", "♀", "°",
+    "′", "″", "℃", "￥", "＄", "￠", "￡", "％", "＃", "＆", "＊", "＠", "§", "☆", "★", "○", "●", "◎", "◇",
+    "◆", "□", "■", "△", "▲", "▽", "▼", "※", "〒", "→", "←", "↑", "↓", "〓", "", "", "", "", "", "",
+    "", "", "", "", "", "∈", "∋", "⊆", "⊇", "⊂", "⊃", "∪", "∩", "", "", "", "", "", "", "", "",
+    "∧", "∨", "￢", "⇒", "⇔", "∀", "∃", "", "", "", "", "", "", "", "", "", "", "", "∠", "⊥", "⌒",
+    "∂", "∇", "≡", "≒", "≪", "≫", "√", "∽", "∝", "∵", "∫", "∬", "", "", "", "", "", "", "", "Å",
+    "‰", "♯", "♭", "♪", "†", "‡", "¶", "", "", "", "", "◯"};
+// a line as UTF-8: row 0x81's pairs decoded; false if what is left is not text (well-formed
+// UTF-8, no control characters)
+bool asText(const std::string& in, std::string& out) {
+    out.clear();
+    for (size_t i = 0; i < in.size(); ++i) {
+        const uint8_t c = uint8_t(in[i]), d = i + 1 < in.size() ? uint8_t(in[i + 1]) : 0;
+        if (c == 0x81 && d >= 0x40 && d <= 0xfc && *kSjisRow81[d - 0x40]) out += kSjisRow81[d - 0x40], ++i;
+        else out += char(c);
+    }
+    for (size_t i = 0; i < out.size();) {
+        const uint8_t c = uint8_t(out[i]);
+        const size_t n = c < 0x80 ? 1 : (c & 0xe0) == 0xc0 ? 2 : (c & 0xf0) == 0xe0 ? 3 : (c & 0xf8) == 0xf0 ? 4 : 0;
+        if (n == 0 || (n == 1 && c < 0x20 && c != '\t') || i + n > out.size()) return false;
+        for (size_t k = 1; k < n; ++k)
+            if ((uint8_t(out[i + k]) & 0xc0) != 0x80) return false;
+        i += n;
+    }
+    return true;
+}
 // the table in a 32-bit executable: its four figure names' strings, then four words pointing at
-// them (the same distances apart: the pointers' base less the file's, the delta), the 544
-// pointers before them the lines
+// them (the same distances apart: the pointers' base less the file's, the delta), and the lines:
+// Android's 544 pointers before them, or the iPad's 438 after them (AllTextTextureGeneration's
+// 0x1b6) - the layout whose every line is text
 bool findStaffRoll(const std::vector<uint8_t>& b, std::vector<std::string>& lines, std::string* figures) {
     static const char* const kNames[4] = {"end2_BG", "end1_BG", "end3_BG", "end4_BG"};
     auto find = [&](const char* s) -> int64_t {
@@ -216,22 +249,31 @@ bool findStaffRoll(const std::vector<uint8_t>& b, std::vector<std::string>& line
         bool ok = true;
         for (int k = 1; k < 4 && ok; ++k) ok = int64_t(word(o + 4 * size_t(k))) - at[k] == delta;
         if (!ok) continue;
-        lines.clear();
-        for (size_t i = 0; i < 544 && ok; ++i) { // (a run of words that only looks so: not every one a string)
-            const int64_t s = int64_t(word(o - 544 * 4 + 4 * i)) - delta;
-            if (s < 0 || size_t(s) >= b.size()) {
-                ok = false;
-                break;
+        const struct {
+            size_t from, count;
+        } layouts[2] = {{o - 544 * 4, 544}, {o + 16, 438}};
+        for (const auto& l : layouts) {
+            if (l.from + l.count * 4 > b.size()) continue;
+            lines.clear();
+            bool text = true;
+            for (size_t i = 0; i < l.count && text; ++i) { // (a run of words that only looks so: not every one a string)
+                const int64_t s = int64_t(word(l.from + 4 * i)) - delta;
+                if (s < 0 || size_t(s) >= b.size()) {
+                    text = false;
+                    break;
+                }
+                std::string raw, t;
+                for (size_t c = size_t(s); c < b.size() && b[c]; ++c) raw += char(b[c]);
+                text = asText(raw, t);
+                lines.push_back(t);
             }
-            std::string t;
-            for (size_t c = size_t(s); c < b.size() && b[c]; ++c) t += char(b[c]);
-            lines.push_back(t);
+            if (!text) continue;
+            if (figures)
+                for (int k = 0; k < 4; ++k) figures[k] = kNames[k];
+            return true;
         }
-        if (!ok) continue;
-        if (figures)
-            for (int k = 0; k < 4; ++k) figures[k] = kNames[k];
-        return true;
     }
+    lines.clear();
     return false;
 }
 } // namespace

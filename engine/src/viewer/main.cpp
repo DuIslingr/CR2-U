@@ -85,6 +85,9 @@
 #include "script/gamesave.hpp"
 #include "event/runtime.hpp"
 #include "viewer/audio.hpp"
+#include "viewer/setup.hpp"
+
+std::string storedData(); // (settings.ini's data=: below)
 #include "field/character.hpp"
 #include "field/fieldmap.hpp"
 #include "field/fieldscript.hpp"
@@ -316,6 +319,7 @@ struct Viewer {
     }
     void saveSettings() const {
         if (!settingsPersist) return;
+        const std::string keepData = storedData(); // (the setup's copy, kept - read before the file is rewritten)
         std::FILE* f = std::fopen(savePath(settingsFile()).c_str(), "wb");
         if (!f) return;
         const Settings& s = settings;
@@ -324,6 +328,7 @@ struct Viewer {
                         "msaa=%d\nanisotropy=%d\nsharp_textures=%d\nhd_textures=%d\nhd_models=%d\npad_swap=%d\nfield_speed=%d\nbattle_speed=%d\n",
                      s.display, s.resolution, s.vsync ? 1 : 0, s.fps, s.renderer, s.upscaler, s.quality, s.sharpness, s.msaa,
                      s.anisotropy, s.sharpTextures ? 1 : 0, s.hdTextures ? 1 : 0, s.hdModels ? 1 : 0, s.padSwap ? 1 : 0, s.fieldSpeed, s.battleSpeed);
+        if (!keepData.empty()) std::fprintf(f, "data=%s\n", keepData.c_str());
         std::fclose(f);
     }
     // The settings onto the device, the window and the textures (each only as it changes)
@@ -11684,7 +11689,44 @@ std::vector<std::string> dataPlaces() {
 #endif
     add(base);
     if (char* cwd = SDL_GetCurrentDirectory()) add(cwd), SDL_free(cwd);
+    if (char* pref = SDL_GetPrefPath("DuIslingr", "CR2-U")) add(pref), SDL_free(pref); // (the profile folder: an .ipa the first start unpacked there)
 #endif
+    return out;
+}
+// settings.ini's data= set (the setup's), its other lines kept
+void storeData(const std::string& path) {
+    char* dir = SDL_GetPrefPath("DuIslingr", "CR2-U");
+    const std::string file = (dir ? std::string(dir) : std::string()) + "settings.ini";
+    SDL_free(dir);
+    size_t size = 0;
+    char* text = static_cast<char*>(SDL_LoadFile(file.c_str(), &size));
+    std::string all = text ? std::string(text, size) : std::string(), out;
+    SDL_free(text);
+    for (size_t at = 0; at < all.size();) {
+        const size_t e = std::min(all.find('\n', at), all.size());
+        if (all.compare(at, 5, "data=") != 0) out += all.substr(at, e - at) + "\n";
+        at = e + 1;
+    }
+    out += "data=" + path + "\n";
+    SDL_SaveFile(file.c_str(), out.data(), out.size());
+}
+// settings.ini's data= - a copy the first start's setup was given (an Android or Vita copy, read where it is)
+std::string storedData() {
+    std::string out;
+    char* dir = SDL_GetPrefPath("DuIslingr", "CR2-U");
+    const std::string path = (dir ? std::string(dir) : std::string()) + "settings.ini";
+    SDL_free(dir);
+    size_t size = 0;
+    if (char* text = static_cast<char*>(SDL_LoadFile(path.c_str(), &size))) {
+        const std::string all(text, size);
+        SDL_free(text);
+        for (size_t at = 0; at < all.size();) {
+            const size_t e = std::min(all.find('\n', at), all.size());
+            if (all.compare(at, 5, "data=") == 0) out = all.substr(at + 5, e - at - 5);
+            at = e + 1;
+        }
+    }
+    while (!out.empty() && (out.back() == '\r' || out.back() == ' ')) out.pop_back();
     return out;
 }
 
@@ -11835,8 +11877,35 @@ int main(int argc, char** argv) {
     if (data.empty()) { // (CR2_DATA, else a copy in a game folder: vita/, android/, ios/ ...)
         searched = dataPlaces();
         data = cr2::defaultArchive(searched);
+        if (data.empty()) data = storedData(); // (the first start's setup's: an Android or Vita copy where it lies)
     }
     data = cr2::resolveArchive(data); // (a folder: the OBB or the CRDB.*.mvgl in it, a Vita copy's PCSG00498 ...)
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+    if (data.empty() && argc <= 1 && !std::getenv("CR2_DATA")) { // the first start without a copy: where is it? (viewer/setup.hpp)
+        SDL_Init(SDL_INIT_VIDEO); // (its message boxes and the system's dialogs)
+        cr2::SetupGame setup;
+        setup.title = "Chaos Rings II", setup.port = "CR2-U", setup.vitaId = "PCSG00498", setup.trilogyDir = "CR2";
+        setup.obbHint = "main.212.com.square_enix.chaosrings2gp.obb";
+        setup.oneRelease = true; // (one copy is the game)
+        auto archiveIs = [](const std::string& p, const char* tail) {
+            std::error_code ec;
+            const std::string a = cr2::resolveArchive(p);
+            const size_t n = std::strlen(tail);
+            return std::filesystem::is_regular_file(a, ec) && a.size() >= n && a.compare(a.size() - n, n, tail) == 0;
+        };
+        setup.iosOk = [&](const std::string& p) { return archiveIs(p, ".ios.mvgl"); };
+        setup.androidOk = [&](const std::string& p) { return archiveIs(p, ".obb"); };
+        setup.vitaOk = [&](const std::string& p) { return archiveIs(p, ".psp2.mvgl"); };
+        std::string profile;
+        if (char* pref = SDL_GetPrefPath("DuIslingr", "CR2-U")) profile = std::string(pref) + "ios/", SDL_free(pref);
+        cr2::SetupResult got;
+        if (!cr2::runSetup(setup, searched.empty() ? profile : searched.front() + "ios/", profile, got)) return 0;
+        const std::string pick = !got.ios.empty() ? got.ios : !got.android.empty() ? got.android : got.vita;
+        if (got.ios.empty()) storeData(pick); // (the .ipa's is found in ios/ again; the others where they are)
+        data = cr2::resolveArchive(pick);
+        SDL_Log("setup: %s", data.c_str());
+    }
+#endif
     if (data.empty() && argc <= 1) { // (opened with nothing: a window, not the terminal's usage)
 #ifdef SDL_PLATFORM_ANDROID
         if (!searched.empty()) // (the folders made, to be seen over USB)

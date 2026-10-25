@@ -143,13 +143,21 @@ retextured - moving with the game's own skeleton and animations:
    A material keeps the game's render state by its name `cr_mat_<n>...`; give it a picture of your own
    (PNG or JPEG, any size, packed in the `.glb`) and that picture replaces the figure's.
 3. Export it from Blender as glTF 2.0 (`.glb`, the defaults) to `models/hd/<figure>.glb` (`c001.glb` for Darwin's `c001`). With HD Models on
-   (Options, Display & Graphics; on by itself) it is drawn instead of the original from the next scene on.
+   (Options, Display & Graphics; off until you switch it on) it is drawn instead of the original from the next scene on.
 
 What it reads: triangles, the first UV set and the second and colour set, four weights a vertex; meshes on more than 85 joints are split; normals, and tangents for normal-mapped materials, are worked out when missing; the skin weights come back summing to 1 (the game's own are 255ths). The
 animations in the file are for previewing - the game plays its own. `cr2tool gltfcheck <archive> <figure|all> [file.glb]`
 checks a round trip (the export loaded back: every figure lands exactly on the original in every
 animation). `CR2_HD_MODELS=<folder>` reads them from elsewhere. Personal use: the exports are the
 game's models - keep them, and what you make from them, out of anything shared.
+
+## Smooth models
+
+Options, Display & Graphics, **Smooth Models**: Off, Smooth (4x triangles) or Smoother (9x) - every
+model in the world (characters, monsters, stages and props; not the menus) rounded out at load time
+with PN triangles, as CR1-U's: the original vertices stay put, edges sharper than 60 degrees stay
+hard, and skinning and animation work as before. From the next scene on; kept in settings.ini
+(`smooth_models` 0, 2 or 3), `--smooth-models n` for one run.
 
 ## Platforms
 

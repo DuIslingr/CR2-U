@@ -30,6 +30,7 @@ add_library(cr2core STATIC
     src/assets/mvgl.cpp
     src/assets/image.cpp
     src/assets/geom.cpp
+    src/assets/smooth.cpp
     src/assets/skeleton.cpp
     src/assets/maptable.cpp
     src/assets/release.cpp

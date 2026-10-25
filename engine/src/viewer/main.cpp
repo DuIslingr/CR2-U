@@ -66,6 +66,7 @@
 #include <vector>
 
 #include "assets/geom.hpp"
+#include "assets/smooth.hpp"
 #include "assets/hd_texture.hpp"
 #include "assets/gltf_figure.hpp"
 #include "field/navigation.hpp"
@@ -253,7 +254,7 @@ struct Viewer {
     int hdLoaded = 0, hdMissing = 0;
     // HD models (the model bridge, assets/gltf_figure.hpp): replacements for figures' meshes from
     // modelsDir - CR2_HD_MODELS, else models/hd/ in the game folder - and the pictures they bring
-    bool hdModels = true;
+    bool hdModels = false;
     std::string modelsDir;
     int hdModelsLoaded = 0;
     std::map<std::string, cr2::Image> modelImages; // "gltf\\<figure>\\<n>" -> its pixels (decode's first look)
@@ -276,7 +277,8 @@ struct Viewer {
         bool sharpTextures = false;
         bool hdTextures = false;
         bool hdSet = false;       // (settings.ini says which: else on when there are HD textures)
-        bool hdModels = true;     // replacement models from models/hd (what loads next)
+        bool hdModels = false;    // replacement models from models/hd (what loads next)
+        int smoothModels = 0;     // smoothed models (assets/smooth.hpp): 0 off, 2 / 3 the PN triangles' level (what loads next)
         bool padSwap = false;     // a controller's: × (south) confirms, ○ (east) goes back - else as the Vita
         int fieldSpeed = 1;       // the field while the player walks it (nothing running there), this many times as fast: 1, 2 .. 5
         int battleSpeed = 1;      // the battles, this many times as fast: 1, 2 .. 5
@@ -311,6 +313,7 @@ struct Viewer {
             else if (k == "sharp_textures") s.sharpTextures = v != 0;
             else if (k == "hd_textures") s.hdTextures = v != 0, s.hdSet = true;
             else if (k == "hd_models") s.hdModels = v != 0;
+            else if (k == "smooth_models") s.smoothModels = v == 2 || v == 3 ? v : 0;
             else if (k == "pad_swap") s.padSwap = v != 0;
             else if (k == "field_speed") s.fieldSpeed = std::clamp(v, 1, 5);
             else if (k == "battle_speed") s.battleSpeed = std::clamp(v, 1, 5);
@@ -325,9 +328,10 @@ struct Viewer {
         const Settings& s = settings;
         std::fprintf(f, "# CR2-U: the options' Display & Graphics (the command line's flags go over these)\n"
                         "display=%d\nresolution=%d\nvsync=%d\nfps=%d\nrenderer=%d\nupscaler=%d\nquality=%d\nsharpness=%d\n"
-                        "msaa=%d\nanisotropy=%d\nsharp_textures=%d\nhd_textures=%d\nhd_models=%d\npad_swap=%d\nfield_speed=%d\nbattle_speed=%d\n",
+                        "msaa=%d\nanisotropy=%d\nsharp_textures=%d\nhd_textures=%d\nhd_models=%d\nsmooth_models=%d\npad_swap=%d\nfield_speed=%d\nbattle_speed=%d\n",
                      s.display, s.resolution, s.vsync ? 1 : 0, s.fps, s.renderer, s.upscaler, s.quality, s.sharpness, s.msaa,
-                     s.anisotropy, s.sharpTextures ? 1 : 0, s.hdTextures ? 1 : 0, s.hdModels ? 1 : 0, s.padSwap ? 1 : 0, s.fieldSpeed, s.battleSpeed);
+                     s.anisotropy, s.sharpTextures ? 1 : 0, s.hdTextures ? 1 : 0, s.hdModels ? 1 : 0, s.smoothModels, s.padSwap ? 1 : 0, s.fieldSpeed,
+                     s.battleSpeed);
         if (!keepData.empty()) std::fprintf(f, "data=%s\n", keepData.c_str());
         std::fclose(f);
     }
@@ -495,6 +499,16 @@ struct Viewer {
                             have ? "Replacement models (glTF) from " + shortDir(modelsDir) + " - from the next scene on"
                                  : "None in " + shortDir(modelsDir) + " yet: --export-models, edit, save as models/hd/<figure>.glb",
                             true, [&s](int) { s.hdModels = !s.hdModels; }});
+        }
+        {
+            static const char* const kSmooth[] = {"Off", "", "Smooth", "Smoother"};
+            rows.push_back({"Smooth Models", kSmooth[std::clamp(s.smoothModels, 0, 3)],
+                            s.smoothModels ? "Rounder models (4x / 9x triangles), hard edges kept - from the next scene" : "The models as the game built them",
+                            true, [&s](int d) { // (Off, Smooth, Smoother)
+                                static const int kOrder[3] = {0, 2, 3};
+                                int i = s.smoothModels == 2 ? 1 : s.smoothModels == 3 ? 2 : 0;
+                                s.smoothModels = kOrder[(i + (d < 0 ? 2 : 1)) % 3];
+                            }});
         }
         auto speed = [](int x) { return x > 1 ? std::to_string(x) + "x" : std::string("Off"); };
         rows.push_back({"Field Speed", speed(s.fieldSpeed), "Walking the field 2 .. 5 times as fast - its scenes, talk and menus as they are", true,
@@ -1605,8 +1619,19 @@ struct Viewer {
         if (!archive.read(name, data, err) || !cr2::parseGeom(data, g, err)) return false;
         replaceFigure(name, g);
         static const float kWhite[4] = {1, 1, 1, 1}, kZero[3] = {0, 0, 0};
-        for (const cr2::GeomMesh& m : g.meshes) {
+        cr2::SmoothStats smoothed;
+        for (const cr2::GeomMesh& raw : g.meshes) {
             ViewMesh vm;
+            vm.source = raw;
+            if (raw.material < g.materials.size()) { // (the joints as rows: the iPad's slots, a joint in the position's w)
+                const std::array<uint32_t, 4>& key = g.materials[raw.material].shaderKey;
+                const bool builtIn = !key[0] && !key[1] && !key[2] && !key[3]; // (no shader of its own: its file's form says)
+                vm.source.resolveJoints(builtIn ? (g.version == 0x3c ? 3.0f : 1.0f) : shaders->jointScale(key));
+                if (!builtIn) vm.placing = shaders->features(key).vertex;
+            }
+            // Smooth Models: every figure in the world - not the menus' (uiFig) nor a billboard
+            if (settings.smoothModels >= 2 && !loadingUi && vm.placing == 0) cr2::smoothMesh(vm.source, settings.smoothModels, 60.0f, &smoothed);
+            const cr2::GeomMesh& m = vm.source;
             vm.vertices.resize(size_t(m.vertexCount) * cr2::kVertexStride);
             for (uint32_t i = 0; i < m.vertexCount; ++i) {
                 static const float kNoUv[2] = {0, 0};
@@ -1618,13 +1643,6 @@ struct Viewer {
             const std::vector<uint32_t> idx = m.triangles();
             vm.gpu = dev->upload(vm.vertices, idx, -1);
             vm.lit = !m.normal.empty();
-            vm.source = m;
-            if (m.material < g.materials.size()) { // (the joints as rows: the iPad's slots, a joint in the position's w)
-                const std::array<uint32_t, 4>& key = g.materials[m.material].shaderKey;
-                const bool builtIn = !key[0] && !key[1] && !key[2] && !key[3]; // (no shader of its own: its file's form says)
-                vm.source.resolveJoints(builtIn ? (g.version == 0x3c ? 3.0f : 1.0f) : shaders->jointScale(key));
-                if (!builtIn) vm.placing = shaders->features(key).vertex;
-            }
             if (m.material < g.materials.size()) {
                 vm.material = vm.baseMaterial = g.materials[m.material];
                 if (SDL_getenv("CR2_MATERIALS")) { // (debugging: the materials' keys and states)
@@ -1645,10 +1663,12 @@ struct Viewer {
                 if (!vm.material.textures.count(0x44) && (shaders->features(vm.material.shaderKey).shade & SHADE_OVERLAY))
                     vm.extraMap = vm.texture;
             }
-            f.meshes.push_back(std::move(vm));
             f.vertices += m.vertexCount;
             f.triangles += idx.size() / 3;
+            f.meshes.push_back(std::move(vm));
         }
+        if (smoothed.meshes && SDL_getenv("CR2_SMOOTH_LOG"))
+            SDL_Log("%s smoothed: %d meshes, %d -> %d triangles", name.c_str(), smoothed.meshes, smoothed.trianglesBefore, smoothed.trianglesAfter);
         float r2 = 0;
         for (int c = 0; c < 3; ++c) {
             f.centre[c] = (g.boundsMin[c] + g.boundsMax[c]) / 2;
@@ -6416,13 +6436,16 @@ struct Viewer {
         bool loaded = false;
     };
     std::map<std::string, UiFig> uiFigs;
+    bool loadingUi = false; // (uiFig loading its figure: left unsmoothed)
     UiFig& uiFig(const std::string& name) {
         UiFig& u = uiFigs[name];
         if (!u.loaded) {
             u.loaded = true;
             std::string err;
             const float keep = time;
+            loadingUi = true; // (the menus' parts as built: Smooth Models is the world's)
             if (!loadFigure(name + ".geom", u.fig, &err)) SDL_Log("ui %s: %s", name.c_str(), err.c_str());
+            loadingUi = false;
             time = keep;
             std::vector<uint8_t> d;
             if (archive.read(name + ".name", d)) u.joints = cr2::parseJointNames(d), u.materials = cr2::parseMaterialNames(d);
@@ -11737,6 +11760,8 @@ int main(int argc, char** argv) {
     bool tapAfter = false, mute = false, forceAudio = false;
     int hdArg = -1;        // --hd-textures / --no-hd-textures (-1: the settings')
     int speedArg[2] = {0, 0}; // --field-speed / --battle-speed n (0: the settings')
+    int smoothArg = -1;       // --smooth-models 0 | 2 | 3 (-1: the settings')
+    bool hdModelsArg = false; // --hd-models (on whatever the settings say)
     std::string exploreDir, choicesArg; // --explore <folder> [--choices yes,no,...] [--hours h]: the game played by itself
     float exploreHours = 12;
     std::string exportDir; // --export-textures [dir]: every image as <hash>.crraw, for tools/hd_textures.py (textures/export/ in the game folder without one)
@@ -11831,6 +11856,8 @@ int main(int argc, char** argv) {
         else if (a == "--hd-textures") hdArg = 1;
         else if (a == "--no-hd-textures") hdArg = 0;
         else if (a == "--field-speed" && next) speedArg[0] = std::clamp(std::atoi(next), 1, 5), ++i;
+        else if (a == "--smooth-models" && next) smoothArg = std::atoi(next) == 2 || std::atoi(next) == 3 ? std::atoi(next) : 0, ++i;
+        else if (a == "--hd-models") hdModelsArg = true;
         else if (a == "--battle-speed" && next) speedArg[1] = std::clamp(std::atoi(next), 1, 5), ++i;
         else if (a == "--export-textures") {
             exportTextures = true;
@@ -11993,8 +12020,10 @@ int main(int argc, char** argv) {
         const char* env = SDL_getenv("CR2_HD_MODELS");
         v.modelsDir = env && *env ? std::string(env) : gameFolder + "models/hd/";
         if (!v.modelsDir.empty() && v.modelsDir.back() != '/' && v.modelsDir.back() != '\\') v.modelsDir += '/';
+        if (hdModelsArg) v.settings.hdModels = true;
         v.hdModels = v.settings.hdModels;
     }
+    if (smoothArg >= 0) v.settings.smoothModels = smoothArg;
     if (speedArg[0]) v.settings.fieldSpeed = speedArg[0];
     if (speedArg[1]) v.settings.battleSpeed = speedArg[1];
     if (exportModels) { // every figure as glTF (assets/gltf_figure.hpp): its skeleton, meshes, materials, pictures, animations

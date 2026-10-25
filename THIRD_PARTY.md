@@ -14,6 +14,7 @@ them in `engine/third_party/`:
 | `libatrac9/` | LibAtrac9 by Alex Barney, commit efca2e3 (the copy CR1:U vendors) - decodes the Vita release's music (ATRAC9 in SXD) | MIT (`LICENSE`) |
 | `hevag/` | The HE-VAG prediction filter table from vgmstream (the copy CR1:U vendors) - the Vita release's sound effects | ISC (`COPYING`) |
 | `squirrel2/` | Squirrel 2.2.4 stable by Alberto Demichelis (the VM and its standard library, unmodified; `squirrel_2.2.4_stable.tar.gz` from the Squirrel project on SourceForge) - the version the game embeds, which runs its compiled scripts | zlib (`COPYRIGHT`) |
+| `psvpfsparser/` | Vita3K's psvpfsparser, commit 05d43a06 (github.com/Vita3K/psvpfsparser; from motoharu-gosuto's psvpfstools), trimmed, with its own crypto in place of OpenSSL (`README.md` there) - the first start's setup decrypts a Vita NoNpDrm dump with it, as Vita3K's install does. The setup's SELF decryption follows Vita3K's `packages/sce_utils.cpp` and uses its retail app keys | GPL-2.0, as Vita3K (with it, builds of the port are GPL-2.0) |
 
 Built from source by CMake when the system has none (fetched at build time, not in the
 repository; in the CI artifacts):
@@ -22,6 +23,7 @@ repository; in the CI artifacts):
 |---|---|
 | [SDL 3.2.0](https://github.com/libsdl-org/SDL) (linked in statically) | zlib |
 | [zlib 1.3.1](https://github.com/madler/zlib) (Windows, Android) | zlib |
+| [libarchive 3.7.7](https://github.com/libarchive/libarchive) (Windows, macOS: the setup reads a Vita dump's .rar, .7z, .zip, .vpk) | BSD-2-Clause |
 | [FreeType 2.13.3](https://gitlab.freedesktop.org/freetype/freetype) (Windows, macOS, Android: the text) | FreeType License or GPL-2.0 - used here under the GPL |
 
 Carried by the macOS `.app` (Contents/Frameworks, from the LunarG Vulkan SDK; their licence texts in

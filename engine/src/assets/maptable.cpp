@@ -69,9 +69,9 @@ std::vector<std::string> mapTableCandidates(const std::string& archivePath) {
     if (up != std::string::npos) {
         const std::string parent = dir.substr(0, up);
         const size_t up2 = parent.find_last_of("/\\");
-        if (up2 != std::string::npos) { // <app>/CR2/resources/: the Prequel Trilogy's CR2.self, else the game's eboot.bin
-            out.push_back(parent.substr(0, up2) + "/CR2.self");
-            out.push_back(parent.substr(0, up2) + "/eboot.bin");
+        if (up2 != std::string::npos) { // <app>/CR2/resources/: the Prequel Trilogy's CR2.self, else the game's eboot.bin - each
+            // decrypted (<name>.elf: the first start's setup's, from an encrypted one) first
+            for (const char* n : {"/CR2.elf", "/CR2.self", "/eboot.elf", "/eboot.bin"}) out.push_back(parent.substr(0, up2) + n);
         }
     }
     return out;

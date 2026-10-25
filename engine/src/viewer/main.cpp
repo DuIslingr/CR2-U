@@ -11912,9 +11912,11 @@ int main(int argc, char** argv) {
         SDL_Init(SDL_INIT_VIDEO); // (its message boxes and the system's dialogs)
         cr2::SetupGame setup;
         setup.title = "Chaos Rings II", setup.port = "CR2-U", setup.vitaId = "PCSG00498", setup.trilogyDir = "CR2";
+        setup.trilogyAddon = "DIESEL2000ADDCON"; // (the Prequel Trilogy keeps the game's data in its add-on)
         setup.obbHint = "main.212.com.square_enix.chaosrings2gp.obb";
         setup.package = "com.square_enix.chaosrings2gp";
         setup.oneRelease = true; // (one copy is the game)
+        setup.vitaProgram = true; // (the maps' table is in it: an encrypted one - a dump's, the trilogy's CR2.self - decrypted beside it)
         auto archiveIs = [](const std::string& p, const char* tail) {
             std::error_code ec;
             const std::string a = cr2::resolveArchive(p);

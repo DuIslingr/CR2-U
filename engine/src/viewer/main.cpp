@@ -6550,6 +6550,7 @@ struct Viewer {
         bool tapped = false;
         int action = 0;     // for the main loop: 1 a new game, 2 the save, 3 the continue data
         float doneAt = 0;
+        float divaIn = 0, divaOut = -1; // (divaBtn_io: once from the title's start - coming in -, back from the tap - going)
     } titleMenu;
     std::unique_ptr<cr2::EventRuntime> titleEvents; // (title.nut's calls)
     double playSeconds = 0;                         // (the save's play time, cr3_savedata +0x10 / 20)
@@ -6750,7 +6751,7 @@ struct Viewer {
         }
         const float age = uiClock - t.start;
         if (t.stage == 1 && age >= std::max(titleAnimLength("logoinc", "logoinc"), 0.1f)) {
-            t.stage = 2, t.start = uiClock;
+            t.stage = 2, t.start = uiClock, t.divaIn = uiClock, t.divaOut = -1;
             audio.playBgm(1, 10);
             SDL_Log("title: the title");
         } else if (t.stage == 2 && age >= titleAnimLength("title", "title_in")) {
@@ -6758,7 +6759,7 @@ struct Viewer {
         } else if (t.stage == 3 && t.tapped) {
             t.tapped = false;
             audio.playSe(0xb4, false);
-            t.stage = 4, t.start = uiClock, t.next = 1;
+            t.stage = 4, t.start = uiClock, t.next = 1, t.divaOut = uiClock;
         } else if (t.stage == 4 && age >= titleAnimLength("title", "title_wait")) {
             if (t.next == 1) titleScript("title"); // (the first time: Versionup_Title; Tutorial_Credit with flag 5)
             t.stage = 5, t.start = uiClock, t.next = 0;
@@ -6886,10 +6887,13 @@ struct Viewer {
         else poseUi(ti, "title_in", std::max(titleAnimLength("title", "title_in") - (tm.stage == 10 ? age : 1e6f), 0.0f)); // (backwards: gone)
         if (!bg.fig.meshes.empty()) hideJoint(ti, "GEO_titleBG"); // (title_bg in its place)
         drawFigure(ti.fig, view.data());
-        if (tm.stage == 2 || tm.stage == 3) {
+        // (GameTitleMenu: divaBtn_io added unlooped - its 0.25 s from nothing to the picture -, played once
+        // as the title comes in and held; at the tap played back, gone)
+        const float divaLength = titleAnimLength("divabtn_io", "divabtn_io");
+        if (tm.stage == 2 || tm.stage == 3 || (tm.stage == 4 && tm.divaOut >= 0 && uiClock - tm.divaOut < divaLength)) {
             UiFig& diva = uiFig("divabtn_io");
             diva.fig.place = cr2::Mat34();
-            poseUi(diva, "divabtn_io", uiClock - (tm.stage == 2 ? tm.start : 0), true);
+            poseUi(diva, "divabtn_io", tm.stage == 4 ? std::max(divaLength - (uiClock - tm.divaOut), 0.0f) : std::min(uiClock - tm.divaIn, divaLength), false);
             drawFigure(diva.fig, view.data());
         }
         if (tm.stage == 2) { // (from white over 20 frames)

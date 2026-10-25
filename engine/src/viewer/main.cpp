@@ -6868,12 +6868,13 @@ struct Viewer {
             return;
         }
         if (tm.stage == 9) return drawCamp(view, proj, screenW, screenH);
-        // the title over its painting (title_bg: wider than 3:2 stretched)
+        // the title over its painting: Android's own figure, title_bg (wider than 3:2 stretched) - the iPad's
+        // and the Vita's (the trilogy's too) have none, their painting the title's GEO_titleBG
         const float aspect = float(screenW) / float(std::max(screenH, 1));
         UiFig& bg = uiFig("title_bg");
         bg.fig.place = cr2::Mat34();
         if (aspect >= 1.5f) bg.fig.place.m[0] = aspect / 1.5f;
-        poseUi(bg, "title_bg", uiClock, true);
+        // (as it rests: posed by an animation of its name it came out all but black - Android's painting is still)
         drawFigure(bg.fig, view.data());
         UiFig& ti = uiFig("title");
         ti.fig.place = cr2::Mat34();
@@ -6883,7 +6884,7 @@ struct Viewer {
         else if (tm.stage == 4) poseUi(ti, "title_wait", age);
         else if (tm.stage == 5) poseUi(ti, "title_wait", 1e6f); // (its end: the buttons' places)
         else poseUi(ti, "title_in", std::max(titleAnimLength("title", "title_in") - (tm.stage == 10 ? age : 1e6f), 0.0f)); // (backwards: gone)
-        hideJoint(ti, "GEO_titleBG");
+        if (!bg.fig.meshes.empty()) hideJoint(ti, "GEO_titleBG"); // (title_bg in its place)
         drawFigure(ti.fig, view.data());
         if (tm.stage == 2 || tm.stage == 3) {
             UiFig& diva = uiFig("divabtn_io");

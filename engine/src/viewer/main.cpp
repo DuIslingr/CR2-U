@@ -11904,15 +11904,16 @@ int main(int argc, char** argv) {
     if (data.empty()) { // (CR2_DATA, else a copy in a game folder: vita/, android/, ios/ ...)
         searched = dataPlaces();
         data = cr2::defaultArchive(searched);
-        if (data.empty()) data = storedData(); // (the first start's setup's: an Android or Vita copy where it lies)
+        if (data.empty()) data = storedData(); // (an older setup's: an Android or Vita copy where it lay)
     }
     data = cr2::resolveArchive(data); // (a folder: the OBB or the CRDB.*.mvgl in it, a Vita copy's PCSG00498 ...)
 #if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
-    if (data.empty() && argc <= 1 && !std::getenv("CR2_DATA")) { // the first start without a copy: where is it? (viewer/setup.hpp)
+    if (data.empty() && (argc <= 1 || cr2::setupScripted()) && !std::getenv("CR2_DATA")) { // the first start without a copy: where is it? (viewer/setup.hpp)
         SDL_Init(SDL_INIT_VIDEO); // (its message boxes and the system's dialogs)
         cr2::SetupGame setup;
         setup.title = "Chaos Rings II", setup.port = "CR2-U", setup.vitaId = "PCSG00498", setup.trilogyDir = "CR2";
         setup.obbHint = "main.212.com.square_enix.chaosrings2gp.obb";
+        setup.package = "com.square_enix.chaosrings2gp";
         setup.oneRelease = true; // (one copy is the game)
         auto archiveIs = [](const std::string& p, const char* tail) {
             std::error_code ec;
@@ -11921,16 +11922,19 @@ int main(int argc, char** argv) {
             return std::filesystem::is_regular_file(a, ec) && a.size() >= n && a.compare(a.size() - n, n, tail) == 0;
         };
         setup.iosOk = [&](const std::string& p) { return archiveIs(p, ".ios.mvgl"); };
-        setup.androidOk = [&](const std::string& p) { return archiveIs(p, ".obb"); };
+        setup.androidOk = [&](const std::string& p) { // (the OBB, and the APK with the game's library - the maps' table)
+            std::vector<uint8_t> lib;
+            return archiveIs(p, ".obb") && cr2::androidFile(p, "lib/armeabi-v7a/libChaosRings2.so", lib);
+        };
         setup.vitaOk = [&](const std::string& p) { return archiveIs(p, ".psp2.mvgl"); };
         std::string profile;
-        if (char* pref = SDL_GetPrefPath("DuIslingr", "CR2-U")) profile = std::string(pref) + "ios/", SDL_free(pref);
+        if (char* pref = SDL_GetPrefPath("DuIslingr", "CR2-U")) profile = pref, SDL_free(pref);
         cr2::SetupResult got;
-        if (!cr2::runSetup(setup, searched.empty() ? profile : searched.front() + "ios/", profile, got)) return 0;
-        const std::string pick = !got.ios.empty() ? got.ios : !got.android.empty() ? got.android : got.vita;
-        if (got.ios.empty()) storeData(pick); // (the .ipa's is found in ios/ again; the others where they are)
-        data = cr2::resolveArchive(pick);
-        SDL_Log("setup: %s", data.c_str());
+        if (!cr2::runSetup(setup, searched.empty() ? profile : searched.front(), profile, got)) return 0;
+        // (copied into the game folder - ios/, android/, vita/ -: found as on any start)
+        data = cr2::resolveArchive(cr2::defaultArchive(dataPlaces()));
+        SDL_Log("setup: iOS %s, Android %s, Vita %s - the game: %s", got.ios.c_str(), got.android.c_str(), got.vita.c_str(), data.c_str());
+        if (cr2::setupScripted()) return data.empty() ? 1 : 0; // (a test's: the setup alone)
     }
 #endif
     if (data.empty() && argc <= 1) { // (opened with nothing: a window, not the terminal's usage)

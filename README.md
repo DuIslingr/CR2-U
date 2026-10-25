@@ -47,17 +47,19 @@ own saves are read and written too (`--game-save game.dat`, `cr2tool save-import
 
 ## Your copy
 
-The easiest way: just start the program. With no copy found, it asks where yours is (one copy is the game: the first given is used) - pick
-any of them in the window it opens, and it takes the files from there:
+The easiest way: just start the program. With no copy found, it asks where yours is - pick it in
+the window it opens, and the files the port needs are **copied into the game folder** (the profile
+folder's if that one can't be written), the same layout as putting them there by hand (below):
 
-- **iOS** - the `.ipa` (or any file in its unpacked `.app`): unpacked into `ios/` in the game folder
-  (the profile folder's if that one can't be written), found there from then on;
-- **Android** - the APK and its `main.*.obb` (in one folder): read where they are;
-- **Vita** - Vita3K's folder (its own, the folder its `config.yml` names as `pref-path`, or `ux0`)
-  or the game's own `PCSG00498` folder: read where it is.
+- **iOS** - the `.ipa` (or any file in its unpacked `.app`): unpacked into `ios/`;
+- **Android** - the APK and its `main.212.com.square_enix.chaosrings2gp.obb`, both at once: copied into `android/`
+  (an APK beside them that carries the game's package goes along; another game's is refused);
+- **Vita** - Vita3K's folder with the game installed (its own, the folder its `config.yml` names as
+  `pref-path`, or `ux0`), or the game's own `PCSG00498` folder: copied into `vita/PCSG00498/` as Vita3K installs
+  it (`eboot.bin`, `sce_sys/`, the game's folder).
 
-The Android and Vita copies are remembered in `settings.ini` (in the profile folder). (Windows,
-Linux and macOS; on Android, copy the files over USB as below.)
+One copy is the game: the first given starts it. Nothing is read where it was chosen, so the folder it came from can go
+afterwards. (Windows, Linux and macOS; on Android, copy the files over USB as below.)
 
 Or, as before, nothing given on the command line: put your copy in the **game folder** and start
 the program - it finds it by itself. The game folder is:

@@ -1,12 +1,15 @@
-# CR2-U v0.4.1
+# CR2-U v0.4.2
 
 A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux and Android.
 
 ## What's new
 
-- **Vita save importing:** import decrypted Vita saves directly from title-screen Options → Import Vita Saves, using the game's own option menus. Existing saves are backed up automatically.
-- Support the Vita system-save layout alongside the existing native save format.
-- Downloads include the optional command-line save converter and Vita importing instructions.
+- **Menu scrolling:** swipe or use the mouse wheel in item, Sopia, equipment, manual and graphics lists. Swipes move the selection without activating it.
+- **Dialogue audio:** advancing past a completed message stops its voice, and a new story voice replaces the previous one. Revealing text keeps its voice playing.
+- **Orientation:** Lock Orientation now applies on Android and remembers its landscape direction on restart. The original Options On/Off buttons use the same preference.
+- **Vita audio:** fix ATRAC9 bit operations and compressed-frame lookahead bounds. Added input, dialogue and decoder regression tests.
+
+Checked with Android, iOS and Vita game data. Physical Android touch and rotation testing remains pending; the reported early crystal-room crash has not been confirmed.
 
 ## Downloads
 

@@ -326,7 +326,10 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     vm.setNative("Cr3Sound", "StopSEAll", [](NativeCall& c) {
         if (soundHooks().stopAllSe) soundHooks().stopAllSe(c.integer(0));
     });
-    vm.setNative("Cr3Sound", "PlayVoice", [](NativeCall& c) { c.result(soundHooks().playVoice ? soundHooks().playVoice(c.integer(0)) : -1); });
+    vm.setNative("Cr3Sound", "PlayVoice", [](NativeCall& c) {
+        if (soundHooks().stopAllVoices) soundHooks().stopAllVoices(0);
+        c.result(soundHooks().playVoice ? soundHooks().playVoice(c.integer(0)) : -1);
+    });
     vm.setNative("Cr3Sound", "StopVoiceAll", [](NativeCall& c) {
         if (soundHooks().stopAllVoices) soundHooks().stopAllVoices(c.integer(0));
     });
@@ -434,7 +437,10 @@ void EventRuntime::advance() {
     }
     if (pageSendOff_.count(messageWindow_)) return; // (SetWaitButtonEnable false: the script's to end)
     revealed_ = 0, stop_ = 0, stopTime_ = 0;
-    if (++page_ >= int(parsed_.pages.size())) message_ = 0, page_ = 0;
+    if (++page_ >= int(parsed_.pages.size())) {
+        message_ = 0, page_ = 0;
+        if (soundHooks().stopAllVoices) soundHooks().stopAllVoices(0);
+    }
 }
 
 bool EventRuntime::typed() const {

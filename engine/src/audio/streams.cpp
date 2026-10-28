@@ -153,6 +153,7 @@ public:
         if (!parseSxdWaves(file_, waves, error)) return false;
         if (waves.empty()) return fail(error, "no wave");
         w_ = waves[0];
+        if (w_.at > file_.size() || w_.size > file_.size() - w_.at) return fail(error, "the wave's stream past its file's end");
         if (!reset()) return fail(error, "LibAtrac9 doesn't take its config");
         loopStart = w_.loopStart, loopEnd = w_.loopEnd;
         return seek(0);
@@ -199,12 +200,18 @@ private:
         return sfSamples_ > 0 && sfBytes_ > 0;
     }
     bool decode(size_t i) {
-        if (size_t(i + 1) * size_t(sfBytes_) > w_.size) return false;
+        if (sfBytes_ <= 0 || i >= w_.size / size_t(sfBytes_)) return false;
         buf_.resize(size_t(sfSamples_) * size_t(w_.channels));
-        const uint8_t* p = &file_[w_.at + i * size_t(sfBytes_)];
+        // LibAtrac9 peeks beyond the last code's consumed bits. Keep that
+        // lookahead inside a zero-padded superframe, including at end of file.
+        input_.resize(size_t(sfBytes_) + 8);
+        std::memcpy(input_.data(), &file_[w_.at + i * size_t(sfBytes_)], size_t(sfBytes_));
+        std::fill(input_.begin() + sfBytes_, input_.end(), 0);
+        const uint8_t* p = input_.data();
+        const uint8_t* end = p + sfBytes_;
         for (int k = 0; k < frames_; ++k) {
             int used = 0;
-            if (Atrac9Decode(h_, p, buf_.data() + size_t(k) * size_t(frameSamples_) * size_t(w_.channels), &used) != 0 || used <= 0) return false;
+            if (Atrac9Decode(h_, p, buf_.data() + size_t(k) * size_t(frameSamples_) * size_t(w_.channels), &used) != 0 || used <= 0 || size_t(used) > size_t(end - p)) return false;
             p += used;
         }
         return true;
@@ -214,7 +221,7 @@ private:
         ++next_, bufAt_ = 0;
         return true;
     }
-    std::vector<uint8_t> file_;
+    std::vector<uint8_t> file_, input_;
     SxdWave w_;
     void* h_ = nullptr;
     int frames_ = 0, frameSamples_ = 0, sfSamples_ = 0, sfBytes_ = 0;
@@ -357,13 +364,16 @@ bool decodeSxdWave(const SxdWave& w, const uint8_t* data, size_t size, std::vect
             return false;
         }
         std::vector<int16_t> sf(size_t(info.framesInSuperframe) * size_t(info.frameSamples) * size_t(info.channels));
+        std::vector<uint8_t> input(size_t(info.superframeSize) + 8, 0);
         for (size_t at = 0; at + size_t(info.superframeSize) <= size; at += size_t(info.superframeSize)) {
-            const uint8_t* p = data + at;
+            std::memcpy(input.data(), data + at, size_t(info.superframeSize));
+            const uint8_t* p = input.data();
+            const uint8_t* end = p + info.superframeSize;
             bool ok = true;
             for (int k = 0; k < info.framesInSuperframe && ok; ++k) {
                 int used = 0;
-                ok = Atrac9Decode(h, p, sf.data() + size_t(k) * size_t(info.frameSamples) * size_t(info.channels), &used) == 0 && used > 0;
-                p += used;
+                ok = Atrac9Decode(h, p, sf.data() + size_t(k) * size_t(info.frameSamples) * size_t(info.channels), &used) == 0 && used > 0 && size_t(used) <= size_t(end - p);
+                if (ok) p += used;
             }
             if (!ok) break;
             out.insert(out.end(), sf.begin(), sf.end());

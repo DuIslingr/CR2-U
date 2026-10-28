@@ -87,6 +87,7 @@
 #include "script/gamesave.hpp"
 #include "event/runtime.hpp"
 #include "viewer/audio.hpp"
+#include "viewer/mobile_input.hpp"
 #include "viewer/setup.hpp"
 
 std::string storedData(); // (settings.ini's data=: below)
@@ -280,6 +281,7 @@ struct Viewer {
         bool hdSet = false;       // (settings.ini says which: else on when there are HD textures)
         bool hdModels = false;    // replacement models from models/hd (what loads next)
         int smoothModels = 0;     // smoothed models (assets/smooth.hpp): 0 off, 2 / 3 the PN triangles' level (what loads next)
+        bool lockOrientation = false, landscapeFlipped = false;
         bool padSwap = false;     // a controller's: × (south) confirms, ○ (east) goes back - else as the Vita
         int fieldSpeed = 1;       // the field while the player walks it (nothing running there), this many times as fast: 1, 2 .. 5
         int battleSpeed = 1;      // the battles, this many times as fast: 1, 2 .. 5
@@ -289,6 +291,7 @@ struct Viewer {
     SDL_Window* window = nullptr;
     int appliedDisplay = -1, appliedMsaa = -1;
     bool appliedVsync = true, vsyncApplied = false;
+    bool orientationApplied = false, appliedLock = false, appliedFlip = false;
 
     static const char* settingsFile() { return "settings.ini"; }
     void loadSettings() {
@@ -315,6 +318,8 @@ struct Viewer {
             else if (k == "hd_textures") s.hdTextures = v != 0, s.hdSet = true;
             else if (k == "hd_models") s.hdModels = v != 0;
             else if (k == "smooth_models") s.smoothModels = v == 2 || v == 3 ? v : 0;
+            else if (k == "lock_orientation") s.lockOrientation = v != 0;
+            else if (k == "landscape_flipped") s.landscapeFlipped = v != 0;
             else if (k == "pad_swap") s.padSwap = v != 0;
             else if (k == "field_speed") s.fieldSpeed = std::clamp(v, 1, 5);
             else if (k == "battle_speed") s.battleSpeed = std::clamp(v, 1, 5);
@@ -333,6 +338,7 @@ struct Viewer {
                      s.display, s.resolution, s.vsync ? 1 : 0, s.fps, s.renderer, s.upscaler, s.quality, s.sharpness, s.msaa,
                      s.anisotropy, s.sharpTextures ? 1 : 0, s.hdTextures ? 1 : 0, s.hdModels ? 1 : 0, s.smoothModels, s.padSwap ? 1 : 0, s.fieldSpeed,
                      s.battleSpeed);
+        std::fprintf(f, "lock_orientation=%d\nlandscape_flipped=%d\n", int(s.lockOrientation), int(s.landscapeFlipped));
         if (!keepData.empty()) std::fprintf(f, "data=%s\n", keepData.c_str());
         std::fclose(f);
     }
@@ -367,6 +373,10 @@ struct Viewer {
             appliedDisplay = s.display;
         }
         if (s.hdTextures != hdTextures) hdTextures = s.hdTextures, reloadTextures();
+        if (!orientationApplied || appliedLock != s.lockOrientation || appliedFlip != s.landscapeFlipped) {
+            mobile::orientation(window, s.lockOrientation, s.landscapeFlipped);
+            appliedLock = s.lockOrientation, appliedFlip = s.landscapeFlipped, orientationApplied = true;
+        }
         hdModels = s.hdModels; // (from the next figure loaded)
     }
     // Every cached texture again (HD Textures turned on or off): in place, so what holds one sees the new
@@ -511,6 +521,12 @@ struct Viewer {
                                 s.smoothModels = kOrder[(i + (d < 0 ? 2 : 1)) % 3];
                             }});
         }
+        rows.push_back({"Lock Orientation", onOff(s.lockOrientation),
+                        "Hold the current landscape direction and restore it on restart", true, [this, &s](int) {
+                            s.lockOrientation = !s.lockOrientation;
+                            mobile::orientation(window, s.lockOrientation, s.landscapeFlipped, s.lockOrientation);
+                            orientationApplied = false;
+                        }});
         auto speed = [](int x) { return x > 1 ? std::to_string(x) + "x" : std::string("Off"); };
         rows.push_back({"Field Speed", speed(s.fieldSpeed), "Walking the field 2 .. 5 times as fast - its scenes, talk and menus as they are", true,
                         [&s](int d) { s.fieldSpeed = (s.fieldSpeed - 1 + d + 5) % 5 + 1; }});
@@ -707,6 +723,64 @@ struct Viewer {
             poseUi(u, name, uiClock, true);
             drawFigure(u.fig, view.data());
         }
+    }
+    struct MenuList { int* cursor = nullptr; int count = 0, context = 0; };
+    mobile::MenuSwipe menuSwipe;
+    MenuList menuList() {
+        if (saveImport.active()) return {};
+        if (settingsOpen) return {&settingsCursor, int(settingRows().size()), 1};
+        if (optionsOpen || optionsAsk) return {};
+        if (manualStage == 1) return {&manualCursor, int(manualEntries.size()), 2};
+        if (campOpen && !campUse && !campTakeSopia && campLink != 201) {
+            if (campList == 17) return {&campEquipCursor, int(equipRows().size()), 30 + campEquipMode};
+            if ((campList == 16 || campList == 18) && !campSopiaDetail)
+                return {&campCursor, int(campRows().size()), 100 + campList * 10 + campCategory};
+        }
+        return {};
+    }
+    bool menuScroll(int rows) {
+        const MenuList list = menuList();
+        if (!list.cursor || list.count <= 0) return false;
+        const int old = *list.cursor;
+        *list.cursor = mobile::scrollCursor(old, list.count, rows);
+        if (*list.cursor != old && audio.opened()) audio.playSe(0xb3, false);
+        return true;
+    }
+    bool menuPointerDown(float x, float y) {
+        const MenuList list = menuList();
+        if (!list.cursor || list.count <= 0 || x < 0.1f || x > 0.98f || y < 0.12f || y > 0.88f) return false;
+        menuSwipe.begin(x, y, list.context);
+        return true;
+    }
+    void menuPointerMove(float x, float y) {
+        if (!menuSwipe.down) return;
+        const auto list = menuList();
+        if (!list.cursor || list.context != menuSwipe.context) { menuSwipe = {}; return; }
+        menuScroll(menuSwipe.move(x, y));
+    }
+    bool menuPointerUp(float x, float y) {
+        if (!menuSwipe.down) return false;
+        menuPointerMove(x, y);
+        const auto gesture = menuSwipe;
+        menuSwipe = {};
+        if (gesture.down && !gesture.moved) pointerActivate(x, y);
+        return true;
+    }
+    void pointerActivate(float fx, float fy) {
+        if (overFast(fx, fy)) fastHeld = true; // (the fast-forward button: held, not a tap)
+        else if (titleMenu.stage) titleClick(fx, fy);
+        else if (yesNoClick(fx, fy)) {}
+        else if (battleMode && choosing) battleClick(fx, fy);
+        else if (vslash.stage == 1) vslashPointer(fx, fy, 0);
+        else if (fieldMode && !eventMode && keyLock.stage != 0) unlockPointer(fx, fy, 0);
+        else if (fieldMode && !eventMode && iai.stage) iaiPointer(fx, fy, 0);
+        else if (fieldMode && !eventMode && aim.stage) aimPointer(fx, fy, 0);
+        else if (fieldMode && !eventMode && hakkei.stage) hakkeiPointer(fx, fy);
+        else if (fieldMode && !eventMode && mystic.stage) mysticPointer(fx, fy);
+        else if (fieldMode && !eventMode && (sprintTap(fx, fy) || actionTap(fx, fy))) {}
+        else if (fieldMode && !eventMode && fieldClick(fx, fy)) {
+        } else if (fieldMode && !eventMode && walkStart(fx, fy)) { // (a walk, or the tap on its release)
+        } else if (eventMode || fieldMode || battleMode) tap();
     }
     void tap() {
         if (titleMenu.stage) return titleTap();
@@ -3793,7 +3867,7 @@ struct Viewer {
         if (optionsOpen) { // (Back; a bar's slide area: its volume by the point across it)
             if (r.id == 100) optionsOpen = false;
             else if (r.id == 3110) openSettings();
-            else if ((r.id >= 3100 && r.id < 3300) || r.id == 4098 || r.id == 4099) optionTap(r.id);
+            else if ((r.id >= 3100 && r.id < 3300) || r.id == 4036 || r.id == 4037 || r.id == 4098 || r.id == 4099) optionTap(r.id);
             else if (r.id >= 2000 && r.id < 2003) {
                 const float a = std::min(r.x0, r.x1), b = std::max(r.x0, r.x1);
                 optionVolume[r.id - 2000] = std::clamp(int(std::lround((x - a) / std::max(b - a, 1e-4f) * 20.0f)) * 5, 0, 100);
@@ -7467,6 +7541,12 @@ struct Viewer {
         case 3112: saveImportAnswer(true); break;
         case 3113: case 3114: saveImportAnswer(false); break;
         case 3110: openSettings(); break; // (CR2-U's Display & Graphics)
+        case 4036: case 4037:
+            settings.lockOrientation = id == 4036;
+            mobile::orientation(window, settings.lockOrientation, settings.landscapeFlipped, settings.lockOrientation);
+            orientationApplied = false;
+            saveSettings();
+            break;
         case 3103: optionQuality = (optionQuality + 2) % 3; break;
         case 3104: case 4098: optionQuality = (optionQuality + 1) % 3; break;
         case 3105: optionLanguage = (optionLanguage + 7) % 8; break;
@@ -7632,9 +7712,11 @@ struct Viewer {
                 const int n = std::atoi(j.c_str() + 17);
                 static const int kLanguageFrame[8] = {41, 42, 44, 45, 46, 47, 48, 40}; // (0x534728)
                 poseUi(c, "circlebtn_fr", float(n == 99 ? kLanguageFrame[std::clamp(optionLanguage, 0, 7)] : n == 98 ? 0 : n) / 20.0f); // (98, the quality's: frame 0, its text over it)
+                c.fig.tint[0] = c.fig.tint[1] = c.fig.tint[2] = (n == 36 || n == 37) && ((n == 36) != settings.lockOrientation) ? 0.45f : 1.0f;
                 drawFigure(c.fig, view.data());
+                c.fig.tint[0] = c.fig.tint[1] = c.fig.tint[2] = 1.0f;
                 float sx, sy, ex, ey;
-                if ((n == 98 || n == 99) && uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) tapRects.push_back({4000 + n, sx, sy, ex, ey});
+                if ((n == 36 || n == 37 || n == 98 || n == 99) && uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) tapRects.push_back({4000 + n, sx, sy, ex, ey});
             } else if (j.rfind("call_mainIcon_id", 0) == 0 && uiJoint(seat, j, x, y)) {
                 UiFig& ic = uiFig("mainicon_id");
                 ic.fig.place = cr2::Mat34();
@@ -11826,6 +11908,7 @@ std::string storedData() {
 }
 
 int main(int argc, char** argv) {
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     std::string data, model, capture, animName, renderer = "vulkan", lights = "d0101c", fieldName, at = "defaultPos", binary;
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
     float drag[5] = {0, 0, 0, 0, 0};               // --drag x0,y0,x1,y1,s: then a finger's drag that long (the screen's fractions; held for the capture)
@@ -12716,22 +12799,12 @@ int main(int argc, char** argv) {
                     dragging = true;
                     float fx, fy;
                     screenFraction(e.button.x, e.button.y, fx, fy);
-                    if (v.overFast(fx, fy)) v.fastHeld = true; // (the fast-forward button: held, not a tap)
-                    else if (v.titleMenu.stage) v.titleClick(fx, fy);
-                    else if (v.yesNoClick(fx, fy)) {}
-                    else if (v.battleMode && v.choosing) v.battleClick(fx, fy);
-                    else if (v.vslash.stage == 1) v.vslashPointer(fx, fy, 0);
-                    else if (v.fieldMode && !v.eventMode && v.keyLock.stage != 0) v.unlockPointer(fx, fy, 0);
-                    else if (v.fieldMode && !v.eventMode && v.iai.stage) v.iaiPointer(fx, fy, 0);
-                    else if (v.fieldMode && !v.eventMode && v.aim.stage) v.aimPointer(fx, fy, 0);
-                    else if (v.fieldMode && !v.eventMode && v.hakkei.stage) v.hakkeiPointer(fx, fy);
-                    else if (v.fieldMode && !v.eventMode && v.mystic.stage) v.mysticPointer(fx, fy);
-                    else if (v.fieldMode && !v.eventMode && (v.sprintTap(fx, fy) || v.actionTap(fx, fy))) {}
-                    else if (v.fieldMode && !v.eventMode && v.fieldClick(fx, fy)) {
-                    } else if (v.fieldMode && !v.eventMode && v.walkStart(fx, fy)) { // (a walk, or the tap on its release)
-                    } else if (v.eventMode || v.fieldMode || v.battleMode) v.tap();
+                    if (!v.menuPointerDown(fx, fy)) v.pointerActivate(fx, fy);
                 }
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                    float fx, fy;
+                    screenFraction(e.button.x, e.button.y, fx, fy);
+                    if (v.menuPointerUp(fx, fy)) { dragging = false; continue; }
                     dragging = false;
                     v.fastHeld = false;
                     if (v.walkDrag.down) v.walkEnd();
@@ -12746,6 +12819,11 @@ int main(int argc, char** argv) {
                         screenFraction(e.button.x, e.button.y, fx, fy);
                         v.aimPointer(fx, fy, 2);
                     }
+                } else if (e.type == SDL_EVENT_MOUSE_MOTION && v.menuSwipe.down) {
+                    float fx, fy;
+                    screenFraction(e.motion.x, e.motion.y, fx, fy);
+                    v.menuPointerMove(fx, fy);
+                } else if (e.type == SDL_EVENT_MOUSE_WHEEL && v.menuScroll(e.wheel.y > 0 ? -1 : e.wheel.y < 0 ? 1 : 0)) {
                 } else if (e.type == SDL_EVENT_MOUSE_MOTION && dragging && v.walkDrag.down) {
                     float fx, fy;
                     screenFraction(e.motion.x, e.motion.y, fx, fy);

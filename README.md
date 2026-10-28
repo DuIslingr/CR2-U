@@ -114,6 +114,13 @@ Options, Display & Graphics: **Field Speed** and **Battle Speed**, each Off or 2
 field (its scenes, talk and menus as they are) and the battles that many times as fast. Kept in
 settings.ini (`field_speed`, `battle_speed`); `--field-speed n` / `--battle-speed n` for one run.
 
+## Vita save importing
+
+Import decrypted Vita saves from title-screen **Options**, using **Import Vita Saves** below the volume bars.
+Choose the exported save folder and confirm; existing saves are backed up automatically.
+No Python is needed. See [Vita save importing](docs/VITA_SAVES.md) for supported state,
+profile locations and the optional command-line converter.
+
 ## HD textures
 
 Upscaled textures you make yourself, from your own copy - waifu2x or Real-ESRGAN, drawn in place of

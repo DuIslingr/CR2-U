@@ -45,6 +45,7 @@
 // PageUp / PageDown for the character's animations. Space pauses, Esc quits. --capture draws
 // one frame (at --time; --run plays that many seconds more first, 60 frames a second) to a BMP
 // and exits.
+#include "platform/vita_import_ui.hpp"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
@@ -2637,6 +2638,7 @@ struct Viewer {
             inputScript.pop_front();
         }
         audio.setVolumes(float(optionVolume[0]) / 100.0f, float(optionVolume[1]) / 100.0f, float(optionVolume[2]) / 100.0f);
+        saveImport.poll();
         audio.update(dt);
         updateVistaSlash();
         if (optionsWasOpen && !optionsOpen && scriptSaves) writeSystem(); // (OptionMenu's end: Cr3Util_Save_SystemData)
@@ -3722,6 +3724,16 @@ struct Viewer {
     // the options' window, its question and the manual (in a battle or the camp) taking a key:
     // false - none of them open
     bool optionsKey(SDL_Keycode k) {
+        if (saveImport.active()) {
+            if (saveImport.state == vitaimport::Session::Picking) {
+                if (k == SDLK_ESCAPE || k == SDLK_BACKSPACE) saveImport.cancel();
+            } else if (k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_UP || k == SDLK_DOWN) saveImport.focus ^= 1;
+            else if (k == SDLK_ESCAPE || k == SDLK_BACKSPACE || k == SDLK_N) saveImportAnswer(false);
+            else if (k == SDLK_Y) saveImportAnswer(true);
+            else if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE) saveImportAnswer(saveImport.focus == 0);
+            return true;
+        }
+
         if (settingsKey(k)) return true;
         if (manualStage == 2) { // (the tutorial: Return a page)
             if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && manualEvents) manualEvents->advance();
@@ -3742,12 +3754,13 @@ struct Viewer {
         }
         if (optionsOpen) { // (the options: Backspace / Return back, Left / Right the focused bar; G / Tab
                            // CR2-U's Display & Graphics)
-            if (k == SDLK_G || k == SDLK_TAB) openSettings();
+            if (k == SDLK_I || ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && optionFocus == 3)) optionTap(3111);
+            else if (k == SDLK_G || k == SDLK_TAB) openSettings();
             else if (k == SDLK_BACKSPACE || k == SDLK_RETURN || k == SDLK_KP_ENTER) optionsOpen = false;
-            else if (k == SDLK_UP) optionFocus = (optionFocus + 2) % 3;
-            else if (k == SDLK_DOWN) optionFocus = (optionFocus + 1) % 3;
-            else if (k == SDLK_LEFT) optionVolume[optionFocus] = std::max(optionVolume[optionFocus] - 5, 0), volumeSet(optionFocus);
-            else if (k == SDLK_RIGHT) optionVolume[optionFocus] = std::min(optionVolume[optionFocus] + 5, 100), volumeSet(optionFocus);
+            else if (k == SDLK_UP) optionFocus = (optionFocus + 3) % 4;
+            else if (k == SDLK_DOWN) optionFocus = (optionFocus + 1) % 4;
+            else if (k == SDLK_LEFT && optionFocus < 3) optionVolume[optionFocus] = std::max(optionVolume[optionFocus] - 5, 0), volumeSet(optionFocus);
+            else if (k == SDLK_RIGHT && optionFocus < 3) optionVolume[optionFocus] = std::min(optionVolume[optionFocus] + 5, 100), volumeSet(optionFocus);
             return true;
         }
         return false;
@@ -3761,6 +3774,11 @@ struct Viewer {
     // a tap on the options' window, its question or the manual (`x`: across, UI units): false -
     // none of them open
     bool optionsTapped(const TapRect& r, float x) {
+        if (saveImport.active()) {
+            if (r.id == 3112) saveImportAnswer(true);
+            else if (r.id == 3113 || r.id == 3114) saveImportAnswer(false);
+            return true;
+        }
         if (settingsTapped(r.id)) return true;
         if (manualStage == 1) {
             if (r.id == 100) closeManual();
@@ -6700,12 +6718,18 @@ struct Viewer {
         }
     }
     void titleToken(const std::string& tok) {
+        if (saveImport.active()) {
+            if (tok == "yes") saveImportAnswer(true);
+            else if (tok == "no" || tok == "back") saveImportAnswer(false);
+            return;
+        }
+
         SDL_Log("title: input %s (stage %d)", tok.c_str(), titleMenu.stage);
         static const std::pair<const char*, int> kButtons[] = {{"start", 8}, {"options", 20}, {"scenarios", 24}, {"new", 9}, {"load", 10}, {"back", 100}};
         if (titleMenu.stage == 3) titleMenu.tapped = true;
         else if (titleMenu.stage == 7 && (tok == "yes" || tok == "no")) titleAnswer(tok == "yes");
         else if (titleMenu.stage == 9) {
-            static const std::pair<const char*, int> kOptionTaps[] = {{"reset", 3101}, {"manual", 3102}, {"yes", 3201}, {"no", 3202}};
+            static const std::pair<const char*, int> kOptionTaps[] = {{"import", 3111}, {"reset", 3101}, {"manual", 3102}, {"yes", 3201}, {"no", 3202}};
             for (const auto& [name, id] : kOptionTaps)
                 if (tok == name && (optionsOpen || optionsAsk)) return optionTap(id); // (the options' Reset Data and its questions)
             if (tok == "back") optionsOpen = false, campLink = 0;
@@ -6819,7 +6843,7 @@ struct Viewer {
     static void hideJoint(UiFig& u, const std::string& joint) { showJoint(u, joint, false); }
     // a circle button drawn at `id`: lit if it has the focus (else as its material is)
     void focusLook(UiFig& c, int id) {
-        const bool on = focusScreen() && id == keyFocus;
+        const bool on = buttonLook ? buttonLook(id) == 2 : focusScreen() && id == keyFocus;
         for (ViewMesh& vm : c.fig.meshes) {
             const uint32_t mi = vm.source.material;
             if (mi >= c.materials.size() || c.materials[mi] != "PRG_shiftR") continue;
@@ -7439,6 +7463,9 @@ struct Viewer {
             optionsOpen = false;
             openManual();
             break;
+        case 3111: if (titleOptions()) saveImport.begin("cr2", SDL_GetKeyboardFocus()); break;
+        case 3112: saveImportAnswer(true); break;
+        case 3113: case 3114: saveImportAnswer(false); break;
         case 3110: openSettings(); break; // (CR2-U's Display & Graphics)
         case 3103: optionQuality = (optionQuality + 2) % 3; break;
         case 3104: case 4098: optionQuality = (optionQuality + 1) % 3; break;
@@ -7553,6 +7580,18 @@ struct Viewer {
         const float t = uiClock - optionsAskStart;
         drawAsk(announce(optionsReset == 1 ? 0x6e : optionsReset == 2 ? 0x6f : 0x6d), t, view, w, h, 3201, 3202, true);
     }
+    vitaimport::Session saveImport;
+    void saveImportAnswer(bool yes) {
+        const bool finished = saveImport.state == vitaimport::Session::Result && saveImport.succeeded;
+        const std::string profile = std::filesystem::path(savePath()).parent_path().u8string();
+        saveImport.answer(yes, profile);
+        if (finished) {
+            systemRead = systemFound = false;
+            systemFlags.clear();
+            optionsOpen = optionsAsk = campOpen = false;
+            startTitle();
+        }
+    }
     int optionVolume[3] = {100, 100, 100}, optionFocus = 0; // (0..100: GetOptionWork's time the volume / 20)
     void drawOptions(const Mat4& view, const Mat4& proj, int w, int h) {
         tapRects.clear();
@@ -7628,6 +7667,16 @@ struct Viewer {
                 drawFigure(c.fig, view.data());
                 drawUiText("Graphics", 26, cx, cy, w, h, false, 1.0f, bw * 0.9f);
                 tapRects.push_back({3110, sx + ox, sy + oy, ex + ox, ey + oy});
+                // Import uses another native oval in the open band below the volume bars.
+                const float ix = -(sx + ex) * 0.5f, iy = -0.20f - (sy + ey) * 0.5f;
+                c.fig.place.m[3] = ix, c.fig.place.m[7] = iy;
+                c.fig.tint[0] = c.fig.tint[1] = c.fig.tint[2] = titleOptions() ? 1.0f : 0.4f;
+                poseUi(c, "circlebtn_fr", 0);
+                drawFigure(c.fig, view.data());
+                drawUiText(optionFocus == 3 ? "> Import Vita Saves" : "Import Vita Saves", 22, 0, -0.20f, w, h, false, titleOptions() ? 1.0f : 0.4f, bw * 0.9f);
+                c.fig.tint[0] = c.fig.tint[1] = c.fig.tint[2] = 1.0f;
+                if (titleOptions()) tapRects.push_back({3111, sx + ix, sy + iy, ex + ix, ey + iy});
+
                 break;
             }
         UiFig& bk = uiFig("btlback");
@@ -7636,6 +7685,14 @@ struct Viewer {
         drawFigure(bk.fig, view.data());
         float sx, sy, ex, ey;
         if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
+        if (saveImport.state == vitaimport::Session::Confirm || saveImport.state == vitaimport::Session::Result) {
+            tapRects.clear();
+            dev->clearDepth();
+            const bool confirm = saveImport.state == vitaimport::Session::Confirm;
+            buttonLook = [&](int id) { return !confirm || id == (saveImport.focus == 0 ? 3112 : 3113) ? 2 : 1; };
+            drawAsk(saveImport.message, 1.0f, view, w, h, confirm ? 3112 : 3114, confirm ? 3113 : 3114, true, !confirm);
+            buttonLook = nullptr;
+        } else if (saveImport.state == vitaimport::Session::Picking) tapRects.clear();
         (void)proj;
     }
     void drawChoosing(const Mat4& view, int w, int h) {
@@ -8209,7 +8266,9 @@ struct Viewer {
         bool crc = false;
         std::string err;
         if (!read(path, d) || !cr2::readGameSave(d, game, place, &crc, &err)) return SDL_Log("game save %s: %s", path.c_str(), err.empty() ? "can't read" : err.c_str()), false;
-        const std::string sys = (std::filesystem::path(path).parent_path() / "system.dat").string();
+        const std::filesystem::path input(path);
+        const bool vita = input.filename() == "SAVEDATA0021.bin" || input.filename() == "SAVEDATA0022.bin";
+        const std::string sys = (input.parent_path() / (vita ? "SAVEDATA0020.bin" : "system.dat")).string();
         uint32_t options[6];
         bool sysCrc = false;
         const bool system = read(sys, d) && cr2::readSystemSave(d, game, options, &sysCrc);
@@ -8619,7 +8678,7 @@ struct Viewer {
     // `titleStyle`: InterfaceMain::SetYNChoiceTWindowParameter's (interface 0x3c, TitleYNChoice - the
     // title's, the options', SaveConfirmationMenu's): its Yes / No at reopenBtn_io's call_circleBtn_fr11
     // / 12; else SetYNChoiceWindowParameter's (7, BattleYNChoice): choice_io's call_cBtn_fr11 / 12
-    void drawAsk(const std::string& message, float t, const Mat4& view, int w, int h, int yes, int no, bool titleStyle = false) {
+    void drawAsk(const std::string& message, float t, const Mat4& view, int w, int h, int yes, int no, bool titleStyle = false, bool notice = false) {
         UiFig& win = uiFig("syswin_io");
         win.fig.place = cr2::Mat34();
         poseUi(win, "syswin_io", t);
@@ -8644,15 +8703,17 @@ struct Viewer {
         poseUi(ch, buttons, t);
         drawFigure(ch.fig, view.data());
         for (int n : {11, 12}) {
+            if (notice && n == 12) continue;
             char jn[32];
             std::snprintf(jn, sizeof jn, titleStyle ? "call_circleBtn_fr%d" : "call_cBtn_fr%d", n);
             if (!uiJoint(ch, jn, x, y)) continue;
             UiFig& c = uiFig("circlebtn_fr");
             c.fig.place = cr2::Mat34();
             c.fig.place.m[3] = x, c.fig.place.m[7] = y;
-            poseUi(c, "circlebtn_fr", float(n) / 20.0f);
+            poseUi(c, "circlebtn_fr", float(notice ? 0 : n) / 20.0f);
             focusLook(c, n == 11 ? yes : no);
             drawFigure(c.fig, view.data());
+            if (notice) drawUiText("OK", 26, x, y, w, h, false);
             float sx, sy, ex, ey;
             if (uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) tapRects.push_back({n == 11 ? yes : no, sx, sy, ex, ey});
         }
@@ -9597,6 +9658,12 @@ struct Viewer {
     // --input in the field: "tab", "camp" (the tab opened, then Camp), "back", "items", "sopia",
     // "equip", "options", "category"; the options' own (as in battle); false - not one of these
     bool fieldToken(const std::string& t) {
+        if (saveImport.active()) {
+            if (t == "yes") saveImportAnswer(true);
+            else if (t == "no" || t == "back") saveImportAnswer(false);
+            return true;
+        }
+
         if (t == "tap" && fieldTabShown()) tap(); // (the leader's tap: the nearest balloon's)
         else if (t == "change" && fieldTabShown()) startChange(); // (the character change's button)
         else if (t == "sprint" && sprintAt() >= 0) startSprint(sprintAt());

@@ -171,7 +171,8 @@ std::vector<uint8_t> writeGameSave(const GameState& g, const GameSavePlace& plac
 }
 
 bool readSystemSave(const std::vector<uint8_t>& d, GameState& g, uint32_t options[6], bool* crcOk, std::string* error) {
-    if (!checkHeader(d, kSystemSaveSize, crcOk, error)) return false;
+    // Vita omits the final 0x20-byte achievement block; flags/options have the same offsets.
+    if (!checkHeader(d, d.size() == 0x98 ? 0x98 : kSystemSaveSize, crcOk, error)) return false;
     for (int n = 0; n < int(kSystemFlagBytes) * 8; ++n) g.setFlag(n, (d[kSystemFlags + size_t(n >> 3)] >> (n & 7)) & 1);
     for (int k = 0; k < 6; ++k) options[k] = rd32(d, kSystemOptions + size_t(k) * 4);
     return true;

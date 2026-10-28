@@ -1,19 +1,12 @@
-# CR2-U v0.4.0
+# CR2-U v0.4.1
 
 A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux and Android.
 
 ## What's new
 
-- **Easy first start:** with no game found, it asks for your copy (an iOS `.ipa`, an Android
-  APK + OBB, or a Vita / Vita3K folder) and copies what it needs next to the program. Vita
-  NoNpDrm dumps are decrypted, packed or not (`.rar`, `.7z`, `.zip`, `.vpk`), and the Prequel
-  Trilogy works too.
-- **Smooth Models** (new): rounder models, characters, stages and props alike (Options).
-- **HD Models:** export the models as glTF 2.0 and load your own replacements (off by default).
-- **Field Speed and Battle Speed:** 2x to 5x (Options, Display & Graphics).
-- **Title screen fixes:** the painting now shows on the iPad and Vita releases, and the menu
-  button no longer flashes.
-- Settings scroll with the mouse wheel; long help text wraps.
+- **Vita save importing:** import decrypted Vita saves directly from title-screen Options → Import Vita Saves, using the game's own option menus. Existing saves are backed up automatically.
+- Support the Vita system-save layout alongside the existing native save format.
+- Downloads include the optional command-line save converter and Vita importing instructions.
 
 ## Downloads
 

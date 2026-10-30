@@ -1,15 +1,16 @@
-# CR2-U v0.4.2
+# CR2-U v0.4.3
 
 A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux and Android.
 
 ## What's new
 
-- **Menu scrolling:** swipe or use the mouse wheel in item, Sopia, equipment, manual and graphics lists. Swipes move the selection without activating it.
-- **Dialogue audio:** advancing past a completed message stops its voice, and a new story voice replaces the previous one. Revealing text keeps its voice playing.
-- **Orientation:** Lock Orientation now applies on Android and remembers its landscape direction on restart. The original Options On/Off buttons use the same preference.
-- **Vita audio:** fix ATRAC9 bit operations and compressed-frame lookahead bounds. Added input, dialogue and decoder regression tests.
+- **Invisible character:** a game started from the title showed only a shadow where the player should be. The character now appears.
+- **Dialogue:** pages and yes / no questions wait for you instead of moving on after a few seconds, battle tutorials take your tap first, and timed lines stay up until the next message.
+- **Saves:** written safely and loaded all or nothing. A save cut short is refused, the title stays open with a notice, and damaged numbers are held in range.
+- **Controller:** a button held while the window loses focus, or as a session ends, does nothing until it's let go.
+- **Windows:** a PC without Vulkan no longer refuses to start the game; it goes on to OpenGL.
 
-Checked with Android, iOS and Vita game data. Physical Android touch and rotation testing remains pending; the reported early crystal-room crash has not been confirmed.
+The autoplayer played from the title into the late game, with one puzzle skipped and later bosses taken as won; the ending wasn't reached in this pass. A real Windows PC without Vulkan and physical Android devices are still untested.
 
 ## Downloads
 

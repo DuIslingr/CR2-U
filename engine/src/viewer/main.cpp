@@ -12214,6 +12214,9 @@ int sessionUiViewerSelfTest() {
     return problems ? 1 : 0;
 }
 
+// (no figure asked for: a game - the title's too, whose field comes later - shows the field's leader)
+static bool leaderByDefault(bool noModel, bool title, bool field, bool resumed) { return noModel && (title || field || resumed); }
+
 int newSessionSelfTest() {
     if (!SDL_Init(SDL_INIT_EVENTS)) return 1;
     int problems = 0;
@@ -12237,6 +12240,9 @@ int newSessionSelfTest() {
         if (!v.voiceJobs.empty() || !v.seJobs.empty() || v.pendingBgm || v.pendingBgmAt) {
             ++problems; std::puts("new session FAILED: abandoned scene audio survived");
         }
+    }
+    if (!leaderByDefault(true,true,false,false) || leaderByDefault(true,false,false,false) || leaderByDefault(false,true,false,false)) {
+        ++problems; std::puts("new session FAILED: a game from the title has no leader");
     }
     SDL_Quit();
     std::printf("new session: %d problems\n",problems);
@@ -12467,8 +12473,8 @@ int main(int argc, char** argv) {
             return false;
         };
         Viewer::Settings& s = v.settings;
-        if (!exploreDir.empty()) { // (from the title, as a player: in frames of the reference's 20:9)
-            titleScreen = true;
+        if (!exploreDir.empty()) { // (from the title, as a player - or, --continue, the save: in frames of the reference's 20:9)
+            titleScreen = !continueSave;
             if (resW == 0) resW = 1280, resH = 576;
         }
         if (capture.empty() && !exportTextures && !exportModels && exploreDir.empty()) {
@@ -12619,7 +12625,7 @@ int main(int argc, char** argv) {
         if (e.name.size() > 5 && e.name.compare(e.name.size() - 5, 5, ".geom") == 0) v.models.push_back(e.name);
     std::sort(v.models.begin(), v.models.end());
     if (v.models.empty()) return std::fprintf(stderr, "no models in %s\n", data.c_str()), 1;
-    const bool leaderDefaulted = model.empty() && (!fieldName.empty() || !playFrom.empty() || continueSave);
+    const bool leaderDefaulted = leaderByDefault(model.empty(), titleScreen, !fieldName.empty() || !playFrom.empty(), continueSave);
     if (leaderDefaulted) model = "c001"; // (the leader: Darwin - then the field's, refreshLeader)
     size_t start = 0;
     if (!model.empty()) {

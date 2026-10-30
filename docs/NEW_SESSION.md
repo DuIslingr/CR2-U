@@ -41,3 +41,12 @@ CR2's actual text-save load checks pass with Android and iOS data in both builds
 with fresh progress and zero playtime for Android, iOS and Japanese Vita data
 in both builds (six runs). LeakSanitizer is disabled for the sandbox tracing
 limitation. Diff whitespace checks pass in both repositories.
+
+## Follow-up: the leader from the title (2026-10-30)
+
+A game begun from the title drew no leader: only a shadow. The viewer settled on its
+default figure before the title's launch counted as a game, so the leader never
+followed the field, and `--play` and `--continue` both hid it. `leaderByDefault`
+now counts the title, and the `viewer-new-session` test holds that rule. The real
+launch was checked with the autoplayer: the leaders load and show, and the title
+screen is pixel-identical to before. `--explore` also takes `--continue` now.

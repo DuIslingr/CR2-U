@@ -73,6 +73,14 @@ jobs:
         run: cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=ON -DCMAKE_DISABLE_FIND_PACKAGE_Freetype=ON
       - name: Build
         run: cmake --build build --parallel
+      - name: Vulkan loader for the tests
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # (cr2view links vulkan-1.dll, and the runner has no GPU driver to bring one)
+          dll=$(find "$(cygpath -u "$VULKAN_SDK")" -ipath '*x64*' -iname vulkan-1.dll | head -1)
+          [ -n "$dll" ] || { echo "::error::no vulkan-1.dll under $VULKAN_SDK"; exit 1; }
+          cygpath -w "$(dirname "$dll")" >> "$GITHUB_PATH"
       - name: Native Vita importer tests
         run: ctest --test-dir build --output-on-failure
 

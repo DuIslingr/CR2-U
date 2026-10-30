@@ -123,7 +123,7 @@ public:
     bool skipButtonShown() const { return skipButton_; }
     bool skipHeld() const { return fastForward && skipButton_; }
     bool fastForwardShown() const {
-        return message_ > 0 && messageWindow_ >= 0 && messageWindow_ <= 6 && !skipOff_.count(messageWindow_) && !parsed_.noSkip;
+        return message_ > 0 && !ended_ && messageWindow_ >= 0 && messageWindow_ <= 6 && !skipOff_.count(messageWindow_) && !parsed_.noSkip;
     }
     bool yesNoShown() const { return yesNoShown_; }
     float yesNoAge() const { return yesNoAge_; }
@@ -194,6 +194,7 @@ private:
     std::vector<std::pair<int, std::string>> cutInImages_; // (id, image: the first of an id counts)
     int messageWindow_ = Vista;
     int message_ = 0, page_ = 0, revealed_ = 0, messagesSet_ = 0;
+    bool ended_ = false;  // a \* message ended by itself: still shown, done for CheckMessage
     size_t stop_ = 0;     // the page's next stop (TextStop)
     float stopTime_ = 0;  // (at a \w stop: its time so far)
     const TextStop* held() const; // the stop the typing waits at, else null

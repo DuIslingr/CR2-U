@@ -657,3 +657,30 @@ D01_01_0101_evt --vista d0151b` shows one.
 releases); `cr2tool run <archive> <script>` then calls the script's function with every native
 a stub, listing what it reached - an event plays as far as its first message (scene, animators,
 camera, lights, the window opened, the message set) and then waits on `EvtWindow.CheckMessage`.
+
+## Follow-up: messages in play (2026-10-30)
+
+Two of CR3-U's fixes had not reached this port.
+
+- Pages turned by themselves in play. `--page`'s default of 3 seconds, meant for
+  captures, also ran in a played game: a page turned after 3 seconds and a yes / no
+  answered yes. In play a page now waits for the player, as the game's does, in
+  events, field scripts and battle talk. `--page n` still turns them. A battle's
+  tap now also reaches `GetTouchState`, and a tutorial over the commands takes the
+  tap or Return first, or the battle would wait on a talk the player can't end.
+- A `\*` line vanished as soon as it was typed. `EvtWindow::UpdatePage` only marks
+  the page done (+0x2168), `CheckMessage` reads that, and nothing clears the text
+  until the next `SetMessage` or `Close`; this release binds no `ClearMessage`.
+  224 of the 412 messages in the 70 events are of this kind. The line now stays.
+
+Not every message waits: the opening's are timed lines, so a played opening reaches
+its first battle with no input at all. To see the first fix, use an event such as
+`d01_01_0101_evt`: 20 of the 70 stop on a message with no taps. All 70 still reach
+their ends on taps alone (a tap a second, `autoPage` 0), and `event-reset` covers
+both behaviours. The played default itself has no ctest: it needs a game's data, and
+was checked by running `--event` and `--battle 1 --fight manual` with no input,
+with presses and with `--page 3`.
+
+Compared and needing nothing here: the music streams' empty first packet (every
+iPad track gives sound on its first read), and alpha-only textures (all 33 are used
+as light maps, whose colour is never drawn, so CR3-U's black doesn't apply).

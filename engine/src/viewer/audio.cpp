@@ -45,9 +45,10 @@ void AudioPlayer::close() {
     if (!slots_.empty()) soundHooks() = SoundHooks();
     for (Voice& v : slots_) endVoice(v);
     slots_.clear();
-    if (bgm_) SDL_DestroyAudioStream(bgm_), bgm_ = nullptr;
-    music_.reset();
+    releaseBgm();
+    bgmPos_ = 0, bgmFade_ = 1, bgmFadeStep_ = 0;
     if (device_) SDL_CloseAudioDevice(device_), device_ = 0;
+    data_ = SoundData();
 }
 
 void AudioPlayer::setVolumes(float bgm, float effects, float voices) {
@@ -158,7 +159,7 @@ int AudioPlayer::playSe(int clip, bool loop) {
     log.push_back("se " + std::to_string(clip) + (loop ? " (looping)" : ""));
     SDL_LogDebug(SDL_LOG_CATEGORY_AUDIO, "sound: se %d%s", clip, loop ? " (looping)" : "");
     if (volume_[1] <= 0) return -1;
-    for (int k = 0; k < kEffectSlots; ++k)
+    for (int k = 0; k < std::min(kEffectSlots, int(slots_.size())); ++k)
         if (!slots_[size_t(k)].active) {
             startClip(slots_[size_t(k)], SoundData::Effects, clip, loop);
             return slots_[size_t(k)].active ? k : -1;
@@ -167,14 +168,14 @@ int AudioPlayer::playSe(int clip, bool loop) {
 }
 
 void AudioPlayer::stopSe(int slot, int fadeFrames) {
-    if (slot < 0 || slot >= kEffectSlots) return;
+    if (slot < 0 || slot >= kEffectSlots || size_t(slot) >= slots_.size()) return;
     Voice& v = slots_[size_t(slot)];
     if (fadeFrames <= 0) endVoice(v);
     else v.fadeStep = -kUpdates / float(fadeFrames);
 }
 
 void AudioPlayer::stopAllSe(int fadeFrames) {
-    for (int k = 0; k < kEffectSlots; ++k) stopSe(k, fadeFrames);
+    for (int k = 0; k < std::min(kEffectSlots, int(slots_.size())); ++k) stopSe(k, fadeFrames);
 }
 
 // Cr3UtilSoundPlayVoice (none at a volume of 0)
@@ -182,7 +183,7 @@ int AudioPlayer::playVoice(int clip) {
     log.push_back("voice " + std::to_string(clip));
     SDL_LogDebug(SDL_LOG_CATEGORY_AUDIO, "sound: voice %d", clip);
     if (volume_[2] <= 0) return -1;
-    for (int k = kEffectSlots; k < kEffectSlots + kVoiceSlots; ++k)
+    for (int k = kEffectSlots; k < std::min(kEffectSlots + kVoiceSlots, int(slots_.size())); ++k)
         if (!slots_[size_t(k)].active) {
             startClip(slots_[size_t(k)], SoundData::Voices, clip, false);
             return slots_[size_t(k)].active ? k : -1;
@@ -191,7 +192,7 @@ int AudioPlayer::playVoice(int clip) {
 }
 
 void AudioPlayer::stopAllVoices(int fadeFrames) {
-    for (int k = kEffectSlots; k < kEffectSlots + kVoiceSlots; ++k) {
+    for (int k = kEffectSlots; k < std::min(kEffectSlots + kVoiceSlots, int(slots_.size())); ++k) {
         Voice& v = slots_[size_t(k)];
         if (fadeFrames <= 0) endVoice(v);
         else v.fadeStep = -kUpdates / float(fadeFrames);

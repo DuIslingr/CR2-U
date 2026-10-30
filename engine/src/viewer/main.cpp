@@ -46,6 +46,7 @@
 // one frame (at --time; --run plays that many seconds more first, 60 frames a second) to a BMP
 // and exits.
 #include "platform/vita_import_ui.hpp"
+#include "platform/atomic_file.hpp"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
@@ -88,6 +89,8 @@
 #include "event/runtime.hpp"
 #include "viewer/audio.hpp"
 #include "viewer/mobile_input.hpp"
+#include "platform/input_cancel.hpp"
+#include "platform/lifecycle_clock.hpp"
 #include "viewer/setup.hpp"
 
 std::string storedData(); // (settings.ini's data=: below)
@@ -329,18 +332,20 @@ struct Viewer {
     void saveSettings() const {
         if (!settingsPersist) return;
         const std::string keepData = storedData(); // (the setup's copy, kept - read before the file is rewritten)
-        std::FILE* f = std::fopen(savePath(settingsFile()).c_str(), "wb");
-        if (!f) return;
+        char* serialized = nullptr;
         const Settings& s = settings;
-        std::fprintf(f, "# CR2-U: the options' Display & Graphics (the command line's flags go over these)\n"
+        if (SDL_asprintf(&serialized, "# CR2-U: the options' Display & Graphics (the command line's flags go over these)\n"
                         "display=%d\nresolution=%d\nvsync=%d\nfps=%d\nrenderer=%d\nupscaler=%d\nquality=%d\nsharpness=%d\n"
                         "msaa=%d\nanisotropy=%d\nsharp_textures=%d\nhd_textures=%d\nhd_models=%d\nsmooth_models=%d\npad_swap=%d\nfield_speed=%d\nbattle_speed=%d\n",
                      s.display, s.resolution, s.vsync ? 1 : 0, s.fps, s.renderer, s.upscaler, s.quality, s.sharpness, s.msaa,
                      s.anisotropy, s.sharpTextures ? 1 : 0, s.hdTextures ? 1 : 0, s.hdModels ? 1 : 0, s.smoothModels, s.padSwap ? 1 : 0, s.fieldSpeed,
-                     s.battleSpeed);
-        std::fprintf(f, "lock_orientation=%d\nlandscape_flipped=%d\n", int(s.lockOrientation), int(s.landscapeFlipped));
-        if (!keepData.empty()) std::fprintf(f, "data=%s\n", keepData.c_str());
-        std::fclose(f);
+                     s.battleSpeed) < 0 || !serialized) return;
+        std::string text = serialized;
+        SDL_free(serialized);
+        text += "lock_orientation=" + std::to_string(int(s.lockOrientation)) + "\nlandscape_flipped=" + std::to_string(int(s.landscapeFlipped)) + "\n";
+        if (!keepData.empty()) text += "data=" + keepData + "\n";
+        std::string error;
+        if (!crstorage::replaceFile(savePath(settingsFile()), text, &error)) SDL_Log("settings: %s", error.c_str());
     }
     // The settings onto the device, the window and the textures (each only as it changes)
     void applySettings() {
@@ -746,6 +751,23 @@ struct Viewer {
         if (*list.cursor != old && audio.opened()) audio.playSe(0xb3, false);
         return true;
     }
+    bool pointerCancelled = false;
+    void cancelPointerInput() {
+        menuSwipe = mobile::MenuSwipe();
+        walkDrag = WalkDrag();
+        fastHeld = false, fastUntil = 0;
+        keyLock.pressing = vslash.pressed = false;
+        if (iai.stage == 2) iai.stage = 1;
+        if (aim.stage == 2) aim.stage = 1;
+        pointerCancelled = true;
+        padHeldOver.cancel();
+    }
+    crinput::HeldOver padHeldOver; // (the controller: dead after a cancel or a session's end, until let go)
+    bool consumeInputCancel(crinput::CancelWatch& cancel) {
+        if (!cancel.consume()) return false;
+        cancelPointerInput();
+        return true;
+    }
     bool menuPointerDown(float x, float y) {
         const MenuList list = menuList();
         if (!list.cursor || list.count <= 0 || x < 0.1f || x > 0.98f || y < 0.12f || y > 0.88f) return false;
@@ -787,7 +809,7 @@ struct Viewer {
         if (vslash.stage) return; // (the slash: a swipe, not a tap)
         if (battleMode) {
             if (skipScene()) return;
-            if (battleScript && battleScript->running()) battleScript->events().advance();
+            if (battleScript && battleScript->running()) battleScript->events().touch();
             else if (analyze.stage == 1 || analyze.stage == 2) analyze.tapped = true;
             else if (result.stage > 0) result.tapped = true;
             else if (gameOver.stage > 0) gameOver.tapped = true;
@@ -2749,7 +2771,7 @@ struct Viewer {
             updateEvent(event && event->skipHeld() ? dt * 5 : dt); // (the skip button held: five updates a frame)
         } else if (fieldMode && (campOpen || mapOpen || saveStage || world.stage || shop.stage || party.stage || library.stage == 1 || pub.stage)) { // (FldMain steps 5 .. 7, 10: the camp, the map, saving, the world select - the field held)
             updateManual(dt);
-            if (saveStage == 2 && uiClock - saveStart > 1.0f) saveStage = 0; // (a second, then closed)
+            if (saveStage == 2 && uiClock - saveStart > (saveFailed ? 3.0f : 1.0f)) saveStage = 0; // (a second, then closed)
             if (script && !script->running()) { // (the fade, the windows go on under a menu: GameMain's update - the library's fade back in)
                 fieldClock = std::min(fieldClock + dt, 0.25f);
                 for (; fieldClock >= cr2::EventRuntime::kTick; fieldClock -= cr2::EventRuntime::kTick) script->tick();
@@ -2887,6 +2909,8 @@ struct Viewer {
     bool fightingInFlow = false, randomBattle = false; // (randomBattle: an encounter's)
     // the battle dropped (the options' Title Screen)
     void leaveBattle() {
+        cancelSceneAudio();
+        pendingBgm = 0, pendingBgmAt = 0;
         battleMode = fightingInFlow = choosing = optionsOpen = optionsAsk = false;
         battleScript.reset(), battleRules.reset();
         battleFight = 0, battleStep = BattleStep::Over;
@@ -3159,7 +3183,8 @@ struct Viewer {
             std::string key;
             l >> key;
             if (key == "flags")
-                for (int n; l >> n;) systemFlags.push_back(n);
+                for (int n; l >> n;)
+                    if (n >= 0 && n < kSystemFlags) systemFlags.push_back(n); // (all this file holds)
             else if (key == "options")
                 for (int& o : systemOptions) l >> o;
         }
@@ -3185,9 +3210,22 @@ struct Viewer {
         text += "\noptions";
         for (int v : o) text += " " + std::to_string(v);
         text += "\n";
-        if (std::FILE* f = std::fopen(savePath("system.txt").c_str(), "wb")) std::fwrite(text.data(), 1, text.size(), f), std::fclose(f);
+        std::string error;
+        if (!crstorage::replaceFile(savePath("system.txt"), text, &error)) SDL_Log("system save failed: %s", error.c_str());
+    }
+    // Fresh game / retry boundary. System settings are applied by newGame;
+    // save loading or explicit carryOver runs afterward and supplies its own progress.
+    void resetForNewSession() {
+        resetSessionUi();
+        cancelSceneAudio();
+        pendingBgm = 0, pendingBgmAt = 0;
+        titleEvents.reset();
+        titleMenu = TitleMenu();
+        game = cr2::GameState();
+        playSeconds = 0;
     }
     void newGame() {
+        resetForNewSession();
         applySystem();
         std::vector<uint8_t> d;
         if (!archive.read("data\\battledata.dat", d) || !battleData.parse(d)) return;
@@ -3763,6 +3801,14 @@ struct Viewer {
     int faceState[2] = {0, 0};          // (the HUD's faces: 0 as they are, 1 choosing, 2 down)
     float faceStateAt[2] = {0, 0}; // (BtlWork fighters' +0x48e, the deaths so far; +0x16, the last of the party to act)
     std::vector<VoiceJob> seJobs; // (BtlSound::CreatePlaySEJob: an effect's clip later)
+    // Stop both playback and delayed requests owned by a skipped/abandoned scene.
+    // Apply remaining combat hits after this, so their new cues keep their normal timing.
+    void cancelSceneAudio() {
+        voiceJobs.clear();
+        seJobs.clear();
+        audio.stopAllVoices(0);
+        audio.stopAllSe(0);
+    }
     void updateBattleSounds() {
         for (size_t k = 0; k < seJobs.size();)
             if (battleClock >= seJobs[k].at) {
@@ -3885,6 +3931,10 @@ struct Viewer {
             return;
         }
         if (!choosing) return;
+        if (battleScriptRunning()) { // (a tutorial's talk over the commands: its page first)
+            if (k == SDLK_RETURN || k == SDLK_KP_ENTER) tap();
+            return;
+        }
         keysUsed = true;
         const std::vector<int> c = menuChoices();
         const bool target = commandInput.menu() == cr2::CommandInput::Menu::Target;
@@ -3908,6 +3958,7 @@ struct Viewer {
             return;
         }
         if (!choosing) return;
+        if (battleScriptRunning()) return tap(); // (a tutorial's talk over the commands: its page first)
         if (manualStage == 2) { // (a tap: the tutorial's page)
             if (manualEvents) manualEvents->advance();
             return;
@@ -4056,7 +4107,7 @@ struct Viewer {
         const int chars[2] = {party[0] - 1, party[1] - 1};
         const int monsters[3] = {battleRules->fighter(2).id, battleRules->fighter(3).id, battleRules->fighter(4).id};
         battleScript = std::make_unique<cr2::BattleScript>(archive, game, *battleRules, battle.coupling, chars, monsters);
-        battleScript->events().askYesNo = true;
+        battleScript->events().autoPage = pageSeconds, battleScript->events().askYesNo = true;
         battleScriptClock = 0;
         battleScriptOk = battleScript->begin() && battleScript->runToEnd(100);
         if (!battleScriptOk) SDL_Log("battle script: %s", battleScript->error().c_str());
@@ -4716,7 +4767,7 @@ struct Viewer {
         while (n.level < most && cr2::levelExp(n.level + 1) <= n.exp) ++n.level;
         const int lo = cr2::levelExp(n.level), hi = cr2::levelExp(n.level + 1);
         n.next = n.level >= most ? 0 : hi - n.exp;
-        n.percent = n.level >= most || hi <= lo ? 0 : (n.exp - lo) * 100 / (hi - lo);
+        n.percent = n.level >= most || hi <= lo ? 0 : int((int64_t(n.exp) - lo) * 100 / (hi - lo));
         n.hp = r.hp0 + int(float(r.hpMax - r.hp0) * p);
         return n;
     }
@@ -5632,8 +5683,7 @@ struct Viewer {
         const int command = showIndex < showActions.size() ? showActions[showIndex].command : 0;
         if ((battle.coupling == 0x11a && command == 0x7b) || ((battle.coupling == 0xdd || battle.coupling == 0x10f) && command == 0x160)) return false;
         SDL_Log("  scene skipped");
-        audio.stopAllVoices(0), audio.stopAllSe(0);
-        seJobs.clear();
+        cancelSceneAudio();
         for (Move& m : showMoves) m.active = false;
         for (BattleUnit& u : battleUnits) u.fig.place = u.home;
         for (size_t k = 0; k < scene.steps.size(); ++k) {
@@ -6643,6 +6693,7 @@ struct Viewer {
         int action = 0;     // for the main loop: 1 a new game, 2 the save, 3 the continue data
         float doneAt = 0;
         float divaIn = 0, divaOut = -1; // (divaBtn_io: once from the title's start - coming in -, back from the tap - going)
+        std::string notice; // (CR2-U's: told once the buttons are back - a save that couldn't be read)
     } titleMenu;
     std::unique_ptr<cr2::EventRuntime> titleEvents; // (title.nut's calls)
     double playSeconds = 0;                         // (the save's play time, cr3_savedata +0x10 / 20)
@@ -6686,7 +6737,31 @@ struct Viewer {
         }
         return s;
     }
+    // A title transition abandons menus and their callbacks; it never confirms them.
+    // Keep game progress and preferences until the player chooses a save or new game.
+    void resetSessionUi() {
+        campOpen = mapOpen = settingsOpen = optionsOpen = optionsAsk = false;
+        saveStage = manualStage = 0;
+        saveFailed = false;
+        world.stage = shop.stage = party.stage = library.stage = pub.stage = credits.stage = 0;
+        paused = fieldTabOpen = false;
+        script.reset();
+        event.reset();
+        manualEvents.reset();
+        cancelPointerInput();
+        keyLock.stage = iai.stage = aim.stage = vslash.stage = 0;
+        tapRects.clear();
+        keyFocus = -1;
+        pendingBranch = false;
+        changeStage = 0;
+        toTitle = false;
+        fieldMode = eventMode = battleMode = false;
+        saveImport.cancel();
+    }
     void startTitle() {
+        resetSessionUi();
+        cancelSceneAudio();
+        pendingBgm = 0, pendingBgmAt = 0;
         titleMenu = TitleMenu();
         titleMenu.stage = 1, titleMenu.start = uiClock;
         titleEvents.reset();
@@ -6712,15 +6787,15 @@ struct Viewer {
     // the common data kept (the items, the Oz, the sopia's levels and EXP), each character's weapon
     // and armour (cr3_player_data +0x3c, +0x3e) and seeds, the flags past 3000 and the global work;
     // the levels, the rest of the equipment and the story's flags (0 .. 3000) a new game's
-    void carryOver() {
+    bool carryOver() {
         std::FILE* f = std::fopen(savePath("save1.txt").c_str(), "rb");
-        if (!f) return;
+        if (!f) return false;
         std::string text;
         char buf[4096];
         for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) text.append(buf, n);
         std::fclose(f);
         cr2::GameState old;
-        if (!old.load(text)) return;
+        if (!old.load(text)) return false;
         std::memcpy(game.itemCount, old.itemCount, sizeof game.itemCount);
         game.oz = old.oz;
         std::memcpy(game.sopiaLevel, old.sopiaLevel, sizeof game.sopiaLevel);
@@ -6732,6 +6807,13 @@ struct Viewer {
         for (size_t k = 3001; k < old.flags.size(); ++k) game.setFlag(int(k), old.flags[k]);
         std::memcpy(game.globalWork, old.globalWork, sizeof game.globalWork);
         SDL_Log("title: the clear data carried over");
+        return true;
+    }
+    // A save that can't be read: the title again and a word, the file left as it is - never the app
+    // closed, nor a new game that a later save would write over it
+    void titleLoadFailed() {
+        startTitle();
+        titleMenu.notice = "Could not read this save.\\nThe file has been kept.";
     }
     void titleAsk(int id) {
         titleMenu.ask = id, titleMenu.stage = 7, titleMenu.start = uiClock;
@@ -6775,6 +6857,12 @@ struct Viewer {
     void titleAnswer(bool yes) {
         TitleMenu& t = titleMenu;
         if (t.stage != 7) return;
+        if (!t.notice.empty()) { // (told: the buttons again)
+            audio.playSe(0xb4, false);
+            t.notice.clear();
+            t.stage = 5, t.start = uiClock;
+            return;
+        }
         const int ask = t.ask;
         audio.playSe(yes ? 0xbe : 0xb4, false);
         if (ask == 104) { // (the autosave: resumed, else the panel)
@@ -6834,6 +6922,7 @@ struct Viewer {
     }
     void updateTitle(float dt) {
         TitleMenu& t = titleMenu;
+        if (t.stage == 5 && !t.notice.empty()) t.stage = 7, t.start = uiClock; // (the buttons back: told now)
         if (titleEvents) {
             static float clock = 0;
             clock = std::min(clock + dt, 0.25f);
@@ -7035,7 +7124,8 @@ struct Viewer {
         } else if (tm.stage == 7 && tm.ask == 104) {
             drawCalendar(saveInfo("cont.txt"), view, proj, age);
         }
-        if (tm.stage == 7) drawAsk(announce(tm.ask), age, view, screenW, screenH, 7401, 7402, true);
+        if (tm.stage == 7 && !tm.notice.empty()) drawAsk(tm.notice, age, view, screenW, screenH, 7401, 7402, true, true);
+        else if (tm.stage == 7) drawAsk(announce(tm.ask), age, view, screenW, screenH, 7401, 7402, true);
         else if (tm.stage == 8 && tm.ask == 108 && uiClock < tm.doneAt - 1.0f) drawAsk(announce(108), age, view, screenW, screenH, 0, 0, true);
         if (tm.stage == 8) { // (Cr3FadeOut(0, 20): to black over the last second)
             const float a = std::clamp(1.0f - (tm.doneAt - uiClock), 0.0f, 1.0f);
@@ -8263,6 +8353,7 @@ struct Viewer {
     // after a second
     int saveStage = 0; // (1 asked, 2 saved)
     float saveStart = 0;
+    bool saveFailed = false;
     static std::string savePath(const char* file = "save1.txt") {
         char* dir = SDL_GetPrefPath("DuIslingr", "CR2-U");
         std::string p = dir ? std::string(dir) + file : std::string("cr2u-") + file;
@@ -8278,7 +8369,7 @@ struct Viewer {
         if (kind == 0) writeSave();
         else if (kind == 1) writeSave("cont.txt");
         else if (kind == 3) writeSystem(); // (SaveSystem: the system data at once)
-        else if (std::FILE* f = std::fopen(savePath("cont.txt").c_str(), "wb")) std::fclose(f); // (DeleteCont: none to continue)
+        else if (!crstorage::replaceFile(savePath("cont.txt"), "")) SDL_Log("could not clear continue data"); // (DeleteCont: none to continue)
     }
     bool writeSave(const char* file = "save1.txt") {
         std::map<std::string, std::string> extra;
@@ -8290,12 +8381,34 @@ struct Viewer {
         extra["options"] = std::to_string(optionLanguage) + " " + std::to_string(optionQuality) + " " + std::to_string(optionVolume[0]) + " " +
                            std::to_string(optionVolume[1]) + " " + std::to_string(optionVolume[2]);
         const std::string text = game.save(extra), path = savePath(file);
-        std::FILE* f = std::fopen(path.c_str(), "wb");
-        const bool ok = f && std::fwrite(text.data(), 1, text.size(), f) == text.size();
-        if (f) std::fclose(f);
+        std::string error;
+        const bool ok = crstorage::replaceFile(path, text, &error);
+        if (!ok) SDL_Log("save failed: %s", error.c_str());
         SDL_Log("save: %s %s", path.c_str(), ok ? "written" : "not written");
         if (ok && std::strcmp(file, "save1.txt") == 0) writeSystem(); // (SaveConfirmationMenu: Cr3Util_Save_SystemData too)
         return ok;
+    }
+    void restoreFieldPosition(const float* position, float yaw) {
+        player[0] = position[0], player[1] = position[1], player[2] = position[2], heading = yaw;
+        // The save stores the rendered feet position, 0.02 below the controller.
+        // Restore both physics and interpolation before the next displayed frame.
+        if (controller) {
+            controller->setPosition({player[0], player[1] + 0.02f, player[2]});
+            controller->setVelocity({0, 0, 0});
+        }
+        std::memcpy(playerPrev, player, sizeof player);
+        std::memcpy(playerCur, player, sizeof player);
+        stepClock = 0, substep = 0;
+        exitsArmed = false;
+        insideEvents.clear();
+        const float centre[3] = {player[0], player[1] + 0.02f, player[2]};
+        for (const cr2::Gimmick& g : field.gimmicks())
+            if (g.kind == cr2::Gimmick::Event && !g.check && g.touches(centre, controller ? controller->radius : 0.02f))
+                insideEvents.insert(g.name);
+        checkBalloons();
+        encountSet(player);
+        fig.place = cr2::Mat34();
+        fig.place.m[3] = player[0], fig.place.m[7] = player[1], fig.place.m[11] = player[2];
     }
     // --continue: the save read back, its map entered there
     bool continueSave(const std::string& binary, const std::string& dataPath, const char* only = nullptr) {
@@ -8324,9 +8437,7 @@ struct Viewer {
         if (!loadField(map, "", binary, dataPath)) return false;
         float p[4];
         if (std::sscanf(extra["place"].c_str(), "%f %f %f %f", &p[0], &p[1], &p[2], &p[3]) == 4) {
-            player[0] = p[0], player[1] = p[1], player[2] = p[2], heading = p[3];
-            fig.place = cr2::Mat34();
-            fig.place.m[3] = p[0], fig.place.m[7] = p[1], fig.place.m[11] = p[2];
+            restoreFieldPosition(p, p[3]);
         }
         SDL_Log("continue: %s at %.3f %.3f %.3f", map.c_str(), player[0], player[1], player[2]);
         return true;
@@ -8358,16 +8469,14 @@ struct Viewer {
                 place.map.c_str(), place.position[0], place.position[1], place.position[2]);
         playSeconds = double(place.playFrames) / 20.0;
         if (!loadField(place.map, "", binary, dataPath)) return false;
-        player[0] = place.position[0], player[1] = place.position[1], player[2] = place.position[2], heading = place.heading;
-        fig.place = cr2::Mat34();
-        fig.place.m[3] = player[0], fig.place.m[7] = player[1], fig.place.m[11] = player[2];
+        restoreFieldPosition(place.position, place.heading);
         return true;
     }
     void saveAnswer(bool yes) {
         if (saveStage != 1) return;
         if (yes) {
             audio.playSe(0xbd, false);
-            writeSave();
+            saveFailed = !writeSave();
             saveStage = 2, saveStart = uiClock;
         } else {
             audio.playSe(0xb4, false);
@@ -8392,7 +8501,7 @@ struct Viewer {
             poseUi(win, "syswin_io", t);
             drawFigure(win.fig, view.data());
             float x, y;
-            if (uiJoint(win, "typeM_L01", x, y)) drawUiText(announce(0x6a), 26, x, y, w, h, true);
+            if (uiJoint(win, "typeM_L01", x, y)) drawUiText(saveFailed ? "Could not save. Please try again." : announce(0x6a), 26, x, y, w, h, true);
         }
     }
     bool encountersOff = false; // (cr3_field_data +0x31: the tab's 5th, FldMain step 8 / 9)
@@ -8568,7 +8677,7 @@ struct Viewer {
         r.mp = game.mp[ch] < 0 ? r.mpMax : std::min(game.mp[ch], r.mpMax);
         const int lo = cr2::levelExp(r.level), hi = cr2::levelExp(r.level + 1);
         r.next = r.level >= maxLevel() ? 0 : hi - game.exp[ch];
-        r.percent = r.level >= maxLevel() || hi <= lo ? 0 : std::clamp((game.exp[ch] - lo) * 100 / (hi - lo), 0, 100);
+        r.percent = r.level >= maxLevel() || hi <= lo ? 0 : int(std::clamp((int64_t(game.exp[ch]) - lo) * 100 / (hi - lo), int64_t(0), int64_t(100)));
         return r;
     }
     void drawCamp(const Mat4& view, const Mat4& proj, int w, int h) {
@@ -9077,7 +9186,7 @@ struct Viewer {
             UiFig& bar = uiFig("cmpnxbar_per");
             bar.fig.place = cr2::Mat34();
             bar.fig.place.m[3] = x, bar.fig.place.m[7] = y;
-            poseUi(bar, "cmpnxbar_per", level >= 5 || hi <= lo ? 5.0f : float(std::clamp((exp - lo) * 100 / (hi - lo), 0, 100)) / 20.0f);
+            poseUi(bar, "cmpnxbar_per", level >= 5 || hi <= lo ? 5.0f : float(std::clamp((int64_t(exp) - lo) * 100 / (hi - lo), int64_t(0), int64_t(100))) / 20.0f);
             drawFigure(bar.fig, view.data());
         }
         if (uiJoint(sw, "call_dotNum_id1", x, y)) drawDigits(level >= 5 ? 0 : std::max(hi - exp, 0), 90, 6, x, y, proj);
@@ -11885,7 +11994,8 @@ void storeData(const std::string& path) {
         at = e + 1;
     }
     out += "data=" + path + "\n";
-    SDL_SaveFile(file.c_str(), out.data(), out.size());
+    std::string error;
+    if (!crstorage::replaceFile(file, out, &error)) SDL_Log("settings: %s", error.c_str());
 }
 // settings.ini's data= - a copy the first start's setup was given (an Android or Vita copy, read where it is)
 std::string storedData() {
@@ -11907,7 +12017,239 @@ std::string storedData() {
     return out;
 }
 
+int inputCancelViewerSelfTest() {
+    if (!SDL_Init(SDL_INIT_EVENTS)) return 1;
+    int problems = 0;
+    {
+        Viewer v;
+        crinput::CancelWatch watch;
+        if (!watch.start(42)) return 1;
+        for (Uint32 type : {Uint32(SDL_EVENT_WINDOW_FOCUS_LOST), Uint32(SDL_EVENT_FINGER_CANCELED), Uint32(SDL_EVENT_WILL_ENTER_BACKGROUND)}) {
+            v.menuSwipe.begin(0.5f, 0.5f, 1);
+            v.walkDrag.down = true;
+            v.fastHeld = true, v.fastUntil = 100;
+            v.iai.stage = v.aim.stage = 2;
+            v.keyLock.stage = 1, v.keyLock.pressing = true;
+            v.vslash.stage = 1, v.vslash.pressed = true;
+            SDL_Event e{};
+            e.type = type;
+            if (type == SDL_EVENT_FINGER_CANCELED) e.tfinger.windowID = 42;
+            else e.window.windowID = 42;
+            SDL_PushEvent(&e);
+            const bool consumed = v.consumeInputCancel(watch);
+            const bool clean = !v.menuSwipe.down && !v.walkDrag.down && !v.fastHeld && v.fastUntil == 0 &&
+                               v.iai.stage == 1 && v.aim.stage == 1 && !v.keyLock.pressing && !v.vslash.pressed;
+            const bool unchanged = v.keyLock.stage == 1 && v.vslash.stage == 1 && v.pointerCancelled;
+            problems += !consumed + !clean + !unchanged;
+            if (!clean) std::printf("viewer input cancel FAILED: event %u retained an active gesture\n", type);
+            const bool heldOver = !v.padHeldOver.live(true) && v.padHeldOver.live(false);
+            problems += !heldOver;
+            if (!heldOver) std::printf("viewer input cancel FAILED: event %u left a held controller live\n", type);
+        }
+    }
+    SDL_Quit();
+    std::printf("viewer input cancellation: %d problems\n", problems);
+    return problems ? 1 : 0;
+}
+
+int lifecycleClockViewerSelfTest() {
+    if (!SDL_Init(SDL_INIT_EVENTS)) return 1;
+    int problems = 0;
+    {
+        Viewer v;
+        crtime::LifecycleClock clock;
+        const Uint64 second = SDL_NS_PER_SECOND;
+        auto frame = [&](Uint64 wall) {
+            const float dt = clock.step(wall);
+            v.advance(dt, 0, 0, false);
+        };
+        frame(second);
+        frame(second + second/20);
+        const float before = v.uiClock;
+        SDL_Event event{};
+        event.type = SDL_EVENT_WILL_ENTER_BACKGROUND;
+        clock.note(event, 2*second);
+        event.type = SDL_EVENT_DID_ENTER_FOREGROUND;
+        clock.note(event, 3602*second);
+        frame(3602*second);
+        problems += v.uiClock != before; // no scene/UI catch-up after an hour asleep
+        frame(3602*second + second/20);
+        problems += std::fabs(v.uiClock - before - 0.05f) > 1e-5f;
+        std::printf("viewer lifecycle: %.3f seconds before pause, %.3f after resumed frame; %d problems\n", before, v.uiClock, problems);
+    }
+    SDL_Quit();
+    return problems ? 1 : 0;
+}
+
+int sceneAudioViewerSelfTest() {
+    if (!SDL_Init(SDL_INIT_EVENTS)) return 1;
+    int problems = 0;
+    {
+        auto device = cr2::makeGlDevice(); // resetHistory is a no-op; no GL context needed
+        Viewer v;
+        v.dev = device.get();
+        auto check = [&](bool ok, const char* what) {
+            if (!ok) { ++problems; std::printf("scene audio FAILED: %s\n", what); }
+        };
+        v.voiceJobs.push_back({2, 123});
+        v.seJobs.push_back({2, 456});
+        v.scene.active = true, v.scene.skippable = false, v.scene.hits = true;
+        v.scene.start = 0, v.battleClock = 1;
+        check(!v.skipScene() && v.voiceJobs.size() == 1 && v.seJobs.size() == 1,
+              "a protected scene keeps its pending sounds");
+        v.scene.skippable = true;
+        check(v.skipScene(), "a permitted scene can be skipped");
+        check(v.voiceJobs.empty() && v.seJobs.empty(), "skip cancels pending speech and effects");
+        v.audio.log.clear();
+        v.battleClock = 3;
+        v.updateBattleSounds();
+        check(v.audio.log.empty(), "advancing past the skipped cue cannot replay its voice");
+        auto seed = [&] {
+            v.voiceJobs.push_back({10, 123});
+            v.seJobs.push_back({10, 456});
+            v.pendingBgm = 15, v.pendingBgmAt = 10;
+        };
+        seed();
+        v.leaveBattle();
+        check(v.voiceJobs.empty() && v.seJobs.empty() && v.pendingBgm == 0,
+              "abandoning battle cancels pending clips and the delayed result music");
+        v.audio.log.clear();
+        v.battleClock = 11;
+        v.updateBattleSounds();
+        check(v.audio.log.empty(), "abandoned battle cannot emit audio later");
+        seed();
+        v.startTitle();
+        check(v.voiceJobs.empty() && v.seJobs.empty() && v.pendingBgm == 0,
+              "return to title cancels old scene audio requests");
+        v.audio.log.clear();
+        v.updateBattleSounds();
+        check(v.audio.log.empty(), "old battle cannot replace title music");
+    }
+    SDL_Quit();
+    std::printf("scene audio cancellation: %d problems\n", problems);
+    return problems ? 1 : 0;
+}
+
+int fieldRestoreSelfTest() {
+    Viewer v;
+    v.controller = std::make_unique<cr2::CharacterController>(v.field.collision());
+    v.controller->setPosition({-9,2,-7});
+    std::fill(std::begin(v.playerPrev),std::end(v.playerPrev),-8.0f);
+    std::fill(std::begin(v.playerCur),std::end(v.playerCur),-6.0f);
+    v.stepClock = 0.01f, v.substep = 2;
+    const float saved[3] = {4,5,6};
+    v.restoreFieldPosition(saved,0.75f);
+    int problems = 0;
+    auto check = [&](bool ok, const char* what) {
+        if (!ok) { ++problems; std::printf("field restore FAILED: %s\n",what); }
+    };
+    auto near = [](float a,float b) { return std::abs(a-b)<0.00001f; };
+    const auto at = v.controller->position();
+    check(near(at[0],4) && near(at[1],5.02f) && near(at[2],6),"collision controller starts at the saved location");
+    check(v.stepClock==0 && v.substep==0,"old interpolation time is discarded");
+    check(near(v.heading,0.75f) && near(v.fig.place.m[3],4) && near(v.fig.place.m[7],5) && near(v.fig.place.m[11],6),
+          "saved facing and initial render placement are restored");
+    v.walk(0.001f,0,0,false); // first displayed frame, before a physics substep
+    check(near(v.player[0],4) && near(v.player[1],5) && near(v.player[2],6),"first interpolated frame stays at the save instead of snapping to spawn");
+    v.controller->substep(); // an empty world can fall, but horizontal position must stay at the save
+    check(near(v.controller->position()[0],4) && near(v.controller->position()[2],6),"physics continues at the restored horizontal location");
+    std::printf("field restore: %d problems\n",problems);
+    return problems ? 1 : 0;
+}
+
+std::shared_ptr<vitaimport::Session::Choice> dirtySessionUiForTest(Viewer& v) {
+    v.campOpen = v.mapOpen = v.settingsOpen = v.optionsOpen = v.optionsAsk = true;
+    v.saveStage = 1, v.manualStage = 2;
+    v.world.stage = v.shop.stage = v.party.stage = v.library.stage = v.pub.stage = 1;
+    v.credits.stage = 1;
+    v.paused = true;
+    v.fieldTabOpen = true;
+    v.fieldMode = v.eventMode = true;
+    v.script = std::make_unique<cr2::FieldScript>(v.archive, v.game);
+    v.event = std::make_unique<cr2::EventRuntime>(v.archive, v.game);
+    v.manualEvents = std::make_unique<cr2::EventRuntime>(v.archive, v.game);
+    v.menuSwipe.begin(0.5f, 0.5f, 1);
+    v.fastHeld = true, v.fastUntil = 100;
+    v.keyLock.stage = v.iai.stage = v.aim.stage = v.vslash.stage = 2;
+    v.tapRects.push_back({999,0,0,1,1});
+    v.game.setFlag(123,true);
+    v.settings.fieldSpeed = 3;
+    v.saveImport.state = vitaimport::Session::Picking;
+    v.saveImport.choice = std::make_shared<vitaimport::Session::Choice>();
+
+    return v.saveImport.choice;
+}
+int checkSessionUiForTest(Viewer& v, const std::shared_ptr<vitaimport::Session::Choice>& picker) {
+    int problems = 0;
+    auto check = [&](bool ok, const char* what) {
+        if (!ok) { ++problems; std::printf("session UI FAILED: %s\n", what); }
+    };
+    check(!v.campOpen && !v.mapOpen && !v.settingsOpen && !v.optionsOpen && !v.optionsAsk &&
+          v.saveStage == 0 && v.manualStage == 0 && !v.world.stage && !v.shop.stage && !v.party.stage &&
+          !v.library.stage && !v.pub.stage && !v.credits.stage && !v.paused && !v.fieldTabOpen,
+          "old menus and pause cannot block a new title/session");
+    check(!v.script && !v.event && !v.manualEvents && !v.activeEvents(), "old field/tutorial runtimes are detached");
+    check(!v.menuSwipe.down && !v.fastHeld && v.fastUntil == 0 && v.tapRects.empty() &&
+          !v.keyLock.stage && !v.iai.stage && !v.aim.stage && !v.vslash.stage,
+          "old input targets and ability controls are discarded");
+    { std::lock_guard<std::mutex> lock(picker->mutex); picker->path = "/no-such-late-import-after-title"; picker->ready = true; }
+    v.saveImport.poll();
+    check(!v.saveImport.active() && !v.saveImport.choice, "late picker completion cannot reactivate the importer");
+    check(v.game.flag(123) && v.settings.fieldSpeed == 3, "progress and preferences are retained until a new game/load is selected");
+
+    v.saveImport.cancel();
+    return problems;
+}
+int sessionUiViewerSelfTest() {
+    if (!SDL_Init(SDL_INIT_EVENTS)) return 1;
+    int problems = 0;
+    {
+        Viewer v;
+        const auto picker = dirtySessionUiForTest(v);
+        v.startTitle();
+        problems = checkSessionUiForTest(v,picker);
+    }
+    SDL_Quit();
+    std::printf("viewer session UI: %d problems\n",problems);
+    return problems ? 1 : 0;
+}
+
+int newSessionSelfTest() {
+    if (!SDL_Init(SDL_INIT_EVENTS)) return 1;
+    int problems = 0;
+    {
+        Viewer v;
+        const auto picker = dirtySessionUiForTest(v);
+        v.systemRead = v.systemFound = true;
+        v.systemFlags = {123}; // global unlocks survive a fresh game
+        v.game.setFlag(1500, true);
+        v.game.oz = 54321;
+        v.game.itemCount[1] = 7;
+        v.playSeconds = 987;
+        v.voiceJobs.push_back({10,123});
+        v.seJobs.push_back({10,456});
+        v.pendingBgm = 15, v.pendingBgmAt = 10;
+        v.newGame(); // the same entry point used by direct-play restart and title/retry
+        problems += checkSessionUiForTest(v,picker);
+        if (v.game.flag(1500) || v.game.oz == 54321 || v.game.itemCount[1] != 0 || v.playSeconds != 0) {
+            ++problems; std::puts("new session FAILED: old progress or playtime survived");
+        }
+        if (!v.voiceJobs.empty() || !v.seJobs.empty() || v.pendingBgm || v.pendingBgmAt) {
+            ++problems; std::puts("new session FAILED: abandoned scene audio survived");
+        }
+    }
+    SDL_Quit();
+    std::printf("new session: %d problems\n",problems);
+    return problems ? 1 : 0;
+}
+
 int main(int argc, char** argv) {
+    if (argc>1 && std::strcmp(argv[1],"--selftest-new-session")==0) return newSessionSelfTest();
+    if (argc>1 && std::strcmp(argv[1],"--selftest-field-restore")==0) return fieldRestoreSelfTest();
+    if (argc>1 && std::strcmp(argv[1],"--selftest-session-ui")==0) return sessionUiViewerSelfTest();
+    if (argc > 1 && std::strcmp(argv[1], "--selftest-scene-audio") == 0) return sceneAudioViewerSelfTest();
+    if (argc > 1 && std::strcmp(argv[1], "--selftest-lifecycle-clock") == 0) return lifecycleClockViewerSelfTest();
+    if (argc > 1 && std::strcmp(argv[1], "--selftest-input-cancel") == 0) return inputCancelViewerSelfTest();
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     std::string data, model, capture, animName, renderer = "vulkan", lights = "d0101c", fieldName, at = "defaultPos", binary;
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
@@ -12132,6 +12474,7 @@ int main(int argc, char** argv) {
         if (capture.empty() && !exportTextures && !exportModels && exploreDir.empty()) {
             v.settingsPersist = true;
             v.loadSettings();
+            if (!given("--page")) page = 0; // (played: a page and a yes / no wait for the player, as the game's - --page n turns them by themselves)
             if (!given("--renderer")) renderer = s.renderer ? "opengl" : "vulkan";
             if (!given("--fps")) fps = s.fps;
             if (!given("--resolution")) resW = kResolutions[s.resolution][0], resH = kResolutions[s.resolution][1];
@@ -12417,17 +12760,33 @@ int main(int argc, char** argv) {
     }
     if (v.fieldMode && animName.empty()) v.playMotion(v.fig, "fn01");
     // the title's choice: a new game, the save, the continue data (false: it failed)
+    if (const char* expected = SDL_getenv("CR_SELFTEST_LOAD_POSITION")) {
+        float xyz[3], yaw;
+        if (std::sscanf(expected, "%f %f %f %f", &xyz[0], &xyz[1], &xyz[2], &yaw) != 4 || !v.fieldMode || !v.controller) return 1;
+        int problems = 0;
+        const auto physical = v.controller->position();
+        for (int k = 0; k < 3; ++k)
+            problems += std::abs(physical[k] - xyz[k] - (k == 1 ? 0.02f : 0.0f)) > 0.00001f;
+        problems += std::abs(v.heading - yaw) > 0.00001f;
+        v.walk(0.001f, 0, 0, false);
+        for (int k = 0; k < 3; ++k) problems += std::abs(v.player[k] - xyz[k]) > 0.00001f;
+        SDL_Log("loaded save position: controller and first frame; %d problems", problems);
+        return problems ? 1 : 0;
+    }
     auto takeTitle = [&]() {
         if (v.titleMenu.stage != 0 || !v.titleMenu.action) return true;
         const int act = v.titleMenu.action;
         v.titleMenu.action = 0;
-        v.game = cr2::GameState(); // (Cr3UtilResetWork)
-        v.playSeconds = 0;
         v.newGame();
-        if (act == 4) v.carryOver();
-        const bool ok = act == 1 || act == 4 ? v.loadField(fieldName, at, binary, data, callEntry)
-                                             : v.continueSave(binary, data, act == 2 ? "save1.txt" : "cont.txt");
-        SDL_Log("title: %s", act == 1 ? "a new game" : act == 4 ? "a new game with the clear data" : act == 2 ? "the save loaded" : "the continue data");
+        const bool carried = act != 4 || v.carryOver();
+        const bool ok = carried && (act == 1 || act == 4 ? v.loadField(fieldName, at, binary, data, callEntry)
+                                                         : v.continueSave(binary, data, act == 2 ? "save1.txt" : "cont.txt"));
+        SDL_Log("title: %s%s", act == 1 ? "a new game" : act == 4 ? "a new game with the clear data" : act == 2 ? "the save loaded" : "the continue data",
+                ok ? "" : " - failed");
+        if (!ok && act != 1) { // (a save read: the title again; a new game that can't start is the data's fault, and the end)
+            v.titleLoadFailed();
+            return true;
+        }
         return ok;
     };
     auto frameSize = [&](int& w, int& h) {
@@ -12568,7 +12927,30 @@ int main(int argc, char** argv) {
         v.draw(w, h);
         dev->endFrame(false);
         std::vector<uint8_t> px;
-        const bool ok = dev->readPixels(px, w, h) && saveBmp(capture.c_str(), px, w, h);
+        bool recoveryOk = true;
+        if (SDL_getenv("CR_SELFTEST_GRAPHICS")) {
+            dev->readPixels(px, w, h);
+            const auto before = px;
+            size_t visible = 0;
+            for (size_t i = 0; i + 3 < before.size(); i += 4)
+                visible += int(before[i]) + before[i + 1] + before[i + 2] > 32;
+            recoveryOk = visible >= before.size() / 4 / 10;
+            SDL_Log("graphics recovery: visible scene pixels %zu (%s)", visible, recoveryOk ? "enough" : "FAILED");
+            for (int cycle = 0; cycle < 3; ++cycle) {
+                SDL_GL_DestroyContext(SDL_GL_GetCurrentContext());
+                if (!SDL_GL_CreateContext(win) || !dev->restoreAfterContextLoss()) {
+                    recoveryOk = false;
+                    break;
+                }
+                v.draw(w, h);
+                dev->endFrame(false);
+                dev->readPixels(px, w, h);
+                const bool sameFrame = !before.empty() && before == px && dev->takeErrors() == 0;
+                recoveryOk &= sameFrame;
+                SDL_Log("graphics recovery: cycle %d, identical scene frame %s", cycle + 1, sameFrame ? "yes" : "NO");
+            }
+        }
+        const bool ok = recoveryOk && dev->readPixels(px, w, h) && saveBmp(capture.c_str(), px, w, h);
         SDL_Log("capture %s: %s", capture.c_str(), ok ? "written" : SDL_GetError());
         if (v.hdTextures) SDL_Log("hd textures: %d replaced, %d without one (%s)", v.hdLoaded, v.hdMissing, v.hdDir.c_str());
         code = ok ? 0 : 1;
@@ -12583,6 +12965,16 @@ int main(int argc, char** argv) {
         SDL_Gamepad* pad = nullptr;
         SDL_Keycode padDir = 0;
         Uint64 padDirNext = 0;
+        crinput::CancelWatch inputCancel;
+        inputCancel.start(SDL_GetWindowID(win));
+        crtime::LifecycleClock frameClock;
+        if (!frameClock.start()) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "lifecycle clock: %s", SDL_GetError());
+            return 1;
+        }
+        auto consumeInputCancel = [&] {
+            if (v.consumeInputCancel(inputCancel)) dragging = false, padDir = 0, padDirNext = 0;
+        };
         auto pushKey = [](SDL_Keycode key) {
             SDL_Event k{};
             k.type = SDL_EVENT_KEY_DOWN;
@@ -12592,7 +12984,8 @@ int main(int argc, char** argv) {
         };
         // CR2_PAD_SCRIPT (tests): a virtual controller, its buttons and stick set at their times - "1.5:east
         // 2:down 3:lx=1 4:lx=0" (a button is held 0.1 s; east / south / north / west, up / down / left /
-        // right, l / r, start, back; lx / ly the left stick, -1 .. 1, ly up positive)
+        // right, l / r, start, back; lx / ly the left stick, -1 .. 1, ly up positive; blur the window's focus
+        // lost). Each press of a held direction is logged
         struct PadStep {
             float at;
             std::string what;
@@ -12662,16 +13055,28 @@ int main(int argc, char** argv) {
             SDL_PushEvent(&m);
             SDL_Log("test mouse: %s", w.c_str());
         };
-        Uint64 last = SDL_GetTicksNS();
+        const Uint64 firstFrame = SDL_GetTicksNS();
         // --fps (the settings' Frame Rate): each frame starts no sooner than its slot (the display's
         // vsync may hold it longer)
-        Uint64 nextFrame = last, fpsSince = last;
+        Uint64 nextFrame = firstFrame, fpsSince = firstFrame;
         int fpsFrames = 0, totalFrames = 0;
         float measured = 0;
-        const Uint64 started = last;
+        const Uint64 started = firstFrame;
         while (running) {
             SDL_Event e;
             while (SDL_PollEvent(&e)) {
+                const bool cancelled = inputCancel.note(e);
+                consumeInputCancel();
+                if (cancelled) continue;
+                if (e.type == SDL_EVENT_RENDER_DEVICE_RESET) {
+                    if (e.render.windowID == SDL_GetWindowID(win) && !dev->restoreAfterContextLoss()) {
+                        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "Unable to restore the OpenGL context");
+                        code = 1;
+                        running = false;
+                        break;
+                    }
+                    continue;
+                }
                 if (e.type == SDL_EVENT_QUIT) running = false;
                 else if (e.type == SDL_EVENT_KEY_DOWN) {
                     // (Android's Back: the menus' back, as Backspace)
@@ -12796,12 +13201,14 @@ int main(int argc, char** argv) {
                     else if (b == SDL_GAMEPAD_BUTTON_START && v.titleMenu.stage >= 2 && v.titleMenu.stage <= 3) key = SDLK_RETURN;
                     if (key) pushKey(key);
                 } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+                    v.pointerCancelled = false;
                     dragging = true;
                     float fx, fy;
                     screenFraction(e.button.x, e.button.y, fx, fy);
                     if (!v.menuPointerDown(fx, fy)) v.pointerActivate(fx, fy);
                 }
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                    if (v.pointerCancelled) continue; // an interrupted gesture cannot activate or finish anything
                     float fx, fy;
                     screenFraction(e.button.x, e.button.y, fx, fy);
                     if (v.menuPointerUp(fx, fy)) { dragging = false; continue; }
@@ -12850,6 +13257,8 @@ int main(int argc, char** argv) {
                     v.zoom = std::clamp(v.zoom * (e.wheel.y > 0 ? 0.9f : 1.1f), 0.05f, 20.0f);
                 }
             }
+            consumeInputCancel();
+            if (!running) break;
             if (!takeTitle()) running = false;
             if (v.toTitle) { // (the options' Title Screen, yes: the title screen; --play without it from a new game again; else the end)
                 v.toTitle = false;
@@ -12868,7 +13277,7 @@ int main(int argc, char** argv) {
                 nextFrame = std::max(nextFrame + period, SDL_GetTicksNS() - period); // (no catching up after a stall)
             }
             const Uint64 now = SDL_GetTicksNS();
-            const float dt = float(double(now - last) / 1e9);
+            const float dt = frameClock.step();
             while (!mouseScript.empty() && mouseScript.front().at <= float(double(now - started) / 1e9)) { // (CR2_MOUSE_SCRIPT's)
                 pushMouse(mouseScript.front().what);
                 mouseScript.erase(mouseScript.begin());
@@ -12885,7 +13294,12 @@ int main(int argc, char** argv) {
                     padScript.erase(padScript.begin());
                     if (w.rfind("lx=", 0) == 0) SDL_SetJoystickVirtualAxis(testPad, SDL_GAMEPAD_AXIS_LEFTX, Sint16(std::clamp(std::atof(w.c_str() + 3), -1.0, 1.0) * 32767));
                     else if (w.rfind("ly=", 0) == 0) SDL_SetJoystickVirtualAxis(testPad, SDL_GAMEPAD_AXIS_LEFTY, Sint16(-std::clamp(std::atof(w.c_str() + 3), -1.0, 1.0) * 32767));
-                    else if (auto b = kButtons.find(w); b != kButtons.end()) {
+                    else if (w == "blur") {
+                        SDL_Event focus{};
+                        focus.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+                        focus.window.windowID = SDL_GetWindowID(win);
+                        SDL_PushEvent(&focus);
+                    } else if (auto b = kButtons.find(w); b != kButtons.end()) {
                         SDL_SetJoystickVirtualButton(testPad, b->second, true);
                         testReleases.push_back({now + 100000000, b->second});
                     }
@@ -12895,7 +13309,16 @@ int main(int argc, char** argv) {
                     if (testReleases[r].first <= now) SDL_SetJoystickVirtualButton(testPad, testReleases[r].second, false), testReleases.erase(testReleases.begin() + long(r));
                     else ++r;
             }
-            if (pad) { // (the d-pad, or the stick pushed all the way: a direction's press, then its repeats)
+            SDL_Gamepad* livePad = nullptr;
+            if (pad) {
+                float ax, ay;
+                padStick(ax, ay);
+                bool held = ax != 0 || ay != 0;
+                for (auto button : {SDL_GAMEPAD_BUTTON_DPAD_UP, SDL_GAMEPAD_BUTTON_DPAD_DOWN, SDL_GAMEPAD_BUTTON_DPAD_LEFT, SDL_GAMEPAD_BUTTON_DPAD_RIGHT, SDL_GAMEPAD_BUTTON_WEST})
+                    held = held || SDL_GetGamepadButton(pad, button);
+                if (v.padHeldOver.live(held)) livePad = pad;
+            }
+            if (livePad) { // (the d-pad, or the stick pushed all the way: a direction's press, then its repeats)
                 float ax, ay;
                 padStick(ax, ay);
                 SDL_Keycode d = SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_UP)      ? SDLK_UP
@@ -12905,11 +13328,15 @@ int main(int argc, char** argv) {
                                                                                            : 0;
                 if (!d && std::max(std::abs(ax), std::abs(ay)) >= 0.9f)
                     d = std::abs(ay) >= std::abs(ax) ? (ay > 0 ? SDLK_UP : SDLK_DOWN) : (ax > 0 ? SDLK_RIGHT : SDLK_LEFT);
+                auto padPress = [&] {
+                    pushKey(d);
+                    if (testPad) SDL_Log("test controller: pressed %s", SDL_GetKeyName(d));
+                };
                 if (d != padDir) {
                     padDir = d;
-                    if (d) pushKey(d), padDirNext = now + 600000000;
+                    if (d) padPress(), padDirNext = now + 600000000;
                 } else if (d && now >= padDirNext) {
-                    pushKey(d), padDirNext = now + 80000000;
+                    padPress(), padDirNext = now + 80000000;
                 }
             }
             ++fpsFrames, ++totalFrames;
@@ -12918,16 +13345,15 @@ int main(int argc, char** argv) {
                 fpsFrames = 0, fpsSince = now;
             }
             if (!v.paused) v.time += dt;
-            last = now;
             if (!v.paused && v.battleMode && !v.fieldMode && !v.eventMode) v.advance(dt, 0, 0, false);
             if (!v.paused && (v.eventMode || v.fieldMode || v.credits.stage || v.titleMenu.stage)) { // the arrows / WASD run, with Shift walk (the title: its clock)
                 const bool* keys = SDL_GetKeyboardState(nullptr);
-                if (keys[SDL_SCANCODE_F] || (pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_WEST))) v.fastHeld = true; // (F or □ held: the fast-forward button's)
+                if (keys[SDL_SCANCODE_F] || (livePad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_WEST))) v.fastHeld = true; // (F or □ held: the fast-forward button's)
                 else if (!(SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK)) v.fastHeld = false;
                 float sx = float((keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) - (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]));
                 float sy = float((keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W]) - (keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S]));
                 bool run = !(keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]);
-                if (pad && !v.fieldTabOpen) { // (FldMain::PlayerMove: the stick's push as the finger's drag - far, a run)
+                if (livePad && !v.fieldTabOpen) { // (FldMain::PlayerMove: the stick's push as the finger's drag - far, a run)
                     float ax, ay;
                     padStick(ax, ay);
                     const float dx = float(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) - float(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT));

@@ -5,7 +5,10 @@
 #include <algorithm>
 #include <cstring>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
+
+#include "gfx/gl_backup.hpp"
 
 #include "gfx/gl.hpp"
 #include "gfx/render_device.hpp"
@@ -199,45 +202,41 @@ public:
             SDL_LogError(SDL_LOG_CATEGORY_RENDER, "OpenGL setup failed: %s", SDL_GetError());
             return false;
         }
-        program_ = link(kVertex, kFragment);
-        meshProgram_ = link(kMeshVertex, kMeshFragment, true);
-        if (!program_ || !meshProgram_) return false;
-        uMvp_ = gl::GetUniformLocation(meshProgram_, "uMvp");
-        gl::UseProgram(meshProgram_);
-        gl::Uniform1i(gl::GetUniformLocation(meshProgram_, "uTex"), 0);
-        gl::Uniform1i(gl::GetUniformLocation(meshProgram_, "uNormal"), 1);
-        gl::Uniform1i(gl::GetUniformLocation(meshProgram_, "uExtra"), 2);
-        gl::UniformBlockBinding(meshProgram_, gl::GetUniformBlockIndex(meshProgram_, "Material"), 0);
-        gl::GenBuffers(1, &ubo_);
-        gl::BindBuffer(GL_UNIFORM_BUFFER, ubo_);
-        gl::BufferData(GL_UNIFORM_BUFFER, sizeof(ShadingBlock), nullptr, GL_DYNAMIC_DRAW);
-        gl::BindBufferBase(GL_UNIFORM_BUFFER, 0, ubo_);
-        uAlphaRef_ = gl::GetUniformLocation(meshProgram_, "uAlphaRef");
-        uMeshColor_ = gl::GetUniformLocation(meshProgram_, "uColor");
-        uTexMode_ = gl::GetUniformLocation(meshProgram_, "uTexMode");
-        uAlphaTex_ = gl::GetUniformLocation(meshProgram_, "uAlphaTex");
-        uLight_ = gl::GetUniformLocation(meshProgram_, "uLight");
-        uProj_ = gl::GetUniformLocation(program_, "uProj");
-        uColor_ = gl::GetUniformLocation(program_, "uColor");
-        uTex_ = gl::GetUniformLocation(program_, "uTex");
+        return initObjects();
+    }
 
-        gl::GenVertexArrays(1, &vao_);
-        gl::GenBuffers(1, &vbo_);
-        gl::BindVertexArray(vao_);
-        gl::BindBuffer(GL_ARRAY_BUFFER, vbo_);
-        gl::BufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * 6, nullptr, GL_DYNAMIC_DRAW);
-        gl::VertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, nullptr);
-        gl::VertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, reinterpret_cast<const void*>(sizeof(float) * 2));
-        gl::EnableVertexAttribArray(0);
-        gl::EnableVertexAttribArray(1);
-        gl::Enable(GL_BLEND);
-        gl::BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        SDL_GL_SetSwapInterval(1);
-        return true;
+    // SDL has already made its replacement context current. Old GL names must not
+    // be deleted here: they belong to the lost context, not this new namespace.
+    bool restoreAfterContextLoss() override {
+        const SDL_GLContext replacement = SDL_GL_GetCurrentContext();
+        if (!replacement || SDL_GL_GetCurrentWindow() != window_) return false;
+        ctx_ = replacement;
+        program_ = meshProgram_ = vao_ = vbo_ = 0;
+        ubo_ = 0;
+        for (auto& [handle, rec] : textures_) rec.name = 0;
+        for (auto& [handle, rec] : meshes_) rec.vao = rec.vbo = rec.ebo = 0;
+        anisoLimit_ = -1;
+        if (!gl::load() || !initObjects()) return false;
+        for (auto& [handle, rec] : textures_) {
+            std::vector<uint8_t> pixels;
+            if (!rec.pixels.unpack(pixels)) return false;
+            createTexture(rec, pixels);
+        }
+        for (auto& [handle, rec] : meshes_) createMesh(rec);
+        const int errors = takeErrors();
+        if (errors) SDL_LogError(SDL_LOG_CATEGORY_RENDER, "OpenGL recovery: %d errors", errors);
+        else SDL_Log("OpenGL context restored: %zu textures, %zu meshes", textures_.size(), meshes_.size());
+        return errors == 0;
     }
 
     void shutdown() override {
         if (!ctx_) return;
+        for (auto& [handle, rec] : textures_) gl::DeleteTextures(1, &rec.name);
+        for (auto& [handle, rec] : meshes_) deleteMesh(rec);
+        textures_.clear();
+        meshes_.clear();
+        mipmapped_.clear();
+        white_ = {};
         if (vbo_) gl::DeleteBuffers(1, &vbo_);
         if (ubo_) gl::DeleteBuffers(1, &ubo_);
         if (vao_) gl::DeleteVertexArrays(1, &vao_);
@@ -256,7 +255,7 @@ public:
     void setFiltering(const TextureFiltering& f) override {
         if (f == filtering_) return;
         filtering_ = f;
-        for (unsigned id : mipmapped_) filter(id);
+        for (unsigned id : mipmapped_) filter(textureName(id));
     }
     int maxAnisotropy() const override {
         if (anisoLimit_ < 0) {
@@ -277,24 +276,23 @@ public:
         t.width = img.logicalW ? img.logicalW : img.width; // (an HD replacement: the original's)
         t.height = img.logicalH ? img.logicalH : img.height;
         t.alphaOnly = img.alphaOnly;
-        gl::GenTextures(1, &t.id);
-        gl::BindTexture(GL_TEXTURE_2D, t.id);
-        gl::PixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        gl::TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, img.width, img.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img.rgba.data());
-        if (img.mipmaps) {
-            gl::GenerateMipmap(GL_TEXTURE_2D);
-            mipmapped_.insert(t.id);
-        }
-        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, img.mipmaps ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
-        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        if (img.mipmaps) filter(t.id);
-        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        t.id = nextTexture_++;
+        auto& rec = textures_[t.id];
+        rec.width = img.width;
+        rec.height = img.height;
+        rec.mipmaps = img.mipmaps;
+        rec.pixels.store(img.rgba);
+        createTexture(rec, img.rgba);
+        if (img.mipmaps) mipmapped_.insert(t.id);
         return t;
     }
 
     void destroy(Texture& tex) override {
-        if (tex.id) gl::DeleteTextures(1, &tex.id);
+        auto it = textures_.find(tex.id);
+        if (it != textures_.end()) {
+            gl::DeleteTextures(1, &it->second.name);
+            textures_.erase(it);
+        }
         mipmapped_.erase(tex.id);
         tex = {};
     }
@@ -303,35 +301,31 @@ public:
         GpuMesh g;
         g.texture = texture;
         g.indexCount = int(indices.size());
-        gl::GenVertexArrays(1, &g.vao);
-        gl::GenBuffers(1, &g.vbo);
-        gl::GenBuffers(1, &g.ebo);
-        gl::BindVertexArray(g.vao);
-        gl::BindBuffer(GL_ARRAY_BUFFER, g.vbo);
-        gl::BufferData(GL_ARRAY_BUFFER, GLsizeiptr(vertices.size()), vertices.data(), GL_STATIC_DRAW);
-        gl::BindBuffer(GL_ELEMENT_ARRAY_BUFFER, g.ebo);
-        gl::BufferData(GL_ELEMENT_ARRAY_BUFFER, GLsizeiptr(indices.size() * sizeof(uint32_t)), indices.data(), GL_STATIC_DRAW);
-        gl::VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, kStride, nullptr);
-        gl::VertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(12));
-        gl::VertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, kStride, reinterpret_cast<const void*>(20));
-        gl::VertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(24));
-        gl::VertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(36));
-        gl::VertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(48));
-        gl::VertexAttribPointer(7, 2, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(60));
-        for (unsigned a : {0u, 1u, 2u, 4u, 5u, 6u, 7u}) gl::EnableVertexAttribArray(a);
-        gl::BindVertexArray(0);
+        g.vao = nextMesh_++;
+        auto& rec = meshes_[g.vao];
+        rec.vertices = vertices;
+        rec.indices = indices;
+        createMesh(rec);
         return g;
     }
 
     void updateVertices(GpuMesh& mesh, const std::vector<uint8_t>& vertices) override {
-        gl::BindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
-        gl::BufferSubData(GL_ARRAY_BUFFER, 0, GLsizeiptr(vertices.size()), vertices.data());
+        auto it = meshes_.find(mesh.vao);
+        if (it == meshes_.end()) return;
+        auto& rec = it->second;
+        const bool sameSize = rec.vertices.size() == vertices.size();
+        rec.vertices = vertices; // includes the latest skinned/animated pose
+        gl::BindBuffer(GL_ARRAY_BUFFER, rec.vbo);
+        if (sameSize) gl::BufferSubData(GL_ARRAY_BUFFER, 0, GLsizeiptr(vertices.size()), vertices.data());
+        else gl::BufferData(GL_ARRAY_BUFFER, GLsizeiptr(vertices.size()), vertices.data(), GL_DYNAMIC_DRAW);
     }
 
     void destroy(GpuMesh& mesh) override {
-        if (mesh.ebo) gl::DeleteBuffers(1, &mesh.ebo);
-        if (mesh.vbo) gl::DeleteBuffers(1, &mesh.vbo);
-        if (mesh.vao) gl::DeleteVertexArrays(1, &mesh.vao);
+        auto it = meshes_.find(mesh.vao);
+        if (it != meshes_.end()) {
+            deleteMesh(it->second);
+            meshes_.erase(it);
+        }
         mesh = {};
     }
 
@@ -380,7 +374,7 @@ public:
         gl::BindBuffer(GL_ARRAY_BUFFER, vbo_);
         gl::BufferData(GL_ARRAY_BUFFER, sizeof(float) * 24, v, GL_DYNAMIC_DRAW);
         gl::ActiveTexture(GL_TEXTURE0);
-        gl::BindTexture(GL_TEXTURE_2D, tex.id);
+        gl::BindTexture(GL_TEXTURE_2D, textureName(tex.id));
         gl::Uniform4f(uColor_, rgba[0], rgba[1], rgba[2], rgba[3]);
         gl::DrawArrays(GL_TRIANGLES, 0, 6);
     }
@@ -431,7 +425,7 @@ public:
             gl::Enable(GL_POLYGON_OFFSET_FILL);
             gl::PolygonOffset(st.offsetFactor, st.offsetUnits);
         }
-        gl::BindVertexArray(mesh.vao);
+        gl::BindVertexArray(meshName(mesh.vao));
         gl::DrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_INT, nullptr);
         gl::DepthMask(GL_TRUE);
         if (!st.colorWrite) gl::ColorMask(colorWrite_, colorWrite_, colorWrite_, colorWrite_);
@@ -457,14 +451,114 @@ public:
         return n;
     }
 
-    void setVSync(bool on) override { SDL_GL_SetSwapInterval(on ? 1 : 0); }
+    void setVSync(bool on) override { vsync_ = on; SDL_GL_SetSwapInterval(on ? 1 : 0); }
 
 private:
+
+    struct TextureRec {
+        unsigned name = 0;
+        int width = 0, height = 0;
+        bool mipmaps = false;
+        crgl::Backup pixels;
+    };
+    struct MeshRec {
+        unsigned vao = 0, vbo = 0, ebo = 0;
+        std::vector<uint8_t> vertices;
+        std::vector<uint32_t> indices;
+    };
+    std::unordered_map<unsigned, TextureRec> textures_;
+    std::unordered_map<unsigned, MeshRec> meshes_;
+    unsigned nextTexture_ = 1, nextMesh_ = 1;
+    bool vsync_ = true;
+    unsigned textureName(unsigned handle) const {
+        auto it = textures_.find(handle);
+        return it == textures_.end() ? 0 : it->second.name;
+    }
+    unsigned meshName(unsigned handle) const {
+        auto it = meshes_.find(handle);
+        return it == meshes_.end() ? 0 : it->second.vao;
+    }
+    void createTexture(TextureRec& rec, const std::vector<uint8_t>& pixels) {
+        gl::GenTextures(1, &rec.name);
+        gl::BindTexture(GL_TEXTURE_2D, rec.name);
+        gl::PixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        gl::TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, rec.width, rec.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+        if (rec.mipmaps) {
+            gl::GenerateMipmap(GL_TEXTURE_2D);
+        }
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, rec.mipmaps ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        if (rec.mipmaps) filter(rec.name);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    void createMesh(MeshRec& rec) {
+        gl::GenVertexArrays(1, &rec.vao);
+        gl::GenBuffers(1, &rec.vbo);
+        gl::GenBuffers(1, &rec.ebo);
+        gl::BindVertexArray(rec.vao);
+        gl::BindBuffer(GL_ARRAY_BUFFER, rec.vbo);
+        gl::BufferData(GL_ARRAY_BUFFER, GLsizeiptr(rec.vertices.size()), rec.vertices.data(), GL_STATIC_DRAW);
+        gl::BindBuffer(GL_ELEMENT_ARRAY_BUFFER, rec.ebo);
+        gl::BufferData(GL_ELEMENT_ARRAY_BUFFER, GLsizeiptr(rec.indices.size() * sizeof(uint32_t)), rec.indices.data(), GL_STATIC_DRAW);
+        gl::VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, kStride, nullptr);
+        gl::VertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(12));
+        gl::VertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, kStride, reinterpret_cast<const void*>(20));
+        gl::VertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(24));
+        gl::VertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(36));
+        gl::VertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(48));
+        gl::VertexAttribPointer(7, 2, GL_FLOAT, GL_FALSE, kStride, reinterpret_cast<const void*>(60));
+        for (unsigned a : {0u, 1u, 2u, 4u, 5u, 6u, 7u}) gl::EnableVertexAttribArray(a);
+        gl::BindVertexArray(0);
+    }
+    void deleteMesh(MeshRec& rec) {
+        gl::DeleteBuffers(1, &rec.ebo);
+        gl::DeleteBuffers(1, &rec.vbo);
+        gl::DeleteVertexArrays(1, &rec.vao);
+    }
+    bool initObjects() {
+        program_ = link(kVertex, kFragment);
+        meshProgram_ = link(kMeshVertex, kMeshFragment, true);
+        if (!program_ || !meshProgram_) return false;
+        uMvp_ = gl::GetUniformLocation(meshProgram_, "uMvp");
+        gl::UseProgram(meshProgram_);
+        gl::Uniform1i(gl::GetUniformLocation(meshProgram_, "uTex"), 0);
+        gl::Uniform1i(gl::GetUniformLocation(meshProgram_, "uNormal"), 1);
+        gl::Uniform1i(gl::GetUniformLocation(meshProgram_, "uExtra"), 2);
+        gl::UniformBlockBinding(meshProgram_, gl::GetUniformBlockIndex(meshProgram_, "Material"), 0);
+        gl::GenBuffers(1, &ubo_);
+        gl::BindBuffer(GL_UNIFORM_BUFFER, ubo_);
+        gl::BufferData(GL_UNIFORM_BUFFER, sizeof(ShadingBlock), nullptr, GL_DYNAMIC_DRAW);
+        gl::BindBufferBase(GL_UNIFORM_BUFFER, 0, ubo_);
+        uAlphaRef_ = gl::GetUniformLocation(meshProgram_, "uAlphaRef");
+        uMeshColor_ = gl::GetUniformLocation(meshProgram_, "uColor");
+        uTexMode_ = gl::GetUniformLocation(meshProgram_, "uTexMode");
+        uAlphaTex_ = gl::GetUniformLocation(meshProgram_, "uAlphaTex");
+        uLight_ = gl::GetUniformLocation(meshProgram_, "uLight");
+        uProj_ = gl::GetUniformLocation(program_, "uProj");
+        uColor_ = gl::GetUniformLocation(program_, "uColor");
+        uTex_ = gl::GetUniformLocation(program_, "uTex");
+
+        gl::GenVertexArrays(1, &vao_);
+        gl::GenBuffers(1, &vbo_);
+        gl::BindVertexArray(vao_);
+        gl::BindBuffer(GL_ARRAY_BUFFER, vbo_);
+        gl::BufferData(GL_ARRAY_BUFFER, sizeof(float) * 4 * 6, nullptr, GL_DYNAMIC_DRAW);
+        gl::VertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, nullptr);
+        gl::VertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, reinterpret_cast<const void*>(sizeof(float) * 2));
+        gl::EnableVertexAttribArray(0);
+        gl::EnableVertexAttribArray(1);
+        gl::Enable(GL_BLEND);
+        gl::BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        SDL_GL_SetSwapInterval(vsync_ ? 1 : 0);
+        return true;
+    }
+
     // A texture on unit `unit` with its sampling (texture parameters: per texture, so set per draw)
     void bindTexture(unsigned unit, const Texture* tex, const Sampling& smp) {
         gl::ActiveTexture(GL_TEXTURE0 + unit);
         const bool textured = tex && tex->id;
-        gl::BindTexture(GL_TEXTURE_2D, textured ? tex->id : whiteId());
+        gl::BindTexture(GL_TEXTURE_2D, textured ? textureName(tex->id) : whiteId());
         if (!textured) return;
         gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,
                           smp.clampS ? GL_CLAMP_TO_EDGE : smp.mirrorS ? GL_MIRRORED_REPEAT : GL_REPEAT);
@@ -486,7 +580,7 @@ private:
             img.rgba = {255, 255, 255, 255};
             white_ = upload(img);
         }
-        return white_.id;
+        return textureName(white_.id);
     }
 
     SDL_Window* window_ = nullptr;
@@ -503,7 +597,7 @@ private:
     // EXT_texture_filter_anisotropic; clamped to the GPU's limit), the nearest texel magnified
     void filter(unsigned id) {
         gl::BindTexture(GL_TEXTURE_2D, id);
-        if (maxAnisotropy() > 1) gl::TexParameteri(GL_TEXTURE_2D, 0x84FE, std::max(filtering_.anisotropy, 1));
+        if (maxAnisotropy() > 1) gl::TexParameteri(GL_TEXTURE_2D, 0x84FE, std::clamp(filtering_.anisotropy, 1, maxAnisotropy()));
         gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filtering_.sharp ? GL_NEAREST : GL_LINEAR);
     }
     int anisoLimit_ = -1;

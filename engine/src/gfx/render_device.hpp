@@ -17,7 +17,7 @@ struct SDL_Window;
 namespace cr2 {
 
 struct Texture {
-    unsigned id = 0; // GL texture name, or the Vulkan device's handle (0 = none)
+    unsigned id = 0; // opaque device handle (0 = none)
     int width = 0, height = 0;
     bool alphaOnly = false;
 };
@@ -26,7 +26,7 @@ struct Texture {
 // uv 2 f32 at 12, colour 4 u8 at 20, normal 3 f32 at 24, tangent 3 f32 at 36, binormal 3 f32 at
 // 48, uv1 2 f32 at 60) plus a triangle index buffer
 struct GpuMesh {
-    unsigned vao = 0, vbo = 0, ebo = 0; // GL objects; Vulkan keeps its handle in vao (0 = none)
+    unsigned vao = 0, vbo = 0, ebo = 0; // opaque mesh handle in vao (0 = none); vbo/ebo reserved
     int indexCount = 0;
     int texture = -1;
 };
@@ -161,6 +161,9 @@ public:
     virtual uint64_t windowFlags() const = 0;
     virtual bool init(SDL_Window* window) = 0;
     virtual void shutdown() = 0;
+    // SDL_EVENT_RENDER_DEVICE_RESET: rebuild live GPU resources in SDL's new
+    // current GL context, preserving opaque client handles and scene state.
+    virtual bool restoreAfterContextLoss() { return false; }
     virtual std::string description() const = 0;
 
     virtual Texture upload(const Image& img) = 0;

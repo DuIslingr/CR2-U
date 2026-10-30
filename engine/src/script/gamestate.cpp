@@ -160,7 +160,20 @@ std::string GameState::save(const std::map<std::string, std::string>& extra) con
     return o.str();
 }
 
+// A save is taken whole or not at all: read into a copy, the game changed only by a complete one -
+// a file cut short (written before saves were staged, a copy or sync gone wrong) would otherwise
+// leave a mix of it and the session before
 bool GameState::load(const std::string& text, std::map<std::string, std::string>* extra, std::string* error) {
+    GameState parsed = *this;
+    std::map<std::string, std::string> found;
+    if (!parsed.parse(text, &found, error)) return false;
+    *this = std::move(parsed);
+    if (extra)
+        for (auto& [key, value] : found) (*extra)[key] = std::move(value);
+    return true;
+}
+
+bool GameState::parse(const std::string& text, std::map<std::string, std::string>* extra, std::string* error) {
     std::istringstream in(text);
     std::string line;
     if (!std::getline(in, line) || line != "CR2-U save 1") {
@@ -175,7 +188,8 @@ bool GameState::load(const std::string& text, std::map<std::string, std::string>
         std::string key;
         if (!(l >> key)) continue;
         if (key == "flags") {
-            for (int n; l >> n;) setFlag(n, true);
+            for (int n; l >> n;) // (the flag table grows to fit: past any game's, a damaged number)
+                if (n < 0x10000) setFlag(n, true);
         } else if (key == "work") {
             int k = 0, v = 0;
             if (l >> k >> v && k >= 0 && k < 32) oldWork.push_back({k, v}); // (an older save's: the same values, set after)
@@ -198,17 +212,22 @@ bool GameState::load(const std::string& text, std::map<std::string, std::string>
             int c = -1;
             if (!(l >> c) || c < 0 || c >= 9) continue;
             l >> level[c] >> exp[c] >> mp[c];
+            // (far past any game's, so a damaged number can't overflow the sums it goes into; mp -1: full)
+            level[c] = std::clamp(level[c], 0, 999), exp[c] = std::clamp(exp[c], 0, 99999999); // (level 200's: 39703470)
+            mp[c] = std::clamp(mp[c], -1, 9999999);
             for (short& e : equip[c]) l >> e;
             for (short& k : seed[c]) l >> k;
         } else if (key == "sopia") {
             int s = -1, lv = 0, e = 0;
-            if (l >> s >> lv >> e && s >= 0 && s < 32) sopiaLevel[s] = static_cast<signed char>(lv), sopiaExp[s] = e;
+            if (l >> s >> lv >> e && s >= 0 && s < 32) sopiaLevel[s] = static_cast<signed char>(lv), sopiaExp[s] = std::clamp(e, 0, 99999999);
         } else if (key == "owned") {
             l >> sopiaOwned;
         } else if (key == "select") {
             l >> selectDungeon;
+            selectDungeon = std::clamp(selectDungeon, 0, 999);
         } else if (key == "difficulty") {
             l >> difficulty;
+            difficulty = std::clamp(difficulty, 0, 999);
         } else if (key == "boxes") {
             l >> boxes.table;
             for (int k = 0; k < 3; ++k)
@@ -226,6 +245,12 @@ bool GameState::load(const std::string& text, std::map<std::string, std::string>
         }
     }
     for (const auto& [k, v] : oldWork) globalWork[k] = v;
+    // (every line ends in a newline, and every save of every version closes with its extras, map
+    // first: with that line here, nothing before it was lost)
+    if (text.empty() || text.back() != '\n' || !extra->count("map")) {
+        if (error) *error = "the save is incomplete";
+        return false;
+    }
     itemsReady = equipReady = sopiaReady = true; // (a new game's set-up not over it)
     return true;
 }

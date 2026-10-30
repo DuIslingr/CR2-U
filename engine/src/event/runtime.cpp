@@ -242,7 +242,7 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
             if (soundHooks().stopAllVoices) soundHooks().stopAllVoices(0);
             soundHooks().playVoice(v);
         }
-        page_ = 0, pageTime_ = 0, revealed_ = 0, stop_ = 0, stopTime_ = 0;
+        page_ = 0, pageTime_ = 0, revealed_ = 0, stop_ = 0, stopTime_ = 0, ended_ = false;
         if (parsed_.pages.empty()) message_ = 0;
         else ++messagesSet_;
     });
@@ -250,7 +250,7 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     vm.setNative("EvtWindow", "SetMessageText", [this](NativeCall& c) {
         messageWindow_ = c.integer(0, Vista), message_ = 0x7fff;
         parsed_ = parseMessage(c.string(1));
-        page_ = 0, pageTime_ = 0, revealed_ = 0, stop_ = 0, stopTime_ = 0;
+        page_ = 0, pageTime_ = 0, revealed_ = 0, stop_ = 0, stopTime_ = 0, ended_ = false;
         if (parsed_.pages.empty()) message_ = 0;
         else ++messagesSet_;
     });
@@ -272,11 +272,11 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
         if (const size_t p = t.find("%s"); p != std::string::npos) t.replace(p, 2, itemNames_.message(id, language));
         messageWindow_ = w, message_ = 0x75, itemShown_ = id;
         parsed_ = parseMessage(t);
-        page_ = 0, pageTime_ = 0, revealed_ = 0, stop_ = 0, stopTime_ = 0;
+        page_ = 0, pageTime_ = 0, revealed_ = 0, stop_ = 0, stopTime_ = 0, ended_ = false;
         if (parsed_.pages.empty()) message_ = 0;
         else ++messagesSet_;
     });
-    vm.setNative("EvtWindow", "CheckMessage", [this](NativeCall& c) { c.result(message_ == 0); });
+    vm.setNative("EvtWindow", "CheckMessage", [this](NativeCall& c) { c.result(message_ == 0 || ended_); });
     vm.setNative("EvtWindow", "ShowYesNoButton", [this](NativeCall&) { yesNoShown_ = true, yesNo_ = 0, yesNoAge_ = 0; });
     vm.setNative("EvtWindow", "HideYesNoButton", [this](NativeCall&) { yesNoShown_ = false; });
     vm.setNative("EvtWindow", "CheckYesNoButton", [this](NativeCall& c) {
@@ -336,6 +336,16 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
 }
 
 void EventRuntime::reset() {
+    // Reusing a runtime for another room must act like fresh vista/window objects.
+    // Keep the host's playback policy, language and manual selection, but no old input/UI.
+    mapAnimPaused = effectLine = fastForward = false;
+    skipButton_ = touched_ = false;
+    touchWait_ = yesNoAge_ = 0;
+    skipOff_.clear(), pageSendOff_.clear();
+    itemShown_ = messagesSet_ = 0;
+    parsed_ = ParsedMessage();
+    executionEnd_ = false;
+    error_.clear();
     scene_ = EventScene();
     fade_ = EventFade();
     faces_.clear();
@@ -344,7 +354,7 @@ void EventRuntime::reset() {
     openWindows_.clear(), opened_.clear(), closing_.clear();
     yesNoShown_ = false, yesNo_ = 0;
     cutIns_ = {}, cutInImages_.clear();
-    messageWindow_ = Vista, message_ = page_ = revealed_ = 0, pageTime_ = stopTime_ = 0, stop_ = 0;
+    messageWindow_ = Vista, message_ = page_ = revealed_ = 0, pageTime_ = stopTime_ = 0, stop_ = 0, ended_ = false;
     execution_ = false;
     terminated_ = drawSkip_ = false;
     wait_ = frame_ = 0;
@@ -389,7 +399,7 @@ bool EventRuntime::update(ScriptVM* vm) {
         if (const TextStop* s = held(); !s) ++revealed_;
         else if (s->wait > 0 && (stopTime_ += kTick) * 20 >= float(s->wait)) ++stop_, stopTime_ = 0;
         else if (s->wait == 0 && autoPage > 0 && (pageTime_ += kTick) >= autoPage) advance(); // (a tap mark: as a page)
-    } else if (message_ > 0 && ending()) message_ = 0, page_ = 0; // (\*: its end by itself)
+    } else if (message_ > 0 && ending()) ended_ = true; // (\*: its end by itself - the script's CheckMessage, the page still shown till the next or Close: EvtWindow::UpdatePage / Update)
     else if ((message_ > 0 || execution_) && autoPage > 0 && (pageTime_ += kTick) >= autoPage) advance();
     fade_.update();
     if (yesNoShown_ && (yesNoAge_ += kTick) >= autoPage && autoPage > 0 && askYesNo && !yesNo_) yesNo_ = 1; // (pages by themselves: yes)
@@ -422,7 +432,7 @@ void EventRuntime::advance() {
         execution_ = false;
         return;
     }
-    if (message_ <= 0) return;
+    if (message_ <= 0 || ended_) return;
     if (!typed()) {
         const std::vector<TextStop>& stops = parsed_.pages[size_t(page_)].stops;
         if (const TextStop* s = held()) { // (at a tap mark: the page's next part; a timed one reads no tap)
@@ -433,6 +443,11 @@ void EventRuntime::advance() {
         while (stop_ < stops.size() && stops[stop_].wait > 0) ++stop_;
         if (stop_ < stops.size()) revealed_ = std::max(revealed_, stops[stop_].at), stopTime_ = 0;
         else showWhole();
+        return;
+    }
+    if (ending()) { // (\*: skipped by the reader)
+        if (soundHooks().stopAllVoices) soundHooks().stopAllVoices(0);
+        ended_ = true;
         return;
     }
     if (pageSendOff_.count(messageWindow_)) return; // (SetWaitButtonEnable false: the script's to end)

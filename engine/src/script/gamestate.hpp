@@ -104,6 +104,7 @@ struct GameState {
     // (the map, the place) - load gives back the lines it doesn't know there
     std::string save(const std::map<std::string, std::string>& extra = {}) const;
     bool load(const std::string& text, std::map<std::string, std::string>* extra = nullptr, std::string* error = nullptr);
+    bool parse(const std::string& text, std::map<std::string, std::string>* extra, std::string* error); // (load's: over this copy)
     bool flag(int n) const { return n >= 0 && size_t(n) < flags.size() && flags[size_t(n)]; }
     void setFlag(int n, bool on) {
         if (n < 0) return;

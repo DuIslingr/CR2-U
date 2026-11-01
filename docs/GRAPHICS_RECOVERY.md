@@ -118,3 +118,19 @@ could run. The MSVC build now delay-loads the DLL. With no loader, SDL refuses t
 Vulkan window, no Vulkan call is made, and the game goes on to OpenGL. CI's Windows
 runners have no loader, so the CR2-U and CR3-U viewer tests there start only because
 of this. llvm-mingw builds, which are not released, still link it directly.
+
+## Follow-up: memory held during play (2026-11-01)
+
+An HD model bringing pictures of its own erased those pictures' textures each time its
+figure loaded. Figures still being drawn hold textures by address, so the next draw
+read freed memory, and the old texture stayed on the GPU until exit. The textures now
+stay in place: the same picture is left alone, and a changed one is replaced where it is.
+Under ASan on the software renderer, the old code crashed 2:26 into a game and the new
+code ran past it (3:36, the same five reloads).
+
+The menu text cache (`uiTexts`) kept a texture for every string at every size until
+exit. It now keeps 1024, dropping those not drawn for longest, and frees the rest at
+exit. `viewer-new-session` holds both rules.
+
+Measure with a software driver (`VK_DRIVER_FILES=.../lvp_icd.json`): a leak test on a
+real GPU coincided with a full system freeze, cause unproven.

@@ -1,16 +1,14 @@
-# CR2-U v0.4.3
+# CR2-U v0.4.4
 
 A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux and Android.
 
 ## What's new
 
-- **Invisible character:** a game started from the title showed only a shadow where the player should be. The character now appears.
-- **Dialogue:** pages and yes / no questions wait for you instead of moving on after a few seconds, battle tutorials take your tap first, and timed lines stay up until the next message.
-- **Saves:** written safely and loaded all or nothing. A save cut short is refused, the title stays open with a notice, and damaged numbers are held in range.
-- **Controller:** a button held while the window loses focus, or as a session ends, does nothing until it's let go.
-- **Windows:** a PC without Vulkan no longer refuses to start the game; it goes on to OpenGL.
+- **HD models:** a model with pictures of its own could crash the game when it loaded again; it no longer does, and its old textures no longer pile up on the GPU.
+- **Menu text:** the text cache no longer grows for the whole session.
+- **HD textures:** `--export-textures` now writes ordinary PNGs and the game reads PNG replacements, so any upscaler or editor works without a converter. A replacement that doesn't keep its picture's shape is skipped and named in the log, instead of breaking the menus.
 
-The autoplayer played from the title into the late game, with one puzzle skipped and later bosses taken as won; the ending wasn't reached in this pass. A real Windows PC without Vulkan and physical Android devices are still untested.
+The HD model crash was reproduced and its fix checked under the sanitizers. Physical Android devices and a real Windows PC without Vulkan are still untested.
 
 ## Downloads
 

@@ -385,12 +385,20 @@ struct Viewer {
         }
         hdModels = s.hdModels; // (from the next figure loaded)
     }
+    // The HD replacement for a picture; one that doesn't fit it is left out, said once
+    std::set<std::string> hdRefused;
+    bool loadHd(const cr2::Image& img, cr2::Image& hd) {
+        std::string why;
+        if (cr2::loadHdImage(hdDir, img, hd, &why)) return true;
+        if (!why.empty() && hdRefused.insert(why).second) SDL_Log("hd textures: %s - left out", why.c_str());
+        return false;
+    }
     void reloadTexture(const std::string& name, cr2::Texture& t) {
         cr2::Image img;
         if (!decode(name, img)) return;
         if (hdTextures && !hdDir.empty()) {
             cr2::Image hd;
-            if (cr2::loadHdImage(hdDir, img, hd)) hd.logicalW = img.width, hd.logicalH = img.height, img = std::move(hd), ++hdLoaded;
+            if (loadHd(img, hd)) hd.logicalW = img.width, hd.logicalH = img.height, img = std::move(hd), ++hdLoaded;
             else ++hdMissing;
         }
         img.mipmaps = textureMips.count(name) ? textureMips[name] : true;
@@ -1643,7 +1651,7 @@ struct Viewer {
         if (!decode(name, img)) return nullptr;
         if (hdTextures && !hdDir.empty()) { // (drawn at the original's size, sharper)
             cr2::Image hd;
-            if (cr2::loadHdImage(hdDir, img, hd)) {
+            if (loadHd(img, hd)) {
                 hd.logicalW = img.width, hd.logicalH = img.height;
                 img = std::move(hd);
                 ++hdLoaded;
@@ -12314,7 +12322,7 @@ int main(int argc, char** argv) {
     bool hdModelsArg = false; // --hd-models (on whatever the settings say)
     std::string exploreDir, choicesArg; // --explore <folder> [--choices yes,no,...] [--hours h]: the game played by itself
     float exploreHours = 12;
-    std::string exportDir; // --export-textures [dir]: every image as <hash>.crraw, for tools/hd_textures.py (textures/export/ in the game folder without one)
+    std::string exportDir; // --export-textures [dir]: every image as <hash>.png (upright), for tools/hd_textures.py (textures/export/ in the game folder without one)
     bool exportTextures = false;
     bool exportModels = false; // --export-models [dir]: every figure as <figure>.glb (models/export/ in the game folder without one)
     std::string exportModelsDir;
@@ -12655,9 +12663,9 @@ int main(int argc, char** argv) {
             if (!v.archive.read(e.name, file) || !cr2::decodeImg(file, img)) { ++failed; continue; }
             const uint64_t h = cr2::imageHash(img);
             if (!seen.insert(h).second) { ++dupes; continue; }
-            const std::string path = exportDir + cr2::hashName(h) + ".crraw";
+            const std::string path = exportDir + cr2::hashName(h) + ".png";
             if (SDL_GetPathInfo(path.c_str(), nullptr)) continue; // (already there)
-            if (cr2::saveRawImage(path, img)) ++written, ++kinds[cr2::imageStorage(img)];
+            if (cr2::savePngImage(path, img)) ++written, ++kinds[cr2::imageStorage(img)];
             else ++failed;
         }
         std::printf("exported %d pictures to %s (%d lossless, %d block-compressed, %d 16-bit, %d unknown); %d alike, %d failed\n",

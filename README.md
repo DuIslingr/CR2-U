@@ -89,8 +89,8 @@ the program - it finds it by itself. The game folder is:
 ├── vita/
 │   └── PCSG00498/                      the installed title: CR2/resources/CRDB.psp2.mvgl, Sound.psp2/, eboot.bin
 └── textures/
-    ├── export/                         written by --export-textures: the pictures to upscale (<hash>.crraw)
-    └── hd/                             read by the game: the upscaled pictures (<hash>.crhd)
+    ├── export/                         written by --export-textures: the pictures to upscale (<hash>.png)
+    └── hd/                             read by the game: the upscaled pictures (<hash>.png or .crhd)
 ```
 
 A release's folder may hold the release itself or have it one or two folders down, as above
@@ -127,15 +127,20 @@ Upscaled textures you make yourself, from your own copy - waifu2x or Real-ESRGAN
 the originals:
 
 1. `cr2view --export-textures` writes every picture the game draws to `<game folder>/textures/export/`
-   (`<hash>.crraw`; the profile folder's `textures/export/` if the game folder can't be written;
+   (`<hash>.png`, upright; the profile folder's `textures/export/` if the game folder can't be written;
    `--export-textures <folder>` elsewhere). Each release exports its own pictures.
 2. `python3 tools/hd_textures.py <game folder>` upscales them into `<game folder>/textures/hd/`
-   (`<hash>.crhd`): waifu2x (`waifu2x-ncnn-vulkan` on the PATH, or `--waifu2x <it>`) for the
+   (`<hash>.png`): waifu2x (`waifu2x-ncnn-vulkan` on the PATH, or `--waifu2x <it>`) for the
    lossless and block-compressed pictures, Real-ESRGAN (`--esrgan <the folder with
    realesrgan-ncnn-vulkan and models/>`) for the 16-bit ones - or `--engine waifu2x` for all. It
    needs Python 3 with NumPy and Pillow; `--help` lists the rest (`--scale`, `--noise`, `--only` ...).
 3. Start the game: with `textures/hd/` there, HD Textures is on by itself (Options, Graphics, HD Textures switches
    it; `--no-hd-textures` for a run without). One `textures/hd/` can hold every release's.
+
+The exports are ordinary PNGs, so any upscaler or image editor works as well: save the result
+under the same name in `textures/hd/`. Keep each picture's shape - one scale across and down, at
+least the original's size, up to 8192 a side - and its rows the right way up: a picture that
+doesn't fit is left out (the log says which and why) rather than drawn wrong.
 
 `CR2_HD_TEXTURES=<folder>` reads them from elsewhere; the older `hd-textures/` beside the program or in
 the profile folder is still read while there is no `textures/hd/`. The `tools/hd_textures.py` is the

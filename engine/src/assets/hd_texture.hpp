@@ -4,11 +4,13 @@
 // by the hash of the original's decoded pixels, so the same picture in several releases, or in
 // several of the archive's images, gets one replacement without a name table.
 //
-// <hash>.crraw: an original as exported for upscaling ("CRRAW1", u32 width, height, flags (bit 0
+// <hash>.crraw: an original as exported before .png ("CRRAW1", u32 width, height, flags (bit 0
 //               alpha-only; bits 1-2 how the release stored it: imageStorage), then RGBA8 rows)
+// <hash>.png:   an original exported upright (savePngImage), or a replacement made from one
 // <hash>.crhd:  its replacement ("CRHD1\0", u32 width, height, original width, original height,
 //               flags, zlib-compressed RGBA8 rows)
-// The rows in the Image's own order (the game's texture coordinates': v = 0 the first row).
+// The rows in the Image's own order (the game's texture coordinates': v = 0 the first row) -
+// the .png's upright, the top first.
 
 #include "assets/image.hpp"
 
@@ -27,8 +29,15 @@ uint64_t imageHash(const Image& img);
 std::string hashName(uint64_t hash); // 16 hex digits
 
 bool saveRawImage(const std::string& path, const Image& img);
-// The replacement for `original` in `dir` (with its trailing slash), if there is one: same
-// original size, larger or equal size
-bool loadHdImage(const std::string& dir, const Image& original, Image& out);
+// A replacement's size against its original's: at least as large, no side over 8192, and the same
+// shape - one scale across and down, each side rounded to whole pixels
+bool hdShapeFits(int w, int h, int originalW, int originalH);
+// <hash>.png: an original exported for upscaling or editing - upright, the top row first, the
+// .crraw's flags in a tEXt chunk ("cr-flags") for tools/hd_textures.py
+bool savePngImage(const std::string& path, const Image& img);
+// The replacement for `original` in `dir` (with its trailing slash), if there is one -
+// <hash>.crhd, else <hash>.png (any upscale or edit, upright) - of a size hdShapeFits; one
+// that doesn't fit is left out, `why` saying why
+bool loadHdImage(const std::string& dir, const Image& original, Image& out, std::string* why = nullptr);
 
 } // namespace cr2

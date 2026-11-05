@@ -1,5 +1,10 @@
 #include "assets/hd_texture.hpp"
 
+#include "stb/stb_image.h"
+#include "stb/stb_image_write.h"
+
+#include <algorithm>
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -28,6 +33,16 @@ bool readAll(const std::string& path, std::vector<uint8_t>& out) {
     const bool ok = n > 0 && std::fread(out.data(), 1, out.size(), f) == out.size();
     std::fclose(f);
     return ok;
+}
+
+// a whole file, through <path>.part
+bool writeFile(const std::string& path, const std::vector<uint8_t>& out) {
+    std::FILE* f = std::fopen((path + ".part").c_str(), "wb");
+    if (!f) return false;
+    const bool ok = std::fwrite(out.data(), 1, out.size(), f) == out.size();
+    if (std::fclose(f) != 0 || !ok) return std::remove((path + ".part").c_str()), false;
+    std::remove(path.c_str()); // (Windows' rename won't replace)
+    return std::rename((path + ".part").c_str(), path.c_str()) == 0;
 }
 
 } // namespace
@@ -77,26 +92,93 @@ bool saveRawImage(const std::string& path, const Image& img) {
     put32(out, uint32_t(img.height));
     put32(out, (img.alphaOnly ? 1u : 0u) | uint32_t(imageStorage(img)) << 1);
     out.insert(out.end(), img.rgba.begin(), img.rgba.end());
-    std::FILE* f = std::fopen((path + ".part").c_str(), "wb");
-    if (!f) return false;
-    const bool ok = std::fwrite(out.data(), 1, out.size(), f) == out.size();
-    if (std::fclose(f) != 0 || !ok) return std::remove((path + ".part").c_str()), false;
-    std::remove(path.c_str()); // (Windows' rename won't replace)
-    return std::rename((path + ".part").c_str(), path.c_str()) == 0;
+    return writeFile(path, out);
 }
 
-bool loadHdImage(const std::string& dir, const Image& original, Image& out) {
-#ifdef CR2_HAVE_ZLIB
+
+
+namespace {
+
+// A replacement left out: why ("<hash>.png: ..."), and false
+bool leftOut(std::string* why, const std::string& file, const std::string& what) {
+    if (why) *why = file + ": " + what;
+    return false;
+}
+
+std::string sizesText(int w, int h, int originalW, int originalH) {
+    return std::to_string(w) + "x" + std::to_string(h) + " for a " + std::to_string(originalW) + "x" + std::to_string(originalH) +
+           " picture (its shape, at least its size)";
+}
+
+// The rows the other way up (a bottom-up Image's, as a picture is seen: the top first)
+void flipRows(std::vector<uint8_t>& px, int w, int h) {
+    const size_t row = size_t(w) * 4;
+    for (int y = 0; y < h / 2; ++y) std::swap_ranges(px.begin() + std::ptrdiff_t(row * size_t(y)), px.begin() + std::ptrdiff_t(row * size_t(y + 1)),
+                                                     px.begin() + std::ptrdiff_t(row * size_t(h - 1 - y)));
+}
+
+// PNG's chunk check (CRC-32, the IEEE polynomial)
+uint32_t crc32Of(const uint8_t* p, size_t n) {
+    uint32_t c = 0xffffffffu;
+    for (size_t i = 0; i < n; ++i) {
+        c ^= p[i];
+        for (int k = 0; k < 8; ++k) c = c & 1 ? 0xedb88320u ^ (c >> 1) : c >> 1;
+    }
+    return ~c;
+}
+
+void putBe32(std::vector<uint8_t>& out, uint32_t v) {
+    for (int i = 3; i >= 0; --i) out.push_back(uint8_t(v >> (8 * i)));
+}
+
+} // namespace
+
+bool hdShapeFits(int w, int h, int originalW, int originalH) {
+    if (originalW <= 0 || originalH <= 0 || w < originalW || h < originalH || w > 8192 || h > 8192) return false;
+    // (one scale s for both: w = originalW s + a, h = originalH s + b, each rounded, |a|, |b| <= 1/2)
+    const int64_t off = int64_t(w) * originalH - int64_t(h) * originalW;
+    return 2 * (off < 0 ? -off : off) <= int64_t(originalW) + originalH;
+}
+
+bool savePngImage(const std::string& path, const Image& img) {
+    const size_t n = size_t(std::max(img.width, 0)) * size_t(std::max(img.height, 0)) * 4;
+    if (!n || img.rgba.size() < n) return false;
+    std::vector<uint8_t> rows(img.rgba.begin(), img.rgba.begin() + std::ptrdiff_t(n));
+    if (img.bottomUp) flipRows(rows, img.width, img.height);
+    std::vector<uint8_t> png;
+    stbi_write_png_to_func(
+        [](void* to, void* data, int size) {
+            auto* v = static_cast<std::vector<uint8_t>*>(to);
+            v->insert(v->end(), static_cast<uint8_t*>(data), static_cast<uint8_t*>(data) + size);
+        },
+        &png, img.width, img.height, 4, rows.data(), img.width * 4);
+    if (png.size() < 33 || std::memcmp(png.data() + 12, "IHDR", 4) != 0) return false;
+    // the .crraw's flags for tools/hd_textures.py (which upscaler), after IHDR
+    const std::string text = std::string("cr-flags") + '\0' + std::to_string((img.alphaOnly ? 1u : 0u) | uint32_t(imageStorage(img)) << 1);
+    std::vector<uint8_t> chunk;
+    putBe32(chunk, uint32_t(text.size()));
+    chunk.insert(chunk.end(), {'t', 'E', 'X', 't'});
+    chunk.insert(chunk.end(), text.begin(), text.end());
+    putBe32(chunk, crc32Of(chunk.data() + 4, chunk.size() - 4));
+    png.insert(png.begin() + 33, chunk.begin(), chunk.end());
+    return writeFile(path, png);
+}
+
+bool loadHdImage(const std::string& dir, const Image& original, Image& out, std::string* why) {
+    if (why) why->clear();
     if (dir.empty() || original.width <= 0) return false;
+    const std::string name = hashName(imageHash(original));
     std::vector<uint8_t> file;
-    if (!readAll(dir + hashName(imageHash(original)) + ".crhd", file)) return false;
-    const size_t size = file.size();
-    const uint8_t* p = file.data();
-    bool ok = size > 26 && std::memcmp(p, "CRHD1", 6) == 0;
-    const uint32_t w = ok ? get32(p + 6) : 0, h = ok ? get32(p + 10) : 0;
-    ok = ok && get32(p + 14) == uint32_t(original.width) && get32(p + 18) == uint32_t(original.height) && w >= 1 &&
-         h >= 1 && w <= 8192 && h <= 8192 && w >= uint32_t(original.width) && h >= uint32_t(original.height);
-    if (ok) {
+#ifdef CR2_HAVE_ZLIB
+    if (readAll(dir + name + ".crhd", file)) {
+        const size_t size = file.size();
+        const uint8_t* p = file.data();
+        if (size <= 26 || std::memcmp(p, "CRHD1", 6) != 0) return leftOut(why, name + ".crhd", "not a .crhd");
+        const uint32_t w = get32(p + 6), h = get32(p + 10);
+        if (get32(p + 14) != uint32_t(original.width) || get32(p + 18) != uint32_t(original.height))
+            return leftOut(why, name + ".crhd", "made for a picture of another size");
+        if (!hdShapeFits(int(std::min(w, 65536u)), int(std::min(h, 65536u)), original.width, original.height))
+            return leftOut(why, name + ".crhd", sizesText(int(std::min(w, 65536u)), int(std::min(h, 65536u)), original.width, original.height));
         out = Image();
         out.width = int(w);
         out.height = int(h);
@@ -105,15 +187,31 @@ bool loadHdImage(const std::string& dir, const Image& original, Image& out) {
         out.format = original.format + " (HD)";
         out.rgba.resize(size_t(w) * h * 4);
         uLongf len = uLongf(out.rgba.size());
-        ok = uncompress(out.rgba.data(), &len, p + 26, uLong(size - 26)) == Z_OK && len == out.rgba.size();
+        if (uncompress(out.rgba.data(), &len, p + 26, uLong(size - 26)) != Z_OK || len != out.rgba.size())
+            return leftOut(why, name + ".crhd", "its pixels don't unpack");
+        return true;
     }
-    return ok;
-#else
-    (void)dir;
-    (void)original;
-    (void)out;
-    return false; // built without zlib
 #endif
+    if (readAll(dir + name + ".png", file)) { // (any upscale or edit: upright, the original's shape)
+        int w = 0, h = 0, channels = 0;
+        stbi_uc* px = stbi_load_from_memory(file.data(), int(std::min(file.size(), size_t(1) << 30)), &w, &h, &channels, 4);
+        if (!px) return leftOut(why, name + ".png", "not a PNG this reads");
+        if (!hdShapeFits(w, h, original.width, original.height)) {
+            stbi_image_free(px);
+            return leftOut(why, name + ".png", sizesText(w, h, original.width, original.height));
+        }
+        out = Image();
+        out.width = w;
+        out.height = h;
+        out.alphaOnly = original.alphaOnly;
+        out.bottomUp = original.bottomUp;
+        out.format = original.format + " (HD)";
+        out.rgba.assign(px, px + size_t(w) * size_t(h) * 4);
+        stbi_image_free(px);
+        if (out.bottomUp) flipRows(out.rgba, w, h); // (the PNG the top first, the Image in its own order)
+        return true;
+    }
+    return false;
 }
 
 } // namespace cr2

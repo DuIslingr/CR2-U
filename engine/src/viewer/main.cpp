@@ -551,6 +551,9 @@ struct Viewer {
                         s.padSwap ? "A controller's \u00d7 (the bottom button) confirms, \u25cb (the right one) goes back"
                                   : "A controller's \u25cb (the right button) confirms, \u00d7 (the bottom one) goes back - as on the Vita",
                         true, [&s](int) { s.padSwap = !s.padSwap; }});
+        if (titleOptions()) // (the saves: only before a game is loaded - its confirmation over the options)
+            rows.push_back({"Import Vita Saves", "", "Import your decrypted Vita saves (docs/VITA_SAVES.md) - or press I in the options", true,
+                            [this](int) { settingsOpen = false, optionTap(3111); }});
         rows.push_back({"Defaults", "", "Every setting here back to its default", true, [&s](int) { s = Settings(); }});
         return rows;
     }
@@ -3896,11 +3899,11 @@ struct Viewer {
         }
         if (optionsOpen) { // (the options: Backspace / Return back, Left / Right the focused bar; G / Tab
                            // CR2-U's Display & Graphics)
-            if (k == SDLK_I || ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && optionFocus == 3)) optionTap(3111);
+            if (k == SDLK_I) optionTap(3111);
             else if (k == SDLK_G || k == SDLK_TAB) openSettings();
             else if (k == SDLK_BACKSPACE || k == SDLK_RETURN || k == SDLK_KP_ENTER) optionsOpen = false;
-            else if (k == SDLK_UP) optionFocus = (optionFocus + 3) % 4;
-            else if (k == SDLK_DOWN) optionFocus = (optionFocus + 1) % 4;
+            else if (k == SDLK_UP) optionFocus = (optionFocus + 2) % 3;
+            else if (k == SDLK_DOWN) optionFocus = (optionFocus + 1) % 3;
             else if (k == SDLK_LEFT && optionFocus < 3) optionVolume[optionFocus] = std::max(optionVolume[optionFocus] - 5, 0), volumeSet(optionFocus);
             else if (k == SDLK_RIGHT && optionFocus < 3) optionVolume[optionFocus] = std::min(optionVolume[optionFocus] + 5, 100), volumeSet(optionFocus);
             return true;
@@ -6913,8 +6916,13 @@ struct Viewer {
         static const std::pair<const char*, int> kButtons[] = {{"start", 8}, {"options", 20}, {"scenarios", 24}, {"new", 9}, {"load", 10}, {"back", 100}};
         if (titleMenu.stage == 3) titleMenu.tapped = true;
         else if (titleMenu.stage == 7 && (tok == "yes" || tok == "no")) titleAnswer(tok == "yes");
-        else if (titleMenu.stage == 9) {
-            static const std::pair<const char*, int> kOptionTaps[] = {{"import", 3111}, {"reset", 3101}, {"manual", 3102}, {"yes", 3201}, {"no", 3202}};
+        else if (titleMenu.stage == 9 && settingsOpen) { // (the Graphics list: as the camp's)
+            if (tok == "up" || tok == "down" || tok == "left" || tok == "right" || tok == "enter")
+                settingsKey(tok == "up" ? SDLK_UP : tok == "down" ? SDLK_DOWN : tok == "left" ? SDLK_LEFT : tok == "right" ? SDLK_RIGHT : SDLK_RETURN);
+            else if (tok == "back") closeSettings();
+        } else if (titleMenu.stage == 9) {
+            static const std::pair<const char*, int> kOptionTaps[] = {{"import", 3111}, {"reset", 3101}, {"manual", 3102}, {"yes", 3201}, {"no", 3202},
+                                                                      {"graphics", 3110}};
             for (const auto& [name, id] : kOptionTaps)
                 if (tok == name && (optionsOpen || optionsAsk)) return optionTap(id); // (the options' Reset Data and its questions)
             if (tok == "back") optionsOpen = false, campLink = 0;
@@ -7078,7 +7086,6 @@ struct Viewer {
             if (a > 0 && white.id) dev->drawQuad(white, kScreen, id.data(), rgba);
             return;
         }
-        if (tm.stage == 9) return drawCamp(view, proj, screenW, screenH);
         // the title over its painting: Android's own figure, title_bg (wider than 3:2 stretched) - the iPad's
         // and the Vita's (the trilogy's too) have none, their painting the title's GEO_titleBG
         const float aspect = float(screenW) / float(std::max(screenH, 1));
@@ -7094,9 +7101,17 @@ struct Viewer {
         else if (tm.stage == 3) poseUi(ti, "title_loop", age, true);
         else if (tm.stage == 4) poseUi(ti, "title_wait", age);
         else if (tm.stage == 5) poseUi(ti, "title_wait", 1e6f); // (its end: the buttons' places)
+        else if (tm.stage == 9) poseUi(ti, "title_out", 1e6f); // (the options over it: the title out, its painting left)
         else poseUi(ti, "title_in", std::max(titleAnimLength("title", "title_in") - (tm.stage == 10 ? age : 1e6f), 0.0f)); // (backwards: gone)
         if (!bg.fig.meshes.empty()) hideJoint(ti, "GEO_titleBG"); // (title_bg in its place)
+        if (tm.stage == 9) // (under the options: the painting alone - the credit line and "Please Touch" sat on their buttons)
+            for (const char* j : {"GEO_fontMaruC", "GEO_press"}) hideJoint(ti, j);
         drawFigure(ti.fig, view.data());
+        if (tm.stage == 9) { // (the options: GameTitleMenu::Draw's last part, TitleOptionMenu, over the title and its buttons)
+            drawTitleButtons(ti, view, 0);
+            tapRects.clear(); // (the options' taps alone)
+            return drawCamp(view, proj, screenW, screenH);
+        }
         // (GameTitleMenu: divaBtn_io added unlooped - its 0.25 s from nothing to the picture -, played once
         // as the title comes in and held; at the tap played back, gone)
         const float divaLength = titleAnimLength("divabtn_io", "divabtn_io");
@@ -7808,7 +7823,7 @@ struct Viewer {
             char jn[16];
             std::snprintf(jn, sizeof jn, "typeM_L%02d", k + 1);
             const int label = k == 5 && titleOptions() ? 107 : kLabels[k]; // (the title's: Reset Data)
-            if (uiJoint(seat, jn, x, y)) drawUiText(messageText("announcemenuname", label), 26, x, y, w, h, true);
+            if (uiJoint(seat, jn, x, y)) drawBorderedText(messageText("announcemenuname", label), 26, x, y, w, h, true); // (white on the parchment: an outline to read by)
         }
         for (const std::string& j : seat.joints) {
             if (j.rfind("call_vlmBar_per", 0) == 0) {
@@ -7843,7 +7858,7 @@ struct Viewer {
                 drawFigure(ic.fig, view.data());
             }
         }
-        if (uiJoint(seat, "typeM_C01", x, y)) drawUiText(messageText("announcemenuname", 143 + optionQuality), 26, x, y, w, h); // (the quality: over its button)
+        if (uiJoint(seat, "typeM_C01", x, y)) drawBorderedText(messageText("announcemenuname", 143 + optionQuality), 26, x, y, w, h); // (the quality: over its button)
 
         for (int k = 1; k <= 6; ++k) { // (the seat's own tap areas)
             char sa[16], ea[16];
@@ -7865,17 +7880,10 @@ struct Viewer {
                 c.fig.place.m[3] = ox, c.fig.place.m[7] = oy;
                 poseUi(c, "circlebtn_fr", 0);
                 drawFigure(c.fig, view.data());
-                drawUiText("Graphics", 26, cx, cy, w, h, false, 1.0f, bw * 0.9f);
+                drawBorderedText("Graphics", 26, cx, cy, w, h, false, 1.0f, bw * 0.9f);
                 tapRects.push_back({3110, sx + ox, sy + oy, ex + ox, ey + oy});
-                // Import uses another native oval in the open band below the volume bars.
-                const float ix = -(sx + ex) * 0.5f, iy = -0.20f - (sy + ey) * 0.5f;
-                c.fig.place.m[3] = ix, c.fig.place.m[7] = iy;
-                c.fig.tint[0] = c.fig.tint[1] = c.fig.tint[2] = titleOptions() ? 1.0f : 0.4f;
-                poseUi(c, "circlebtn_fr", 0);
-                drawFigure(c.fig, view.data());
-                drawUiText(optionFocus == 3 ? "> Import Vita Saves" : "Import Vita Saves", 22, 0, -0.20f, w, h, false, titleOptions() ? 1.0f : 0.4f, bw * 0.9f);
-                c.fig.tint[0] = c.fig.tint[1] = c.fig.tint[2] = 1.0f;
-                if (titleOptions()) tapRects.push_back({3111, sx + ix, sy + iy, ex + ix, ey + iy});
+                // (Import Vita Saves: a row of the Graphics list at the title - the band below the volume
+                // bars is Lock Orientation's)
 
                 break;
             }
@@ -12967,10 +12975,38 @@ int main(int argc, char** argv) {
         }
         // --run: frames as the window would show them, the event and animations going on
         if (v.battleMode && !v.playMode) { // (--time: that far into the battle, played at 60 a second)
+            // CR2_CAPTURE_EVERY=<folder>:<from>:<n> (tests): from <from> s, every nth frame as <folder>/fNNNNN.bmp
+            std::string everyDir;
+            float everyFrom = 0;
+            int everyN = 0, frame = 0;
+            std::vector<float> taps; // CR2_CAPTURE_TAP=<s>,<s>... (tests): a tap at each of those times
+            if (const char* e = SDL_getenv("CR2_CAPTURE_TAP"))
+                for (const char* p = e; *p;) {
+                    char* end = nullptr;
+                    taps.push_back(std::strtof(p, &end));
+                    if (end == p) break;
+                    p = *end == ',' ? end + 1 : end;
+                }
+            if (const char* e = SDL_getenv("CR2_CAPTURE_EVERY")) {
+                const std::string s = e;
+                const size_t b = s.rfind(':'), a = b == std::string::npos ? b : s.rfind(':', b - 1);
+                if (a != std::string::npos) everyDir = s.substr(0, a), everyFrom = float(std::atof(s.c_str() + a + 1)), everyN = std::max(1, std::atoi(s.c_str() + b + 1));
+            }
             for (float t = 0; t + 0.5f / 60.0f < startTime; t += 1.0f / 60.0f) {
                 v.advance(1.0f / 60.0f, 0, 0, false), v.pose();
                 catchGlass(); // (the screen caught as it breaks)
                 if (!takeTitle()) return 1; // (a game over's "try again": its save loaded)
+                for (float& at : taps)
+                    if (at >= 0 && t >= at) v.tap(), at = -1, SDL_Log("capture: a tap at %.2f s", t);
+                if (everyN > 0 && t >= everyFrom && frame++ % everyN == 0) {
+                    v.draw(w, h);
+                    dev->endFrame(false);
+                    std::vector<uint8_t> px;
+                    int pw = w, ph = h;
+                    char name[32];
+                    std::snprintf(name, sizeof name, "/f%05d.bmp", int(t * 60.0f + 0.5f));
+                    if (dev->readPixels(px, pw, ph)) saveBmp((everyDir + name).c_str(), px, pw, ph);
+                }
             }
         }
         if (const char* row = SDL_getenv("CR2_CAPTURE_SETTINGS"); row && !v.settingsOpen) { // (tests: the Display & Graphics list over the camp's options, that row in focus)

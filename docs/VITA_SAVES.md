@@ -5,7 +5,7 @@ Use the game's native **Options** screen from the title screen:
 | Game | Option |
 | --- | --- |
 | CR1 / Omega | Game → Import Vita Saves → Choose Folder |
-| CR2 | Import Vita Saves (below the volume bars) |
+| CR2 | Options → Graphics → Import Vita Saves (or the I key) |
 | CR3 | Other → Vita Saves → Import |
 
 Choose a **decrypted, exported** Vita save folder: either the game's `PCSG` folder

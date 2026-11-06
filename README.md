@@ -116,7 +116,7 @@ settings.ini (`field_speed`, `battle_speed`); `--field-speed n` / `--battle-spee
 
 ## Vita save importing
 
-Import decrypted Vita saves from title-screen **Options**, using **Import Vita Saves** below the volume bars.
+Import decrypted Vita saves from title-screen **Options**, using **Import Vita Saves** in its **Graphics** list (or the I key).
 Choose the exported save folder and confirm; existing saves are backed up automatically.
 No Python is needed. See [Vita save importing](docs/VITA_SAVES.md) for supported state,
 profile locations and the optional command-line converter.

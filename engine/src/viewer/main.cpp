@@ -13469,6 +13469,38 @@ int main(int argc, char** argv) {
             frameSize(w, h);
             v.draw(w, h);
             dev->endFrame(true);
+            { // (tests: CR2_WINDOW_SHOTS=<folder>:<from>:<n> - from the battle's <from> s, every nth shown frame as
+              // <folder>/wNNNNN_<battle s>.bmp; CR2_WINDOW_QUIT=<s> - the window closed at that battle time; a long frame logged)
+                static std::string shotDir;
+                static float shotFrom = -1, quitAt = -1;
+                static int shotN = 0, shotFrame = 0;
+                static bool shotRead = false;
+                if (!shotRead) {
+                    shotRead = true;
+                    if (const char* e = SDL_getenv("CR2_WINDOW_SHOTS")) {
+                        const std::string s = e;
+                        const size_t b = s.rfind(':'), a = b == std::string::npos ? b : s.rfind(':', b - 1);
+                        if (a != std::string::npos) shotDir = s.substr(0, a), shotFrom = float(std::atof(s.c_str() + a + 1)), shotN = std::max(1, std::atoi(s.c_str() + b + 1));
+                    }
+                    if (const char* q = SDL_getenv("CR2_WINDOW_QUIT")) quitAt = float(std::atof(q));
+                }
+                if (dt > 0.1f) SDL_Log("window: a long frame, %.2f s (battle %.2f s)", dt, v.battleClock);
+                if (shotN > 0 && v.battleMode && v.battleClock >= shotFrom && shotFrame++ % shotN == 0) {
+                    std::vector<uint8_t> px;
+                    int pw = 0, ph = 0;
+                    char file[64];
+                    std::snprintf(file, sizeof file, "/w%05d_%06.2f.bmp", totalFrames, v.battleClock);
+                    if (dev->readPixels(px, pw, ph)) { // (kept to 960 wide: every kth pixel)
+                        const int k = std::max(1, pw / 960), sw = pw / k, sh = ph / k;
+                        std::vector<uint8_t> small(size_t(sw) * size_t(sh) * 4);
+                        for (int y = 0; y < sh; ++y)
+                            for (int x = 0; x < sw; ++x)
+                                std::memcpy(&small[(size_t(y) * size_t(sw) + size_t(x)) * 4], &px[(size_t(y) * size_t(k) * size_t(pw) + size_t(x) * size_t(k)) * 4], 4);
+                        saveBmp((shotDir + file).c_str(), small, sw, sh);
+                    }
+                }
+                if (quitAt >= 0 && v.battleMode && v.battleClock >= quitAt) SDL_Log("window: closed at battle %.2f s", v.battleClock), running = false;
+            }
         }
         const double secs = double(SDL_GetTicksNS() - started) / 1e9;
         SDL_Log("%d frames in %.1f s: %.1f a second (aiming at %s)", totalFrames, secs, totalFrames / std::max(secs, 1e-3),
@@ -13493,6 +13525,7 @@ int main(int argc, char** argv) {
     for (auto& [k, t] : v.textures) dev->destroy(t);
     dev->shutdown();
     SDL_DestroyWindow(win);
+    v.audio.close(); // (its streams and device before SDL_Quit frees the audio subsystem: ~Viewer runs after it)
     SDL_Quit();
     return code;
 }

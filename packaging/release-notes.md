@@ -1,14 +1,23 @@
-# CR2-U v0.4.4
+# CR2-U v0.4.5
 
 A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux and Android.
 
 ## What's new
 
-- **HD models:** a model with pictures of its own could crash the game when it loaded again; it no longer does, and its old textures no longer pile up on the GPU.
-- **Menu text:** the text cache no longer grows for the whole session.
-- **HD textures:** `--export-textures` now writes ordinary PNGs and the game reads PNG replacements, so any upscaler or editor works without a converter. A replacement that doesn't keep its picture's shape is skipped and named in the log, instead of breaking the menus.
+- **Battles:** the results of a won battle no longer stay on screen over the next one. The next
+  battle used to lose its HUD while the last results' panels came in over the fight (reported by
+  [metastigma](https://github.com/metastigma)).
+- **Vita copies:** text is in the language you chose again. The Vita's message files hold 7
+  languages, not 8, so much of the text - the tutorial, battle announcements - came out in Japanese
+  or Chinese.
+- **Windows:** settings, saves and the first-start setup work with a folder or user name in another
+  alphabet - a Cyrillic user name on a Russian Windows, for example.
+- **Options:** Import Vita Saves moved into the Graphics list (it used to cover Lock Orientation's
+  button), and the title stays behind the Options.
+- **Exit:** closing the window no longer crashes on the way out.
 
-The HD model crash was reproduced and its fix checked under the sanitizers. Physical Android devices and a real Windows PC without Vulkan are still untested.
+Thanks to [metastigma](https://github.com/metastigma) for the report and for testing. The battle fix was reproduced with the Vita data and
+checked over several battles in a row.
 
 ## Downloads
 

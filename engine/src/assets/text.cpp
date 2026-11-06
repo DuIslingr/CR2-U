@@ -22,7 +22,10 @@ bool TextData::parse(const std::vector<uint8_t>& data) {
     *this = TextData();
     if (data.size() < 0x10) return false;
     records_ = u32(data, 0), strings_ = u32(data, 4), count_ = int(u32(data, 8));
-    if (records_ > data.size() || strings_ > data.size() || size_t(count_) * 0x20 > data.size() - records_) return *this = TextData(), false;
+    // (the records run to the strings: 4 bytes a language each - the Vita's 7, the others' 8)
+    languages_ = count_ > 0 && strings_ > records_ && (strings_ - records_) % uint32_t(count_) == 0 ? int((strings_ - records_) / uint32_t(count_) / 4) : 8;
+    if (languages_ < 2 || languages_ > 8) languages_ = 8;
+    if (records_ > data.size() || strings_ > data.size() || size_t(count_) * 4 * size_t(languages_) > data.size() - records_) return *this = TextData(), false;
     if (data.size() >= 8 && std::memcmp(&data[data.size() - 8], "voic", 4) == 0) {
         const uint32_t n = u32(data, data.size() - 4);
         if (size_t(n) * 4 + 8 <= data.size())
@@ -34,7 +37,8 @@ bool TextData::parse(const std::vector<uint8_t>& data) {
 
 std::string TextData::message(int n, int language) const {
     if (n < 1 || n > count_ || language < 0 || language > 7) return {};
-    const size_t at = strings_ + u32(data_, records_ + 0x20 * size_t(n - 1) + 4 * size_t(language));
+    if (language >= languages_) language = 1; // (a language this copy hasn't: English)
+    const size_t at = strings_ + u32(data_, records_ + 4 * size_t(languages_) * size_t(n - 1) + 4 * size_t(language));
     size_t end = at;
     while (end < data_.size() && data_[end]) ++end;
     return at < data_.size() ? std::string(data_.begin() + long(at), data_.begin() + long(end)) : std::string();

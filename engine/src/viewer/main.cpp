@@ -3297,6 +3297,12 @@ struct Viewer {
             if (fx.fig) unload(*fx.fig);
         scene = SceneState(), sceneCameras.clear(), battleFade = BattleFade(), battleMapHidden = false, mapColour = Ramp();
         glass = cr2::GlassFragments(), glassPending = false;
+        // (the last battle's result goes with it: left at its "over" stage it kept the HUD's place -
+        // drawBattleHudMain draws the result window from stage 3 on - and posed that window at
+        // battleClock - its old windowStart, before its start: the next battle's HUD gone, the
+        // result's panels coming in over the fight until the clock caught up)
+        if (result.loopSe >= 0) audio.stopSe(result.loopSe, 0);
+        result = BattleResultShow();
         std::string log;
         auto add = [&](const cr2::BattleSetup::Unit& su) {
             BattleUnit u;
@@ -4542,12 +4548,29 @@ struct Viewer {
         const cr2::Fighter& f = battleRules->fighter(i);
         return localText(f.side == 0 ? "charaname" : "monstername", f.id, f.name);
     }
+    // a message file's languages: its records' size over 4 (the Vita's 7, the iOS / Android 8)
+    static size_t messageLanguages(const std::vector<uint8_t>& d, size_t extra = 0) {
+        auto u32 = [&](size_t o) { return o + 4 <= d.size() ? uint32_t(d[o] | d[o + 1] << 8 | d[o + 2] << 16 | uint32_t(d[o + 3]) << 24) : 0u; };
+        const uint32_t records = u32(0), strings = u32(4), n = u32(8);
+        if (n == 0 || strings <= records || (strings - records) % n) return 8;
+        const size_t stride = (strings - records) / n;
+        const size_t langs = stride > extra ? (stride - extra) / 4 : 8;
+        return langs >= 2 && langs <= 8 ? langs : 8;
+    }
+    // the languages the copy's messages have (announcebattle's records; 8 when it can't tell)
+    int copyLanguages() {
+        std::vector<uint8_t>& d = messageFiles["announcebattle"];
+        if (d.empty()) archive.read("message\\announcebattle.dat", d);
+        return d.empty() ? 8 : int(messageLanguages(d));
+    }
     std::string messageText(const std::string& file, int id) {
         std::vector<uint8_t>& d = messageFiles[file];
         if (d.empty() && !archive.read("message\\" + file + ".dat", d)) return {};
         auto u32 = [&](size_t o) { return o + 4 <= d.size() ? uint32_t(d[o] | d[o + 1] << 8 | d[o + 2] << 16 | uint32_t(d[o + 3]) << 24) : 0u; };
         if (id < 1 || uint32_t(id) > u32(8)) return {};
-        const size_t o = size_t(u32(4)) + u32(size_t(u32(0)) + size_t(id - 1) * 0x20 + 4u * size_t(std::clamp(optionLanguage, 0, 7))); // (the option's language: English the second)
+        // (the option's language: English the second; 4 bytes a language - the Vita's 7, the others' 8)
+        const size_t langs = messageLanguages(d), lang = size_t(std::clamp(optionLanguage, 0, 7)) < langs ? size_t(std::clamp(optionLanguage, 0, 7)) : 1;
+        const size_t o = size_t(u32(4)) + u32(size_t(u32(0)) + size_t(id - 1) * 4 * langs + 4u * lang);
         std::string s;
         for (size_t k = o; k < d.size() && d[k]; ++k) s += char(d[k]);
         return s;
@@ -7682,8 +7705,12 @@ struct Viewer {
             break;
         case 3103: optionQuality = (optionQuality + 2) % 3; break;
         case 3104: case 4098: optionQuality = (optionQuality + 1) % 3; break;
-        case 3105: optionLanguage = (optionLanguage + 7) % 8; break;
-        case 3106: case 4099: optionLanguage = (optionLanguage + 1) % 8; break;
+        case 3105: // (only the languages this copy has: the Vita's no Korean)
+            do optionLanguage = (optionLanguage + 7) % 8; while (optionLanguage >= copyLanguages());
+            break;
+        case 3106: case 4099:
+            do optionLanguage = (optionLanguage + 1) % 8; while (optionLanguage >= copyLanguages());
+            break;
         case 3201: // (8: the music stopped, InterfaceMain to the title, 0x1d)
             if (optionsReset == 1) { // (TitleOptionMenu 6: the second question)
                 optionsReset = 2, optionsAskStart = uiClock;
@@ -7728,13 +7755,16 @@ struct Viewer {
         if (archive.read("message\\instructions.dat", d)) {
             auto u32 = [&](size_t o) { return o + 4 <= d.size() ? uint32_t(d[o] | d[o + 1] << 8 | d[o + 2] << 16 | uint32_t(d[o + 3]) << 24) : 0u; };
             const size_t records = u32(0), strings = u32(4);
+            // (a record: a title per language - the Vita's 7, the others' 8 -, its flag, its id)
+            const size_t langs = messageLanguages(d, 8), stride = 4 * langs + 8;
+            const size_t lang = size_t(std::clamp(optionLanguage, 0, 7)) < langs ? size_t(std::clamp(optionLanguage, 0, 7)) : 1;
             for (uint32_t k = 0, n = u32(8); k < n; ++k) {
-                const size_t r = records + size_t(k) * 0x28;
-                const int flag = int(u32(r + 0x20));
+                const size_t r = records + size_t(k) * stride;
+                const int flag = int(u32(r + 4 * langs));
                 if (flag != 0 && !game.flag(flag)) continue; // (Cr3UtilFlagCheck)
                 ManualEntry e;
-                for (size_t c = strings + u32(r + 4u * size_t(std::clamp(optionLanguage, 0, 7))); c < d.size() && d[c]; ++c) e.title += char(d[c]);
-                e.id = int(u32(r + 0x24));
+                for (size_t c = strings + u32(r + 4u * lang); c < d.size() && d[c]; ++c) e.title += char(d[c]);
+                e.id = int(u32(r + 4 * langs + 4));
                 manualEntries.push_back(e);
             }
         }

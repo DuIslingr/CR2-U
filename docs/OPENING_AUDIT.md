@@ -63,6 +63,29 @@ port's `EventRuntime::update` is one of those: the scene, the script, the typing
 | The vista's end (`VistaMain::EventExecute` sees the script's state 4 the update after and reports it the one after that; state 200 waits for `Cr3Fade`; 10000 counts `+0x24 = 2` down; `BranchAfterVista` sets the next main, `GameMain::Update` makes and updates it the update after) | the battle's (the field's, the credits') first update is the sixth after the script's last, another vista's function is called in the seventh; the scene, the windows and the fade go on meanwhile | the battle begun in the script's last update | six (seven) updates after, the scene going on (`--play`) |
 | A field event's way out (`FldMain::EventExecute` reports the script's end the update after seeing its state 4; `BranchAfterEvent`: a vista or the title go to step 0x1d, a `BattleIN` to 0x1c - no wipe, `+0xa0` is 0 -; 0x1d and 0x1e wait for `Cr3Fade`'s count, 0x1f counts three updates, 0x20 waits again and sets the next main; `GameMain::Update` makes it the update after, `VistaMain` loading its script in that one and calling the function in the next) | a vista's function starts ten updates after the event's last, an event's battle eight, the title nine; the field's fade and windows go on meanwhile | the next main started in the event's last update | held that long (`--play`; the pop points' and area changes' way, step 0x10, as before) |
 
+### The first area's dialogue: the cut-ins
+
+d0104's `D01_01_0401` (`Msg_Open(0)`, `Cutin_Start`, two messages, `Cutin_End_L / R`,
+`Msg_Close`): the conversation window (`EvtCutinWindow` -> interface 0xc, `ConversationWindowMenu`:
+`msgWin` with `msgWin_in` 0.15 s and `msgWin_out` 0.25 s) and the portraits (`EvtFace.Create(n)`
+-> `InterfaceMain::SetCutInWindow`: interfaces 0x18 / 0x17 / 0x16 / 99 / 100, `CutInWindowMenu`
+on `cutIn` with `cutInR_io` / `cutInLR_io` / `cutInL_io` / `cutInPty_io` / `cutInSgl_io`, 0.2 s
+each).
+
+| | The original | CR2-U before | CR2-U now |
+|---|---|---|---|
+| A message set while the window's in animation plays (`ConversationWindowMenu::Update`: state 0 until `IsEndCurrentAnime`, then 1; its texts are stepped and drawn - `CustomDraw`, `Pose` - in state 1 alone; `SetStringData` steps the new text once when made) | nothing drawn until the animation is over; the first character exists from the set, the rest type from the update after the one that ended the animation (msgWin_in: the fourth after the open; the vista's `vstWin_io` and the narration's `narrationPos` have no length: the second) | drawn and typed from the set | the same wait (`EventRuntime::messageWindowUp`, `openSeconds`) - the help / announcement / tutorial windows 0.2 s, the system window 0.15, the item window 0.2 |
+| The update of an `Open` / `Close` / `Create` / `Delete` itself (the menu made or its close animation set during the script's turn; `InterfaceMain::Update` steps it from the next) | the window or portrait stands at its first frame till the next update | stepped in that update | ages start at -1 update (`windowAge` -kTick, `Portrait::fresh`) |
+| A tap while the cut-ins' text types (`ConversationWindowMenu::TouchGestureTap`: `Cr3UtilCheckHitTapCollision` on `msgWin`'s tap area first, then `MenuText::SetSkipFlag`; a typed page turns on a tap anywhere - `EvtWindow::UpdatePage` reads the touch itself) | the typing skipped only by a tap on the window | anywhere | on the window's `tapAreaS01 .. E01` (`onConversationWindow`); the vista's and the narration's anywhere, as theirs are |
+| A tap while the window's animation plays (`TouchGestureTap`: `IsEndCurrentAnime` first) | nothing | the typing skipped | nothing |
+
+Also as the original already: `EndCutInWindow` turns the portrait's io animation back from where it
+is (`CutInWindowMenu::InterfaceCloseAnimeSet` keeps the time, +0x5c = 2), gone at its start;
+`SetColor` the material's diffuse (`ChangeDiffuseColor`), `ChangeTexture` its colour map
+(`SetTexture`); the other side's joints hidden and the layout moved toward its side on a wide
+screen (`PositionCorrection`); three lines a page (`EvtCutinWindow::GetLinePerPage`); the window's
+close through `msgWin_out`, its text gone with it (state 2).
+
 Also checked, and the same already: `WaitFrame(n)` (`WaitProcessor::ProcessWait`: n updates, 0 as
 1); a message's first character in the update of `SetMessage` (`NextPage` -> `ShowMessage` ->
 `NarrationWindowMenu::SetStringData` steps the text once), then one code point an update
@@ -89,10 +112,11 @@ compared further here.
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
-Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (three:
-the second from the `FldMain::Update` row on, the third from the `FldUtilSetPopPoint` row on).
-`re/opening-audit-evidence.json` (never committed) holds the second session's records and
-`re/opening-audit-evidence-3.json` the third's; the first's bundle was overwritten by the second,
+Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (four: the
+second from the `FldMain::Update` row on, the third from the `FldUtilSetPopPoint` row on, the
+fourth - the cut-ins - from the `InterfaceMain::SetCutInWindow` row on).
+`re/opening-audit-evidence.json` (never committed) holds the second session's records,
+`re/opening-audit-evidence-3.json` the third's and `-4.json` the fourth's; the first's bundle was overwritten by the second,
 so those IDs name records no longer on disk - each is a plain decompile of the named function,
 reproducible with `open_binary` and `batch_decompile` on the same library.
 
@@ -121,6 +145,10 @@ reproducible with `open_binary` and `batch_decompile` on the same library.
 | `FldUtilSetPopPoint / ReserveChangeDungeon / ReserveChangeArea / GetChangeDungeon / GetChangeArea / ClearPopPoint / GetPopPoint` (with `FldMain::Update`'s steps 0x10 .. 0x12 and `ChangeAreaExecute` in the repo's decompilation) | `ev_7f28871e2b85ab7aa6a6ca16d71d4a1f1f43c01fe9dd115f0652e8eafac1edcb` |
 | `VistaConversationWindowMenu / ConversationWindowMenu / HelpWindowMenu / AnnouncementWindowMenu / SystemWindowMenu::TouchGestureTap` | `ev_4763b23ca1e1ae91b8c10c0da52d6599c6064da2ff0b1bc6f0be124569dd4dad` |
 | `TitleMain::Update / Init` | `ev_3f6ef182c41c007647af49a74b3b884be04fe70326ac4eaef168d1857eadccbd` |
+| `InterfaceMain::SetCutInWindow / EndCutInWindow / ChangeCutInWindowTexture / ChangeBrightCutInWindowTexture`, `CutInWindowMenu::Initialize / Update / Pose / InterfaceOpenAnimeSet / InterfaceCloseAnimeSet / SetParamNumber / SetTexture / ChangeDiffuseColor / PositionCorrection` | `ev_fbfcf1d930795173abbd7023113a4a27917449e811d21a50f9bc300b1f173b9a` |
+| `ConversationWindowMenu::Initialize / Update / InterfaceOpenAnimeSet / InterfaceCloseAnimeSet / SetParamNumber / EndStringDisplay` | `ev_e4e9ae3fc1d421d6f9da59b17beb135fa5a1d106c73144c4d16a23952fc71661` |
+| `ConversationWindowMenu::SetStringData / CheckStringDisplayEnd / CheckStringDisplayEndSend / Pose / CustomDraw`, `EvtCutinWindow::Open / Close / IsSkip / SetMessage / GetLinePerPage / GetTheme` | `ev_1907bb34814a71c653cf9681996d6f8f6d4ba4557c685131879d70b81647abb4` |
+| `InterfaceMain::SetMessageWindowParameterEmpty / EndMessageWindowStringDisplay / ChangeMessageWindowMessage / IsMessageWindowFastForward`, `Cr3UtilCheckHitTapCollision`, `VistaConversationWindowMenu::Initialize / Update / InterfaceOpenAnimeSet / InterfaceCloseAnimeSet` | `ev_6022cb605dfb1f3b30d86fe58f82bcf741dab7aba6f5ccd82bd3e85a904419d9` |
 | The fade colour tables at 0x51e208 (48 bytes) | `ev_e855b7b8c9e85282a529f88d42e04c330c84f2b6e9fa41df062d5857225339c9` |
 
 These are static observations of the shipped library, not traces of the original running: the
@@ -133,13 +161,13 @@ animations being linear (assumed, as before).
   line of a block and steps each once; whether that shows each line's first character at once
   (the typing then line after line) depends on `MenuText`'s renderer (`CustomFigure`), not read.
   The port types the block from its first character.
-- **A tap while typing** in the other windows: the vista's, the help (tutorial) and the system
-  windows' handlers have the narration's shape (`VistaConversationWindowMenu` /
-  `HelpWindowMenu` / `SystemWindowMenu::TouchGestureTap`: the block whole, given a permit byte
-  whose setting at their open was not traced); the announcement window ignores taps
-  (`AnnouncementWindowMenu::TouchGestureTap` returns 0); the cut-ins' conversation window takes
-  a tap only on its own tap area (`ConversationWindowMenu::TouchGestureTap`:
-  `Cr3UtilCheckHitTapCollision` on its figure). The port treats a tap anywhere alike for all.
+- **A tap while typing** in the help (tutorial) and system windows: their handlers have the
+  narration's shape (`HelpWindowMenu` / `SystemWindowMenu::TouchGestureTap`: the block whole,
+  given a permit byte whose setting at their open was not traced). The port skips their typing on
+  a tap anywhere. (`AnnouncementWindowMenu`, which takes no tap, is the battle's, not an event
+  window's.)
+- **The windows' tap areas as the figures stand**: the cut-ins' window's area is read from
+  `msgWin` posed as drawn; the original's `Cr3UtilCheckHitCollision` was not read.
 - The battle's own end (`BtlMain`'s result steps and when it says it is done): not counted; the
   port returns to the field as its battle ends.
 - A voice is not played while the skip button is held (`ShowMessage`'s `IsSkip`); the port plays

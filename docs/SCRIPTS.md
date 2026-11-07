@@ -642,7 +642,10 @@ camera, the moves, the animations and the fades where they are by then. The scri
   `LoadSharedNameData('name_tag')`, `Open`, `SetMessage(window, n)`, then `CheckMessage` each
   frame until the player has read it (`WaitMessage`), `Close` - the window drawn as the game's
   (FORMATS.md, the interface), its lines typing a character an update from the update of the
-  `SetMessage` (EvtWindow::ShowMessage, NarrationWindowMenu::SetStringData, MenuText::Step). A
+  `SetMessage` (EvtWindow::ShowMessage, NarrationWindowMenu::SetStringData, MenuText::Step) - once
+  the window's in animation has played (ConversationWindowMenu::Update: its texts stepped and drawn
+  in state 1 alone; msgWin_in 0.15 s, annoWin_in / helpWin_in 0.2, the vista's and the narration's
+  none: an update), the first character made meanwhile but unseen. A
   stop's tap counts once 0.15 s have passed since its block began (EvtWindow::UpdatePage's timer),
   and the last page's tap reaches the script two updates on: the next update's UpdatePage sees the
   page's end and EvtWindow::Update ends the message, after the script's turn. A `\*` message

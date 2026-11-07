@@ -820,26 +820,37 @@ struct Viewer {
         else if (fieldMode && !eventMode && (sprintTap(fx, fy) || actionTap(fx, fy))) {}
         else if (fieldMode && !eventMode && fieldClick(fx, fy)) {
         } else if (fieldMode && !eventMode && walkStart(fx, fy)) { // (a walk, or the tap on its release)
-        } else if (eventMode || fieldMode || battleMode) tap();
+        } else if (eventMode || fieldMode || battleMode) tap(fx, fy);
     }
-    void tap() {
+    // the cut-ins' message window's own tap area (msgWin's tapAreaS01 .. E01, as the window stands
+    // now): a tap there skips its typing (ConversationWindowMenu::TouchGestureTap), one elsewhere
+    // only turns a typed page; a tap without a place (a key) counts as on it
+    bool onConversationWindow(float fx, float fy) {
+        if (fx < 0 || fy < 0) return true;
+        float sx, sy, ex, ey;
+        if (!windowJoint(conversationWindow, "tapAreaS01", sx, sy) || !windowJoint(conversationWindow, "tapAreaE01", ex, ey)) return true;
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+        return x >= std::min(sx, ex) && x <= std::max(sx, ex) && y >= std::min(sy, ey) && y <= std::max(sy, ey);
+    }
+    void tap(float fx = -1, float fy = -1) {
         if (titleMenu.stage) return titleTap();
         if (vslash.stage) return; // (the slash: a swipe, not a tap)
         if (battleMode) {
             if (skipScene()) return;
-            if (battleScript && battleScript->running()) battleScript->events().touch();
+            if (battleScript && battleScript->running()) battleScript->events().touch(onConversationWindow(fx, fy));
             else if (analyze.stage == 1 || analyze.stage == 2) analyze.tapped = true;
             else if (result.stage > 0) result.tapped = true;
             else if (gameOver.stage > 0) gameOver.tapped = true;
             return;
         }
         if (eventMode) {
-            if (event) event->touch();
+            if (event) event->touch(onConversationWindow(fx, fy));
             return;
         }
         if (!fieldMode || !script) return;
         if (script->running()) {
-            script->events().touch();
+            script->events().touch(onConversationWindow(fx, fy));
             return;
         }
         if (const int s = sprintAt(); s >= 0) return startSprint(s); // (FldMain: a sprint's before the balloons)
@@ -6674,7 +6685,7 @@ struct Viewer {
             const cr2::EventRuntime::Portrait& c = ev->cutIn(k);
             ViewFigure& f = cutInFigures[size_t(k)];
             if (!c.open || f.meshes.empty()) continue;
-            const float t = c.closing ? std::max(c.time - eventLead(), 0.0f) : std::min(c.time + eventLead(), cr2::EventRuntime::kCutInSeconds);
+            const float t = c.fresh ? c.time : c.closing ? std::max(c.time - eventLead(), 0.0f) : std::min(c.time + eventLead(), cr2::EventRuntime::kCutInSeconds);
             f.place = cr2::Mat34();
             if (aspect < 1.5f) f.place.m[7] = -0.0403125f;
             else {
@@ -12024,7 +12035,7 @@ struct Viewer {
             const float rgba[4] = {c[0], c[1], c[2], alpha};
             fullFrameQuad(white, kScreen, rgba);
         }
-        const bool message = ev->messageShown() && ev->page() < int(ev->message().pages.size());
+        const bool message = ev->messageShown() && ev->page() < int(ev->message().pages.size()) && ev->messageWindowUp(); // (none while its window's in animation plays)
         if (ev->windowOpen(cr2::EventRuntime::Vista))
             drawWindow(vistaWindow, message && ev->messageWindow() == cr2::EventRuntime::Vista, screenW, screenH);
         drawCutIns(screenW, screenH);

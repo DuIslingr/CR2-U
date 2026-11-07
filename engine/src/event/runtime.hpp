@@ -81,8 +81,17 @@ public:
     bool windowOpen() const { return !openWindows_.empty(); }
     bool windowOpen(int w) const { return openWindows_.count(w) != 0; }
     // how long a window has been open, or (closing) since it closed - its in / out animations'
-    // time (seconds, as of the last update); -1: neither
+    // time (seconds, as of the last update; -kTick in the update of the Open / Close itself: the
+    // menu's first step is the next update's); -1: neither
     float windowAge(int w) const;
+    // the window's opening: its in animation's length (msgWin_in 0.15 s, annoWin_in / helpWin_in /
+    // getItem_in 0.2, sysWin_io 0.15; the vista's and the narration's none - an update), before
+    // which its menu neither draws nor types its text (ConversationWindowMenu::Update and the like:
+    // state 1 once IsEndCurrentAnime, the texts stepped and drawn in state 1 alone)
+    static float openSeconds(int w);
+    // the message's window is up: its text drawn (a message set before that waits, its first
+    // character made - SetStringData's step - but unseen)
+    bool messageWindowUp() const;
     bool windowClosing(int w) const { return closing_.count(w) != 0; }
     int messageWindow() const { return messageWindow_; }
     int itemShown() const { return itemShown_; } // (window 7's item: EvtWindow::SetItemMessage)
@@ -105,9 +114,12 @@ public:
     // page, or its end (CheckMessage says it's done two updates on). `tap`: the reader's - read at
     // a stop only once 0.15 s have passed since its block began (EvtWindow::UpdatePage's timer) -
     // else the pages turning by themselves or a button held, which wait for nothing
-    void advance(bool tap = true);
+    // `onWindow`: the tap fell on the message window's own tap area - the cut-ins' window skips
+    // its typing for those alone (ConversationWindowMenu::TouchGestureTap's hit test); a page's
+    // turn takes a tap anywhere (EvtWindow::UpdatePage reads the touch itself)
+    void advance(bool tap = true, bool onWindow = true);
     // a tap: also the touch Cr3Touch.GetTouchState says once (1: a finger down - WaitTouch's)
-    void touch() { touched_ = true, advance(true); }
+    void touch(bool onWindow = true) { touched_ = true, advance(true, onWindow); }
     // pages turn (and slashes happen) by themselves after this many seconds (0: only advance())
     float autoPage = 3.0f;
     // The yes / no buttons (EvtWindow.ShowYesNoButton: BattleYNChoice - choice_io, circleBtn_fr 11
@@ -152,6 +164,7 @@ public:
         float time = 0; // into the io animation
         int texture = -1;
         float bright = 1;
+        bool fresh = true; // (Create / Delete this update: the menu's first step is the next update's)
     };
     const Portrait& cutIn(int kind) const { return cutIns_[size_t(kind)]; }
     std::string cutInImage(int id) const; // a loaded face's image ("" none)

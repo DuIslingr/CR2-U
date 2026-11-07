@@ -203,11 +203,11 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     // (a window argument of null: the vista's, Cr3Work 2's usual value)
     vm.setNative("EvtWindow", "Open", [this](NativeCall& c) {
         const int w = c.integer(0, Vista);
-        if (openWindows_.insert(w).second) opened_[w] = 0, closing_.erase(w);
+        if (openWindows_.insert(w).second) opened_[w] = -kTick, closing_.erase(w); // (the menu made now, stepped from the next update)
         skipOff_.erase(w), pageSendOff_.erase(w); // (EvtWindow::Open: the skip and wait buttons allowed again)
     });
     auto close = [this](int w) {
-        if (openWindows_.erase(w)) opened_.erase(w), closing_[w] = 0;
+        if (openWindows_.erase(w)) opened_.erase(w), closing_[w] = -kTick; // (EndStringDisplay: the out animation set, stepped from the next update)
         if (w == messageWindow_) message_ = 0, endHold_ = 0;
     };
     vm.setNative("EvtWindow", "Close", [close](NativeCall& c) { close(c.integer(0, Vista)); });
@@ -215,15 +215,17 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     // the cut-ins' portraits
     vm.setNative("EvtFace", "SetTexture", [this](NativeCall& c) { cutInImages_.push_back({c.integer(1), c.string(0)}); });
     vm.setNative("EvtFace", "DeleteTexture", [this](NativeCall&) { cutInImages_.clear(); });
+    // (CutInWindowMenu: made with its layout's io animation playing from 0 - stepped from the next
+    // update -; EndCutInWindow turns it back from where it is, gone at 0)
     vm.setNative("EvtFace", "Create", [this](NativeCall& c) {
         const int k = c.integer(0, -1);
-        if (k >= 0 && k < kCutIns) cutIns_[size_t(k)] = Portrait{true, false, 0, -1, 1};
+        if (k >= 0 && k < kCutIns) cutIns_[size_t(k)] = Portrait{true, false, 0, -1, 1, true};
     });
     auto endCutIn = [this](int n) {
         static const int kEnd[6] = {0, 1, 2, -1, 3, 4}; // (EndCutInWindow: 3 every one)
         if (n < 0 || n > 5) return;
         for (int k = 0; k < kCutIns; ++k)
-            if ((n == 3 || kEnd[n] == k) && cutIns_[size_t(k)].open) cutIns_[size_t(k)].closing = true;
+            if ((n == 3 || kEnd[n] == k) && cutIns_[size_t(k)].open && !cutIns_[size_t(k)].closing) cutIns_[size_t(k)].closing = cutIns_[size_t(k)].fresh = true;
     };
     vm.setNative("EvtFace", "Delete", [endCutIn](NativeCall& c) { endCutIn(c.integer(0, -1)); });
     vm.setNative("EvtFace", "DispOff", [endCutIn](NativeCall&) { endCutIn(3); });
@@ -415,7 +417,13 @@ bool EventRuntime::update(ScriptVM* vm) {
         if (soundHooks().stopAllVoices) soundHooks().stopAllVoices(0);
     }
     if (message_ > 0) blockTime_ += kTick;
-    if (!parsed_.noSkip && ((fastForward && fastForwardShown()) || (skipHeld() && message_ > 0))) { // (a button held: the page whole, then the next at once - EvtWindow::IsSkip)
+    // (the window's menu, until its in animation has played, neither steps nor draws its texts, nor
+    // says them typed - EvtWindow::UpdatePage's stops and taps wait on that; the first character
+    // is made all the same, SetStringData's step)
+    const bool up = messageWindowUp();
+    if (message_ > 0 && !up) {
+        if (revealed_ == 0 && !typed()) ++revealed_;
+    } else if (!parsed_.noSkip && ((fastForward && fastForwardShown()) || (skipHeld() && message_ > 0))) { // (a button held: the page whole, then the next at once - EvtWindow::IsSkip)
         if (!typed()) showWhole();
         else advance(false);
     } else if (message_ > 0 && !typed()) { // (a character an update; the page's time counts once it's typed)
@@ -436,10 +444,26 @@ bool EventRuntime::update(ScriptVM* vm) {
         it = (it->second += kTick) > 1.0f ? closing_.erase(it) : std::next(it);
     for (Portrait& c : cutIns_) {
         if (!c.open) continue;
-        if (!c.closing) c.time = std::min(c.time + kTick, kCutInSeconds);
+        if (c.fresh) c.fresh = false; // (the update of the Create / Delete: no step yet)
+        else if (!c.closing) c.time = std::min(c.time + kTick, kCutInSeconds);
         else if ((c.time -= kTick) <= 0) c = Portrait(); // (back to its start: gone)
     }
     return true;
+}
+
+float EventRuntime::openSeconds(int w) {
+    switch (w) {
+    case CutIn: return 0.15f;                            // msgWin_in
+    case AnnounceA: case AnnounceB: case Tutorial: return 0.2f; // annoWin_in / helpWin_in
+    case System: return 0.15f;                           // sysWin_io
+    case 7: return 0.2f;                                 // getItem_in
+    default: return kTick;                               // (the vista's vstWin_io and the narration's: no length - the one update of the menu's first step)
+    }
+}
+
+bool EventRuntime::messageWindowUp() const {
+    const auto it = opened_.find(messageWindow_);
+    return it == opened_.end() || it->second + 1e-4f >= openSeconds(messageWindow_); // (never opened: as up - checks, SetMessage without an Open)
 }
 
 float EventRuntime::windowAge(int w) const {
@@ -454,13 +478,14 @@ std::string EventRuntime::cutInImage(int id) const {
     return {};
 }
 
-void EventRuntime::advance(bool tap) {
+void EventRuntime::advance(bool tap, bool onWindow) {
     pageTime_ = 0;
     if (execution_) {
         execution_ = false;
         return;
     }
     if (message_ <= 0 || ended_ || endHold_ > 0) return;
+    if (tap && !messageWindowUp()) return; // (the menu's TouchGestureTap: nothing till its animation has ended; UpdatePage: not typed)
     // (EvtWindow::UpdatePage: a stop's taps are read once its timer - from the block's start, reset by
     // EvtWindowPage::NextBlock - has passed 0.15 s; a button held reads them at once)
     const bool early = tap && blockTime_ + 1e-4f < 0.15f;
@@ -472,7 +497,10 @@ void EventRuntime::advance(bool tap) {
         }
         // (else NarrationWindowMenu::TouchGestureTap - its +0x49 set at the window's open,
         // SetNarrationWindow's parameter 0xf -: MenuText::SetSkipFlag on the block's lines, shown
-        // whole up to its next stop; a timed one then waits its frames)
+        // whole up to its next stop; a timed one then waits its frames. The cut-ins' window takes
+        // that tap on its own tap area alone - ConversationWindowMenu::TouchGestureTap's
+        // Cr3UtilCheckHitTapCollision; the vista's and the narration's anywhere)
+        if (tap && messageWindow_ == CutIn && !onWindow) return;
         if (stop_ < stops.size()) revealed_ = std::max(revealed_, stops[stop_].at), stopTime_ = 0;
         else showWhole();
         return;

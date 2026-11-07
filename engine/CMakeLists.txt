@@ -334,10 +334,11 @@ if(CR2_GLES)
     message(STATUS "GL device: OpenGL ES 3.0 (${CR2_GLES_LIBRARY})")
 endif()
 target_link_libraries(cr2view PRIVATE cr2core SDL3::SDL3)
-# The first start's setup (viewer/setup.cpp), on a desktop: a Vita NoNpDrm dump's files decrypted
-# (third_party/psvpfsparser - Vita3K's, GPL-2.0) and a dump's archive - .rar, .7z, .zip, .vpk -
-# unpacked (libarchive: the system's, else built here - CR_FETCH_DEPS; without it, a folder only)
-if(NOT ANDROID AND NOT IOS)
+# The setup (viewer/setup.cpp): a Vita NoNpDrm dump's files decrypted (third_party/psvpfsparser -
+# Vita3K's, GPL-2.0) - the first start's on a desktop, one copied into vita/ on any start, a phone's
+# too -, and on a desktop a dump's archive - .rar, .7z, .zip, .vpk - unpacked (libarchive: the
+# system's, else built here - CR_FETCH_DEPS; without it, a folder only)
+if(NOT IOS)
     file(GLOB CR_PSVPFS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/third_party/psvpfsparser/*.cpp)
     add_library(psvpfs STATIC ${CR_PSVPFS_SOURCES})
     target_include_directories(psvpfs SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/psvpfsparser)
@@ -347,6 +348,8 @@ if(NOT ANDROID AND NOT IOS)
     endif()
     target_link_libraries(cr2view PRIVATE psvpfs)
     target_compile_definitions(cr2view PRIVATE CR_HAVE_PSVPFS=1)
+endif()
+if(NOT ANDROID AND NOT IOS)
     find_package(LibArchive QUIET)
     if(NOT LibArchive_FOUND AND CR_FETCH_DEPS)
         include(FetchContent)

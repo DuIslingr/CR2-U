@@ -12344,6 +12344,31 @@ int newSessionSelfTest() {
     return problems ? 1 : 0;
 }
 
+// The game as the setup (viewer/setup.hpp) knows it: the first start's on a PC, a Vita dump copied
+// into vita/ on any start
+static cr2::SetupGame cr2SetupGame() {
+    cr2::SetupGame setup;
+    setup.title = "Chaos Rings II", setup.port = "CR2-U", setup.vitaId = "PCSG00498", setup.trilogyDir = "CR2";
+    setup.trilogyAddon = "DIESEL2000ADDCON"; // (the Prequel Trilogy keeps the game's data in its add-on)
+    setup.obbHint = "main.212.com.square_enix.chaosrings2gp.obb";
+    setup.package = "com.square_enix.chaosrings2gp";
+    setup.oneRelease = true; // (one copy is the game)
+    setup.vitaProgram = true; // (the maps' table is in it: an encrypted one - a dump's, the trilogy's CR2.self - decrypted beside it)
+    auto archiveIs = [](const std::string& p, const char* tail) {
+        std::error_code ec;
+        const std::string a = cr2::resolveArchive(p);
+        const size_t n = std::strlen(tail);
+        return std::filesystem::is_regular_file(a, ec) && a.size() >= n && a.compare(a.size() - n, n, tail) == 0;
+    };
+    setup.iosOk = [archiveIs](const std::string& p) { return archiveIs(p, ".ios.mvgl"); };
+    setup.androidOk = [archiveIs](const std::string& p) { // (the OBB, and the APK with the game's library - the maps' table)
+        std::vector<uint8_t> lib;
+        return archiveIs(p, ".obb") && cr2::androidFile(p, "lib/armeabi-v7a/libChaosRings2.so", lib);
+    };
+    setup.vitaOk = [archiveIs](const std::string& p) { return archiveIs(p, ".psp2.mvgl"); };
+    return setup;
+}
+
 int main(int argc, char** argv) {
     if (argc>1 && std::strcmp(argv[1],"--selftest-new-session")==0) return newSessionSelfTest();
     if (argc>1 && std::strcmp(argv[1],"--selftest-field-restore")==0) return fieldRestoreSelfTest();
@@ -12501,6 +12526,10 @@ int main(int argc, char** argv) {
     std::vector<std::string> searched; // (where a copy was looked for: the message if none)
     if (data.empty()) { // (CR2_DATA, else a copy in a game folder: vita/, android/, ios/ ...)
         searched = dataPlaces();
+        for (const std::string& place : searched) { // (a Vita dump copied into vita/ - a phone's way -, its files encrypted: decrypted into place)
+            cr2::SetupResult got;
+            if (cr2::installDroppedVita(cr2SetupGame(), place, got, !capture.empty())) break;
+        }
         data = cr2::defaultArchive(searched);
         if (data.empty()) data = storedData(); // (an older setup's: an Android or Vita copy where it lay)
     }
@@ -12508,25 +12537,7 @@ int main(int argc, char** argv) {
 #if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
     if (data.empty() && (argc <= 1 || cr2::setupScripted()) && !std::getenv("CR2_DATA")) { // the first start without a copy: where is it? (viewer/setup.hpp)
         SDL_Init(SDL_INIT_VIDEO); // (its message boxes and the system's dialogs)
-        cr2::SetupGame setup;
-        setup.title = "Chaos Rings II", setup.port = "CR2-U", setup.vitaId = "PCSG00498", setup.trilogyDir = "CR2";
-        setup.trilogyAddon = "DIESEL2000ADDCON"; // (the Prequel Trilogy keeps the game's data in its add-on)
-        setup.obbHint = "main.212.com.square_enix.chaosrings2gp.obb";
-        setup.package = "com.square_enix.chaosrings2gp";
-        setup.oneRelease = true; // (one copy is the game)
-        setup.vitaProgram = true; // (the maps' table is in it: an encrypted one - a dump's, the trilogy's CR2.self - decrypted beside it)
-        auto archiveIs = [](const std::string& p, const char* tail) {
-            std::error_code ec;
-            const std::string a = cr2::resolveArchive(p);
-            const size_t n = std::strlen(tail);
-            return std::filesystem::is_regular_file(a, ec) && a.size() >= n && a.compare(a.size() - n, n, tail) == 0;
-        };
-        setup.iosOk = [&](const std::string& p) { return archiveIs(p, ".ios.mvgl"); };
-        setup.androidOk = [&](const std::string& p) { // (the OBB, and the APK with the game's library - the maps' table)
-            std::vector<uint8_t> lib;
-            return archiveIs(p, ".obb") && cr2::androidFile(p, "lib/armeabi-v7a/libChaosRings2.so", lib);
-        };
-        setup.vitaOk = [&](const std::string& p) { return archiveIs(p, ".psp2.mvgl"); };
+        const cr2::SetupGame setup = cr2SetupGame();
         std::string profile;
         if (char* pref = SDL_GetPrefPath("DuIslingr", "CR2-U")) profile = pref, SDL_free(pref);
         cr2::SetupResult got;
@@ -12546,7 +12557,8 @@ int main(int argc, char** argv) {
         msg += searched.empty() ? std::string("(no folder)") : searched.front();
         msg += "\n\n  ios/      the iPad's ChaosRings2enHD.app (or the unpacked .ipa)"
                "\n  android/  the Android release's main.212.com.square_enix.chaosrings2gp.obb and its APK"
-               "\n  vita/     the Vita's PCSG00498 folder\n\nAlso looked in:";
+               "\n  vita/     the Vita's PCSG00498 folder, or a NoNpDrm dump's folder (the Prequel Trilogy's with its"
+               "\n            addcont/ beside its app/: decrypted here on the next start)\n\nAlso looked in:";
         for (size_t k = 1; k < searched.size(); ++k) msg += "\n" + searched[k];
         msg += "\n\nThe README's \"Your copy\" has the details.";
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Chaos Rings II", msg.c_str(), nullptr);

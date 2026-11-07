@@ -373,9 +373,13 @@ struct Viewer {
         tf.lodBias = upscale.mode != cr2::Upscaler::Off ? -std::log2(upscale.ratio) : 0.0f;
         dev->setFiltering(tf);
         if (window && s.display != appliedDisplay) {
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
+            SDL_SetWindowFullscreen(window, true); // (a phone's or tablet's: the whole screen, the system's bars hidden - SDL's immersive mode)
+#else
             if (s.display == 1) SDL_SetWindowFullscreenMode(window, SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(window)));
             else SDL_SetWindowFullscreenMode(window, nullptr);
             SDL_SetWindowFullscreen(window, s.display != 0);
+#endif
             appliedDisplay = s.display;
         }
         if (s.hdTextures != hdTextures) hdTextures = s.hdTextures, reloadTextures();
@@ -939,8 +943,8 @@ struct Viewer {
         const float cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
         if (cw <= 0) return false;
         const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
-        x = (m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / cw * float(screenW) * 0.5f / k;
-        y = (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / cw * float(screenH) * 0.5f / k;
+        x = (m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / cw * float(frameW) * 0.5f / k;
+        y = (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / cw * float(frameH) * 0.5f / k;
         return true;
     }
     // the mouse on the lock (fx, fy: the screen's fractions): pressed, dragged, let go
@@ -2276,7 +2280,8 @@ struct Viewer {
     // The output: a chosen resolution (0 x 0: the window's), and the temporal upscaler (Vulkan)
     int resW = 0, resH = 0;
     cr2::UpscaleSettings upscale;
-    int screenX = 0, screenY = 0, screenW = 1, screenH = 1; // the game's screen in the frame
+    int screenX = 0, screenY = 0, screenW = 1, screenH = 1; // the game's screen in the frame: the UI's, inside the display's safe area
+    int frameX = 0, frameY = 0, frameW = 1, frameH = 1;     // the frame the scene fills: under a camera hole, into the corners
 
     // A frame of fw x fh: the game's screen all of it (an offscreen device's frames are the
     // chosen resolution, letterboxed into the window when shown), or - drawing straight into the
@@ -2293,23 +2298,63 @@ struct Viewer {
             dev->drawQuad(white, kScreen, id.data(), rgba);
             dev->clearDepth();
         }
-        drawScene(screenW, screenH);
+        drawScene(frameW, frameH); // (the scene: all of the frame)
         dev->endScene();
-        dev->setViewport(float(screenX), float(screenY), float(screenW), float(screenH));
+        dev->setViewport(float(screenX), float(screenY), float(screenW), float(screenH)); // (the UI: inside the safe area)
         drawEventUi(); // (the vista's, or the field's events')
     }
-    // The game's screen in a frame of fw x fh (screenX ...), the scene's viewport on it
-    void placeScreen(int fw, int fh) {
-        screenX = screenY = 0, screenW = fw, screenH = fh;
-        if (!dev->offscreen() && resW > 0 && resH > 0) {
-            if (int64_t(resW) * fh > int64_t(fw) * resH) screenH = std::max(int(int64_t(fw) * resH / resW), 1);
-            else screenW = std::max(int(int64_t(fh) * resW / resH), 1);
-            screenX = (fw - screenW) / 2, screenY = (fh - screenH) / 2;
+    // a quad over the whole frame - a fade, a dimming -, not the UI's screen alone; the UI's viewport back after it
+    void fullFrameQuad(const cr2::Texture& t, const float* v, const float* rgba) {
+        static const Mat4 id = cr2::mat4Identity();
+        dev->setViewport(float(frameX), float(frameY), float(frameW), float(frameH));
+        dev->drawQuad(t, v, id.data(), rgba);
+        dev->setViewport(float(screenX), float(screenY), float(screenW), float(screenH));
+    }
+    // The display's safe area in a frame of fw x fh: SDL lays the window out under a camera hole
+    // (LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS), so the scene can fill all of it while the UI stays
+    // clear - the insets, each axis's larger on both its sides so the UI's screen stays centred, in
+    // the frame's pixels (an offscreen device's frame is scaled into the window to fit: the insets
+    // less the bars around it, in its own pixels). CR2_SAFE_INSETS "l,t,r,b" in the frame's pixels: tests
+    void safeInsets(int fw, int fh, int& ix, int& iy) const {
+        ix = iy = 0;
+        int l = 0, t = 0, r = 0, b = 0;
+        if (const char* e = SDL_getenv("CR2_SAFE_INSETS"); e && std::sscanf(e, "%d,%d,%d,%d", &l, &t, &r, &b) == 4) {
+        } else if (SDL_Rect safe; window && SDL_GetWindowSafeArea(window, &safe)) {
+            int ww = 0, wh = 0, pw = 0, ph = 0;
+            if (!SDL_GetWindowSize(window, &ww, &wh) || ww <= 0 || wh <= 0 || !SDL_GetWindowSizeInPixels(window, &pw, &ph) || pw <= 0 || ph <= 0) return;
+            const float sx = float(pw) / float(ww), sy = float(ph) / float(wh); // (the insets in the window's pixels)
+            float fl = float(safe.x) * sx, ft = float(safe.y) * sy, fr = float(ww - safe.x - safe.w) * sx, fb = float(wh - safe.y - safe.h) * sy;
+            if (dev->offscreen()) { // (the frame scaled to fit the window, centred: the bars around it count against the insets)
+                const float k = std::min(float(pw) / float(fw), float(ph) / float(fh));
+                const float ox = (float(pw) - float(fw) * k) * 0.5f, oy = (float(ph) - float(fh) * k) * 0.5f;
+                fl = (fl - ox) / k, fr = (fr - ox) / k, ft = (ft - oy) / k, fb = (fb - oy) / k;
+            } else { // (the frame is the window's pixels - a chosen resolution letterboxed in it: placeScreen)
+                fl *= float(fw) / float(pw), fr *= float(fw) / float(pw), ft *= float(fh) / float(ph), fb *= float(fh) / float(ph);
+            }
+            l = int(std::ceil(std::max(fl, 0.0f))), t = int(std::ceil(std::max(ft, 0.0f)));
+            r = int(std::ceil(std::max(fr, 0.0f))), b = int(std::ceil(std::max(fb, 0.0f)));
         }
+        ix = std::clamp(std::max(l, r), 0, fw / 4), iy = std::clamp(std::max(t, b), 0, fh / 4);
+    }
+    // The frame (frameX ...): all of fw x fh, or - drawing straight into the window (GL) - a chosen
+    // resolution's shape letterboxed in it; the scene's viewport on it. The UI's screen (screenX ...):
+    // the frame inside the safe area
+    void placeScreen(int fw, int fh) {
+        frameX = frameY = 0, frameW = fw, frameH = fh;
+        if (!dev->offscreen() && resW > 0 && resH > 0) {
+            if (int64_t(resW) * fh > int64_t(fw) * resH) frameH = std::max(int(int64_t(fw) * resH / resW), 1);
+            else frameW = std::max(int(int64_t(fh) * resW / resH), 1);
+            frameX = (fw - frameW) / 2, frameY = (fh - frameH) / 2;
+        }
+        int ix = 0, iy = 0;
+        safeInsets(fw, fh, ix, iy);
+        const int x0 = std::max(frameX, ix), y0 = std::max(frameY, iy);
+        const int x1 = std::min(frameX + frameW, fw - ix), y1 = std::min(frameY + frameH, fh - iy);
+        screenX = x0, screenY = y0, screenW = std::max(x1 - x0, 1), screenH = std::max(y1 - y0, 1);
         int rw = fw, rh = fh;
         dev->sceneSize(fw, fh, rw, rh);
         const float kx = float(rw) / float(fw), ky = float(rh) / float(fh);
-        dev->setViewport(screenX * kx, screenY * ky, screenW * kx, screenH * ky);
+        dev->setViewport(frameX * kx, frameY * ky, frameW * kx, frameH * ky);
     }
 
     void drawScene(int w, int h) {
@@ -3080,7 +3125,7 @@ struct Viewer {
             static const float kScreen[24] = {-1, -1, 0, 0, 1, -1, 1, 0, 1, 1, 1, 1, -1, -1, 0, 0, 1, 1, 1, 1, -1, 1, 0, 1};
             const Mat4 id = cr2::mat4Identity();
             const float rgba[4] = {0, 0, 0, a};
-            dev->drawQuad(white, kScreen, id.data(), rgba);
+            fullFrameQuad(white, kScreen, rgba);
         }
     }
     void returnToField(int mode) {
@@ -5967,7 +6012,7 @@ struct Viewer {
     // the iPhone's 640 - the shards' speeds are in its pixels)
     void glassSize(int& hw, int& hh) const {
         hh = 320;
-        hw = std::max(int(320.0f * float(screenW) / float(std::max(screenH, 1)) + 0.5f), 1);
+        hw = std::max(int(320.0f * float(frameW) / float(std::max(frameH, 1)) + 0.5f), 1);
     }
     // BtlMain::PostEffectGlassFragments: the map alone (passes 2, 4, 8) drawn into render target
     // 5, its texture the shards' (BtlPostEffectGlassFragment::Setup)
@@ -5975,21 +6020,21 @@ struct Viewer {
         glassPending = false;
         dev->beginFrame(fw, fh);
         placeScreen(fw, fh);
-        drawBattle(screenW, screenH, true);
+        drawBattle(frameW, frameH, true);
         dev->endScene();
         dev->endFrame(false);
         std::vector<uint8_t> px;
         int w = 0, h = 0;
-        if (!dev->readPixels(px, w, h) || screenW <= 0 || screenH <= 0 || screenX + screenW > w || screenY + screenH > h) {
-            SDL_Log("the screen breaks away: not caught (%dx%d of %dx%d)", screenW, screenH, w, h);
+        if (!dev->readPixels(px, w, h) || frameW <= 0 || frameH <= 0 || frameX + frameW > w || frameY + frameH > h) {
+            SDL_Log("the screen breaks away: not caught (%dx%d of %dx%d)", frameW, frameH, w, h);
             return;
         }
         cr2::Image img;
-        img.width = screenW, img.height = screenH;
-        img.rgba.resize(size_t(screenW) * screenH * 4);
-        for (int y = 0; y < screenH; ++y) { // (bottom-up: a render target's v = 0 its bottom)
-            const uint8_t* row = &px[(size_t(screenY + screenH - 1 - y) * w + screenX) * 4];
-            std::memcpy(&img.rgba[size_t(y) * screenW * 4], row, size_t(screenW) * 4);
+        img.width = frameW, img.height = frameH;
+        img.rgba.resize(size_t(frameW) * frameH * 4);
+        for (int y = 0; y < frameH; ++y) { // (bottom-up: a render target's v = 0 its bottom)
+            const uint8_t* row = &px[(size_t(frameY + frameH - 1 - y) * w + frameX) * 4];
+            std::memcpy(&img.rgba[size_t(y) * frameW * 4], row, size_t(frameW) * 4);
         }
         for (size_t k = 3; k < img.rgba.size(); k += 4) img.rgba[k] = 255;
         if (glassTexture.id) dev->destroy(glassTexture);
@@ -7108,7 +7153,7 @@ struct Viewer {
             drawFigure(logo.fig, view.data());
             const float a = std::max(0.0f, 1.0f - age / (20 * cr2::EventRuntime::kTick));
             const float rgba[4] = {0, 0, 0, a};
-            if (a > 0 && white.id) dev->drawQuad(white, kScreen, id.data(), rgba);
+            if (a > 0 && white.id) fullFrameQuad(white, kScreen, rgba);
             return;
         }
         // the title over its painting: Android's own figure, title_bg (wider than 3:2 stretched) - the iPad's
@@ -7149,7 +7194,7 @@ struct Viewer {
         if (tm.stage == 2) { // (from white over 20 frames)
             const float a = std::max(0.0f, 1.0f - age / (20 * cr2::EventRuntime::kTick));
             const float rgba[4] = {1, 1, 1, a};
-            if (a > 0 && white.id) dev->drawQuad(white, kScreen, id.data(), rgba);
+            if (a > 0 && white.id) fullFrameQuad(white, kScreen, rgba);
         }
         if (titleRunning()) return;
         if (tm.stage == 5 || tm.stage == 4) drawTitleButtons(ti, view, 0); // (CircleButtonPose: following their joints)
@@ -7193,7 +7238,7 @@ struct Viewer {
         if (tm.stage == 8) { // (Cr3FadeOut(0, 20): to black over the last second)
             const float a = std::clamp(1.0f - (tm.doneAt - uiClock), 0.0f, 1.0f);
             const float rgba[4] = {0, 0, 0, a};
-            if (a > 0 && white.id) dev->drawQuad(white, kScreen, id.data(), rgba);
+            if (a > 0 && white.id) fullFrameQuad(white, kScreen, rgba);
         }
     }
 
@@ -7350,8 +7395,8 @@ struct Viewer {
         const float cw = mm[3] * p[0] + mm[7] * p[1] + mm[11] * p[2] + mm[15];
         if (cw <= 0) return false;
         const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
-        x = (mm[0] * p[0] + mm[4] * p[1] + mm[8] * p[2] + mm[12]) / cw * float(screenW) * 0.5f / k;
-        y = (mm[1] * p[0] + mm[5] * p[1] + mm[9] * p[2] + mm[13]) / cw * float(screenH) * 0.5f / k;
+        x = (mm[0] * p[0] + mm[4] * p[1] + mm[8] * p[2] + mm[12]) / cw * float(frameW) * 0.5f / k;
+        y = (mm[1] * p[0] + mm[5] * p[1] + mm[9] * p[2] + mm[13]) / cw * float(frameH) * 0.5f / k;
         return true;
     }
     std::vector<DamageShown> damageShown;
@@ -11700,7 +11745,7 @@ struct Viewer {
             const float nx = (m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / cw;
             const float ny = (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / cw;
             balloonFigure.place = cr2::Mat34();
-            balloonFigure.place.m[3] = nx * float(w) * 0.5f / k, balloonFigure.place.m[7] = ny * float(h) * 0.5f / k;
+            balloonFigure.place.m[3] = nx * float(frameW) * 0.5f / k, balloonFigure.place.m[7] = ny * float(frameH) * 0.5f / k; // (the field's camera across the frame)
             pose(balloonFigure, time);
             drawFigure(balloonFigure, view.data());
         }
@@ -11735,8 +11780,8 @@ struct Viewer {
             if (cw <= 0) continue;
             UiFig& f = uiFig("flag");
             f.fig.place = cr2::Mat34();
-            f.fig.place.m[3] = (m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / cw * float(w) * 0.5f / k;
-            f.fig.place.m[7] = (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / cw * float(h) * 0.5f / k;
+            f.fig.place.m[3] = (m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / cw * float(frameW) * 0.5f / k;
+            f.fig.place.m[7] = (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / cw * float(frameH) * 0.5f / k;
             poseUi(f, "flag", time, true);
             drawFigure(f.fig, view.data());
         }
@@ -11910,7 +11955,7 @@ struct Viewer {
                 const Mat4 id = cr2::mat4Identity();
                 const float* c = fadeColours[std::clamp(battleFade.colour, 0, 3)];
                 const float rgba[4] = {c[0], c[1], c[2], alpha};
-                dev->drawQuad(white, kScreen, id.data(), rgba);
+                fullFrameQuad(white, kScreen, rgba);
             }
         }
         if (fieldMode && !battleMode && encount.fadeAt >= 0) drawEncountWipe((uiClock - encount.fadeAt) / kWipeSeconds, true); // (an encounter's: Cr3FadeOut(3, 20))
@@ -11940,7 +11985,7 @@ struct Viewer {
             const Mat4 id = cr2::mat4Identity();
             const float* c = fadeColours[std::clamp(fd.colour, 0, 3)];
             const float rgba[4] = {c[0], c[1], c[2], alpha};
-            dev->drawQuad(white, kScreen, id.data(), rgba);
+            fullFrameQuad(white, kScreen, rgba);
         }
         const bool message = ev->messageShown() && ev->page() < int(ev->message().pages.size());
         if (ev->windowOpen(cr2::EventRuntime::Vista))
@@ -12767,7 +12812,11 @@ int main(int argc, char** argv) {
     cr2::useBundledVulkan(); // (macOS: the .app's own loader)
     std::unique_ptr<cr2::RenderDevice> dev;
     SDL_Window* win = nullptr;
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
+    const SDL_WindowFlags shown = capture.empty() && exploreDir.empty() ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_HIDDEN; // (the system's bars hidden from the start)
+#else
     const SDL_WindowFlags shown = capture.empty() && exploreDir.empty() ? SDL_WINDOW_RESIZABLE : SDL_WINDOW_HIDDEN;
+#endif
     for (const cr2::Backend b : {cr2::Backend::Vulkan, cr2::Backend::OpenGL}) {
         if (b == cr2::Backend::Vulkan && renderer != "vulkan") continue;
         std::unique_ptr<cr2::RenderDevice> d = b == cr2::Backend::Vulkan ? cr2::makeVkDevice() : cr2::makeGlDevice();
@@ -13171,7 +13220,8 @@ int main(int argc, char** argv) {
             SDL_GetWindowSizeInPixels(win, &pw, &ph);
             const float px = wx * float(pw) / float(std::max(ww, 1)), py = wy * float(ph) / float(std::max(wh, 1));
             const float sw = float(v.screenW), sh = float(v.screenH);
-            const float k = std::min(float(pw) / sw, float(ph) / sh);
+            // (the UI's screen centred in the frame: an offscreen device's scaled into the window to fit; GL's in its own pixels)
+            const float k = v.dev->offscreen() ? std::min(float(pw) / float(v.frameW), float(ph) / float(v.frameH)) : 1.0f;
             const float ox = (float(pw) - sw * k) * 0.5f, oy = (float(ph) - sh * k) * 0.5f;
             fx = (px - ox) / (sw * k), fy = (py - oy) / (sh * k);
         };

@@ -6834,8 +6834,11 @@ struct Viewer {
     }
     // Cr3UtilResetWork(true) / Cr3InitWorkFromBattleData(.., true) - a new game with the clear data:
     // the common data kept (the items, the Oz, the sopia's levels and EXP), each character's weapon
-    // and armour (cr3_player_data +0x3c, +0x3e) and seeds, the flags past 3000 and the global work;
-    // the levels, the rest of the equipment and the story's flags (0 .. 3000) a new game's
+    // and armour (cr3_player_data +0x3c, +0x3e) and seeds, the flags past 3000 (and the system's,
+    // 0 .. 1000 - cr3_flag_system_work, untouched); the levels, the rest of the equipment, the story's
+    // flags (1001 .. 3000) and the global work a new game's - ResetWork zeroes cr3_treasureBox + 0x24
+    // .. cr3_global_work + 0x7c either way, the global work whole (Cr3Work: the scripts' GetVar - 0 the
+    // scenario, which d1020's evt000 must find 0 or 1 to begin the story, SkipPrologue's question with it)
     bool carryOver() {
         std::FILE* f = std::fopen(savePath("save1.txt").c_str(), "rb");
         if (!f) return false;
@@ -6854,7 +6857,6 @@ struct Viewer {
             std::memcpy(game.seed[c], old.seed[c], sizeof game.seed[c]);
         }
         for (size_t k = 3001; k < old.flags.size(); ++k) game.setFlag(int(k), old.flags[k]);
-        std::memcpy(game.globalWork, old.globalWork, sizeof game.globalWork);
         SDL_Log("title: the clear data carried over");
         return true;
     }

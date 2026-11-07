@@ -10,6 +10,16 @@ A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux an
   `amdvkffx64.dll` and (on Linux) ffx-vk-linux's `libffx_vk_linux.so` into `fsr4/` in the game
   folder - its `README.txt` says where each comes from. On Linux the DLLs run natively through
   ffx-vk-linux, no Wine. Without the files FSR 3.1 stays as it is.
+- **Cutscenes closer to the original** (the opening checked call by call against the Android
+  library's code): a fade-in starts three frames later and a fade-out one frame later, as the
+  original's fade windows do; a scripted camera (and light) move rests on its last frame instead of
+  one past it; a page's last tap reaches the script two frames on, with the text still shown, and a
+  tap within 150 ms of a page's start no longer turns it; a narration that ends by itself hands
+  over to the script the frame its last character types; a motion blend (`ChangeAnimatorBlend`) takes the seconds
+  the script names - 3, 8 or 10 s for the idle motions - not that many frames; and the game's own
+  pauses between scenes are kept: a cutscene's battle begins six frames after its script ends and
+  a field event's cutscene ten frames after the event's, the scene going on meanwhile, as the
+  original's `VistaMain` and `FldMain` have it.
 - **Battles:** the results of a won battle no longer stay on screen over the next one. The next
   battle used to lose its HUD while the last results' panels came in over the fight (reported by
   [metastigma](https://github.com/metastigma)).

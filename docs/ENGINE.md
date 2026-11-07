@@ -87,3 +87,7 @@ Save-position restoration and load-confirmation follow-up:
 New-game and retry state follow-up: [NEW_SESSION.md](NEW_SESSION.md).
 
 Checked save replacement and failure recovery: [STORAGE_SAFETY.md](STORAGE_SAFETY.md).
+
+The opening (the field event, the prologue vista, its battle) checked call by call against the
+Android library - the fades' holds, the camera's rest frame, the messages' tap timing, the blend's
+units, the branch after a vista: [OPENING_AUDIT.md](OPENING_AUDIT.md).

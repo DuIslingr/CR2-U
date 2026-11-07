@@ -637,6 +637,7 @@ struct Viewer {
     // script's coroutine then running as the area's entry does (FldMain::CallEvent)
     std::set<std::string> insideEvents;
     bool pendingBranch = false;
+    int fieldExitHold = -1; // (--play: an event's way out to a vista or battle - the updates FldMain spends on it)
     void touchEvents(const cr2::Vec3& p) {
         if (!script) return;
         std::set<std::string> now;
@@ -2600,7 +2601,7 @@ struct Viewer {
             for (const std::string& f : script->flagMarks()) marks += " " + f;
             SDL_Log("%s: flag marks%s", map.c_str(), marks.c_str());
         }
-        fieldClock = 0;
+        fieldClock = 0, fieldExitHold = -1;
         field.setSolidGimmicks([this](const cr2::Gimmick& g) {
             const auto it = script->gimmicks().find(g.id);
             return script->visible(g) && (it == script->gimmicks().end() || it->second.collision);
@@ -2751,6 +2752,12 @@ struct Viewer {
         for (; fieldClock >= cr2::EventRuntime::kTick; fieldClock -= cr2::EventRuntime::kTick) {
             if (pendingBranch) {
                 pendingBranch = false;
+                if (fieldExitHold > 0) { // (FldMain's way out, steps 0x1d .. 0x20: the fade and the windows go on)
+                    script->tick();
+                    if (fieldExitHold <= 3 || !script->events().fade().moving()) --fieldExitHold; // (0x1d / 0x1e / 0x20: WaitFadeFinish)
+                    pendingBranch = true;
+                    continue;
+                }
                 branchAfterField();
                 if (!fieldMode) return;
                 continue;
@@ -2884,6 +2891,19 @@ struct Viewer {
     // the camp, the shop, the party, the pub, the chapter select, the library, the title
     void branchAfterField() {
         cr2::GameState::Next& n = game.next;
+        // An event's way out to another main (FldMain::BranchAfterEvent; EventExecute reports the
+        // script's end the update after seeing its state 4): step 0x1d waits for Cr3Fade's count, 0x1e
+        // again, 0x1f counts three updates, 0x20 waits again and sets the next main, GameMain::Update
+        // makes and updates it the update after - a battle's first update (BattleIN from an event:
+        // step 0x1c first, no wipe) is the eighth after the script's last, the title's the ninth; a
+        // vista's script is loaded in the ninth and its function called in the tenth. (The pop
+        // points' and area changes' way, step 0x10, is the field's own.)
+        if (n.popPoint.empty() && n.changeDungeon < 0 && n.changeArea < 0 && (n.battle >= 0 || n.vista) && fieldExitHold < 0) {
+            fieldExitHold = n.battle >= 0 ? 7 : 9;
+            pendingBranch = true;
+            return;
+        }
+        fieldExitHold = -1;
         if (!n.popPoint.empty()) {
             const std::string pp = n.popPoint;
             n.popPoint.clear();
@@ -6117,6 +6137,7 @@ struct Viewer {
     float fadeColours[4][3] = {{0, 0, 0}, {1, 1, 1}, {1, 1, 1}, {0, 0, 0}};
     cr2::Texture white;
     bool eventEnded = false, messageLogged = false;
+    int eventEndHold = 0, eventEndTotal = 0; // (--play: the script ended - updates till the branch after the vista)
 
     bool startEvent(const std::string& function, const std::string& map, float page) {
         initEventDrawing();
@@ -6150,7 +6171,7 @@ struct Viewer {
         vistaMap = ViewFigure();
         for (ViewFigure& f : eventFigures) unload(f);
         eventFigures.clear(), eventFigureNames.clear();
-        eventEnded = false, eventClock = 0, messageLogged = false;
+        eventEnded = false, eventEndHold = 0, eventClock = 0, messageLogged = false;
         if (map != "null" && !loadFigure(map + ".geom", vistaMap, &err)) SDL_Log("vista %s: %s", map.c_str(), err.c_str());
         vistaMap.absolute = true; // (VistaMain::LoadMapData: slot 0)
         vistaMapTime = 0;
@@ -6168,18 +6189,28 @@ struct Viewer {
         return true;
     }
 
-    // one of the game's updates, the figures following the scene's models
+    // one of the game's updates, the figures following the scene's models. The script's end:
+    // VistaMain::EventExecute sees its state 4 the update after and says so the one after that
+    // (VistaMain state 200), which waits for Cr3Fade's count, then two updates more (its +0x24 = 2)
+    // and sets the next main; GameMain::Update makes and updates it the update after - the scene,
+    // the windows and the fade updated meanwhile. The battle's (the field's, the credits') first
+    // update is the sixth after the script's last; another vista's script is loaded in that one
+    // and its function called in the seventh
     void stepEvent() {
-        if (eventEnded) return;
+        if (eventEnded && eventEndHold <= 0) return;
         if (!event->tick()) {
             SDL_Log("event: %s", event->error().c_str());
-            eventEnded = true;
+            eventEnded = true, eventEndHold = 0;
         }
         if (!event->running() && !eventEnded) {
             eventEnded = true;
             SDL_Log("event ended at frame %d (%.2f s)%s", event->frame(), event->frame() * cr2::EventRuntime::kTick,
                     event->battle() >= 0 ? (": battle " + std::to_string(event->battle())).c_str() : "");
-            if (playMode) {
+            if (playMode) eventEndHold = eventEndTotal = game.next.battle < 0 && game.next.vista ? 7 : 6;
+        } else if (eventEnded && eventEndHold > 0) {
+            if (eventEndHold == eventEndTotal - 2 && event->fade().moving()) {
+                // (state 200: a fade still going is waited for)
+            } else if (--eventEndHold == 0) {
                 branchAfterVista();
                 return;
             }
@@ -6209,7 +6240,7 @@ struct Viewer {
     }
 
     // a frame between the event's updates: how far past the last one it is (none once it ended)
-    float eventLead() const { return battleMode && battleScript ? battleScriptClock : eventMode ? (eventEnded ? 0.0f : eventClock) : fieldClock; }
+    float eventLead() const { return battleMode && battleScript ? battleScriptClock : eventMode ? (eventEnded && eventEndHold <= 0 ? 0.0f : eventClock) : fieldClock; }
 
     void updateEvent(float dt) {
         if (event && !event->mapAnimPaused) vistaMapTime += dt;
@@ -6242,7 +6273,10 @@ struct Viewer {
             f.absolute = m.animation.empty();
             // a ChangeAnimatorBlend's fade from the motion before
             f.blendWeight = 1;
-            if (m.blendSeconds > 0 && m.animTime + eventLead() < m.blendSeconds && !m.blendFrom.empty()) {
+            // (EvtMotionManager::Update: the update after SetMotion puts the weight at 0, each after
+            // counts one of the blend's updates - its value / 0.05 - towards 1)
+            const float blendAt = std::max(m.animTime + eventLead() - cr2::EventRuntime::kTick, 0.0f);
+            if (m.blendSeconds > 0 && blendAt < m.blendSeconds && !m.blendFrom.empty()) {
                 const std::string from = m.blendFrom + ".anim";
                 if (from != f.blendName) {
                     std::vector<uint8_t> d;
@@ -6251,7 +6285,7 @@ struct Viewer {
                 }
                 f.blendAbsolute = m.blendFrom == m.figure;
                 f.blendTime = m.blendFromTime + m.animTime + eventLead();
-                f.blendWeight = (m.animTime + eventLead()) / m.blendSeconds;
+                f.blendWeight = blendAt / m.blendSeconds;
             }
             // EvtModel::ChangeTexture_Face: the j<NNN>face material's colour texture
             const auto face = ev.faces().find(m.face);

@@ -27,14 +27,19 @@
 namespace cr2 {
 
 // The screen's fade (Cr3Fade over InterfaceMain's fade windows): a colour at an opacity moving
-// linearly to its target over the frames the script gave
+// linearly to its target over the frames the script gave, after a hold of some updates (the fade
+// windows move in InterfaceMain::Update, before the scripts' turn, and a fade in's window holds
+// three updates more: FadeWindowMenu::InterfaceCloseAnimeSet's +0x18 = 3)
 struct EventFade {
     int colour = 0;      // 0 black (fadeB), 1 white (fadeW), 2 fadeF, 3 the encounter's wipe
     float alpha = 0, target = 0, step = 0;
-    void start(int colour, int frames, float from, float to);
+    int hold = 0;        // updates before the first step
+    void start(int colour, int frames, float from, float to, int hold = 0);
     void update();
+    bool moving() const { return hold > 0 || alpha != target; }
     // the opacity `fraction` (0..1) of an update on from the last
     float at(float fraction) const {
+        if (hold > 0) return alpha;
         const float d = step * std::clamp(fraction, 0.0f, 1.0f);
         return alpha < target ? std::min(alpha + d, target) : std::max(alpha - d, target);
     }
@@ -97,10 +102,12 @@ public:
     bool awaitingSlash() const { return execution_; }
     bool finishingSlash() const { return executionEnd_; } // (ExecutionEndStart's: the finale)
     // a tap (a swipe): the slash awaited, else the page typed at once, else the message's next
-    // page, or its end (CheckMessage then says it's done)
-    void advance();
+    // page, or its end (CheckMessage says it's done two updates on). `tap`: the reader's - read at
+    // a stop only once 0.15 s have passed since its block began (EvtWindow::UpdatePage's timer) -
+    // else the pages turning by themselves or a button held, which wait for nothing
+    void advance(bool tap = true);
     // a tap: also the touch Cr3Touch.GetTouchState says once (1: a finger down - WaitTouch's)
-    void touch() { touched_ = true, advance(); }
+    void touch() { touched_ = true, advance(true); }
     // pages turn (and slashes happen) by themselves after this many seconds (0: only advance())
     float autoPage = 3.0f;
     // The yes / no buttons (EvtWindow.ShowYesNoButton: BattleYNChoice - choice_io, circleBtn_fr 11
@@ -194,7 +201,10 @@ private:
     std::vector<std::pair<int, std::string>> cutInImages_; // (id, image: the first of an id counts)
     int messageWindow_ = Vista;
     int message_ = 0, page_ = 0, revealed_ = 0, messagesSet_ = 0;
-    bool ended_ = false;  // a \* message ended by itself: still shown, done for CheckMessage
+    bool ended_ = false;  // a \* message typed to its end: still shown, done for CheckMessage
+    int endHold_ = 0;     // the last page's tap taken: updates till the message is gone (CheckMessage true)
+    float blockTime_ = 0; // since the page's block began (its stop's tap timer)
+    void pageStarted();   // a page begun: its timer
     size_t stop_ = 0;     // the page's next stop (TextStop)
     float stopTime_ = 0;  // (at a \w stop: its time so far)
     const TextStop* held() const; // the stop the typing waits at, else null

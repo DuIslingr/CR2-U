@@ -53,7 +53,9 @@ function dirty() {
     if (!script("function nextMessage(){EvtWindow.SetMessageText(1,\"Fresh dialogue\");}", "nextMessage")) return 1;
     check(events.fastForwardShown() && events.messagesSet() == 1, "fresh dialogue has normal skip permission");
     events.advance(); // reveal
+    for (int k = 0; k < 3; ++k) events.update(&vm); // (a page's tap counts once 0.15 s have passed: EvtWindow::UpdatePage)
     events.advance(); // dismiss, without needing a new Open to repair stale permissions
+    for (int k = 0; k < 2; ++k) events.update(&vm); // (the page's end seen the update after, the message gone the next)
     check(!events.messageShown(), "fresh dialogue advances with a tap");
     // a page waits for the player with autoPage 0, however long; a \\* line that ends by itself
     // stays on screen, done for the script, until the next message or its window closes

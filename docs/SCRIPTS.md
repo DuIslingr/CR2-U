@@ -588,8 +588,10 @@ camera, the moves, the animations and the fades where they are by then. The scri
 
 - **the scene** (`EvtScene`): `Init(event)`, `Visible(model, on)`, `ChangeAnimator(model,
   "e826", loop)` (the model plays `<figure>e826`, its figure the name up to `_NN`, a motion
-  relative to its base pose), `ChangeAnimatorBlend(model, "e007", loop, frames)` (the same,
-  faded in from the motion before over the frames: EvtMotionManager's two slots),
+  relative to its base pose; EvtMotionManager::SetMotion with -1: no blend), `ChangeAnimatorBlend(model,
+  "e007", loop, seconds)` (the same, faded in from the motion before over that many seconds - the
+  value / 0.05 updates, the weight 0 the update after - EvtMotionManager's two slots; the scripts'
+  `ModelAnim` helper passes 3, 8 or 10 s for the idle motions e001 .. e007 and e500 .. e506),
   `PlayEffect` / `PlayEffectLoop(model)` (shown, its own animation - alone in slot 0, absolute -
   from the start, once or looping: an effect's, `eff284`),
   `SetFaceTexture(slot, image)` / `ChangeModelFace(model, slot)` (the colour texture of the
@@ -607,8 +609,10 @@ camera, the moves, the animations and the fades where they are by then. The scri
   white behind an awakening's message, the field's layers hidden by `Cr3FieldMap.SetVisibleBG` /
   `FG` / `MG` / `3D`, which the field's drawing now honours);
 - **the timelines** (`VistaEvent`, in the scene's frames - 20 a second): `SetMove(model, from,
-  to)` (the model along its locator), `CameraMove(from, to)` / `LightMove` (to + 1: the frame's
-  end), `CameraQuake(width, from %, to %, frames)` / `CameraQuakeStop` (EvtUtilVistaCameraQuake,
+  to)` (the model along its locator), `CameraMove(from, to)` / `LightMove` (EvtUtilVistaCameraMove
+  keeps (to + 1) / 20 s as the end, but VistaMain::Update adds the update first and stops without
+  posing: frames from + 1 .. to, one an update, resting on `to`), `CameraQuake(width, from %, to %,
+  frames)` / `CameraQuakeStop` (EvtUtilVistaCameraQuake,
   VistaMain::Pose: each update the camera moved along its own up axis by width x the rate - from ..
   to over the frames, then held, or stopped when it ends at 0 - one way, then back).
   `DirectionalLightColorAnimStart(from intensity, to intensity, from colour, to colour, frames)`
@@ -637,7 +641,14 @@ camera, the moves, the animations and the fades where they are by then. The scri
   message)`; `LoadSharedTextData(name)` (`message\<name>.dat`),
   `LoadSharedNameData('name_tag')`, `Open`, `SetMessage(window, n)`, then `CheckMessage` each
   frame until the player has read it (`WaitMessage`), `Close` - the window drawn as the game's
-  (FORMATS.md, the interface), its lines typing a character an update;
+  (FORMATS.md, the interface), its lines typing a character an update from the update of the
+  `SetMessage` (EvtWindow::ShowMessage, NarrationWindowMenu::SetStringData, MenuText::Step). A
+  stop's tap counts once 0.15 s have passed since its block began (EvtWindow::UpdatePage's timer),
+  and the last page's tap reaches the script two updates on: the next update's UpdatePage sees the
+  page's end and EvtWindow::Update ends the message, after the script's turn. A `\*` message
+  (the prologue's narrations) is done for `CheckMessage` in the update after its last character
+  types (EvtWindow::CheckMessage: the page's end, the text typed, EvtWindowMessage::CheckMessage's
+  byte past the page - the text's end), shown until the next message or `Close` (OPENING_AUDIT.md);
 - **the portraits** (`EvtFace`, through the dungeon scripts' `Cutin_*` helpers): `SetTexture(file,
   id)` loads a face, `Create(layout)` opens a layout (0 right, 1 both, 2 left, 3 the party's, 4 a
   single one), `ChangeTexture(layout, id)` shows a face in it, `SetColor(layout, 0.5)` dims who
@@ -645,8 +656,21 @@ camera, the moves, the animations and the fades where they are by then. The scri
   3, 4), `DispOff` closes them all, `DeleteTexture` drops the faces;
 - **the fades** (`Cr3Fade.FadeIn / FadeOut(type, frames)`, the `2`s with from / to %): the colour
   0 black (the interface's `fadeB`), 1 white (`fadeW`), 2 `fadeF`, 3 the encounter's wipe
-  (Cr3FadeIn's table; the colours the fade figures' DiffuseColor), linear over the frames;
-- **the end**: `Cr3System.BattleIN(id)` and the like (the game's flow above).
+  (Cr3FadeIn's table; the colours the fade figures' DiffuseColor), linear over the frames. The
+  fade windows move in InterfaceMain::Update, before the scripts' turn: a fade out's first step
+  is the update after the call (SetFadeOut -> FadeWindowMenu::InterfaceOpenAnimeSet), a fade in's
+  the fourth (SetFadeIn -> InterfaceCloseAnimeSet holds three updates: its +0x18 = 3, counted down
+  by FadeWindowMenu::Update). Cr3Fade's own count - what a vista's end waits for - runs from the
+  call (OPENING_AUDIT.md);
+- **the end**: `Cr3System.BattleIN(id)` and the like (the game's flow above). VistaMain::Update
+  sees the script's end the update after (EventExecute: its state 4) and acts on it the one after
+  that, waits for Cr3Fade's count, counts two updates more (its +0x24) and sets the next main,
+  which GameMain::Update makes and updates the update after - the battle's (the field's) first
+  update is the sixth after the script's last, another vista's function called in the seventh;
+  the scene, the windows and the fade go on meanwhile. A field event's way out is longer
+  (FldMain::BranchAfterEvent, steps 0x1d .. 0x20: the fade waited for, three updates, the fade
+  again): a vista's function starts ten updates after the event's last, an event's battle eight
+  (OPENING_AUDIT.md).
 
 `engine/src/event/` implements them (`scene.cpp`: the figures and timelines; `runtime.cpp`: the
 script, the window's messages, the fades); `cr2tool play <archive> all` plays every event script

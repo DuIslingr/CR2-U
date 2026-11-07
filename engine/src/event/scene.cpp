@@ -154,14 +154,17 @@ void EventScene::setMove(const std::string& name, float from, float to) {
     }
 }
 
+// (EvtUtilVistaCameraMove / LightMove keep (to + 1) / 20 s as the move's end, but VistaMain::Update
+// adds the update's time before comparing and, at the end, stops without posing: the camera is
+// posed at frames from + 1 .. to, one an update, and rests on frame `to`)
 void EventScene::cameraMove(float from, float to) {
     cameraTime_ = from * 0.05f;
-    cameraEnd_ = (to + 1) * 0.05f; // (EvtUtilVistaCameraMove: to + 1)
+    cameraEnd_ = to * 0.05f;
 }
 
 void EventScene::lightMove(float from, float to) {
     lightTime_ = from * 0.05f;
-    lightEnd_ = (to + 1) * 0.05f;
+    lightEnd_ = to * 0.05f;
 }
 
 void EventScene::update(float dt) {

@@ -20,13 +20,15 @@ int fadeColour(int type) { return type >= 1 && type <= 3 ? type : 0; }
 
 } // namespace
 
-void EventFade::start(int c, int frames, float from, float to) {
+void EventFade::start(int c, int frames, float from, float to, int h) {
     colour = c;
     alpha = from, target = to;
     step = frames > 0 ? std::abs(to - from) / float(frames) : 1.0f;
+    hold = h;
 }
 
 void EventFade::update() {
+    if (hold > 0) return void(--hold); // (FadeWindowMenu::Update: its hold counted down before any step)
     if (alpha < target) alpha = std::min(alpha + step, target);
     else if (alpha > target) alpha = std::max(alpha - step, target);
 }
@@ -70,12 +72,14 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
             m->blendSeconds = 0;
         }
     });
-    // ChangeAnimatorBlend(model, "e007", loop, frames): the same, faded in from the motion before
+    // ChangeAnimatorBlend(model, "e007", loop, seconds): the same, faded in from the motion before
+    // over that many seconds (the scripts' ModelAnim passes 3.0, 8.0, 10.0 for its idle motions:
+    // EvtMotionManager::SetMotion counts the value / 0.05 updates; ChangeAnimator passes -1: none)
     vm.setNative("EvtScene", "ChangeAnimatorBlend", [this](NativeCall& c) {
         if (EventModel* m = scene_.model(c.string(0))) {
             m->blendFrom = m->animation.empty() ? m->figure : m->animation;
             m->blendFromTime = m->animTime;
-            m->blendSeconds = float(std::max(c.integer(3), 0)) * kTick;
+            m->blendSeconds = std::max(c.number(3), 0.0f);
             m->animation = m->figure + c.string(1);
             m->loop = c.boolean(2, true);
             m->animTime = 0;
@@ -204,10 +208,10 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     });
     auto close = [this](int w) {
         if (openWindows_.erase(w)) opened_.erase(w), closing_[w] = 0;
-        if (w == messageWindow_) message_ = 0;
+        if (w == messageWindow_) message_ = 0, endHold_ = 0;
     };
     vm.setNative("EvtWindow", "Close", [close](NativeCall& c) { close(c.integer(0, Vista)); });
-    vm.setNative("EvtWindow", "UnloadAll", [this](NativeCall&) { openWindows_.clear(), opened_.clear(), closing_.clear(), message_ = 0; });
+    vm.setNative("EvtWindow", "UnloadAll", [this](NativeCall&) { openWindows_.clear(), opened_.clear(), closing_.clear(), message_ = 0, endHold_ = 0; });
     // the cut-ins' portraits
     vm.setNative("EvtFace", "SetTexture", [this](NativeCall& c) { cutInImages_.push_back({c.integer(1), c.string(0)}); });
     vm.setNative("EvtFace", "DeleteTexture", [this](NativeCall&) { cutInImages_.clear(); });
@@ -243,6 +247,7 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
             soundHooks().playVoice(v);
         }
         page_ = 0, pageTime_ = 0, revealed_ = 0, stop_ = 0, stopTime_ = 0, ended_ = false;
+        pageStarted();
         if (parsed_.pages.empty()) message_ = 0;
         else ++messagesSet_;
     });
@@ -251,6 +256,7 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
         messageWindow_ = c.integer(0, Vista), message_ = 0x7fff;
         parsed_ = parseMessage(c.string(1));
         page_ = 0, pageTime_ = 0, revealed_ = 0, stop_ = 0, stopTime_ = 0, ended_ = false;
+        pageStarted();
         if (parsed_.pages.empty()) message_ = 0;
         else ++messagesSet_;
     });
@@ -273,6 +279,7 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
         messageWindow_ = w, message_ = 0x75, itemShown_ = id;
         parsed_ = parseMessage(t);
         page_ = 0, pageTime_ = 0, revealed_ = 0, stop_ = 0, stopTime_ = 0, ended_ = false;
+        pageStarted();
         if (parsed_.pages.empty()) message_ = 0;
         else ++messagesSet_;
     });
@@ -289,16 +296,23 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
         else skipOff_.insert(c.integer(0, Vista));
     });
     vm.setNative("EvtWindow", "SkipMessage", [this](NativeCall&) { if (message_ > 0) showWhole(); });
-    // the fades: (type, frames), the 2s (type, frames, from %, to %)
-    vm.setNative("Cr3Fade", "FadeIn", [this](NativeCall& c) { fade_.start(fadeColour(c.integer(0)), c.integer(1), 1, 0); });
-    vm.setNative("Cr3Fade", "FadeOut", [this](NativeCall& c) { fade_.start(fadeColour(c.integer(0)), c.integer(1), 0, 1); });
-    auto fade2 = [this](NativeCall& c) {
-        fade_.start(fadeColour(c.integer(0)), c.integer(1), c.number(2) / 100.0f, c.number(3) / 100.0f);
+    // the fades: (type, frames), the 2s (type, frames, from %, to %). InterfaceMain's fade windows
+    // (FadeWindowMenu) move in InterfaceMain::Update, which GameMain::Update runs before the
+    // scripts: a fade out's (SetFadeOut -> InterfaceOpenAnimeSet) first step is the update after the
+    // call; a fade in's (SetFadeIn -> InterfaceCloseAnimeSet) holds three updates more first (its
+    // +0x18 = 3, counted down by FadeWindowMenu::Update before any step), so the screen starts
+    // clearing at the fourth update. Cr3Fade's own count - what a vista's end waits for - runs from
+    // the call, without the hold.
+    static constexpr int kFadeOutHold = 1, kFadeInHold = 4;
+    vm.setNative("Cr3Fade", "FadeIn", [this](NativeCall& c) { fade_.start(fadeColour(c.integer(0)), c.integer(1), 1, 0, kFadeInHold); });
+    vm.setNative("Cr3Fade", "FadeOut", [this](NativeCall& c) { fade_.start(fadeColour(c.integer(0)), c.integer(1), 0, 1, kFadeOutHold); });
+    auto fade2 = [this](NativeCall& c, int hold) {
+        fade_.start(fadeColour(c.integer(0)), c.integer(1), c.number(2) / 100.0f, c.number(3) / 100.0f, hold);
     };
     vm.setNative("Cr3Fade", "SetEffectLine", [this](NativeCall&) { effectLine = true; });
     vm.setNative("Cr3Fade", "DeleteEffectLine", [this](NativeCall&) { effectLine = false; });
-    vm.setNative("Cr3Fade", "FadeIn2", fade2);
-    vm.setNative("Cr3Fade", "FadeOut2", fade2);
+    vm.setNative("Cr3Fade", "FadeIn2", [fade2](NativeCall& c) { fade2(c, kFadeInHold); });
+    vm.setNative("Cr3Fade", "FadeOut2", [fade2](NativeCall& c) { fade2(c, kFadeOutHold); });
     // the vista's skip button (EvtSkip): held - the viewer's fastForward while it shows
     vm.setNative("EvtSkip", "CheckButtonTouch", [this](NativeCall& c) { c.result(skipHeld()); });
     vm.setNative("EvtSkip", "ButtonCreate", [this](NativeCall&) { skipButton_ = true; });
@@ -355,6 +369,7 @@ void EventRuntime::reset() {
     yesNoShown_ = false, yesNo_ = 0;
     cutIns_ = {}, cutInImages_.clear();
     messageWindow_ = Vista, message_ = page_ = revealed_ = 0, pageTime_ = stopTime_ = 0, stop_ = 0, ended_ = false;
+    endHold_ = 0, blockTime_ = 0;
     execution_ = false;
     terminated_ = drawSkip_ = false;
     wait_ = frame_ = 0;
@@ -392,15 +407,28 @@ bool EventRuntime::update(ScriptVM* vm) {
         wait_ = 0;
         if (!vm->resume()) return error_ = vm->error(), false;
     }
+    // (the last page's tap: EvtWindow::UpdatePage turns its last block in the update that reads the
+    // tap, the next update's UpdatePage sees the page's end and EvtWindow::Update ends the message
+    // - after the script's turn, so its CheckMessage says so the update after that)
+    if (endHold_ > 0 && --endHold_ == 0) {
+        message_ = 0, page_ = 0;
+        if (soundHooks().stopAllVoices) soundHooks().stopAllVoices(0);
+    }
+    if (message_ > 0) blockTime_ += kTick;
     if (!parsed_.noSkip && ((fastForward && fastForwardShown()) || (skipHeld() && message_ > 0))) { // (a button held: the page whole, then the next at once - EvtWindow::IsSkip)
         if (!typed()) showWhole();
-        else advance();
+        else advance(false);
     } else if (message_ > 0 && !typed()) { // (a character an update; the page's time counts once it's typed)
-        if (const TextStop* s = held(); !s) ++revealed_;
-        else if (s->wait > 0 && (stopTime_ += kTick) * 20 >= float(s->wait)) ++stop_, stopTime_ = 0;
-        else if (s->wait == 0 && autoPage > 0 && (pageTime_ += kTick) >= autoPage) advance(); // (a tap mark: as a page)
+        if (const TextStop* s = held(); !s) {
+            ++revealed_;
+            // (\*: EvtWindow::CheckMessage wants the page's end, the text typed - CheckDisplayEnd in
+            // the update of its last character - and the text's end past it: the script's next
+            // CheckMessage says so; the page stays shown till the next message or Close)
+            if (ending()) ended_ = true;
+        } else if (s->wait > 0 && (stopTime_ += kTick) * 20 >= float(s->wait)) ++stop_, stopTime_ = 0, blockTime_ = 0;
+        else if (s->wait == 0 && autoPage > 0 && (pageTime_ += kTick) >= autoPage) advance(false); // (a tap mark: as a page)
     } else if (message_ > 0 && ending()) ended_ = true; // (\*: its end by itself - the script's CheckMessage, the page still shown till the next or Close: EvtWindow::UpdatePage / Update)
-    else if ((message_ > 0 || execution_) && autoPage > 0 && (pageTime_ += kTick) >= autoPage) advance();
+    else if ((message_ > 0 || execution_) && autoPage > 0 && (pageTime_ += kTick) >= autoPage) advance(false);
     fade_.update();
     if (yesNoShown_ && (yesNoAge_ += kTick) >= autoPage && autoPage > 0 && askYesNo && !yesNo_) yesNo_ = 1; // (pages by themselves: yes)
     for (auto& [w, t] : opened_) t += kTick;
@@ -426,21 +454,25 @@ std::string EventRuntime::cutInImage(int id) const {
     return {};
 }
 
-void EventRuntime::advance() {
+void EventRuntime::advance(bool tap) {
     pageTime_ = 0;
     if (execution_) {
         execution_ = false;
         return;
     }
-    if (message_ <= 0 || ended_) return;
+    if (message_ <= 0 || ended_ || endHold_ > 0) return;
+    // (EvtWindow::UpdatePage: a stop's taps are read once its timer - from the block's start, reset by
+    // EvtWindowPage::NextBlock - has passed 0.15 s; a button held reads them at once)
+    const bool early = tap && blockTime_ + 1e-4f < 0.15f;
     if (!typed()) {
         const std::vector<TextStop>& stops = parsed_.pages[size_t(page_)].stops;
         if (const TextStop* s = held()) { // (at a tap mark: the page's next part; a timed one reads no tap)
-            if (s->wait == 0) ++stop_;
+            if (s->wait == 0 && !early) ++stop_, blockTime_ = 0;
             return;
         }
-        // (else EvtWindowPage::Skip: on to the next tap mark, past the timed ones)
-        while (stop_ < stops.size() && stops[stop_].wait > 0) ++stop_;
+        // (else NarrationWindowMenu::TouchGestureTap - its +0x49 set at the window's open,
+        // SetNarrationWindow's parameter 0xf -: MenuText::SetSkipFlag on the block's lines, shown
+        // whole up to its next stop; a timed one then waits its frames)
         if (stop_ < stops.size()) revealed_ = std::max(revealed_, stops[stop_].at), stopTime_ = 0;
         else showWhole();
         return;
@@ -451,12 +483,18 @@ void EventRuntime::advance() {
         return;
     }
     if (pageSendOff_.count(messageWindow_)) return; // (SetWaitButtonEnable false: the script's to end)
-    revealed_ = 0, stop_ = 0, stopTime_ = 0;
-    if (++page_ >= int(parsed_.pages.size())) {
-        message_ = 0, page_ = 0;
-        if (soundHooks().stopAllVoices) soundHooks().stopAllVoices(0);
+    if (early) return;
+    if (page_ + 1 >= int(parsed_.pages.size())) { // (the last page: shown two updates more, then gone)
+        endHold_ = 2;
+        return;
     }
+    revealed_ = 0, stop_ = 0, stopTime_ = 0;
+    ++page_;
+    pageStarted();
 }
+
+// a page begun (SetMessage's first, a tap's next): its block's timer from now
+void EventRuntime::pageStarted() { blockTime_ = 0; }
 
 bool EventRuntime::typed() const {
     if (message_ <= 0 || page_ >= int(parsed_.pages.size())) return true;

@@ -313,7 +313,7 @@ struct Viewer {
             else if (k == "vsync") s.vsync = v != 0;
             else if (k == "fps") s.fps = std::clamp(v, 0, 1000);
             else if (k == "renderer") s.renderer = std::clamp(v, 0, 1);
-            else if (k == "upscaler") s.upscaler = std::clamp(v, 0, 3);
+            else if (k == "upscaler") s.upscaler = std::clamp(v, 0, 4);
             else if (k == "quality") s.quality = std::clamp(v, 0, int(std::size(kQualities)) - 1);
             else if (k == "sharpness") s.sharpness = std::clamp(v, 0, 100);
             else if (k == "msaa") s.msaa = v >= 8 ? 8 : v >= 4 ? 4 : v >= 2 ? 2 : 1;
@@ -359,7 +359,7 @@ struct Viewer {
             dev->resetHistory();
         }
         cr2::UpscaleSettings u;
-        u.mode = cr2::Upscaler(std::clamp(s.upscaler, 0, 3));
+        u.mode = cr2::Upscaler(std::clamp(s.upscaler, 0, 4));
         u.ratio = kQualities[std::clamp(s.quality, 0, int(std::size(kQualities)) - 1)].ratio;
         u.sharpness = float(s.sharpness) / 100.0f;
         if (u.mode != cr2::Upscaler::Off && !dev->upscalerProblem(u.mode).empty()) u.mode = cr2::Upscaler::Off;
@@ -467,16 +467,16 @@ struct Viewer {
                             true, [&s](int) { s.renderer = 1 - s.renderer; }});
         }
         const bool vk = dev && dev->offscreen(); // (the Vulkan device renders offscreen: the upscalers', MSAA's)
-        static const char* const kUpscaler[] = {"Off", "FSR 3.1", "DLSS", "MetalFX"};
+        static const char* const kUpscaler[] = {"Off", "FSR 3.1", "DLSS", "MetalFX", "FSR 4"};
         {
-            std::string v = kUpscaler[std::clamp(s.upscaler, 0, 3)];
+            std::string v = kUpscaler[std::clamp(s.upscaler, 0, 4)];
             std::string why = s.upscaler && dev ? dev->upscalerProblem(cr2::Upscaler(s.upscaler)) : std::string();
             if (!why.empty()) v += " (n/a)";
             rows.push_back({"Upscaler", v, why.empty() ? "The scene renders smaller and is rebuilt at full size; the menus stay sharp" : kUpscaler[s.upscaler] + std::string(": ") + why,
                             vk, [this, &s](int d) {
                                 // (the ones this device can run, Off always)
-                                for (int k = 1; k <= 4; ++k) {
-                                    const int u = ((s.upscaler + d * k) % 4 + 4) % 4;
+                                for (int k = 1; k <= 5; ++k) {
+                                    const int u = ((s.upscaler + d * k) % 5 + 5) % 5;
                                     if (u == 0 || (dev && dev->upscalerProblem(cr2::Upscaler(u)).empty())) {
                                         s.upscaler = u;
                                         return;
@@ -494,7 +494,7 @@ struct Viewer {
                             [&s](int d) { const int n = int(std::size(kQualities)); s.quality = (s.quality + d + n) % n; }});
         }
         rows.push_back({"Sharpness", std::to_string(s.sharpness) + "%", "FSR's sharpening pass (RCAS); DLSS and MetalFX have none",
-                        vk && s.upscaler == 1, [&s](int d) { s.sharpness = std::clamp(s.sharpness + d * 5, 0, 100); }});
+                        vk && (s.upscaler == 1 || s.upscaler == 4), [&s](int d) { s.sharpness = std::clamp(s.sharpness + d * 5, 0, 100); }});
         {
             const int most = dev ? dev->maxSamples() : 1;
             rows.push_back({"Anti-aliasing", s.msaa > 1 ? "MSAA " + std::to_string(s.msaa) + "x" : std::string("Off"),
@@ -12060,7 +12060,7 @@ std::string upscaleName(const cr2::UpscaleSettings& u) {
     std::string q = "x" + std::to_string(u.ratio);
     for (const Quality& k : kQualities)
         if (k.ratio == u.ratio) q = k.name;
-    return std::string(u.mode == cr2::Upscaler::Fsr3 ? "FSR 3.1 " : u.mode == cr2::Upscaler::MetalFx ? "MetalFX " : "DLSS ") + q;
+    return std::string(u.mode == cr2::Upscaler::Fsr3 ? "FSR 3.1 " : u.mode == cr2::Upscaler::Fsr4 ? "FSR 4 " : u.mode == cr2::Upscaler::MetalFx ? "MetalFX " : "DLSS ") + q;
 }
 
 } // namespace
@@ -12562,7 +12562,8 @@ int main(int argc, char** argv) {
     if (upscaler == "fsr3" || upscaler == "fsr") upscale.mode = cr2::Upscaler::Fsr3;
     else if (upscaler == "dlss") upscale.mode = cr2::Upscaler::Dlss;
     else if (upscaler == "metalfx") upscale.mode = cr2::Upscaler::MetalFx;
-    else if (upscaler != "off") return std::fprintf(stderr, "--upscaler: off, fsr3, dlss or metalfx\n"), 2;
+    else if (upscaler == "fsr4") upscale.mode = cr2::Upscaler::Fsr4;
+    else if (upscaler != "off") return std::fprintf(stderr, "--upscaler: off, fsr3, fsr4, dlss or metalfx\n"), 2;
     {
         const auto q = std::find_if(std::begin(kQualities), std::end(kQualities), [&](const Quality& k) { return quality == k.name; });
         if (q == std::end(kQualities)) return std::fprintf(stderr, "--quality: native, quality, balanced, performance or ultra\n"), 2;
@@ -12810,6 +12811,13 @@ int main(int argc, char** argv) {
     }
     // The device: Vulkan unless asked otherwise or it can't start, then OpenGL
     cr2::useBundledVulkan(); // (macOS: the .app's own loader)
+#ifdef CR_HAVE_VULKAN
+    { // FSR 4's files (AMD's DLLs, Linux's ffx-vk-linux): fsr4/ in the game folder, beside the executable, CR2_FSR4_DIR
+        const char* env = SDL_getenv("CR2_FSR4_DIR");
+        const char* base = SDL_GetBasePath();
+        cr2::setFsr4Dirs({env && *env ? std::string(env) : std::string(), gameFolder + "fsr4/", base ? std::string(base) + "fsr4/" : std::string()});
+    }
+#endif
     std::unique_ptr<cr2::RenderDevice> dev;
     SDL_Window* win = nullptr;
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)

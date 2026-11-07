@@ -24,6 +24,7 @@
 #include "gfx/vk_metalfx.hpp"
 #endif
 #include "gfx/vk_fsr3.hpp"
+#include "gfx/vk_fsr4.hpp"
 
 #include <algorithm>
 #include <array>
@@ -235,6 +236,7 @@ public:
         destroySceneTarget();
         fsr_.shutdown();
         dlss_.shutdown();
+        fsr4_.shutdown();
 #ifdef __APPLE__
         metalfx_.shutdown();
 #endif
@@ -613,6 +615,45 @@ public:
 #ifdef __APPLE__
             done = metalFxEncode();
 #endif
+        } else if (active_ == Upscaler::Fsr4) {
+            Fsr4Inputs in;
+            const VkImageUsageFlags scene = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+            in.color = {sceneColor_, sceneColorView_, kColorFormat, scene | VK_IMAGE_USAGE_TRANSFER_SRC_BIT};
+            if (sceneDepthAspect_ & VK_IMAGE_ASPECT_STENCIL_BIT) {
+                // (AMD's SDK views a depth as D32 alone: the stencilled one's depth aspect copied out)
+                barrier(cmd_, sceneDepth_, sceneDepthAspect_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+                barrier(cmd_, fsr4Depth_, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+                VkImageCopy copy{};
+                copy.srcSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1};
+                copy.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                copy.extent = {uint32_t(sceneW_), uint32_t(sceneH_), 1};
+                vkCmdCopyImage(cmd_, sceneDepth_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, fsr4Depth_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+                barrier(cmd_, sceneDepth_, sceneDepthAspect_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+                barrier(cmd_, fsr4Depth_, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+                in.depth = {fsr4Depth_, fsr4DepthView_, VK_FORMAT_R32_SFLOAT, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
+            } else {
+                in.depth = {sceneDepth_, sceneDepthView_, sceneDepthFormat_, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
+            }
+            in.motion = {sceneMotion_, sceneMotionView_, kMotionFormat, scene};
+            in.reactive = {sceneReactive_, sceneReactiveView_, kReactiveFormat, scene};
+            in.output = {colorImage_, colorView_, kColorFormat, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT};
+            in.renderW = sceneW_;
+            in.renderH = sceneH_;
+            in.outW = targetW_;
+            in.outH = targetH_;
+            in.jitterX = jitter_[0];
+            in.jitterY = jitter_[1];
+            in.deltaMs = frameMs_;
+            in.cameraNear = cameraNear_;
+            in.cameraFar = cameraFar_;
+            in.fovY = cameraFovY_;
+            in.sharpness = std::clamp(upscale_.sharpness, 0.0f, 1.0f);
+            in.reset = historyReset_;
+            done = !(sceneDepthAspect_ & VK_IMAGE_ASPECT_STENCIL_BIT) || fsr4Depth_ ? fsr4_.evaluate(cmd_, in) : false;
         } else if (active_ == Upscaler::Dlss) {
             DlssInputs in;
             in.color = {sceneColor_, sceneColorView_, kColorFormat};
@@ -672,6 +713,12 @@ public:
 #else
             return "MetalFX is Apple's: macOS only";
 #endif
+        }
+        if (m == Upscaler::Fsr4) {
+            if (!fsr4_.problem().empty()) return fsr4_.problem();
+            if ((sceneDepthAspect_ & VK_IMAGE_ASPECT_STENCIL_BIT) && !(maintenance8_ && sceneDepthFormat_ == VK_FORMAT_D32_SFLOAT_S8_UINT))
+                return "FSR 4 needs VK_KHR_maintenance8 and a D32S8 depth here (the scene's depth has a stencil)";
+            return "";
         }
         return dlss_.problem();
     }
@@ -1159,6 +1206,23 @@ private:
             ext.push_back(Fsr3::extension());
         }
         if (upscaleCaps_) dlss_.deviceRequirements(instance_, gpu_, ext, f12); // NGX's, on NVIDIA RTX
+        if (upscaleCaps_) fsr4_.deviceRequirements(gpu_, ext, f2, f12, f13); // AMD's FSR 4: with its files, on AMD
+#ifdef VK_KHR_maintenance8
+        if (fsr4_.wanted()) { // (its depth copied out of a stencilled scene depth: the aspect -> colour copy maintenance8 allows)
+            uint32_t n = 0;
+            vkEnumerateDeviceExtensionProperties(gpu_, nullptr, &n, nullptr);
+            std::vector<VkExtensionProperties> have(n);
+            vkEnumerateDeviceExtensionProperties(gpu_, nullptr, &n, have.data());
+            for (const VkExtensionProperties& e : have)
+                if (std::strcmp(e.extensionName, VK_KHR_MAINTENANCE_8_EXTENSION_NAME) == 0) maintenance8_ = true;
+            if (maintenance8_) {
+                maintenance8Features_.maintenance8 = VK_TRUE;
+                maintenance8Features_.pNext = f13.pNext;
+                f13.pNext = &maintenance8Features_;
+                ext.push_back(VK_KHR_MAINTENANCE_8_EXTENSION_NAME);
+            }
+        }
+#endif
         VkDeviceCreateInfo ci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
         ci.pNext = &f2;
         ci.queueCreateInfoCount = 1;
@@ -1168,6 +1232,7 @@ private:
         if (!ok(vkCreateDevice(gpu_, &ci, nullptr, &device_))) return false;
         if (fsrSupported_ && !fsr_.init(device_, gpu_, kFrames)) fsrSupported_ = false;
         if (upscaleCaps_) dlss_.init(instance_, gpu_, device_);
+        if (upscaleCaps_) fsr4_.init(instance_, gpu_, device_);
         vkGetDeviceQueue(device_, family_, 0, &queue_);
 #ifdef __APPLE__
         if (upscaleCaps_ && metalObjects_) metalfx_.init(instance_, device_, queue_);
@@ -1832,25 +1897,31 @@ private:
         createImage(w, h, kColorFormat, use | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, sceneColor_, sceneColorMem_);
         createImage(w, h, kMotionFormat, use, sceneMotion_, sceneMotionMem_);
         createImage(w, h, kReactiveFormat, use, sceneReactive_, sceneReactiveMem_);
-        createImage(w, h, sceneDepthFormat_, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        const bool copiedDepth = maintenance8_ && sceneDepthFormat_ == VK_FORMAT_D32_SFLOAT_S8_UINT; // (FSR 4's: its depth aspect copied out)
+        createImage(w, h, sceneDepthFormat_,
+                    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | (copiedDepth ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0),
                     sceneDepth_, sceneDepthMem_);
         sceneColorView_ = makeView(sceneColor_, kColorFormat, VK_IMAGE_ASPECT_COLOR_BIT);
         sceneMotionView_ = makeView(sceneMotion_, kMotionFormat, VK_IMAGE_ASPECT_COLOR_BIT);
         sceneReactiveView_ = makeView(sceneReactive_, kReactiveFormat, VK_IMAGE_ASPECT_COLOR_BIT);
         sceneDepthView_ = makeView(sceneDepth_, sceneDepthFormat_, VK_IMAGE_ASPECT_DEPTH_BIT); // (the upscalers': depth alone)
         sceneDepthAttachView_ = makeView(sceneDepth_, sceneDepthFormat_, sceneDepthAspect_);
+        if (copiedDepth) { // (FSR 4's depth: the depth aspect copied here)
+            createImage(w, h, VK_FORMAT_R32_SFLOAT, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, fsr4Depth_, fsr4DepthMem_);
+            fsr4DepthView_ = makeView(fsr4Depth_, VK_FORMAT_R32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT);
+        }
     }
 
     void destroySceneTarget() {
-        for (VkImageView* v : {&sceneColorView_, &sceneMotionView_, &sceneReactiveView_, &sceneDepthView_, &sceneDepthAttachView_}) {
+        for (VkImageView* v : {&sceneColorView_, &sceneMotionView_, &sceneReactiveView_, &sceneDepthView_, &sceneDepthAttachView_, &fsr4DepthView_}) {
             if (*v) vkDestroyImageView(device_, *v, nullptr);
             *v = VK_NULL_HANDLE;
         }
-        for (VkImage* i : {&sceneColor_, &sceneMotion_, &sceneReactive_, &sceneDepth_}) {
+        for (VkImage* i : {&sceneColor_, &sceneMotion_, &sceneReactive_, &sceneDepth_, &fsr4Depth_}) {
             if (*i) vkDestroyImage(device_, *i, nullptr);
             *i = VK_NULL_HANDLE;
         }
-        for (Alloc* a : {&sceneColorMem_, &sceneMotionMem_, &sceneReactiveMem_, &sceneDepthMem_}) {
+        for (Alloc* a : {&sceneColorMem_, &sceneMotionMem_, &sceneReactiveMem_, &sceneDepthMem_, &fsr4DepthMem_}) {
             freeAlloc(*a);
             *a = Alloc();
         }
@@ -1995,6 +2066,16 @@ private:
     bool fsrSupported_ = false, upscaleCaps_ = false;
     Fsr3 fsr_;
     Dlss dlss_;
+    Fsr4 fsr4_;
+    // FSR 4's depth where the scene's has a stencil (D32S8): AMD's SDK views a depth as D32 alone,
+    // so the depth aspect is copied into an R32 image each frame - VK_KHR_maintenance8 allows the copy
+    bool maintenance8_ = false;
+#ifdef VK_KHR_maintenance8
+    VkPhysicalDeviceMaintenance8FeaturesKHR maintenance8Features_{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_8_FEATURES_KHR};
+#endif
+    VkImage fsr4Depth_ = VK_NULL_HANDLE;
+    Alloc fsr4DepthMem_;
+    VkImageView fsr4DepthView_ = VK_NULL_HANDLE;
 #ifdef __APPLE__
     MetalFx metalfx_;
     bool metalObjects_ = false; // VK_EXT_metal_objects on

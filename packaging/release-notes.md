@@ -4,6 +4,12 @@ A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux an
 
 ## What's new
 
+- **FSR 3.1.6:** the built-in FSR is updated from 3.1.4 to AMD's FSR SDK 2.4 passes.
+- **FSR 4 (Linux and Windows, AMD GPUs):** a new Upscaler choice. AMD ships FSR 4 for Vulkan only as
+  its own Windows DLLs, so they aren't included: put AMD's two SDK DLLs, the driver's
+  `amdvkffx64.dll` and (on Linux) ffx-vk-linux's `libffx_vk_linux.so` into `fsr4/` in the game
+  folder - its `README.txt` says where each comes from. On Linux the DLLs run natively through
+  ffx-vk-linux, no Wine. Without the files FSR 3.1 stays as it is.
 - **Battles:** the results of a won battle no longer stay on screen over the next one. The next
   battle used to lose its HUD while the last results' panels came in over the fight (reported by
   [metastigma](https://github.com/metastigma)).

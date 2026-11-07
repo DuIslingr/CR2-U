@@ -7,6 +7,7 @@ them in `engine/third_party/`:
 | Folder | What | Licence |
 |---|---|---|
 | `fidelityfx/` | AMD FSR SDK 2.4.0's FSR 3.1.6 GPU passes (SDK 1.1.4's GLSL core) (as in CR1:U / CRO-U) | MIT (`LICENSE.txt`) |
+| `ffx/` | AMD FSR SDK 2.4.0's FSR API headers: the interface of AMD's Vulkan DLLs (FSR 4; the DLLs aren't here) | MIT (each file's header) |
 | `stb/stb_vorbis.c` | stb_vorbis 1.22 by Sean Barrett (the copy CR1:U vendors) - decodes the Android release's music (Ogg Vorbis) | public domain / MIT (in the file) |
 | `cgltf/` | cgltf 1.13 by Johannes Kuhlmann - reads the HD models (glTF 2.0) | MIT (in the file) |
 | `stb/stb_image.h`, `stb/stb_image_write.h` | stb_image 2.30 (PNG and JPEG only) and stb_image_write 1.16 by Sean Barrett - the HD models' pictures, read and written (`gltf_libs.c` builds them with cgltf) | public domain / MIT (in the files) |

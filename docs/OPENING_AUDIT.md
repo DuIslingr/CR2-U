@@ -57,6 +57,7 @@ port's `EventRuntime::update` is one of those: the scene, the script, the typing
 | `ChangeAnimatorBlend(model, motion, loop, x)` (`Cr3EvtSceneChangeAnimatorBlend` passes x through to `EvtModel::SetEventAnimDirect` -> `EvtMotionManager::SetMotion`, which counts x / 0.05 updates; `ChangeAnimator` passes -1.0: none) | x is seconds (`ModelAnim`'s table: 3, 8 and 10 s for the idle motions e001 .. e007, e500 .. e506); the weight is 0 the update after, then k / frames | x taken as frames (x / 20 s) | seconds, the weight an update behind |
 | A page's last tap (`EvtWindow::UpdatePage`: `NextBlock`; the next update's `UpdatePage` sees the page's end, `EvtWindow::Update` -> `EvtWindowMessage::SkipMessage`; the script's `CheckMessage` runs before the windows) | the script goes on two updates after the tap, the text shown till then | at once | two updates after, the text shown |
 | A tap stop's taps (`UpdatePage`: its timer from the block's start - `EvtWindowPage::NextBlock` - must pass 0.15 s; 0 when skipping) | a tap within 150 ms of the block's start is ignored | taken | ignored (`EventRuntime::advance(tap)`; buttons held and pages turning by themselves wait for nothing) |
+| An event's pop point or area change (`FldUtilSetPopPoint` reserves a dungeon change as `ReserveChangeDungeon` does; `BranchAfterEvent` sends it to step 0x10: the fade waited for, 0x11 counts three updates, 0x12 `ChangeAreaExecute` - one call - and `CallEvent` the area's entry, run by `EventExecute` the update after) | the new area's entry script starts eight updates after the event's last (the prologue's `ppJump('d0104_p1')` after battle 221) | at once | held eight (`--play`) |
 | A tap while the text types (`NarrationWindowMenu::TouchGestureTap`, with its +0x49 - set by `InterfaceMain::SetNarrationWindow`'s parameter 0xf at the open - and +0x4d: `MenuText::SetSkipFlag` on the block's lines) | the block shows whole, up to its next stop; a timed stop (`\w`) then waits its frames as it would | the page to its next tap mark, the timed stops skipped (the narration's 2 s cut short) | the block to its next stop |
 | A `\*` message - the two narrations are ones (`EvtWindow::CheckMessage`: the page's end, the text typed - `CheckDisplayEnd` in the update of its last character - and `EvtWindowMessage::CheckMessage`'s byte past the page, the text's end) | done for the script's `CheckMessage` in the update after its last character types; shown till the next message or `Close` | done one update later than that | the same update |
 | The vista's end (`VistaMain::EventExecute` sees the script's state 4 the update after and reports it the one after that; state 200 waits for `Cr3Fade`; 10000 counts `+0x24 = 2` down; `BranchAfterVista` sets the next main, `GameMain::Update` makes and updates it the update after) | the battle's (the field's, the credits') first update is the sixth after the script's last, another vista's function is called in the seventh; the scene, the windows and the fade go on meanwhile | the battle begun in the script's last update | six (seven) updates after, the scene going on (`--play`) |
@@ -79,7 +80,11 @@ with the leader's materialisation, SE 336 and a white fade-in of 30, else a blac
 port runs them; the battle's return to the field (`BtlMainCtrl::StepBattleOut`: `NextMode` 2 the
 vista with flag 1003, else 0 the field; `FldMain::Init` mode 1 `CallEvent` evt100, run in its first
 update). `FldMain::Init`'s mode 0 - no entry script - fades in from white over 20 on its own; the
-opening never enters that way.
+opening never enters that way. The title (`TitleMain::Update`): five updates, then the title
+sequence (`InterfaceMain::SetTitleSequenceParameter`, the interface's own - `title.nut` with it);
+when `CheckTitleSeqenceReaction` says it is over, `FldMain` is next, made and updated the update
+after, its entry event with it. The port's title is its own flow (SCRIPTS.md) and was not
+compared further here.
 
 ## Original-code evidence
 
@@ -112,6 +117,9 @@ reproducible with `open_binary` and `batch_decompile` on the same library.
 | `FldMain::BranchAfterEvent / EventExecute / WaitFadeFinish / CallEvent` | `ev_1bae0e10210676505d72e555328f0963caed2619606e8669e28d530ef3ee708f` |
 | `BtlMainCtrl::StepBattleIn / StepBattleOut / StepEnd`, `Cr3BattleEvent_Exit` | `ev_84d2de9a02350b8e40792ef17e5428f922fd05d68299225df2db4026ed2d0de7` |
 | `NarrationWindowMenu::NarrationWindowMenu / TouchSimpleRelease`, `InterfaceMain::IsNarrationMessageWindowFastForward` | `ev_e97798cb339467d2a1c0a7a3e0b5ecb882a5f3506df7b8bd7a1bfe0130731149` |
+| `FldUtilSetPopPoint / ReserveChangeDungeon / ReserveChangeArea / GetChangeDungeon / GetChangeArea / ClearPopPoint / GetPopPoint` (with `FldMain::Update`'s steps 0x10 .. 0x12 and `ChangeAreaExecute` in the repo's decompilation) | `ev_7f28871e2b85ab7aa6a6ca16d71d4a1f1f43c01fe9dd115f0652e8eafac1edcb` |
+| `VistaConversationWindowMenu / ConversationWindowMenu / HelpWindowMenu / AnnouncementWindowMenu / SystemWindowMenu::TouchGestureTap` | `ev_4763b23ca1e1ae91b8c10c0da52d6599c6064da2ff0b1bc6f0be124569dd4dad` |
+| `TitleMain::Update / Init` | `ev_3f6ef182c41c007647af49a74b3b884be04fe70326ac4eaef168d1857eadccbd` |
 | The fade colour tables at 0x51e208 (48 bytes) | `ev_e855b7b8c9e85282a529f88d42e04c330c84f2b6e9fa41df062d5857225339c9` |
 
 These are static observations of the shipped library, not traces of the original running: the
@@ -124,8 +132,13 @@ animations being linear (assumed, as before).
   line of a block and steps each once; whether that shows each line's first character at once
   (the typing then line after line) depends on `MenuText`'s renderer (`CustomFigure`), not read.
   The port types the block from its first character.
-- **A tap while typing** in the vista's and the cut-ins' windows: only the narration's
-  (`NarrationWindowMenu::TouchGestureTap`) was read; the port treats them all alike.
+- **A tap while typing** in the other windows: the vista's, the help (tutorial) and the system
+  windows' handlers have the narration's shape (`VistaConversationWindowMenu` /
+  `HelpWindowMenu` / `SystemWindowMenu::TouchGestureTap`: the block whole, given a permit byte
+  whose setting at their open was not traced); the announcement window ignores taps
+  (`AnnouncementWindowMenu::TouchGestureTap` returns 0); the cut-ins' conversation window takes
+  a tap only on its own tap area (`ConversationWindowMenu::TouchGestureTap`:
+  `Cr3UtilCheckHitTapCollision` on its figure). The port treats a tap anywhere alike for all.
 - The battle's own end (`BtlMain`'s result steps and when it says it is done): not counted; the
   port returns to the field as its battle ends.
 - A voice is not played while the skip button is held (`ShowMessage`'s `IsSkip`); the port plays

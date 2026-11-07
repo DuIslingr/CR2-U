@@ -669,8 +669,9 @@ camera, the moves, the animations and the fades where they are by then. The scri
   update is the sixth after the script's last, another vista's function called in the seventh;
   the scene, the windows and the fade go on meanwhile. A field event's way out is longer
   (FldMain::BranchAfterEvent, steps 0x1d .. 0x20: the fade waited for, three updates, the fade
-  again): a vista's function starts ten updates after the event's last, an event's battle eight
-  (OPENING_AUDIT.md).
+  again): a vista's function starts ten updates after the event's last, an event's battle eight;
+  a pop point's or area change's new area (step 0x10: the fade, three updates, ChangeAreaExecute)
+  runs its entry script eight updates after (OPENING_AUDIT.md).
 
 `engine/src/event/` implements them (`scene.cpp`: the figures and timelines; `runtime.cpp`: the
 script, the window's messages, the fades); `cr2tool play <archive> all` plays every event script

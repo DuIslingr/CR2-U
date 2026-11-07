@@ -2896,10 +2896,13 @@ struct Viewer {
         // again, 0x1f counts three updates, 0x20 waits again and sets the next main, GameMain::Update
         // makes and updates it the update after - a battle's first update (BattleIN from an event:
         // step 0x1c first, no wipe) is the eighth after the script's last, the title's the ninth; a
-        // vista's script is loaded in the ninth and its function called in the tenth. (The pop
-        // points' and area changes' way, step 0x10, is the field's own.)
-        if (n.popPoint.empty() && n.changeDungeon < 0 && n.changeArea < 0 && (n.battle >= 0 || n.vista) && fieldExitHold < 0) {
-            fieldExitHold = n.battle >= 0 ? 7 : 9;
+        // vista's script is loaded in the ninth and its function called in the tenth. A pop point
+        // (FldUtilSetPopPoint reserves a dungeon change too) or an area change goes to step 0x10:
+        // the fade waited for, 0x11 counts three updates, 0x12 changes the area in one
+        // (ChangeAreaExecute) and calls its entry event, run in the next - the eighth.
+        const bool area = !n.popPoint.empty() || (n.changeDungeon >= 0 && n.changeArea >= 0);
+        if ((area || n.battle >= 0 || n.vista) && fieldExitHold < 0) {
+            fieldExitHold = area || n.battle >= 0 ? 7 : 9;
             pendingBranch = true;
             return;
         }

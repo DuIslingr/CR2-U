@@ -17,9 +17,9 @@ A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux an
   tap within 150 ms of a page's start no longer turns it; a narration that ends by itself hands
   over to the script the frame its last character types; a motion blend (`ChangeAnimatorBlend`) takes the seconds
   the script names - 3, 8 or 10 s for the idle motions - not that many frames; and the game's own
-  pauses between scenes are kept: a cutscene's battle begins six frames after its script ends and
-  a field event's cutscene ten frames after the event's, the scene going on meanwhile, as the
-  original's `VistaMain` and `FldMain` have it.
+  pauses between scenes are kept: a cutscene's battle begins six frames after its script ends, a
+  field event's cutscene ten frames after the event's and the area it warps to eight, the scene
+  going on meanwhile, as the original's `VistaMain` and `FldMain` have it.
 - **Battles:** the results of a won battle no longer stay on screen over the next one. The next
   battle used to lose its HUD while the last results' panels came in over the fight (reported by
   [metastigma](https://github.com/metastigma)).

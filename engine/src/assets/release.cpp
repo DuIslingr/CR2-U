@@ -1,6 +1,7 @@
 #include "assets/release.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -83,18 +84,25 @@ std::string resolveArchive(const std::string& path) {
 std::string defaultArchive(const std::vector<std::string>& places) {
     std::error_code ec;
     if (const char* env = std::getenv("CR2_DATA"); env && *env) return resolveArchive(env);
-    // a folder, then the folders below it (two deep, sorted)
+    // a folder, then the folders below it (two deep, sorted) - not another game's of the Prequel
+    // Trilogy (its PCSG00457 holds CR1/, CRO/, CR3/ beside CR2/, each with a CRDB.psp2.mvgl of its
+    // own; the add-ons DIESEL1000ADDCON, DIESELOM00ADDCON are CR1's and Omega's)
+    auto otherGame = [](const fs::path& p) {
+        std::string n = p.filename().string();
+        std::transform(n.begin(), n.end(), n.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+        return n == "cr1" || n == "cro" || n == "cr3" || n == "diesel1000addcon" || n == "dieselom00addcon";
+    };
     auto below = [&](const std::string& dir) {
         std::vector<std::string> out{dir};
         std::vector<std::string> one;
         for (const fs::directory_entry& e : fs::directory_iterator(dir, ec))
-            if (e.is_directory(ec)) one.push_back(e.path().string());
+            if (e.is_directory(ec) && !otherGame(e.path())) one.push_back(e.path().string());
         std::sort(one.begin(), one.end());
         for (const std::string& a : one) {
             out.push_back(a);
             std::vector<std::string> two;
             for (const fs::directory_entry& e : fs::directory_iterator(a, ec))
-                if (e.is_directory(ec)) two.push_back(e.path().string());
+                if (e.is_directory(ec) && !otherGame(e.path())) two.push_back(e.path().string());
             std::sort(two.begin(), two.end());
             out.insert(out.end(), two.begin(), two.end());
         }

@@ -12534,15 +12534,24 @@ int main(int argc, char** argv) {
         if (data.empty()) data = storedData(); // (an older setup's: an Android or Vita copy where it lay)
     }
     data = cr2::resolveArchive(data); // (a folder: the OBB or the CRDB.*.mvgl in it, a Vita copy's PCSG00498 ...)
-#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
-    if (data.empty() && (argc <= 1 || cr2::setupScripted()) && !std::getenv("CR2_DATA")) { // the first start without a copy: where is it? (viewer/setup.hpp)
+#if !defined(SDL_PLATFORM_IOS)
+    if (data.empty() && (argc <= 1 || cr2::setupScripted()) && !std::getenv("CR2_DATA")) { // the first start without a copy: where is it? (viewer/setup.hpp - a phone's too)
         SDL_Init(SDL_INIT_VIDEO); // (its message boxes and the system's dialogs)
         const cr2::SetupGame setup = cr2SetupGame();
         std::string profile;
-        if (char* pref = SDL_GetPrefPath("DuIslingr", "CR2-U")) profile = pref, SDL_free(pref);
+#ifdef SDL_PLATFORM_ANDROID
+        if (!searched.empty()) // (the folders made, to be seen over USB)
+            for (const char* f : {"ios", "android", "vita"}) SDL_CreateDirectory((searched.front() + f).c_str());
+#else
+        if (char* pref = SDL_GetPrefPath("DuIslingr", "CR2-U")) profile = pref, SDL_free(pref); // (a phone's game folder is always its own: no other)
+#endif
         cr2::SetupResult got;
         if (!cr2::runSetup(setup, searched.empty() ? profile : searched.front(), profile, got)) return 0;
-        // (copied into the game folder - ios/, android/, vita/ -: found as on any start)
+        // (copied into the game folder - ios/, android/, vita/ -: found as on any start; a dump copied in meanwhile decrypted)
+        for (const std::string& place : dataPlaces()) {
+            cr2::SetupResult dropped;
+            if (cr2::installDroppedVita(setup, place, dropped, !capture.empty())) break;
+        }
         data = cr2::resolveArchive(cr2::defaultArchive(dataPlaces()));
         SDL_Log("setup: iOS %s, Android %s, Vita %s - the game: %s", got.ios.c_str(), got.android.c_str(), got.vita.c_str(), data.c_str());
         if (cr2::setupScripted()) return data.empty() ? 1 : 0; // (a test's: the setup alone)

@@ -89,9 +89,10 @@ compared further here.
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
-Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (two: the
-second, for the hand-overs, from the `FldMain::Update` row on). `re/opening-audit-evidence.json`
-(never committed) holds the second session's records; the first's bundle was overwritten by it,
+Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (three:
+the second from the `FldMain::Update` row on, the third from the `FldUtilSetPopPoint` row on).
+`re/opening-audit-evidence.json` (never committed) holds the second session's records and
+`re/opening-audit-evidence-3.json` the third's; the first's bundle was overwritten by the second,
 so those IDs name records no longer on disk - each is a plain decompile of the named function,
 reproducible with `open_binary` and `batch_decompile` on the same library.
 

@@ -222,18 +222,44 @@ Also as the original already: the distance in x and z only, the 0.17 step, the d
 steps, the + 5 after a miss, the area's ten weighted couplings, the switch's flags, no count while
 an event runs; `SaveWorkBeforeBattle` keeps the leader's place and rotation for the return.
 
+### The battle's way out: from its end to the field
+
+`BtlMainCtrl::StepResult` waits for `BtlResult`'s steps to reach their end (step code 0x12) and
+sets step 7; `StepBattleOut` copies the battle's results into the game's data, picks the next main
+(`BtlMain::NextMode`: 0 the field, 1 the title, 2 a vista with flag 0x3eb - cleared -) and sets
+step 8, where `BtlMainCtrl` does nothing more. `Cr3BattleEvent_Exit` (a script's own end) calls
+`NextMode` the same way. `NextMode` only sets `BtlMain +0x10 = 1`; `BtlMain::Update` runs
+`UpdateStep` before the scene: step 1, once `Cr3Fade` is idle, `Cr3Fade::FadeOut` over 20 updates -
+white (colour 1) unless `BtlWork +0x1a` is set (black: `BtlGameover::Update` sets it when it
+reloads the save or the continue data), none for coupling 282 (0x11a) - and `BtlSound::StopBgm(20)`;
+step 2 counts its time past 1.0 s (21 updates) and releases the music; step 3 waits for the fade,
+hides the battle's status and ends the scene (`Term`, `+0x18 = 0`); step 4 waits for
+`Cr3ResourceManager::IsEmpty` and calls `Exit`, which makes the next main - `GameMain` runs it from
+the update after. The field's `FldMain::Init` (mode 1) calls `evt100`, whose `Battle_FadeIn` fades
+in from white over 20 (`FadeIn(1, 20)`).
+
+| | The original | CR2-U before | CR2-U now |
+|---|---|---|---|
+| A battle's end, its result over (or its script's `Exit`, or a loss with no game over) | the battle - still moving - fades to white over 20 updates from the update after, its music fading over 20; the next main about 24 updates after the end; the field then fades in from white | the field at once: a cut from the battle to the field's white, then its fade-in | `beginBattleOut`: `battleFade` white from the update after (none for coupling 282), `stopBgm(20)`, the field after `kBattleOutSeconds` (24 updates) |
+
+Also as the original already: `BtlResult::Update`'s victory - `Battle_End` called when the script
+has one, the music stopped over 20 and 1.1 s waited, the victory theme (BGM 15) unless the kind is
+3, the announcement 6 with the victory motion and camera 0.1 s on, then the result window after a
+tap or 5 s (`result.stage` 1 .. 3); the game over's black fade of 20 when it reloads.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
-Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (eight: the
+Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (nine: the
 second from the `FldMain::Update` row on, the third from the `FldUtilSetPopPoint` row on, the
 fourth - the cut-ins - from the `InterfaceMain::SetCutInWindow` row on, the fifth - the first
 field - from the `VistaConversationWindowMenu::SetParamNumber` row on, the sixth - its talks -
 from the `Cr3EvtWindowShowYesNoButton` row on, the seventh - its events - from the
 `FldMain::CheckTouchEventExec_Tap` row on, the eighth - the encounters - from the
-`FldEncount::Update` row on).
+`FldEncount::Update` row on, the ninth - the battle's way out - from the `BtlMainCtrl::StepBattleOut`
+row on).
 `re/opening-audit-evidence.json` (never committed) holds the second session's records,
-`re/opening-audit-evidence-3.json` the third's, `-4.json` the fourth's, `-5.json` the fifth's, `-6.json` the sixth's, `-7.json` the seventh's and `-8.json` the eighth's; the first's bundle was overwritten by the second,
+`re/opening-audit-evidence-3.json` the third's, `-4.json` the fourth's, `-5.json` the fifth's, `-6.json` the sixth's, `-7.json` the seventh's, `-8.json` the eighth's and `-9.json` the ninth's; the first's bundle was overwritten by the second,
 so those IDs name records no longer on disk - each is a plain decompile of the named function,
 reproducible with `open_binary` and `batch_decompile` on the same library.
 
@@ -298,6 +324,10 @@ reproducible with `open_binary` and `batch_decompile` on the same library.
 | `FldEncount::Update / Pickout / SetData / Reset / SetPosition / SetBattle / CheckEncountInterface / SetInterfaceMark`, `FldMain::SaveWorkBeforeBattle` | `ev_b9be37d33dd8f8c17f7b7bd27a768953c8e7dc198c6d9cc14f9c4648332f0759` |
 | `Cr3FadeOut`, `Cr3Fade::FadeOut / Update`, `FldMain::WaitFadeFinish`, `FadeWindowMenu::SetParamNumber` (speed 10 / frames; type 0x14's 0.6) | `ev_a991701993bbd7b6880d03d55a4c0cefd92699563791f06673ab32e1438129e9` |
 | Procedure search (`FldEncount`, `SaveWorkBeforeBattle`); `FldMain::Update`'s steps 0x1c .. 0x20 and its call of `FldEncount::Update` read in the repo's own decompilation | `ev_1e4a3345aba4a363569c163370e794f3ff18e4e3210b24804a5052353bfc6cfb` |
+| `BtlMainCtrl::StepBattleOut / StepEnd / Update / StepResult`, `BtlMain::Exit / UpdateStep / Update` | `ev_70246b38943dcebe2e9bd44ff2bf5677377da103e857851ea7ed32f75d93e9f1` |
+| `BtlMain::NextMode`, `BtlMainCtrl::SetNextStep`, `BtlResult::Update / UpdateResult` | `ev_16c722dd1c8c0edc6f2a55e96469a2f223fbe94c3c0279b5455e4266a2b36c7c` |
+| `BtlWork::InitializeVariables / Initialize` (+0x1a starts 0), `Cr3BattleEvent_Exit`; `Cr3BattleEvent_SetParamI` (no +0x1a); `BtlGameover::Update`'s +0x1a = 1 read in the repo's decompilation | `ev_ecf88876626d0e2ea8231bb2b7243f4cda497c63be1c9b718f847ef5c50bc3f1`, `ev_0e0a54279243a90104c380956f92ffce55f9f6af55242e312fb99a60a595b910` |
+| Procedure searches (`BtlMainCtrl`'s steps, `BtlMain`, `BtlResult`; `BtlWork`'s set-up, `Cr3BattleEvent_*`) | `ev_1456ddd23f43bc6c706a6bd3197ed1e145cfd648824069cd324df4ac1a484716`, `ev_4af47a3bc0b309317076611a34bce82b12fea577a167f0ef71987c326cd7ebf3` |
 
 These are static observations of the shipped library, not traces of the original running: the
 update order and counts follow from the code, the visual result from the fade figures'
@@ -337,8 +367,12 @@ animations being linear (assumed, as before).
   length. Within an update of each other; not counted exactly.
 - **The windows' tap areas as the figures stand**: the cut-ins' window's area is read from
   `msgWin` posed as drawn; the original's `Cr3UtilCheckHitCollision` was not read.
-- The battle's own end (`BtlMain`'s result steps and when it says it is done): not counted; the
-  port returns to the field as its battle ends.
+- **The battle's last update before the next main.** `Exit` waits for `Cr3ResourceManager` to be
+  empty; the port counts 24 updates from the end, as if the resources went at once. A slow unload
+  would hold the original's white a little longer.
+- **The port's own pause before the end.** CR2-U ends a battle 1.5 s after its last action is
+  shown (or when its result window is dismissed); the original's end comes from `BtlResult`'s and
+  `StepBattleOut`'s steps, not timed against the port's here.
 - A voice is not played while the skip button is held (`ShowMessage`'s `IsSkip`); the port plays
   it. Not in the opening's reach (its two narrations are skipped whole).
 
@@ -395,6 +429,10 @@ call, and when control is back):
 The encounters, `cr2view --data <obb> --play d0105 --explore <dir> --hours 0.03 --skip-battles`
 (bounded: `timeout -s KILL`): `d0106: an encounter (area 4, roll 6 of 20%): coupling 58`, then
 `play: battle 58 - an encounter ..., 27 updates after the hit` - the battle's first update the 28th.
+
+The battle's way out, the same bounded explore: battle 57 won, its result over at about 25.45 s,
+`play: the battle's way out over at 26.65 s` (1.2 s later), then `d0107: evt100 running`. The fade
+itself was not captured.
 
 (The second narration is `... \w60 \*`.) The captures are frames of the port, compared with the
 counts above, not with the original running.

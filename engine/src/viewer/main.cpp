@@ -2908,9 +2908,14 @@ struct Viewer {
             if (fightingInFlow && battleStep == BattleStep::Over && !battleScriptRunning() && battleClock > showEnd + 1.5f &&
                 (result.stage == 0 || result.stage >= 4) && gameOver.stage == 0) {
                 fightingInFlow = false;
+                beginBattleOut();
                 SDL_Log("play: battle %s", battleRules->exited() ? "ended by its script" : battleRules->escaped() ? "escaped" : battleRules->outcome() == 1 ? "won" : "lost (back to the field: no game over yet in the story)");
                 if (ex.on && battleRules->outcome() == 1 && !randomBattle && ex.grind > 0) ex.grind = 0, exploreLog("  (won: no more fighting first)");
                 ++battlesSkipped;
+            }
+            if (battleOutAt >= 0 && battleClock - battleOutAt >= kBattleOutSeconds) { // (BtlMain::Exit: the next main)
+                battleOutAt = -1;
+                SDL_Log("play: the battle's way out over at %.2f s", battleClock);
                 afterBattle();
             }
         } else if (eventMode) {
@@ -3071,8 +3076,24 @@ struct Viewer {
         afterBattle();
     }
     bool fightingInFlow = false, randomBattle = false; // (randomBattle: an encounter's)
+    // The battle's way out (BtlMain::NextMode - StepBattleOut's, Cr3BattleEvent_Exit's - then
+    // BtlMain::UpdateStep): step 1, the update after, Cr3Fade's FadeOut over 20 updates - white
+    // (colour 1), black once the game over reloaded (BtlWork +0x1a), none for coupling 282 - with
+    // the music's StopBgm(20); step 2 counts past 1.0 s (21 updates) and releases the music; 3 waits
+    // for the fade and ends the scene (Term); 4 waits for the resources to go and makes the next
+    // main (Exit), which GameMain runs from the update after - the field's evt100 (its
+    // Battle_FadeIn: white over 20) about 24 updates after the battle was over. The battle's
+    // scene goes on under the fade meanwhile (BtlMain +0x18 till Term)
+    static constexpr float kBattleOutSeconds = 24 * cr2::EventRuntime::kTick;
+    float battleOutAt = -1;
+    void beginBattleOut() {
+        battleOutAt = battleClock;
+        if (battle.coupling != 282) battleFade.colour = 1, battleFade.alpha.begin(battleClock + cr2::EventRuntime::kTick, 0, 1, 1.0f);
+        audio.stopBgm(20);
+    }
     // the battle dropped (the options' Title Screen)
     void leaveBattle() {
+        battleOutAt = -1;
         cancelSceneAudio();
         pendingBgm = 0, pendingBgmAt = 0;
         battleMode = fightingInFlow = choosing = optionsOpen = optionsAsk = false;
@@ -3396,6 +3417,7 @@ struct Viewer {
         game.initSopia(battleData, cr2::sopiaExp), game.initItems(battleData), game.initEquip(battleData, cr2::levelExpTable());
     }
     bool startBattle(int id, const int party[2], int area = 0) {
+        battleOutAt = -1;
         std::vector<uint8_t> d;
         std::string err;
         if (!archive.read("data\\battledata.dat", d, &err) || !battleData.parse(d, &err) ||

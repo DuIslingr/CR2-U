@@ -33,7 +33,8 @@ A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux an
   the leader can move again a few frames after an event ends, as in the original. Walking off an
   area now fades to black before the next one, as the original does. A random encounter keeps the
   original's rhythm: the leader takes two more steps, then the sound and the wipe, and the battle
-  starts 1.4 s after the encounter instead of 0.65 s.
+  starts 1.4 s after the encounter instead of 0.65 s. A battle's end fades to white with its music
+  before the field fades back in from white, instead of cutting to a white screen.
 - **Vulkan: fewer hitches.** The renderer keeps the driver's compiled pipelines between runs
   (`vulkan-pipelines.bin` in the profile folder), so the start and each new screen don't compile
   them again. Measured on a scene here: 6.7 ms of pipeline compiling the first time, 0.1 ms the

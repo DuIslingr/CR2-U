@@ -1,25 +1,225 @@
-# CR2-U — a Chaos Rings II reimplementation
+# CR2-U - Chaos Rings II, native
 
-A from-scratch native port of *Chaos Rings II* (Square Enix / Media.Vision, 2012), built by
-reverse-engineering the Android release (2.1.2, whose library keeps its names), with the iPad
-release (2.1.0) and the PlayStation Vita release (PCSG00498) - any one of the three runs as the
-game. It follows **[CR1:U](https://github.com/DuIslingr/CR1-U)** and
-**[CRO-U](https://github.com/DuIslingr/CRO-U)**, but not on their engine: Chaos Rings II is built on
-Media.Vision's own library, MVGL, with its logic split between native classes and compiled Squirrel
-scripts, so the engine here is its own; CR1:U's platform layers (SDL3, the renderers, audio
-decoding, upscaling, HD textures) carried over. It loads the game from **your own copy** at
-runtime.
+CR2-U is a from-scratch native port of *Chaos Rings II* (Square Enix / Media.Vision, 2012) for
+Windows, macOS, Linux and Android. It plays the whole game, from the title screen to the staff
+roll, using the files from **your own copy**: nothing of the game is included.
 
-**No game data is in this repository or distributed with it** - no art, audio, text, scripts or
-code of the game, and nothing generated from them. You need your own copy of the game. The
-engine's source does hold facts read out of the originals (file names, flag numbers, screen
-positions, formula constants, the tables `tools/gen_*.py` read out of the library) where it needs
-them.
+It is new code, written by reverse-engineering the Android release (whose library keeps its
+function names) and checked against the iPad and Vita releases and reference playthroughs. It
+follows [CR1:U](https://github.com/DuIslingr/CR1-U) and [CRO-U](https://github.com/DuIslingr/CRO-U)
+but has its own engine, because Chaos Rings II runs on Media.Vision's MVGL library with compiled
+Squirrel scripts.
 
-Licence: GPL-2.0-or-later (`LICENSE`); the bundled libraries keep their own (`THIRD_PARTY.md`).
-Not affiliated with or endorsed by Square Enix or Media.Vision.
+**[Download the latest release](https://github.com/DuIslingr/CR2-U/releases/latest)**
 
-## Quick start
+## What you need
+
+A copy of the game from one of these releases - any one of them is the whole game:
+
+| Release | What to give the port |
+|---|---|
+| **Android** 2.1.2 | the APK and its `main.212.com.square_enix.chaosrings2gp.obb` |
+| **iPad** 2.1.0 | the `.ipa` (or its unpacked `.app`). iPhone copies aren't supported yet. |
+| **PlayStation Vita** (PCSG00498) | the installed game (Vita3K's folder, or the `PCSG00498` folder), or a NoNpDrm dump - a folder or a `.zip` / `.rar` / `.7z` / `.vpk`. The Prequel Trilogy (PCSG00457) works too. |
+
+A PC needs Vulkan 1.3 or OpenGL 3.3; a phone, Android 7 or later.
+
+## Install and first start
+
+1. Download the file for your system from the [releases page](https://github.com/DuIslingr/CR2-U/releases)
+   and unzip it.
+2. Start `cr2view`.
+3. If it doesn't find a copy of the game, it asks for one: pick the file or folder, and the port
+   copies what it needs into its game folder (or your profile folder if that can't be written).
+   You can delete or move the original afterwards.
+
+A Vita dump is decrypted during setup, keeping only Chaos Rings II's files.
+
+| System | Notes |
+|---|---|
+| Windows 10+ | If SmartScreen warns about an unsigned program, choose *More info*, *Run anyway*. |
+| macOS 11+ | Right-click `cr2view.app` and choose *Open* (it isn't signed). |
+| Linux | `chmod +x` the AppImage and run it, or use the `.tar.gz`. |
+| Android 7+ | Install the APK. On first start it offers the same setup: pick the APK and OBB, the `.ipa` or a Vita archive. Folders can't be picked on Android; copy them over USB instead (below). |
+
+### Putting the files in by hand
+
+You can also copy your game into the **game folder** yourself. The port finds it on the next
+start. The game folder is the folder holding `cr2view` (or `cr2view.exe`, `cr2view.app`, the
+AppImage). On Android it is `Android/data/local.preservation.chaosrings2/files/`, reached over USB.
+
+```
+<game folder>/
+├── android/   the 2.1.2 APK and main.212.com.square_enix.chaosrings2gp.obb
+├── ios/       the iPad 2.1.0 app (ChaosRings2enHD.app, or Payload/ChaosRings2enHD.app as unzipped)
+├── vita/      PCSG00498/ as installed (eboot.bin, sce_sys/, CR2/) - or a NoNpDrm dump as dumped
+├── fsr4/      optional: AMD's FSR 4 files (see Settings)
+├── textures/  optional: export/ and hd/ for HD textures
+└── models/    optional: export/ and hd/ for HD models
+```
+
+- Any one release folder is enough. With several, the port uses the first of `vita/`, `android/`,
+  `ios/`; `--data <folder, archive or OBB>` (or `CR2_DATA`) picks another, or a copy elsewhere.
+- A release can sit one or two folders down, as it was unpacked; folder names below `ios/`,
+  `android/` and `vita/` don't matter.
+- A still-encrypted Vita dump in `vita/` (its `app/`, and `addcont/` for the Prequel Trilogy) is
+  decrypted on the next start, on a phone too, once there is room for the decrypted copy. Delete
+  the dump afterwards.
+- The release downloads already contain these folders, each with a `README.txt` saying what goes
+  in it.
+- Older layouts still work: `ipad/`, `PCSG00498/`, `CR2/`, `ChaosRings2enHD.app/`, `Payload/` or
+  `data/` straight in the game folder.
+
+### Saves and settings
+
+Saves and `settings.ini` go to your profile folder, not the game folder:
+
+| System | Profile folder |
+|---|---|
+| Linux | `~/.local/share/DuIslingr/CR2-U/` |
+| Windows | `%APPDATA%\DuIslingr\CR2-U\` |
+| macOS | `~/Library/Application Support/DuIslingr/CR2-U/` |
+
+It holds CR2-U's save (`save1.txt`), the continue data (`cont.txt`) and, with Vulkan,
+`vulkan-pipelines.bin` (a shader cache that makes later starts quicker; safe to delete).
+
+**Vita saves:** on the title screen, open Options, then the Graphics list, and choose **Import
+Vita Saves** (or press I in the options). Pick the folder of your decrypted saves. Existing saves
+are backed up first. Details: [docs/VITA_SAVES.md](docs/VITA_SAVES.md). The game's own save
+format can also be read and written: `--game-save game.dat`, `cr2tool save-import` / `save-export`.
+
+## Controls
+
+The original iPad and Android releases are touch only, so the mouse or a finger works everywhere:
+buttons, lists, volume bars, balloons and the touch actions' drags and taps. On the field, drag to
+walk (drag further to run) and tap a balloon or mark to act.
+
+### Controller
+
+A controller plays as the Vita does. Buttons are by position: on an Xbox pad ○ is B, × is A, △ is Y
+and □ is X. ○ confirms, as on the Vita. To confirm with the bottom button instead, turn on
+**Swap ○ and ×** in Options, Graphics.
+
+| Button | Field | Menus, battles, messages |
+|---|---|---|
+| Left stick / D-pad | walk (push the stick fully to run) | move the cursor (holding repeats) |
+| ○ | talk, use the touch action in reach | confirm, turn the page |
+| × | - | back, cancel; No in a question |
+| □ (hold) | - | fast-forward messages and the staff roll |
+| △ | open / close the field tab (Camp, Map, Save) - the port's addition, as the Vita uses touch for it | - |
+| L / R | - | switch the list: item category, equipment's character, shop's character. A list without a switch pages instead. |
+| START | - | "Please Touch" on the title |
+
+How the cursors move, as on the Vita:
+
+- **Battle:** Up / Down step through the commands and through the targets.
+- **Camp:** Up / Down step through Items, Equipment, Sopia and Options, skipping greyed ones.
+- **Shop equipment:** L / R change the character, Left / Right change the kind (weapons, armour,
+  accessories).
+- **Yes / No questions:** Yes is selected first; Up / Down move to the other, ○ answers, × is No.
+  Quantities use Left / Right.
+- **Pub board:** the d-pad moves over the posters and Check.
+
+These cursors are highlighted once you've moved them with a key or button (touch shows none).
+Full details, with the original's code references: [docs/CONTROLS.md](docs/CONTROLS.md).
+
+### Keyboard
+
+| Key | Action |
+|---|---|
+| Arrow keys / W A S D | run on the field (hold Shift to walk); move the cursor in menus |
+| Return | talk, turn a page, confirm |
+| Backspace (Android: Back) | back, cancel |
+| Page Up / Page Down | as L / R |
+| Y / N | answer a question |
+| Tab | the field tab (Camp, Map, Save); Graphics in the options |
+| C | Camp |
+| G | Graphics, in the options |
+| F (hold) | fast-forward messages, skip a cutscene |
+| 1 / 2 | the party's two slots (organizing the party in town) |
+| Space | pause |
+| F1 / F2 | cycle output resolution / upscaler mode |
+| Esc | quit |
+
+## Settings
+
+The title's **Options** has the game's own settings. Its **Graphics** button (or G / Tab) opens
+CR2-U's list, saved in `settings.ini`. Most also have a command-line flag for a single run.
+
+| Setting | What it does |
+|---|---|
+| Display, Resolution, VSync, Frame Rate | window / fullscreen / borderless, output size (up to 3840 x 2160), frame cap. The game runs at 20 updates a second; the port draws 60 or more frames in between. |
+| Renderer | Vulkan (default) or OpenGL; takes effect on the next start |
+| Upscaler, Upscale Mode, Sharpness | FSR 3.1, FSR 4, DLSS or MetalFX. The scene renders smaller and is upscaled; menus stay sharp. |
+| Anti-aliasing, Anisotropic / Texture Filtering | MSAA, sharper textures at an angle, sharp or smooth texels |
+| HD Textures, HD Models | your own replacement textures and models (below) |
+| Smooth Models | rounds out every 3D model (4x or 9x triangles), keeping hard edges |
+| Field Speed, Battle Speed | Off or 2x to 5x |
+| Swap ○ and × | which controller button confirms |
+| Lock Orientation | keep the current landscape direction (phones) |
+
+**FSR 4** (AMD RX 6000 or later, on Linux and Windows) needs AMD's own files, which can't be
+included. Put these in `fsr4/` in the game folder (its `README.txt` has the links):
+
+- `amd_fidelityfx_loader_vk.dll` and `amd_fidelityfx_upscaler_vk.dll` from AMD's
+  [FSR SDK 2.4](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/releases/tag/v2.4.0)
+  (`Kits/FidelityFX/signedbin/`)
+- `amdvkffx64.dll` from the AMD Software: Adrenalin Edition 26.10.1 (or later) driver package
+- on Linux also `libffx_vk_linux.so` from [ffx-vk-linux](https://github.com/DuIslingr/ffx-vk-linux),
+  which runs AMD's DLLs natively, without Wine
+
+Without them the option shows "(n/a)" with the reason, and FSR 3.1 is used. `CR2_FSR4_DIR` points
+elsewhere.
+
+**DLSS** isn't in the release builds: NVIDIA's library can't ship with GPL code. You can build it
+yourself (see [Building from source](#building-from-source)).
+
+### HD textures
+
+Upscale the game's textures yourself, from your own copy:
+
+1. `cr2view --export-textures` writes every picture the game draws to `textures/export/` as
+   ordinary upright PNGs.
+2. Upscale them into `textures/hd/` with the same file names. `python3 tools/hd_textures.py <game
+   folder>` does it with waifu2x and Real-ESRGAN (needs Python 3, NumPy and Pillow; `--help` for
+   options), or use any upscaler or image editor.
+3. Start the game. With `textures/hd/` present, HD Textures switches on by itself.
+
+Keep each picture's proportions and orientation (one scale both ways, at least the original size,
+at most 8192 a side). A replacement that doesn't fit is skipped and the log says why. One
+`textures/hd/` can hold replacements for every release. `--no-hd-textures` runs without them.
+
+### HD models
+
+1. `cr2view --export-models` writes every model to `models/export/` as glTF (`.glb`) with its
+   skeleton, textures and animations. Blender imports them directly.
+2. Edit it, keeping the armature (bones named `node_<n>...`) and material names (`cr_mat_<n>...`).
+   New textures can be packed into the `.glb`.
+3. Export as glTF to `models/hd/<model>.glb` (for example `c001.glb` for Darwin) and turn on HD
+   Models in Options, Graphics. It's used from the next scene.
+
+The game plays its own animations; the ones in the file are for preview. `cr2tool gltfcheck`
+checks a round trip.
+
+Exported textures and models are made from the game's art: keep them, and anything made from them,
+for personal use.
+
+## Troubleshooting
+
+- **"No copy found":** the port lists every place it looked. Check the folder names above, or give
+  the copy with `--data`.
+- **Vulkan won't start:** the port falls back to OpenGL by itself; `--renderer opengl` forces it.
+- **Menus or pictures look wrong with HD textures:** try with HD Textures off (Options, Graphics,
+  or `--no-hd-textures`). The log names any replacement it skipped.
+- **Android, updating from an older version:** releases before v0.5.0 were each signed with a
+  different key. Uninstall the old version once first. This deletes the game files and saves you
+  copied in, so keep a copy of them. From v0.5.0 on, each release installs over the last.
+- **Tested on:** Linux (played) and Windows (under Wine). The macOS and Android builds come from CI
+  and haven't been tried on real hardware yet. Reports are welcome in the
+  [issues](https://github.com/DuIslingr/CR2-U/issues): please say which copy of the game you use
+  (Android, iPad or Vita), your system, and what you did.
+
+## Building from source
 
 ```sh
 cd engine
@@ -28,282 +228,55 @@ ninja -C build
 build/cr2view
 ```
 
-C++17, SDL3 (downloaded and built by CMake when it isn't installed) and FreeType; Vulkan 1.3 by
-default, OpenGL 3.3 / ES 3.0 with `--renderer opengl` or when Vulkan can't start. See
-[Platforms](#platforms) for Windows, macOS and Android, and `docs/ENGINE.md` for the build's options
-and the tools.
+Needs a C++17 compiler, CMake and Ninja. SDL3, FreeType and zlib are used from the system or
+downloaded and built by CMake. Vulkan needs the Vulkan loader and `glslc`; without them the build
+is OpenGL only. `ctest --test-dir build` runs the tests (none need the game's files).
 
-Opened with no arguments at all (a double-click, Android's launcher) it starts the game at its
-title screen, your copy found in the game folder - for this build `engine/build/`, or the folder
-you start it from - as `vita/`, `android/` or `ios/` ([Your copy](#your-copy)). Any of the three
-releases works as the game: the Vita's PCSG00498 (the maps' table from its `eboot.bin`, the text in
-its font `CR2/resources/font/TBGoPro-Bold.otf`), the Android 2.1.2 (the maps' table from the APK's
-`lib/armeabi-v7a/libChaosRings2.so`, its font `assets/00001`, read from inside the APK) or the iPad
-2.1.0 (the maps' table from its executable).
-
-Saves and settings go to the profile folder (`~/.local/share/DuIslingr/CR2-U/` on Linux): CR2-U's
-own save (`save1.txt`, the continue data `cont.txt`) and `settings.ini`, and with Vulkan
-`vulkan-pipelines.bin`: the graphics driver's compiled pipelines, so later starts and new screens
-don't compile them again (safe to delete; a driver update starts it anew). The game's
-own saves are read and written too (`--game-save game.dat`, `cr2tool save-import` / `save-export`).
-
-## Your copy
-
-The easiest way: just start the program. With no copy found, it asks where yours is - pick it in
-the window it opens, and the files the port needs are **copied into the game folder** (the profile
-folder's if that one can't be written), the same layout as putting them there by hand (below):
-
-- **iOS** - the `.ipa` (or any file in its unpacked `.app`): unpacked into `ios/`;
-- **Android** - the APK and its `main.212.com.square_enix.chaosrings2gp.obb`, both at once: copied into `android/`
-  (an APK beside them that carries the game's package goes along; another game's is refused);
-- **Vita** - Vita3K's folder with the game installed (its own, the folder its `config.yml` names as
-  `pref-path`, or `ux0`), or the game's own `PCSG00498` folder: copied into `vita/PCSG00498/` as Vita3K installs
-  it (`eboot.bin`, `sce_sys/`, the game's folder).
-  A **NoNpDrm dump** (its files encrypted, `sce_sys/package/work.bin` its licence) - its folder, or packed as
-  `.rar`, `.7z`, `.zip` or `.vpk` - is decrypted as Vita3K's install does, this game's parts alone; from the
-  Prequel Trilogy (`PCSG00457`) its add-on `addcont/PCSG00457/DIESEL2000ADDCON` - where the game's data is - is merged into
-  the game's folder (and its program, `CR2.self`, decrypted to `CR2.elf`: the maps' table).
-
-One copy is the game: the first given starts it. Nothing is read where it was chosen, so the folder it came from can go
-afterwards. (Windows, Linux and macOS; on Android, copy the files over USB as below.)
-
-Or, as before, nothing given on the command line: put your copy in the **game folder** and start
-the program - it finds it by itself. The game folder is:
-
-| Platform | The game folder |
-|---|---|
-| Windows, Linux | the folder holding `cr2view.exe` / `cr2view` |
-| Linux AppImage | the folder holding the `.AppImage` |
-| macOS | the folder holding `cr2view.app` (its `Contents/Resources/` works too) |
-| Android | `Android/data/local.preservation.chaosrings2/files/` on the shared storage (copy your files there over USB) |
-
-(then the working directory too). In it, a folder for each release you have - any one is enough:
-
-```
-<game folder>/
-├── cr2view                          (or cr2view.exe, cr2view.app, the .AppImage)
-├── ios/
-│   └── ChaosRings2enHD.app/            the iPad 2.1.0's .app: CRDB.ios.mvgl, Sound.ios/, its executable (the maps' table)
-│                                       - or Payload/ChaosRings2enHD.app/ (the .ipa unpacked as it is)
-├── android/
-│   ├── main.212.com.square_enix.chaosrings2gp.obb
-│   └── <the 2.1.2 APK>.apk             (the maps' table and the font are read from inside it)
-├── vita/
-│   └── PCSG00498/                      the installed title: CR2/resources/CRDB.psp2.mvgl, Sound.psp2/, eboot.bin
-├── fsr4/                            AMD FSR 4 (optional; Linux and Windows, an AMD GPU): AMD's two SDK DLLs, the driver's
-│                                    amdvkffx64.dll, and on Linux ffx-vk-linux's libffx_vk_linux.so - see Platforms
-└── textures/
-    ├── export/                         written by --export-textures: the pictures to upscale (<hash>.png)
-    └── hd/                             read by the game: the upscaled pictures (<hash>.png or .crhd)
-```
-
-A release's folder may hold the release itself or have it one or two folders down, as above
-(`ios/Payload/....app`, `vita/PCSG00xxx/`), so a copy can be dropped in as it was unpacked or
-installed; the names of the folders below `ios/`, `android/` and `vita/` don't matter. A Vita copy
-is the installed, decrypted title - or a NoNpDrm dump's folder as it was dumped, still encrypted (its
-`app/`, and `addcont/` beside it for the Prequel Trilogy's add-on): the next start decrypts it into
-`vita/` (on a phone too; it needs the space for the decrypted copy), and the dump can be deleted then.
-A dump packed in an archive (.zip, .rar, .7z, .vpk) is chosen in the first start's setup instead - a
-phone's too, which shows when there's no copy yet and picks files (folders are copied in over USB).
-The release downloads come with these folders made, each with a `README.txt` saying what
-goes in it.
-
-CR2-U plays one release at a time: with several, **the first of `vita/`, `android/`, `ios/`** (the
-same order as CR1:U and CRO-U take one alone); `--data` picks another.
-
-If nothing is found the program says where it looked. The older places still work: `ipad/`, `PCSG00498/`, `CR2/`, `ChaosRings2enHD.app/`, `Payload/` or `data/` straight in the game folder.
-To use a copy elsewhere: `--data <a release: its folder, archive, OBB>` (or `CR2_DATA`). Settings and saves go to the profile folder
-(`~/.local/share/DuIslingr/CR2-U/` on Linux; the same folders under `%APPDATA%\` on Windows and
-`~/Library/Application Support/` on macOS), not the game folder. All four ports (CR1:U, CRO-U, CR2-U, CR3-U) look for their copies the same way.
-
-## Field and battle speed
-
-Options, Display & Graphics: **Field Speed** and **Battle Speed**, each Off or 2x .. 5x - walking the
-field (its scenes, talk and menus as they are) and the battles that many times as fast. Kept in
-settings.ini (`field_speed`, `battle_speed`); `--field-speed n` / `--battle-speed n` for one run.
-
-## Vita save importing
-
-Import decrypted Vita saves from title-screen **Options**, using **Import Vita Saves** in its **Graphics** list (or the I key).
-Choose the exported save folder and confirm; existing saves are backed up automatically.
-No Python is needed. See [Vita save importing](docs/VITA_SAVES.md) for supported state,
-profile locations and the optional command-line converter.
-
-## HD textures
-
-Upscaled textures you make yourself, from your own copy - waifu2x or Real-ESRGAN, drawn in place of
-the originals:
-
-1. `cr2view --export-textures` writes every picture the game draws to `<game folder>/textures/export/`
-   (`<hash>.png`, upright; the profile folder's `textures/export/` if the game folder can't be written;
-   `--export-textures <folder>` elsewhere). Each release exports its own pictures.
-2. `python3 tools/hd_textures.py <game folder>` upscales them into `<game folder>/textures/hd/`
-   (`<hash>.png`): waifu2x (`waifu2x-ncnn-vulkan` on the PATH, or `--waifu2x <it>`) for the
-   lossless and block-compressed pictures, Real-ESRGAN (`--esrgan <the folder with
-   realesrgan-ncnn-vulkan and models/>`) for the 16-bit ones - or `--engine waifu2x` for all. It
-   needs Python 3 with NumPy and Pillow; `--help` lists the rest (`--scale`, `--noise`, `--only` ...).
-3. Start the game: with `textures/hd/` there, HD Textures is on by itself (Options, Graphics, HD Textures switches
-   it; `--no-hd-textures` for a run without). One `textures/hd/` can hold every release's.
-
-The exports are ordinary PNGs, so any upscaler or image editor works as well: save the result
-under the same name in `textures/hd/`. Keep each picture's shape - one scale across and down, at
-least the original's size, up to 8192 a side - and its rows the right way up: a picture that
-doesn't fit is left out (the log says which and why) rather than drawn wrong.
-
-`CR2_HD_TEXTURES=<folder>` reads them from elsewhere; the older `hd-textures/` beside the program or in
-the profile folder is still read while there is no `textures/hd/`. The `tools/hd_textures.py` is the
-same in all four ports. Personal use: the outputs are made from the game's art - keep them out of
-anything shared.
-
-## HD models
-
-Models you make or improve yourself, drawn in place of the game's - more detailed, smoother,
-retextured - moving with the game's own skeleton and animations:
-
-1. `cr2view --export-models` writes every figure to `<game folder>/models/export/` as glTF 2.0
-   (`<name>.glb`: its skeleton, meshes, materials, pictures and animations; `--export-models <folder>`
-   elsewhere; `--no-animations` leaves the animations out for small files). Blender (File, Import,
-   glTF 2.0) opens them as they are, animations included.
-2. Edit it - sculpt, subdivide, rebuild, re-weight, paint - keeping the armature: its bones are named
-   `node_<n>...` and the game finds them by that (a new bone goes with its nearest original parent).
-   A material keeps the game's render state by its name `cr_mat_<n>...`; give it a picture of your own
-   (PNG or JPEG, any size, packed in the `.glb`) and that picture replaces the figure's.
-3. Export it from Blender as glTF 2.0 (`.glb`, the defaults) to `models/hd/<figure>.glb` (`c001.glb` for Darwin's `c001`). With HD Models on
-   (Options, Display & Graphics; off until you switch it on) it is drawn instead of the original from the next scene on.
-
-What it reads: triangles, the first UV set and the second and colour set, four weights a vertex; meshes on more than 85 joints are split; normals, and tangents for normal-mapped materials, are worked out when missing; the skin weights come back summing to 1 (the game's own are 255ths). The
-animations in the file are for previewing - the game plays its own. `cr2tool gltfcheck <archive> <figure|all> [file.glb]`
-checks a round trip (the export loaded back: every figure lands exactly on the original in every
-animation). `CR2_HD_MODELS=<folder>` reads them from elsewhere. Personal use: the exports are the
-game's models - keep them, and what you make from them, out of anything shared.
-
-## Smooth models
-
-Options, Display & Graphics, **Smooth Models**: Off, Smooth (4x triangles) or Smoother (9x) - every
-model in the world (characters, monsters, stages and props; not the menus) rounded out at load time
-with PN triangles, as CR1-U's: the original vertices stay put, edges sharper than 60 degrees stay
-hard, and skinning and animation work as before. From the next scene on; kept in settings.ini
-(`smooth_models` 0, 2 or 3), `--smooth-models n` for one run.
-
-## Platforms
-
-Every push is built for Linux, Windows, macOS and Android by `.github/workflows/build.yml`; the
-binaries are that run's artifacts (nothing of the game is in them): an AppImage, a Windows folder,
-a universal macOS `.app` and an APK. The Windows build is checked under Wine (Vulkan and OpenGL, the
-same frames as Linux's); macOS and Android are built in CI but not yet played on a real machine -
-MetalFX, in particular, is compiled but untested.
-
-| Platform | Build | Renderer | The game folder (its `vita/`, `android/`, `ios/`, `textures/`) |
-|---|---|---|---|
-| Linux | `cmake -S engine -B build -G Ninja && ninja -C build` | Vulkan, OpenGL 3.3; FSR 3.1, FSR 4 (AMD's files in `fsr4/`), DLSS (with the SDK) | the folder holding `cr2view`, or the AppImage |
-| Windows 10+ (x64) | MSVC and Ninja from a Developer prompt, the [Vulkan SDK](https://vulkan.lunarg.com/) for Vulkan - or from Linux with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw): `-DCMAKE_TOOLCHAIN_FILE=engine/cmake/llvm-mingw-x86_64.cmake` (runs under Wine). SDL3, zlib and FreeType are built by CMake | Vulkan, OpenGL 3.3; FSR 3.1, FSR 4 (AMD's files in `fsr4/`), DLSS (MSVC, with the SDK) | the folder holding `cr2view.exe` |
-| macOS 11+ (Apple silicon and Intel) | Xcode's command-line tools, Ninja and the [Vulkan SDK](https://vulkan.lunarg.com/) (MoltenVK, copied into the `.app`); add `"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"` for both | Vulkan (MoltenVK), OpenGL 3.3; FSR 3.1, MetalFX (macOS 13+) | the folder holding `cr2view.app` (or its `Contents/Resources/`) |
-| Android 7+ (arm64, x86-64) | the Android SDK and NDK: `git clone -b release-3.2.0 https://github.com/libsdl-org/SDL android/SDL`, then `gradle assembleRelease` in `android/` | OpenGL ES 3.0 | `Android/data/local.preservation.chaosrings2/files/` on the shared storage (copy your files there over USB) |
-
-The text falls back on the system's fonts where the release's own is missing: Noto CJK on Linux,
-Malgun Gothic and Microsoft YaHei on Windows, Apple SD Gothic Neo and PingFang on macOS.
-`-DCR2_GLES=ON` builds the desktop viewer on OpenGL ES 3.0, as Android runs it (Mesa has it): a
-way to test that path without a device. Saves go to SDL's profile folder (`DuIslingr/CR2-U/`).
-
-DLSS: the NGX headers and library from NVIDIA's [DLSS SDK](https://github.com/NVIDIA/DLSS)
-(`-DCR_DLSS_SDK=<its checkout>`, or `engine/third_party/dlss/`), its runtime copied next to the
-game. CI builds and links it on Linux and Windows to prove it, but never uploads those builds: NGX
-is proprietary and the port is GPL, so a DLSS build is for your own use (THIRD_PARTY.md).
-
-FSR 4 (Linux and Windows, an AMD GPU of the RX 6000 series or later): AMD's machine-learning
-upscaler, FSR Upscaling 4.1.2, is an Upscaler choice too (`--upscaler fsr4`) once its files are in
-`fsr4/` in the game folder. AMD ships it for Vulkan only as its own signed Windows DLLs, whose
-licence allows them to be passed on in that form under AMD's terms alone, so they aren't included:
-`amd_fidelityfx_loader_vk.dll` and `amd_fidelityfx_upscaler_vk.dll` from AMD's
-[FSR SDK 2.4](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/releases/tag/v2.4.0)
-(`Kits/FidelityFX/signedbin/`), `amdvkffx64.dll` - FSR 4 itself - from AMD Software: Adrenalin
-Edition 26.10.1 or later (the Windows driver package), and on Linux `libffx_vk_linux.so` from
-[ffx-vk-linux](https://github.com/DuIslingr/ffx-vk-linux) (MIT), which maps AMD's DLLs natively, no
-Wine. The game's log says which FSR AMD's SDK picked; without the driver DLL it offers only FSR 3.1
-and the game says so. `CR2_FSR4_DIR` points at the files elsewhere.
-
-## Controls
-
-A controller plays as the Vita does (its own code: `docs/CONTROLS.md`). The face buttons are by
-position, so on an Xbox pad ○ is B, × is A, △ is Y and □ is X; ○ confirms, as on the Vita - the
-options' Graphics list has "Swap ○ and ×". Everything the original takes by touch also takes a click
-or a tap: the buttons, the lists, the volume bars, the balloons, the touch actions' drags and taps.
-
-| Button | On the field | In menus and messages |
+| Platform | How | Renderers and upscalers |
 |---|---|---|
-| Left stick / D-pad | walk (the stick pushed far runs) | move the cursor (held, it repeats) |
-| ○ | talk, the touch action in reach | confirm, turn the page |
-| × | - | back, cancel |
-| □ (held) | - | fast-forward the messages |
-| △ | open / close the tab (Camp, Map, Save) - the port's own, the Vita's is a touch | - |
-| L / R | - | a list's page; the shop's character |
-| START | - | the title's "Please Touch" |
+| Linux | as above | Vulkan, OpenGL 3.3; FSR 3.1, FSR 4, DLSS (with the SDK) |
+| Windows 10+ x64 | MSVC and Ninja from a Developer prompt, with the [Vulkan SDK](https://vulkan.lunarg.com/); or from Linux with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw): `-DCMAKE_TOOLCHAIN_FILE=engine/cmake/llvm-mingw-x86_64.cmake` | Vulkan, OpenGL 3.3; FSR 3.1, FSR 4, DLSS (MSVC, with the SDK) |
+| macOS 11+ | Xcode command-line tools, Ninja and the [Vulkan SDK](https://vulkan.lunarg.com/) (MoltenVK is copied into the `.app`); `"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"` for a universal build | Vulkan (MoltenVK), OpenGL 3.3; FSR 3.1, MetalFX (macOS 13+) |
+| Android 7+ (arm64, x86-64) | Android SDK and NDK: `git clone -b release-3.2.0 https://github.com/libsdl-org/SDL android/SDL`, then `gradle assembleRelease` in `android/` | OpenGL ES 3.0 |
 
-| Keyboard | |
-|---|---|
-| Arrow keys / W A S D | run on the field (Shift walks); in menus, the cursor - also over the title's, the shop's and the party's buttons |
-| Return | talk to what has a balloon, turn a message's page, pick |
-| Backspace (Android: Back) | back, cancel |
-| Y / N | answer a question |
-| Tab | the field's tab (Camp, Map, Save); in the options, Graphics |
-| C | the Camp |
-| G | in the options: Graphics |
-| F (held) | the messages' fast-forward, a vista's skip (as holding their button) |
-| 1 / 2 | the party's two slots (the town's organizing) |
-| Space | pause |
-| F1 / F2 | the next output resolution / upscaler mode |
-| Esc | quit |
+- `-DCR2_GLES=ON` builds the desktop version on OpenGL ES 3.0, as Android runs it.
+- **DLSS:** add `-DCR_DLSS_SDK=<NVIDIA's DLSS SDK checkout>` (or put it in
+  `engine/third_party/dlss/`) and copy its runtime next to the game. NGX is proprietary, so a DLSS
+  build is for your own use only (see `THIRD_PARTY.md`).
+- Missing glyphs fall back to system fonts (Noto CJK on Linux, Malgun Gothic / Microsoft YaHei on
+  Windows, Apple SD Gothic Neo / PingFang on macOS).
+- Every push is built for all four platforms by `.github/workflows/build.yml`; a `v*` tag publishes
+  a release.
 
-## Status
-
-The game plays from its title screen to the staff roll, in all three releases (released as
-[v0.1.0](https://github.com/DuIslingr/CR2-U/releases/tag/v0.1.0)). Checked against the Android
-release's named code and a reference playthrough (`docs/STATUS.md` has each part and what checks it):
-
-- **Data**: the MDB1 archives (the Android OBB is one too), every texture, mesh, skeleton, animation
-  and message of the three releases; the game's own shaders, as one shader with the same formulas
-- **Fields**: the maps' tables (read from your copy's executable), the painted layers and 3D figures,
-  Bullet collision, exits, the gimmicks and NPCs, treasure boxes, talking, the touch actions, the
-  field's HUD and tab
-- **Events**: the game's own Squirrel 2.2.4 running its compiled scripts and every native they call;
-  vistas, message windows in your release's font, cut-in conversations, field scenes, fast-forward
-  and skip
-- **Battles**: the rules (stats, damage, criticals, the break gauge, states, the monsters' choices),
-  the commands' menus (solo / pair, the sopia, items, awakenings, advents), the special scenes,
-  effects, cameras and HUD, the battles' scripts, victory and its results, defeat and the game over
-- **Menus**: the title screen, the camp (status, items, equipment, sopia, Scenarios, the map, saving),
-  the options and the manual, the tutorials, the shop, the party, the pub, the library, the world and
-  chapter selects, the staff roll
-- **Sound**: the music (Android's Ogg Vorbis, the iPad's AAC, the Vita's ATRAC9), the effects and the
-  voices, the options' volumes
-- **Presentation**: 60 frames a second over the game's own 20; the options' **Graphics** button (or
-  G / Tab there) opens CR2-U's own list - display mode, resolution, VSync, frame rate, renderer,
-  FSR 3.1 / DLSS / MetalFX and their modes, sharpness, MSAA, anisotropic and texture filtering, HD
-  textures - kept in `settings.ini`, the command line's flags over it. HD textures you make yourself
-  ([HD textures](#hd-textures)): `cr2view --export-textures`, then `tools/hd_textures.py` (waifu2x
-  or Real-ESRGAN) into `textures/hd/`; each replacement is found by the original's pixels, so every
-  release can have its own in the same folder
-- **Testing**: `cr2tool play all` plays every event to its end in all three releases (no native
-  stubbed), `cr2tool fieldscript` / `walk` / `exits` / `battle` / `fight` check every map and
-  encounter, `cr2view --capture` renders any moment and `--input` drives the menus
+Build options, `cr2view`'s debug modes and `cr2tool`'s checks: [docs/ENGINE.md](docs/ENGINE.md).
 
 ## Documentation
 
 | | |
 |---|---|
-| `docs/STATUS.md` | each part of the port, what it follows and what checks it |
-| `docs/ENGINE.md` | building in detail, `cr2view`'s modes and `cr2tool`'s checks, the tools |
-| `docs/FORMATS.md` | the game's file formats as reverse-engineered |
-| `docs/SCRIPTS.md` | the Squirrel scripts, the native API they call, the game's saves |
-| `docs/BATTLE.md` | the battles' rules and staging as reverse-engineered |
-| `docs/CONTROLS.md` | the Vita's buttons as its code reads them, and how a controller maps onto them |
+| [docs/STATUS.md](docs/STATUS.md) | each part of the port, what it follows and what checks it |
+| [docs/ENGINE.md](docs/ENGINE.md) | building in detail, `cr2view`'s modes, `cr2tool`'s checks, the tools |
+| [docs/CONTROLS.md](docs/CONTROLS.md) | the Vita's buttons as its code reads them, and how a controller maps onto them |
+| [docs/OPENING_AUDIT.md](docs/OPENING_AUDIT.md) | the opening, field and battle timing checked call by call against the original |
+| [docs/FORMATS.md](docs/FORMATS.md) | the game's file formats |
+| [docs/SCRIPTS.md](docs/SCRIPTS.md) | the Squirrel scripts, the native API they call, the game's saves |
+| [docs/BATTLE.md](docs/BATTLE.md) | the battle rules and staging |
+| [docs/VITA_SAVES.md](docs/VITA_SAVES.md) | importing Vita saves |
 
-## Layout
-
-| Path | Purpose |
+| Path | Contents |
 |---|---|
 | `engine/` | the C++17 / SDL3 engine (`cr2core`), `cr2view` and `cr2tool` |
-| `docs/` | engine and format notes |
-| `tools/` | analysis / extraction tools; they work on your own copy |
-| `android/`, `packaging/` | the Android project; the icons, desktop entry and release notes |
-| `re/`, `extracted/` | (not in the repository) local RE output and decoded assets - never commit or share |
+| `tools/` | analysis and extraction tools; they work on your own copy |
+| `android/`, `packaging/` | the Android project; icons, desktop entry, release notes |
+| `re/`, `extracted/` | not in the repository: local reverse-engineering output and decoded assets - never commit or share |
+
+## Licence and credits
+
+- CR2-U is GPL-2.0-or-later (`LICENSE`). The macOS app is GPL-3.0, because of the bundled
+  MoltenVK. Bundled libraries keep their own licences: see `THIRD_PARTY.md`.
+- **No game data is in this repository or the downloads** - no art, audio, text, scripts or code
+  of the game, nor anything generated from them. The source does contain facts read from the
+  original (file names, flag numbers, screen positions, formula constants, tables the
+  `tools/gen_*.py` scripts extract) where the engine needs them.
+- *Chaos Rings II* is by Square Enix and Media.Vision. CR2-U is a fan preservation project, not
+  affiliated with or endorsed by them.

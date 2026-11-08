@@ -11971,10 +11971,12 @@ struct Viewer {
         const int n = std::max(int(rows.size()), 1);
         if (k == SDLK_UP) shop.focus = (shop.focus + n - 1) % n;
         else if (k == SDLK_DOWN) shop.focus = (shop.focus + 1) % n;
-        else if ((k == SDLK_LEFT || k == SDLK_RIGHT) && shop.kind > 0) { // (ShopWepon..ListMenu::CharaChange)
-            const int c = int(shopChars().size());
-            shop.who = (shop.who + (k == SDLK_RIGHT ? 1 : c - 1)) % c, shop.focus = 0;
-            audio.playSe(0xb4, false);
+        else if ((k == SDLK_PAGEUP || k == SDLK_PAGEDOWN) && shop.kind > 0) shopTap(k == SDLK_PAGEUP ? 6511 : 6512); // (L / R: the
+            // list's switch, ScrollListMenu's 8 - ShopWepon Buy / SellListMenu (FUN_810c4650 / FUN_810c54ca) the character, SE 0xb7)
+        else if ((k == SDLK_LEFT || k == SDLK_RIGHT) && shop.kind > 0) { // (the d-pad's Left / Right, the same lists: the
+            // kind - weapons, armour, accessories round -, SE 0xb7)
+            shop.kind = k == SDLK_RIGHT ? shop.kind % 3 + 1 : (shop.kind + 1) % 3 + 1, shop.focus = 0;
+            audio.playSe(0xb7, false);
         } else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && shop.focus < int(rows.size())) shopTap(rows[size_t(shop.focus)].id);
         else if (k == SDLK_BACKSPACE) shopTap(100);
     }
@@ -11983,7 +11985,8 @@ struct Viewer {
                                                             {"armour", 22}, {"accessories", 23}, {"back", 100}};
         if (auto b = kButtons.find(t); b != kButtons.end()) return shopTap(b->second);
         static const std::map<std::string, SDL_Keycode> kKeys = {{"up", SDLK_UP}, {"down", SDLK_DOWN}, {"pick", SDLK_RETURN}, {"more", SDLK_UP},
-                                                                 {"less", SDLK_DOWN}, {"yes", SDLK_Y}, {"no", SDLK_N}, {"char", SDLK_RIGHT}};
+                                                                 {"less", SDLK_DOWN}, {"yes", SDLK_Y}, {"no", SDLK_N}, {"char", SDLK_PAGEDOWN},
+                                                                 {"kind", SDLK_RIGHT}};
         if (auto k = kKeys.find(t); k != kKeys.end()) shopKey(k->second);
     }
     void drawShop(const Mat4& view, const Mat4& proj, int w, int h) {
@@ -12876,6 +12879,22 @@ int padControlsSelfTest() {
         press(R);
         check(v.campCategory == 0 && v.campEquipChar == 2 && !se(0xb7), "camp sopia: R no switch");
         v.campOpen = false, v.campList = 0;
+
+        // the shop's equipment lists (ShopWepon Buy / SellListMenu, FUN_810c4650 / FUN_810c54ca): L / R the
+        // character, the d-pad's Left / Right the kind round, each SE 0xb7
+        v.shop.stage = 3, v.shop.kind = 1, v.shop.who = 0;
+        press(R);
+        check(v.shop.who == 1 && v.shop.kind == 1 && se(0xb7), "shop: R the next character, SE 0xb7");
+        press(right);
+        check(v.shop.kind == 2 && v.shop.who == 1 && se(0xb7), "shop: Right armour, SE 0xb7");
+        press(right), press(right);
+        check(v.shop.kind == 1, "shop: Right round to weapons");
+        press(left);
+        check(v.shop.kind == 3 && se(0xb7), "shop: Left accessories");
+        v.shop.kind = 0, v.shop.who = 0;
+        press(right), press(R);
+        check(v.shop.kind == 0 && v.shop.who == 0, "shop: the items' list has neither");
+        v.shop = Viewer::Shop();
 
         // the buttons' keys: Swap ○ and × (the options'), △ Tab (CR2-U's: the field's tab), L / R in a menu alone
         v.settings.padSwap = true;

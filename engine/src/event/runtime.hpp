@@ -146,6 +146,7 @@ public:
     }
     bool yesNoShown() const { return yesNoShown_; }
     float yesNoAge() const { return yesNoAge_; }
+    float yesNoClosing() const { return yesNoClosing_; } // (seconds since HideYesNoButton while choice_io turns back; -1 none)
     void answerYesNo(bool yes) {
         if (yesNoShown_) yesNo_ = yes ? 1 : 2;
     }
@@ -200,7 +201,7 @@ private:
     TextData itemNames_;                 // (message\ItemName: SetItemMessage's)
     bool yesNoShown_ = false;
     int yesNo_ = 0;
-    float yesNoAge_ = 0;
+    float yesNoAge_ = 0, yesNoClosing_ = -1;
     int itemShown_ = 0;                  // (the item SetItemMessage named: its icon)
     TutorialPicture tutorialPicture_;
     std::set<int> openWindows_;

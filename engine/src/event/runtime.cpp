@@ -286,8 +286,11 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
         else ++messagesSet_;
     });
     vm.setNative("EvtWindow", "CheckMessage", [this](NativeCall& c) { c.result(message_ == 0 || ended_); });
-    vm.setNative("EvtWindow", "ShowYesNoButton", [this](NativeCall&) { yesNoShown_ = true, yesNo_ = 0, yesNoAge_ = 0; });
-    vm.setNative("EvtWindow", "HideYesNoButton", [this](NativeCall&) { yesNoShown_ = false; });
+    vm.setNative("EvtWindow", "ShowYesNoButton", [this](NativeCall&) { yesNoShown_ = true, yesNo_ = 0, yesNoAge_ = 0, yesNoClosing_ = -1; });
+    vm.setNative("EvtWindow", "HideYesNoButton", [this](NativeCall&) {
+        if (yesNoShown_) yesNoClosing_ = -kTick; // (its first step the update after, as the windows')
+        yesNoShown_ = false;
+    });
     vm.setNative("EvtWindow", "CheckYesNoButton", [this](NativeCall& c) {
         if (askYesNo) c.result(yesNo_);
     });
@@ -356,7 +359,7 @@ void EventRuntime::reset() {
     // Keep the host's playback policy, language and manual selection, but no old input/UI.
     mapAnimPaused = effectLine = fastForward = false;
     skipButton_ = touched_ = false;
-    touchWait_ = yesNoAge_ = 0;
+    touchWait_ = yesNoAge_ = 0, yesNoClosing_ = -1;
     skipOff_.clear(), pageSendOff_.clear();
     itemShown_ = messagesSet_ = 0;
     parsed_ = ParsedMessage();
@@ -439,6 +442,7 @@ bool EventRuntime::update(ScriptVM* vm) {
     else if ((message_ > 0 || execution_) && autoPage > 0 && (pageTime_ += kTick) >= autoPage) advance(false);
     fade_.update();
     if (yesNoShown_ && (yesNoAge_ += kTick) >= autoPage && autoPage > 0 && askYesNo && !yesNo_) yesNo_ = 1; // (pages by themselves: yes)
+    if (!yesNoShown_ && yesNoClosing_ >= -kTick && (yesNoClosing_ += kTick) > 1.0f) yesNoClosing_ = -1; // (choice_io back: 0.2 s)
     for (auto& [w, t] : opened_) t += kTick;
     for (auto it = closing_.begin(); it != closing_.end();) // (out animations: a second at most)
         it = (it->second += kTick) > 1.0f ? closing_.erase(it) : std::next(it);

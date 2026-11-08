@@ -375,7 +375,8 @@ the two; `faceSlct` on the focused): a face puts that character in the slot (cr3
 
 Questions (EvtWindow.ShowYesNoButton: BattleYNChoice's `choice_io` with the circle buttons 11
 yes and 12 no; SE 0xb4) wait for an answer: `CheckYesNoButton` 0 until then, 1 yes, 2 no, and
-HideYesNoButton takes them away - the scripts' `ShowYesNoButton()` loops on it (the sealed
+HideYesNoButton takes them away - `choice_io` turned back from where it is over 0.2 s, no tap
+taken meanwhile (BattleYNChoice::InterfaceCloseAnimeSet) - the scripts' `ShowYesNoButton()` loops on it (the sealed
 evil's device `obj021_00`: challenge it?). The headless checks answer nothing (the scripts going
 on as with the buttons stubbed); the viewer waits for a tap, Y / N, `--input yes` / `no`, or
 with pages turning by themselves answers yes.
@@ -395,8 +396,11 @@ then held, or stopped when it ends at 0 - one way then the other, added after th
 in the painting (the midground half of it); `QuakeStop` ends it. The
 field's camera is the script's when it says (`Cr3FieldMapCamera`, in pixels of a 960-wide screen,
 the scroll negated): `SetPos(x, y)` puts it there, `CalcParameter(frames, fromX, fromY, toX,
-toY)` slides it a frame an update, `GetPos_X` / `GetPos_Y` read it, `SetMode(0)` gives it back to
-following the player.
+toY)` slides it a frame an update - `FldMap::ExecuteCameraMove` steps `frames - 1` times from
+`fromX`, so it stops a step short of `toX` and stays there (a slide of 1 frame never moves) -,
+`GetPos_X` / `GetPos_Y` read it, `SetMode(0)` gives it back to following the player. A `SetMode(1)`
+on its own keeps the scroll where the following left it (FldMap +0x30 / +0x34), which `GetPos`
+then reports and `Gimmick_CameraMove` slides from (OPENING_AUDIT.md).
 
 `engine/src/field/fieldscript.cpp` implements those natives (`Cr3Flag`, `Cr3Work`, the dungeon
 and area, `Cr3GimmickData`'s display / collision / event switches, `Cr3FieldMap`'s layers, the

@@ -116,8 +116,9 @@ The first field's `D01_01_05_set`: `MapNameDisp(1)` (`EvtIntroduction.SetDungeon
 `Tutorial_016 / 018 / 019` - each `LoadTexture('tuto016_01')`, `SetTexture(0)`, `Tutorial_Start`
 (`LoadMessageData(4, 'AnnounceTutorialTxt')`, `Open(4)`, SE 184), `SetWindow(true)`, `Msg(78)`,
 `SetWindow(false)`, `Tutorial_End` (`Close(4)`, SE 185, `WaitFrame(10)`, `UnloadData(4)`)). The
-field's talks (`Msg_Open(0)`) use the vista window (`EvtVistaWindow` -> interface 0x21,
-`VistaConversationWindowMenu`: `vstWin` with `vstWin_io`, 0 s, and `vstWin_talk`, 0.05 s).
+field's talks (`Msg_Open(0)`) use the cut-ins' window; the vistas' dialogue (`Msg_Open(1)`) the
+vista window (`EvtVistaWindow` -> interface 0x21, `VistaConversationWindowMenu`: `vstWin` with
+`vstWin_io`, 0 s, and `vstWin_talk`, 0.05 s).
 
 | | The original | CR2-U before | CR2-U now |
 |---|---|---|---|
@@ -137,15 +138,53 @@ every window) is `MenuText::Initialize`'s bordered-text choice, not an alignment
 is the slot joint's letter (`Cr3UtilSearchTextPosition`, `MenuText::SetTextOffsetData`), as the
 port has it.
 
+### The first field's talks: the camera, the leader, the choices, the autosave
+
+A talk in the first field (`D01_01_0103`: `IfDisp(false)`, `StopBGM(30)`, `Msg_Load`,
+`Cutin_Load`, `PlayerDisp(false)`, `EvtSceneLoad`, `ModelDisp_Event`, `CameraSetMode(1)`,
+`CameraSetPos(1088, -384)`, `WaitFrame(30)`, `PlayBGM(22, 20)`, `FadeIn(1, 20)`, the cut-in
+dialogue, `FadeOut(0, 30)`, `CameraSetMode(0)`, `PlayerSet`) and what the field's helpers reach:
+`Cr3FieldMapCamera.SetMode / SetPos / CalcParameter / GetPos_X / _Y` (`FldUtilSetFieldMapCameraMode`
+/ `Pos` / `MoveCalcParameter`, `FldUtilGetFieldMapCameraPos_X / _Y`), `Cr3FieldMapCharacter.SetVisible /
+SetPos_p000 / SetRot_p000 / ChangeDirection` (`FldUtilSetFieldMapPlayerVisible`,
+`Cr3EvtSceneSetFieldMapPos / Rot` -> `FldUtilSetFieldMapPlayerPos / Rot`,
+`FldUtilChangePCDirection`), `Cr3GimmickData.ChangeDirection` (`FldUtilChangeNPCDirection`), the
+choices (`EvtWindow.ShowYesNoButton / CheckYesNoButton / HideYesNoButton` ->
+`InterfaceMain::SetYNChoiceWindowParameter` - interface 7, `BattleYNChoice` on `choice_io` with
+`circleBtn_fr` 11 / 12 -, `GetBattleYNChoicePushBottom`, `EndBattleYNChoice`) and the autosave
+(`SaveCont`: `Cr3Save.CommitCont / SaveCont / CommitSystem / SaveSystem` ->
+`Cr3Util_Commit_ContData` / `Save_ContData` / `Commit_SystemData` / `Save_SystemData`).
+
+| | The original | CR2-U before | CR2-U now |
+|---|---|---|---|
+| A camera slide (`CalcParameter(frames, from, to)`: `FldMap::SetCameraMove_*`, the step `(to - from) / frames`; `FldMap::ExecuteCameraMove`, run by `FldMap::Update` in mode 1 - after the script's turn in `FldMain::Update` -, puts the scroll at `start + step x (frames - remaining)` and counts `remaining` down from `frames`, done when it reaches 0) | the scroll at `from` in the call's update, `from + step x n` n updates on, done after `frames - 1` of them: it stops - and stays - a step short of `to` (a slide of 1 frame never moves); `GetPos` reports that | reached `to` in the update `frames` after the call | the step count stops at `frames - 1` (`FieldScript::tick`, the viewer's between-update interpolation with it) |
+| `SetMode(1)` with no `SetPos` (`Gimmick_CameraMove`, `pub_*Choice`, `evt022` and 30 more: it then slides from `GetPos_X / _Y`) | mode 1 leaves `FldMap +0x30 / +0x34` as `CalcScroll` last put them following the leader; `GetPos_X / _Y` return that (negated, over the width / 960) | the script's camera jumped to its last scripted place (0, 0 at first) and `GetPos` said so | the place it followed to is kept (`shownX_ / shownY_`) when a mode other than 0 is set from following |
+| The yes / no buttons' close (`EndBattleYNChoice` -> `BattleYNChoice::InterfaceCloseAnimeSet`: `choice_io` back from where it is, state 2; `Update` ends it when the animation does) | the buttons slide out over 0.2 s (stepped from the update after the hide), no tap taken meanwhile | gone at once | `yesNoClosing()`: the viewer poses `choice_io` backwards from where it was, its tap areas dropped |
+
+Also as the original already: `SetPos(x, y)` and the slide's ends are the script's pixels times
+the width / 960, negated into the scroll (the `eor 0x80000000`s in `FldUtilSetFieldMapCameraPos`
+and `MoveCalcParameter`; `Cr3UtilGetPlatform` is 1, so `ConvertFieldMapCameraPosForScriptInput`
+changes nothing) and clamped to the painting (`SetScrollStop`: 1024 or 2048 units an axis by the
+map's kind, less the screen; `CalcScrollStop`'s 0.4 on the shared-background maps) - `frameAt`;
+the leader's and an NPC's turn (`FldDirectionManager::SetDirection`: a quaternion slerp from where
+it stands, `(n + 1) / updates` at its n-th update, done at the last); `PlayerSet` puts the leader at
+the event scene's `p000` (`EvtScene +0x610`: its position and rotation); `PlayerDisp` hides the
+leader and its shadow; the buttons answer on the release (`TouchSimpleRelease`: 11 yes, 12 no, SE
+0xb4 while permitted, +0x59 set from construction), from the show on, the open animation
+notwithstanding; `CheckYesNoButton` returns 0, 1 or 2; `Cr3Util_Commit_ContData` copies the game,
+common, player, field, flag, work, box, stats and achievement data into the continue record and
+`Save_ContData` writes `cont.dat` at once (the port's `onSave(1)`).
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
-Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (five: the
+Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (six: the
 second from the `FldMain::Update` row on, the third from the `FldUtilSetPopPoint` row on, the
 fourth - the cut-ins - from the `InterfaceMain::SetCutInWindow` row on, the fifth - the first
-field - from the `VistaConversationWindowMenu::SetParamNumber` row on).
+field - from the `VistaConversationWindowMenu::SetParamNumber` row on, the sixth - its talks -
+from the `Cr3EvtWindowShowYesNoButton` row on).
 `re/opening-audit-evidence.json` (never committed) holds the second session's records,
-`re/opening-audit-evidence-3.json` the third's, `-4.json` the fourth's and `-5.json` the fifth's; the first's bundle was overwritten by the second,
+`re/opening-audit-evidence-3.json` the third's, `-4.json` the fourth's, `-5.json` the fifth's and `-6.json` the sixth's; the first's bundle was overwritten by the second,
 so those IDs name records no longer on disk - each is a plain decompile of the named function,
 reproducible with `open_binary` and `batch_decompile` on the same library.
 
@@ -196,6 +235,14 @@ reproducible with `open_binary` and `batch_decompile` on the same library.
 | `EvtWindow::ShowMessage`, `EvtWindowPage::NextBlock`, `EvtTutoWindow / EvtAnnounceAWindow / EvtCutinWindow / EvtNarrationWindow::SetMessage`, `InterfaceMain::ChangeHelpWindowMessage / ChangeAnnouncementWindowMessage` | `ev_6d366c6a4a69109147b9867a31bfcf9eb0473fca3aba692a0fe8c63bd9daccfe` |
 | `EvtTutoWindow / EvtVistaWindow / EvtCutinWindow / EvtNarrationWindow::GetTheme`, `ConversationWindowMenu::SetStringData` | `ev_715dfadfdb946b2c6026b4c97504c227901f3d8d6242d0811958c53d32c86430` |
 | Procedure and string searches (the menus' names, `Tutorial_*`, the `dNN` suffixes), the `SetMapNameMenuParameter` reference | `ev_da625937e8a1d1435cdf172a6b693f4a00395f9c9c625fa630cc6a4f68563a4b`, `ev_93911e3803cd0b83f17d25688331607f04e12fa27c9236cd2502f55a51664a9b`, `ev_233c95d388de9f859445db5a42a01c3c00d98e72798ce9de02a80f3d0217d3d7`, `ev_34846b7b5c20236832a4602af2d7af28b95adf54a7fa93359f3aa86e85568030`, `ev_9b85ec1829acacd78611ae4cf1d986ab90bb3d512d2d0dacc539024d9006b530`, `ev_ba615bbd95aea9f925d20d5737ddf05575416362ac704d78a84095296a8566ad`, `ev_dafbf52e0c9a5bd2851e9b685839f6b97196fce7bb0e65c0ed1ecec418237f2a`, `ev_f2b27739daa943003e4778236291da6b36b9993dd7e979fe81d1d5c19c50fccb`, `ev_102fbdfcb409aa329e5e876bd8295261a74ffa1755719fd6c343f198019608b7`, `ev_118826059e0a3942feeeb224075785a568e75426e350edb0504df15d08704b68` |
+| `Cr3EvtWindowShowYesNoButton / HideYesNoButton / CheckYesNoButton`, `FldUtilSetFieldMapCameraMode / SetFieldMapCameraPos / ConvertFieldMapCameraPosForScriptInput / SetFieldMapPlayerVisible / SetFieldMapPlayerPos / SetFieldMapPlayerRot / ChangeFieldMapPlayerDirection / SetFieldMapCameraMoveCalcParameter` | `ev_0df2463e7aaa884d9d7b06cb3da4f5e2df8086b66e9f2d4403cbf59081843dae` |
+| `Cr3EvtSceneSetFieldMapPos / Rot`, `FldPlayer::SetDirection`, `FldUtilChangeNPCDirection / ChangePCDirection`, `FldMap::SetDirectScroll`, `InterfaceMain::SetYNChoiceWindowParameter / EndBattleYNChoice / GetBattleYNChoicePushBottom`, `Cr3Util_Save_ContData / Commit_ContData / Save_SystemData` | `ev_21d48e1d84f3095ee3569bbf301d1920ab730defe621872afbcbcaf8f99dcac8` |
+| `BattleYNChoice::Initialize / Update / SetParamNumber / TouchSimplePress / TouchSimpleRelease / InterfaceCloseAnimeSet / Pose`, `BattleYNChoiceControl::Update`, `FldDirectionManager::SetDirection / Update`, `FldMap::CalcScrollStop` | `ev_47ab0d732fc121b9b444eba5098822d79ba944b73091d8736a3345e51f852f65` |
+| `FldMap::CalcScroll / ExecuteCameraMove / SetScrollStop / InitCamera / CalcCameraMove_Param`, `BattleYNChoice::BattleYNChoice`, `CircleBtn::CheckTap` | `ev_117e19eddbc9c4c234cecd71a94e8603755704a1587cfb65879dd211e3aea465` |
+| `FldMap::CalcNewScreenPos / Update`, `Cr3UtilGetPlatform` (1) | `ev_7d12c359ea9e1b680764202053f561f9badce92930ac1705914e25bf1aed331e` |
+| `FldMap::SetCameraMove_Frame / InitCameraMoveWork / SetCameraMove_StartPos`; `FldMap::ExecuteCameraMove` assembly (`start + step x (frames - remaining)`, then `remaining - 1`) | `ev_2cafdf08fc2fab7dd3b69fab058740489521993dcad49a2fd03e6b1e8ce28e95`, `ev_d58f528edafa9d01136ebbd04aa1312fca86d1800d57ec7d522266c6c9daee95` |
+| `FldUtilGetFieldMapCameraPos_X / _Y`; `FldUtilSetFieldMapCameraPos` and `MoveCalcParameter` assembly (the negations) | `ev_ff113d4ff6dc7d77aff7a8fe603a9d76abb8820c30fdcbb695bef57d7757fd2b`, `ev_35bb82489d3df8bc8079b5c279e5d4c0afdacb0df51ebc73c81e7e12132eceb3`, `ev_bcd48d7d7e6aaa692f45f10de79bd0249cb0abbad9863ccac570cdea4b9d9efd` |
+| Procedure searches (the save, camera, player and choice natives; `FldMap`'s camera methods; `BattleYNChoice`, `FldDirectionManager`) | `ev_ce49c2dd1440032cc91d60062a96637b45be21a55c72a08a199f48ee66780bdb`, `ev_194c6cfd1efe763e206e44d5ab3cb68090fab983994c48844ded520d997615e9`, `ev_e7eeec6d10d2a6e257bb6245ee4107a806fd163022b5ca851f205fdd750d6206` |
 
 These are static observations of the shipped library, not traces of the original running: the
 update order and counts follow from the code, the visual result from the fade figures'
@@ -211,6 +258,13 @@ animations being linear (assumed, as before).
   `vstWin_talk` back and put the window's own texture resource (`+0x38`'s `+0x48`) into the
   figure's `+0x44 / +0x3c`, which `SetStringData` slot 0 had set to 0; what that draws for the
   plate was not read. The port poses `vstwin_io` (the plate's joint at x 0) for a nameless line.
+- **The camera slide's hold.** That `ExecuteCameraMove` leaves the scroll a step short of its end
+  is read from its assembly and `FldMain::Update`'s order (the script's `EventExecute` before
+  `FldMap::Update`, in the repo's decompilation); no run of the original confirmed the frame.
+  Nothing else moves the scroll in mode 1, so it holds there till `SetMode(0)`.
+- **A choice's aftermath.** `EndBattleYNChoice` sets `InterfaceMain +0x1c` to 20, counted down in
+  its `Update` into `BtlInterface +0x1b50` (a battle flag); what that holds off in the field, if
+  anything, was not traced. Not reproduced.
 - **The map name's last update.** The original deletes the menu in the `InterfaceMain::Update`
   whose step reaches the animation's end; the port shows it while `ticks x 0.05 s` is under its
   length. Within an update of each other; not counted exactly.
@@ -254,6 +308,11 @@ it):
 | 0.15 s | the picture (`tuto016_01`, the field itself) up at once, the help window still opening: no text |
 | 0.6 s | "Moving" typed, in the middle of the window's band - at its left before the per-line centring |
 | 3.0 s | the page held with its send cursor, the fast-forward button at the top right |
+
+The yes / no buttons' close is checked in `event-reset-tests` (`ShowYesNoButton`, four updates, the
+answer, `HideYesNoButton`: a closing age of -0.05 s in the hide's own update, 0 the update after,
+over within a second); no headless frame of a choice was taken - the first field has none, and the
+tutorial dungeon's `c004_evt` branches on its flags before reaching one.
 
 (The second narration is `... \w60 \*`.) The captures are frames of the port, compared with the
 counts above, not with the original running.

@@ -2387,7 +2387,7 @@ struct Viewer {
             if (script && script->camera().scripted()) {
                 const cr2::FieldScript::Camera& c = script->camera();
                 float cx = c.x, cy = c.y;
-                if (c.frames > 0 && c.t < c.frames) {
+                if (c.frames > 0 && c.t < c.frames - 1) { // (the step under way; the slide stops a step short)
                     const float k = std::clamp(fieldClock / cr2::EventRuntime::kTick, 0.0f, 1.0f) / float(c.frames);
                     cx += (c.toX - c.fromX) * k, cy += (c.toY - c.fromY) * k;
                 }
@@ -8982,7 +8982,10 @@ struct Viewer {
     std::vector<YesNoRect> yesNoRects;
     void drawYesNo(cr2::EventRuntime& ev, int w, int h) {
         yesNoRects.clear();
-        if (!ev.yesNoShown()) return;
+        // (HideYesNoButton - EndBattleYNChoice: InterfaceCloseAnimeSet turns choice_io back from
+        // where it is, the menu gone at its start; the buttons go with it)
+        const bool closing = !ev.yesNoShown() && ev.yesNoClosing() >= -cr2::EventRuntime::kTick; // (-kTick: the hide's own update, still as it was)
+        if (!ev.yesNoShown() && !closing) return;
         Mat4 camera = cr2::mat4Identity();
         camera[14] = -0.881f;
         const Mat4 view = cr2::mat4Multiply(uiProjection(w, h), camera);
@@ -8990,7 +8993,14 @@ struct Viewer {
         dev->setLighting(l);
         UiFig& ch = uiFig("choice_io");
         ch.fig.place = cr2::Mat34();
-        poseUi(ch, "choice_io", ev.yesNoAge());
+        float at = ev.yesNoAge();
+        if (closing) {
+            poseUi(ch, "choice_io", 0); // (loads it: its length)
+            const float dur = ch.fig.animLoaded ? ch.fig.anim.duration() : 0.2f;
+            at = std::min(ev.yesNoAge(), dur) - std::max(ev.yesNoClosing(), 0.0f);
+            if (at < 0) return;
+        }
+        poseUi(ch, "choice_io", at);
         drawFigure(ch.fig, view.data());
         for (int n : {11, 12}) {
             char jn[24];
@@ -9003,7 +9013,7 @@ struct Viewer {
             poseUi(c, "circlebtn_fr", float(n) / 20.0f);
             drawFigure(c.fig, view.data());
             float sx, sy, ex, ey;
-            if (uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) yesNoRects.push_back({n == 11, sx, sy, ex, ey});
+            if (!closing && uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) yesNoRects.push_back({n == 11, sx, sy, ex, ey});
         }
     }
     void answerYesNo(bool yes) {

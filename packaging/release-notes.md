@@ -25,7 +25,10 @@ A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux an
   dialogue's typing only on the window itself (a tap anywhere still turns a page), as in the
   original. A message line is centred by its own `\c`, not its page's first line's: the
   tutorials' titles ("Moving") and the announcements ("Lv. 51 to 60 unlocked!") sit in the middle
-  of their window again instead of at its left.
+  of their window again instead of at its left. In the field, a scripted camera slide stops where
+  the original's does (a step short of its end), a script that takes the camera without placing it
+  keeps the view where it was instead of jumping, and the yes / no buttons slide out over 0.2 s
+  instead of vanishing.
 - **Battles:** the results of a won battle no longer stay on screen over the next one. The next
   battle used to lose its HUD while the last results' panels came in over the fight (reported by
   [metastigma](https://github.com/metastigma)).

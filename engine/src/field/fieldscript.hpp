@@ -80,8 +80,9 @@ public:
 
     // The field's camera as the script has it (Cr3FieldMapCamera; x, y in a 960-wide screen's
     // pixels): following the leader (mode 0, no SetPos since), else at a place or sliding to one
-    // (CalcParameter: over its frames, one an update). scrolled: the scroll shown now, for
-    // GetPos_X / _Y while it follows
+    // (CalcParameter: over its frames, one an update, the last a step short of the end as
+    // FldMap::ExecuteCameraMove has it). scrolled: the scroll shown now, for GetPos_X / _Y while
+    // it follows, and the place a SetMode(1) keeps
     struct Camera {
         int mode = 0;
         bool direct = false;

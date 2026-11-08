@@ -101,8 +101,13 @@ void FieldScript::bind() {
     });
     // the field's camera (FldUtilSetFieldMapCameraMode / Pos / MoveCalcParameter, GetPos_*)
     vm.setNative("Cr3FieldMapCamera", "SetMode", [this](NativeCall& c) {
+        // (FldMap +0x1c: mode 1 runs the slide (ExecuteCameraMove), any other than 0 leaves the
+        // scroll where it is - the scroll FldMap::Update's CalcScroll last put it when it followed
+        // the leader, which GetPos_X / _Y then report and a Gimmick_CameraMove slides from)
+        const bool followed = !camera_.scripted();
         camera_.mode = c.integer(0);
         if (camera_.mode == 0) camera_.direct = false, camera_.frames = 0;
+        else if (followed) camera_.x = shownX_, camera_.y = shownY_;
     });
     vm.setNative("Cr3FieldMapCamera", "SetPos", [this](NativeCall& c) {
         camera_.direct = true, camera_.frames = 0;
@@ -264,7 +269,11 @@ bool FieldScript::tick() {
             quake_.parity = (quake_.parity + 1) % 2;
         }
     }
-    if (camera_.frames > 0 && camera_.t < camera_.frames) { // (a slide: a frame an update)
+    // a slide: FldMap::ExecuteCameraMove, run from FldMap::Update after the script's turn (so
+    // in CalcParameter's own update), puts the scroll at start + step x (frames - remaining) and
+    // counts remaining down from frames: steps 0 .. frames - 1, done - and held - a step short
+    // of the end (a slide of 1 frame never moves)
+    if (camera_.frames > 0 && camera_.t < camera_.frames - 1) {
         const float k = float(++camera_.t) / float(camera_.frames);
         camera_.x = camera_.fromX + (camera_.toX - camera_.fromX) * k;
         camera_.y = camera_.fromY + (camera_.toY - camera_.fromY) * k;
@@ -282,7 +291,7 @@ bool FieldScript::runToEnd(int maxUpdates) {
     // (and what it set going: a fade, a camera slide, still moving on the updates after)
     const auto moving = [this] {
         const EventFade& f = events_->fade();
-        return f.alpha != f.target || (camera_.frames > 0 && camera_.t < camera_.frames);
+        return f.alpha != f.target || (camera_.frames > 0 && camera_.t < camera_.frames - 1);
     };
     for (; ok && !running() && moving() && k < maxUpdates; ++k) ok = tick();
     events_->autoPage = keep;

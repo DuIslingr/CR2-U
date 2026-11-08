@@ -104,6 +104,22 @@ function menus() {
     events.reset();
     script("function finalMessage(){EvtWindow.Open(1);EvtWindow.SetMessageText(1,\"Still bound\");}", "finalMessage");
     check(events.windowOpen(1) && events.messageShown() && events.messagesSet() == 1, "native bindings still work after repeated reset");
+    // the yes / no buttons' close (BattleYNChoice::InterfaceCloseAnimeSet: choice_io turned back
+    // from where it is, stepped from the update after the hide): shown while open, then a closing
+    // age from the hide's own update, gone after a second
+    if (script(R"(
+function yesno() { EvtWindow.ShowYesNoButton(); }
+function yesnohide() { EvtWindow.HideYesNoButton(); }
+)", "yesno")) {
+        check(events.yesNoShown() && events.yesNoClosing() < -0.06f, "yes / no shown, not closing");
+        for (int k = 0; k < 4; ++k) events.update(&vm);
+        events.answerYesNo(true);
+        check(vm.call("yesnohide") && !events.yesNoShown() && events.yesNoClosing() > -0.06f && events.yesNoClosing() < 0, "the hide's update: closing from where it is");
+        events.update(&vm);
+        check(events.yesNoClosing() > -0.001f && events.yesNoClosing() < 0.001f, "the first step the update after");
+        for (int k = 0; k < 21; ++k) events.update(&vm);
+        check(events.yesNoClosing() < 0, "the closing is over after a second");
+    }
     std::printf("scene reset: %d problems\n", problems);
     return problems ? 1 : 0;
 }

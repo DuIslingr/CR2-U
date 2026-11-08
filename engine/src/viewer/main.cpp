@@ -3952,6 +3952,13 @@ struct Viewer {
     bool inMenu() const {
         return campOpen || (battleMode && choosing) || shop.stage || world.stage || pub.stage || library.stage == 1 || party.stage;
     }
+    // a list whose L / R is its switch (ScrollListMenu::PartsUpdate: 0x200 / 0x400 its
+    // ScrollListSwitchButton's left / right, +0x48 = 8 - CampItemListMenu::Update the other category,
+    // CampEquipmentListMenu::Update_EquipView the character); a list without one pages (CR2-U's)
+    bool switchList() const {
+        return campOpen && !campUse && !settingsOpen && !optionsOpen && !optionsAsk && !manualStage && !saveImport.active() &&
+               (campList == 16 || (campList == 17 && !campTakeSopia));
+    }
     // A controller's button as the key the screens take: ○ Return, × Backspace (the options' Swap ○
     // and ×: the other way), △ Tab (CR2-U's: the field's tab - the Vita's is a touch), L / R
     // PageUp / PageDown in a menu (a list's switch, else its page), START the title's "Please Touch"
@@ -3975,7 +3982,7 @@ struct Viewer {
             else if (k == SDLK_BACKSPACE || k == SDLK_N) answerYesNo(false);
             return true;
         }
-        if ((k == SDLK_PAGEUP || k == SDLK_PAGEDOWN) && listShown()) { // (a list's page: four rows on)
+        if ((k == SDLK_PAGEUP || k == SDLK_PAGEDOWN) && listShown() && !switchList()) { // (a list's page: four rows on)
             for (int r = 0; r < 4; ++r) gameKey(k == SDLK_PAGEUP ? SDLK_UP : SDLK_DOWN);
             return true;
         }
@@ -10488,6 +10495,7 @@ struct Viewer {
             if (k == SDLK_UP) campEquipCursor = (campEquipCursor + n - 1) % n;
             else if (k == SDLK_DOWN) campEquipCursor = (campEquipCursor + 1) % n;
             else if (k == SDLK_LEFT || k == SDLK_RIGHT) campEquipChange(k == SDLK_LEFT ? -1 : 1);
+            else if (k == SDLK_PAGEUP || k == SDLK_PAGEDOWN) campEquipChange(k == SDLK_PAGEUP ? -1 : 1); // (L / R: Update_EquipView's switch, 8)
             else if (k == SDLK_TAB) campEquipView(); // (the change button - a controller's triangle)
             else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && !rows.empty()) campEquipPick(rows[size_t(std::clamp(campEquipCursor, 0, n - 1))].id);
             return;
@@ -10496,8 +10504,9 @@ struct Viewer {
             const int n = std::max(int(campRows().size()), 1);
             if (k == SDLK_UP) campCursor = (campCursor + n - 1) % n;
             else if (k == SDLK_DOWN) campCursor = (campCursor + 1) % n;
-            else if (k == SDLK_LEFT || k == SDLK_RIGHT) { // (the items' two categories)
-                if (campList == 16) campCategory = 1 - campCategory, campCursor = 0;
+            else if (k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_PAGEUP || k == SDLK_PAGEDOWN) { // (the items' two
+                // categories: the switch's arrows - L / R on the Vita, CampItemListMenu::Update's 8, SE 0xb7)
+                if (campList == 16) campCategory = 1 - campCategory, campCursor = 0, audio.playSe(0xb7, false);
             } else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && (campList == 16 || campList == 18)) {
                 const std::vector<ListRow> rows = campRows();
                 if (!rows.empty()) {
@@ -10507,9 +10516,15 @@ struct Viewer {
             }
             return;
         }
-        if (k == SDLK_UP) campCursor = (campCursor + 3) % 4;
-        else if (k == SDLK_DOWN) campCursor = (campCursor + 1) % 4;
-        else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) campPress(campCursorButton());
+        // (CampTopMenu's update, FUN_81084c8e: FUN_810452fe - Up / Down round past the greyed Items
+        // with none held, SE 0xb3)
+        if (k == SDLK_UP || k == SDLK_DOWN) {
+            bool anyItem = false;
+            for (int id = 1; id < 300; ++id) anyItem = anyItem || game.itemCount[id] > 0;
+            do campCursor = (campCursor + (k == SDLK_UP ? 3 : 1)) % 4;
+            while (campCursor == 0 && !anyItem);
+            audio.playSe(0xb3, false);
+        } else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) campPress(campCursorButton());
     }
     // a click on the field's UI (the tab, the camp): false - none of it there (the field's own tap)
     bool fieldClick(float fx, float fy) {
@@ -12837,6 +12852,30 @@ int padControlsSelfTest() {
                                 R = SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, up = SDL_GAMEPAD_BUTTON_DPAD_UP, down = SDL_GAMEPAD_BUTTON_DPAD_DOWN,
                                 left = SDL_GAMEPAD_BUTTON_DPAD_LEFT, right = SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
         for (int c = 0; c < 3; ++c) v.game.setFlag(0x3fd + c, true); // (three joined: Cr3UtilValidCharacter)
+
+        // the camp's buttons (CampTopMenu, FUN_81084c8e): Down / Up round past Items with none held, SE 0xb3
+        v.campOpen = true, v.campList = 0, v.campCursor = 0;
+        press(down);
+        check(v.campCursor == 1 && se(0xb3), "camp: Down the next button, SE 0xb3");
+        press(up);
+        check(v.campCursor == 3 && se(0xb3), "camp: Up past Items (none held) round to Options");
+        // the items' list: L / R its switch - the other category (CampItemListMenu::Update's 8), SE 0xb7
+        v.campList = 16, v.campCategory = 0, v.campCursor = 2;
+        press(R);
+        check(v.campCategory == 1 && v.campCursor == 0 && se(0xb7), "camp items: R the other category, SE 0xb7");
+        press(L);
+        check(v.campCategory == 0 && se(0xb7), "camp items: L back");
+        // the equipment: L / R the character (CampEquipmentListMenu::Update_EquipView's 8), SE 0xb7
+        v.campList = 17, v.campEquipMode = 0, v.campEquipChar = 0;
+        press(R);
+        check(v.campEquipChar == 1 && se(0xb7), "camp equipment: R the next character, SE 0xb7");
+        press(L), press(L);
+        check(v.campEquipChar == 2, "camp equipment: L the one before, round");
+        // the sopia's list (no switch): L / R its page - four rows (CR2-U's)
+        v.campList = 18, v.campCursor = 0;
+        press(R);
+        check(v.campCategory == 0 && v.campEquipChar == 2 && !se(0xb7), "camp sopia: R no switch");
+        v.campOpen = false, v.campList = 0;
 
         // the buttons' keys: Swap ○ and × (the options'), △ Tab (CR2-U's: the field's tab), L / R in a menu alone
         v.settings.padSwap = true;

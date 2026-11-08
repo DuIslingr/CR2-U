@@ -456,6 +456,7 @@ if(NOT ANDROID AND NOT IOS)
     set_tests_properties(gl-context-recovery PROPERTIES SKIP_RETURN_CODE 77)
 
     add_test(NAME viewer-input-cancel COMMAND cr2view --selftest-input-cancel)
+    add_test(NAME viewer-pad-controls COMMAND cr2view --selftest-pad-controls)
     add_test(NAME viewer-lifecycle-clock COMMAND cr2view --selftest-lifecycle-clock)
     add_executable(audio-player-tests tools/audio_player_test.cpp src/viewer/audio.cpp)
     target_link_libraries(audio-player-tests PRIVATE cr2core SDL3::SDL3)

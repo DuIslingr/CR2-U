@@ -3952,6 +3952,55 @@ struct Viewer {
     bool inMenu() const {
         return campOpen || (battleMode && choosing) || shop.stage || world.stage || pub.stage || library.stage == 1 || party.stage;
     }
+    // A controller's button as the key the screens take: ○ Return, × Backspace (the options' Swap ○
+    // and ×: the other way), △ Tab (CR2-U's: the field's tab - the Vita's is a touch), L / R
+    // PageUp / PageDown in a menu (a list's switch, else its page), START the title's "Please Touch"
+    // (GameTitleMenu::Update: ○ or START, 0x900); 0 - none
+    SDL_Keycode padButtonKey(SDL_GamepadButton b) const {
+        const SDL_GamepadButton circle = settings.padSwap ? SDL_GAMEPAD_BUTTON_SOUTH : SDL_GAMEPAD_BUTTON_EAST;
+        const SDL_GamepadButton cross = settings.padSwap ? SDL_GAMEPAD_BUTTON_EAST : SDL_GAMEPAD_BUTTON_SOUTH;
+        if (b == circle) return SDLK_RETURN;
+        if (b == cross) return SDLK_BACKSPACE;
+        if (b == SDL_GAMEPAD_BUTTON_NORTH) return SDLK_TAB;
+        if (b == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER && inMenu()) return SDLK_PAGEUP;
+        if (b == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER && inMenu()) return SDLK_PAGEDOWN;
+        if (b == SDL_GAMEPAD_BUTTON_START && titleMenu.stage >= 2 && titleMenu.stage <= 3) return SDLK_RETURN;
+        return 0;
+    }
+    // A key the game's screens take (the keyboard's, and the controller's buttons as padButtonKey has
+    // them); false - none took it (the model viewer's own keys then)
+    bool gameKey(SDL_Keycode k) {
+        if (yesNoShown()) { // (an event's yes / no: Y or Return yes, N or Backspace no)
+            if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) answerYesNo(true);
+            else if (k == SDLK_BACKSPACE || k == SDLK_N) answerYesNo(false);
+            return true;
+        }
+        if ((k == SDLK_PAGEUP || k == SDLK_PAGEDOWN) && listShown()) { // (a list's page: four rows on)
+            for (int r = 0; r < 4; ++r) gameKey(k == SDLK_PAGEUP ? SDLK_UP : SDLK_DOWN);
+            return true;
+        }
+        if (focusKey(k)) return true; // (the title's, the shop's and the party's buttons; the field's tab)
+        if (battleMode && choosing) return battleKey(k), true; // (the commands)
+        if (campOpen) return campKey(k), true;       // (the camp: Up / Down and Return, Backspace back)
+        if (party.stage) return partyKey(k), true;   // (the party: 1 / 2, Left / Right, Return, Backspace)
+        if (shop.stage) return shopKey(k), true;     // (the shop: 1 .. 4 its buttons, Up / Down, Left / Right, Return, Backspace; Y / N)
+        if (world.stage) return worldKey(k), true;   // (the world select: Up / Down, Return, Backspace; Y / N its question)
+        if (pub.stage) return pubKey(k), true;       // (the pub: the arrows, Return, Backspace; Y / N)
+        if (library.stage == 1) return libraryKey(k), true; // (the library: Up / Down, Return, Backspace)
+        if (mapOpen) { // (the map: any key closes it)
+            audio.playSe(0xb5, false), mapOpen = false;
+            return true;
+        }
+        if (saveStage) { // (saving: Return yes, Backspace no)
+            if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) saveAnswer(true);
+            else if (k == SDLK_BACKSPACE || k == SDLK_N) saveAnswer(false);
+            return true;
+        }
+        if (k == SDLK_TAB && fieldTabShown()) return fieldTabTap(1), true; // (the field's tab: open or closed; C the camp)
+        if (k == SDLK_C && fieldTabShown()) return fieldToken("camp"), true;
+        if (k == SDLK_RETURN || k == SDLK_KP_ENTER) tap();
+        return eventMode;
+    }
     // a step of the choosing begun: its camera (StepGetset: Cam_Getset; SetCommandCamera: 0x1a the
     // first's, 0x1b the second's, 0x1d the pair's command, 0x1c the one alone's - the target's camera
     // BtlCommand::SetCommandTargetCamera's - setTargetCamera)
@@ -12728,6 +12777,74 @@ int inputCancelViewerSelfTest() {
     return problems ? 1 : 0;
 }
 
+// The controller on the Vita's screens (docs/CONTROLS.md): a virtual controller, as CR2_PAD_SCRIPT's,
+// its buttons' events through padButtonKey and gameKey - the d-pad's first press as the window's loop
+// has it, its arrow - on screens set up without the game's files; what each did and the sounds asked
+int padControlsSelfTest() {
+    if (!SDL_Init(SDL_INIT_EVENTS | SDL_INIT_GAMEPAD)) return 1;
+    int problems = 0;
+    auto check = [&](bool ok, const std::string& what) {
+        if (!ok) ++problems, std::printf("pad controls FAILED: %s\n", what.c_str());
+    };
+    SDL_VirtualJoystickDesc desc;
+    SDL_INIT_INTERFACE(&desc);
+    desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+    desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
+    desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+    desc.name = "CR2-U test controller";
+    const SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
+    SDL_Joystick* stick = id ? SDL_OpenJoystick(id) : nullptr;
+    SDL_Gamepad* pad = id ? SDL_OpenGamepad(id) : nullptr;
+    if (!stick || !pad) {
+        std::printf("pad controls: no virtual controller (%s)\n", SDL_GetError());
+        SDL_Quit();
+        return 1;
+    }
+    {
+        Viewer v;
+        auto drain = [&] {
+            SDL_UpdateJoysticks();
+            SDL_Event e;
+            while (SDL_PollEvent(&e)) {
+                if (e.type != SDL_EVENT_GAMEPAD_BUTTON_DOWN) continue;
+                const SDL_GamepadButton b = SDL_GamepadButton(e.gbutton.button);
+                SDL_Keycode k = v.padButtonKey(b);
+                if (b == SDL_GAMEPAD_BUTTON_DPAD_UP) k = SDLK_UP;
+                else if (b == SDL_GAMEPAD_BUTTON_DPAD_DOWN) k = SDLK_DOWN;
+                else if (b == SDL_GAMEPAD_BUTTON_DPAD_LEFT) k = SDLK_LEFT;
+                else if (b == SDL_GAMEPAD_BUTTON_DPAD_RIGHT) k = SDLK_RIGHT;
+                if (k) v.gameKey(k);
+            }
+        };
+        drain();
+        auto press = [&](SDL_GamepadButton b) { // (down, then up: the sounds asked meanwhile)
+            v.audio.log.clear();
+            SDL_SetJoystickVirtualButton(stick, b, true);
+            drain();
+            SDL_SetJoystickVirtualButton(stick, b, false);
+            drain();
+        };
+        auto se = [&](int clip) { return std::count(v.audio.log.begin(), v.audio.log.end(), "se " + std::to_string(clip)) > 0; };
+        const SDL_GamepadButton circle = SDL_GAMEPAD_BUTTON_EAST, cross = SDL_GAMEPAD_BUTTON_SOUTH, L = SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,
+                                R = SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, up = SDL_GAMEPAD_BUTTON_DPAD_UP, down = SDL_GAMEPAD_BUTTON_DPAD_DOWN,
+                                left = SDL_GAMEPAD_BUTTON_DPAD_LEFT, right = SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
+        for (int c = 0; c < 3; ++c) v.game.setFlag(0x3fd + c, true); // (three joined: Cr3UtilValidCharacter)
+
+        // the buttons' keys: Swap ○ and × (the options'), △ Tab (CR2-U's: the field's tab), L / R in a menu alone
+        v.settings.padSwap = true;
+        check(v.padButtonKey(SDL_GAMEPAD_BUTTON_SOUTH) == SDLK_RETURN && v.padButtonKey(SDL_GAMEPAD_BUTTON_EAST) == SDLK_BACKSPACE,
+              "Swap ○ and ×: the bottom button confirms");
+        v.settings.padSwap = false;
+        check(v.padButtonKey(SDL_GAMEPAD_BUTTON_NORTH) == SDLK_TAB && v.padButtonKey(L) == 0, "△ Tab; L outside a menu nothing");
+    }
+    SDL_CloseGamepad(pad);
+    SDL_CloseJoystick(stick);
+    SDL_DetachVirtualJoystick(id);
+    SDL_Quit();
+    std::printf("viewer pad controls: %d problems\n", problems);
+    return problems ? 1 : 0;
+}
+
 int lifecycleClockViewerSelfTest() {
     if (!SDL_Init(SDL_INIT_EVENTS)) return 1;
     int problems = 0;
@@ -12984,6 +13101,7 @@ int main(int argc, char** argv) {
     if (argc > 1 && std::strcmp(argv[1], "--selftest-scene-audio") == 0) return sceneAudioViewerSelfTest();
     if (argc > 1 && std::strcmp(argv[1], "--selftest-lifecycle-clock") == 0) return lifecycleClockViewerSelfTest();
     if (argc > 1 && std::strcmp(argv[1], "--selftest-input-cancel") == 0) return inputCancelViewerSelfTest();
+    if (argc > 1 && std::strcmp(argv[1], "--selftest-pad-controls") == 0) return padControlsSelfTest();
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     std::string data, model, capture, animName, renderer = "vulkan", lights = "d0101c", fieldName, at = "defaultPos", binary;
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
@@ -13764,7 +13882,8 @@ int main(int argc, char** argv) {
         // CR2_PAD_SCRIPT (tests): a virtual controller, its buttons and stick set at their times - "1.5:east
         // 2:down 3:lx=1 4:lx=0" (a button is held 0.1 s; east / south / north / west, up / down / left /
         // right, l / r, start, back; lx / ly the left stick, -1 .. 1, ly up positive; blur the window's focus
-        // lost). Each press of a held direction is logged
+        // lost; shot=<file.bmp> the next frame shown saved; quit the window closed). Each press of a held
+        // direction is logged
         struct PadStep {
             float at;
             std::string what;
@@ -13788,6 +13907,7 @@ int main(int argc, char** argv) {
             }
         }
         std::vector<std::pair<Uint64, SDL_GamepadButton>> testReleases;
+        std::string padShot; // (CR2_PAD_SCRIPT's shot=: the next frame's file)
         auto padStick = [&](float& x, float& y) { // (the left stick, up positive; the Vita's 0.25 dead zone)
             x = pad ? float(SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX)) / 32767.0f : 0.0f;
             y = pad ? -float(SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY)) / 32767.0f : 0.0f;
@@ -13893,63 +14013,7 @@ int main(int argc, char** argv) {
                         SDL_Log("output: %s", describe().c_str());
                         continue;
                     }
-                    if (v.yesNoShown()) { // (an event's yes / no: Y or Return yes, N or Backspace no)
-                        if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) v.answerYesNo(true);
-                        else if (k == SDLK_BACKSPACE || k == SDLK_N) v.answerYesNo(false);
-                        continue;
-                    }
-                    if ((k == SDLK_PAGEUP || k == SDLK_PAGEDOWN) && v.listShown()) { // (a list's page: four rows on)
-                        for (int r = 0; r < 4; ++r) pushKey(k == SDLK_PAGEUP ? SDLK_UP : SDLK_DOWN);
-                        continue;
-                    }
-                    if (v.focusKey(k)) continue; // (the title's, the shop's and the party's buttons; the field's tab)
-                    if (v.battleMode && v.choosing) {
-                        v.battleKey(k);
-                        continue;
-                    }
-                    if (v.campOpen) { // (the camp: Up / Down and Return, Backspace back)
-                        v.campKey(k);
-                        continue;
-                    }
-                    if (v.party.stage) { // (the party: 1 / 2, Left / Right, Return, Backspace)
-                        v.partyKey(k);
-                        continue;
-                    }
-                    if (v.shop.stage) { // (the shop: 1 .. 4 its buttons, Up / Down, Left / Right, Return, Backspace; Y / N)
-                        v.shopKey(k);
-                        continue;
-                    }
-                    if (v.world.stage) { // (the world select: Up / Down, Return, Backspace; Y / N its question)
-                        v.worldKey(k);
-                        continue;
-                    }
-                    if (v.pub.stage) { // (the pub: Left / Right, Return, Backspace; Y / N)
-                        v.pubKey(k);
-                        continue;
-                    }
-                    if (v.library.stage == 1) { // (the library: Up / Down, Return, Backspace)
-                        v.libraryKey(k);
-                        continue;
-                    }
-                    if (v.mapOpen) { // (the map: any key closes it)
-                        v.audio.playSe(0xb5, false), v.mapOpen = false;
-                        continue;
-                    }
-                    if (v.saveStage) { // (saving: Return yes, Backspace no)
-                        if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) v.saveAnswer(true);
-                        else if (k == SDLK_BACKSPACE || k == SDLK_N) v.saveAnswer(false);
-                        continue;
-                    }
-                    if (k == SDLK_TAB && v.fieldTabShown()) { // (the field's tab: open or closed; C the camp)
-                        v.fieldTabTap(1);
-                        continue;
-                    }
-                    if (k == SDLK_C && v.fieldTabShown()) {
-                        v.fieldToken("camp");
-                        continue;
-                    }
-                    if (k == SDLK_RETURN || k == SDLK_KP_ENTER) v.tap();
-                    if (v.eventMode) continue;
+                    if (v.gameKey(k)) continue; // (the game's screens; a controller's buttons come as these keys)
                     ViewFigure& f = v.fig;
                     if (v.fieldMode) {
                         if ((k == SDLK_PAGEUP || k == SDLK_PAGEDOWN) && !f.anims.empty())
@@ -13968,18 +14032,7 @@ int main(int argc, char** argv) {
                 } else if (e.type == SDL_EVENT_GAMEPAD_REMOVED) {
                     if (pad && SDL_GetGamepadID(pad) == e.gdevice.which) SDL_CloseGamepad(pad), pad = nullptr, padDir = 0;
                 } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad) {
-                    const SDL_GamepadButton b = SDL_GamepadButton(e.gbutton.button);
-                    const SDL_GamepadButton circle = v.settings.padSwap ? SDL_GAMEPAD_BUTTON_SOUTH : SDL_GAMEPAD_BUTTON_EAST;
-                    const SDL_GamepadButton cross = v.settings.padSwap ? SDL_GAMEPAD_BUTTON_EAST : SDL_GAMEPAD_BUTTON_SOUTH;
-                    const bool shopList = v.shop.stage >= 3 && v.shop.kind > 0; // (ShopCutInPiupiuMenu: L / R the character)
-                    SDL_Keycode key = 0;
-                    if (b == circle) key = SDLK_RETURN;
-                    else if (b == cross) key = SDLK_BACKSPACE;
-                    else if (b == SDL_GAMEPAD_BUTTON_NORTH) key = SDLK_TAB;
-                    else if (b == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER && v.inMenu()) key = shopList ? SDLK_LEFT : SDLK_PAGEUP;
-                    else if (b == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER && v.inMenu()) key = shopList ? SDLK_RIGHT : SDLK_PAGEDOWN;
-                    else if (b == SDL_GAMEPAD_BUTTON_START && v.titleMenu.stage >= 2 && v.titleMenu.stage <= 3) key = SDLK_RETURN;
-                    if (key) pushKey(key);
+                    if (const SDL_Keycode key = v.padButtonKey(SDL_GamepadButton(e.gbutton.button))) pushKey(key);
                 } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
                     v.pointerCancelled = false;
                     dragging = true;
@@ -14074,6 +14127,8 @@ int main(int argc, char** argv) {
                     padScript.erase(padScript.begin());
                     if (w.rfind("lx=", 0) == 0) SDL_SetJoystickVirtualAxis(testPad, SDL_GAMEPAD_AXIS_LEFTX, Sint16(std::clamp(std::atof(w.c_str() + 3), -1.0, 1.0) * 32767));
                     else if (w.rfind("ly=", 0) == 0) SDL_SetJoystickVirtualAxis(testPad, SDL_GAMEPAD_AXIS_LEFTY, Sint16(-std::clamp(std::atof(w.c_str() + 3), -1.0, 1.0) * 32767));
+                    else if (w.rfind("shot=", 0) == 0) padShot = w.substr(5);
+                    else if (w == "quit") running = false;
                     else if (w == "blur") {
                         SDL_Event focus{};
                         focus.type = SDL_EVENT_WINDOW_FOCUS_LOST;
@@ -14181,6 +14236,12 @@ int main(int argc, char** argv) {
                                 std::memcpy(&small[(size_t(y) * size_t(sw) + size_t(x)) * 4], &px[(size_t(y) * size_t(k) * size_t(pw) + size_t(x) * size_t(k)) * 4], 4);
                         saveBmp((shotDir + file).c_str(), small, sw, sh);
                     }
+                }
+                if (!padShot.empty()) { // (CR2_PAD_SCRIPT's shot=)
+                    std::vector<uint8_t> px;
+                    int pw = 0, ph = 0;
+                    if (dev->readPixels(px, pw, ph)) saveBmp(padShot.c_str(), px, pw, ph), SDL_Log("test controller: saved %s", padShot.c_str());
+                    padShot.clear();
                 }
                 if (quitAt >= 0 && v.battleMode && v.battleClock >= quitAt) SDL_Log("window: closed at battle %.2f s", v.battleClock), running = false;
             }

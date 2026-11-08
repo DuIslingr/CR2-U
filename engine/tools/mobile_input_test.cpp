@@ -43,7 +43,11 @@ int main() {
     problems += voices != 1;
     events.advance(); // the first tap reveals the text, keeping the voice
     problems += voices != 1;
+    // (a tap counts once 0.15 s have passed since its block began - EvtWindow::UpdatePage's
+    // timer - and the last page's reaches the end two updates on: the updates go by first)
+    for (int k = 0; k < 3; ++k) events.update(&vm);
     events.advance(); // the second skips the completed message and its voice
+    for (int k = 0; k < 2; ++k) events.update(&vm);
     problems += voices != 0;
     vm.call("nextvoice"); vm.call("nextvoice");
     problems += voices != 1;

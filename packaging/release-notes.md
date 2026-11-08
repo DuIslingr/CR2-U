@@ -34,6 +34,10 @@ A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux an
   area now fades to black before the next one, as the original does. A random encounter keeps the
   original's rhythm: the leader takes two more steps, then the sound and the wipe, and the battle
   starts 1.4 s after the encounter instead of 0.65 s.
+- **Vulkan: fewer hitches.** The renderer keeps the driver's compiled pipelines between runs
+  (`vulkan-pipelines.bin` in the profile folder), so the start and each new screen don't compile
+  them again. Measured on a scene here: 6.7 ms of pipeline compiling the first time, 0.1 ms the
+  next; slower drivers save more. A cache from another GPU or driver is ignored and rebuilt.
 - **Battles:** the results of a won battle no longer stay on screen over the next one. The next
   battle used to lose its HUD while the last results' panels came in over the fight (reported by
   [metastigma](https://github.com/metastigma)).

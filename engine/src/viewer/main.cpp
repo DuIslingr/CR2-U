@@ -12937,6 +12937,10 @@ int main(int argc, char** argv) {
         cr2::setFsr4Dirs({env && *env ? std::string(env) : std::string(), gameFolder + "fsr4/", base ? std::string(base) + "fsr4/" : std::string()});
     }
 #endif
+    // (the Vulkan pipelines compiled in earlier runs: the profile's, as the settings are kept - not
+    // a capture's or an export's; CR2_PIPELINE_CACHE names another file, "" none)
+    if (const char* pc = SDL_getenv("CR2_PIPELINE_CACHE")) cr2::setPipelineCacheFile(pc);
+    else if (v.settingsPersist) cr2::setPipelineCacheFile(Viewer::savePath("vulkan-pipelines.bin"));
     std::unique_ptr<cr2::RenderDevice> dev;
     SDL_Window* win = nullptr;
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)

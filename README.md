@@ -42,7 +42,9 @@ its font `CR2/resources/font/TBGoPro-Bold.otf`), the Android 2.1.2 (the maps' ta
 2.1.0 (the maps' table from its executable).
 
 Saves and settings go to the profile folder (`~/.local/share/DuIslingr/CR2-U/` on Linux): CR2-U's
-own save (`save1.txt`, the continue data `cont.txt`) and `settings.ini`. The game's
+own save (`save1.txt`, the continue data `cont.txt`) and `settings.ini`, and with Vulkan
+`vulkan-pipelines.bin`: the graphics driver's compiled pipelines, so later starts and new screens
+don't compile them again (safe to delete; a driver update starts it anew). The game's
 own saves are read and written too (`--game-save game.dat`, `cr2tool save-import` / `save-export`).
 
 ## Your copy

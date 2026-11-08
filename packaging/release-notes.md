@@ -44,7 +44,10 @@ A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux an
   instead of at an even pace; the leader turns toward a nearby balloon or mark on stopping, as in
   the original, and stands still under an encounter's wipe. The field camera follows the leader
   with the original's easing instead of being locked to it, leans toward a high jump's, mystic's
-  or aim's mark, and eases back after a scripted camera move.
+  or aim's mark, and eases back after a scripted camera move. Closing a menu or finishing a touch
+  action starts its scene on the next update, as the original does. A line's voice stays quiet
+  while it is fast-forwarded or skipped, as in the original. An encounter's wipe, in and out,
+  takes a quarter of a second as in the original, not half a second.
 - **Vulkan: fewer hitches.** The renderer keeps the driver's compiled pipelines between runs
   (`vulkan-pipelines.bin` in the profile folder), so the start and each new screen don't compile
   them again. Measured on a scene here: 6.7 ms of pipeline compiling the first time, 0.1 ms the

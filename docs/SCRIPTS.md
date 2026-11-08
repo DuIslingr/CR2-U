@@ -250,7 +250,7 @@ focused dungeon's mapPic_dNN). Its rows: the dungeons whose flags are set (0x534
 names announcemenuname's), then the levels (Lv. 01 - 10 .. : eleven, flags 0x5345a8), then the
 question in the System window (the dungeon, the level, announce 0x80: yes / no). Yes chooses
 the dungeon (`GetSelectDungeonNum`, saved) and the difficulty, the level less one, and calls the
-town's `WarpTask` (CallEvent: the warp's tutorial, effect and jump to the dungeon); no asks
+town's `WarpTask` (CallEvent, run from the update after: the warp's tutorial, effect and jump to the dungeon); no asks
 again, Back steps back to the field. A dungeon can want a set pair (MapSelectMenu::
 CheckCoupling). Its flag (0x534578 by its number: 1079, 1076, 1077, 1078, 1074, 1073, 1075, 1072,
 1080 for 1..9) must be set, and one of its rows (0x5345d8: the dungeon, a flag, the two characters

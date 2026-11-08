@@ -216,7 +216,7 @@ which `GameMain::Update` runs from the next.
 
 | | The original | CR2-U before | CR2-U now |
 |---|---|---|---|
-| The hit's way to the battle | the leader walks two more updates (`PlayerMove` in step 2 before the check); SE 0xc9 in the second update after the hit; the wipe called in the third (its window's first step the fourth, covered 0.5 s later - `FadeWindowMenu` speed 10 / 20) with the music's 20-update fade; the battle's first update the 28th after the hit (1.4 s) | SE, wipe and music at the hit, the walk stopped there; the battle 0.65 s after the hit (the wipe's 0.5 s and three updates) | counted on the hit's updates (`encountStep`: `encount.updates`): walk to the second, SE then, wipe and music in the third, the battle started after the 27th |
+| The hit's way to the battle | the leader walks two more updates (`PlayerMove` in step 2 before the check); SE 0xc9 in the second update after the hit; the wipe called in the third (its window's first step the fourth, covered 0.25 s later - `encount_in` at its own speed, as the reference video shows; see round 19) with the music's 20-update fade; the battle's first update the 28th after the hit (1.4 s) | SE, wipe and music at the hit, the walk stopped there; the battle 0.65 s after the hit (the wipe's 0.5 s and three updates) | counted on the hit's updates (`encountStep`: `encount.updates`): walk to the second, SE then, wipe and music in the third, the battle started after the 27th |
 
 Also as the original already: the distance in x and z only, the 0.17 step, the draw every area's
 steps, the + 5 after a miss, the area's ten weighted couplings, the switch's flags, no count while
@@ -363,10 +363,105 @@ has control, so an event keeps it. `FldMain::SetMapCameraAtNewArea` (from `Init`
 | A script's camera let go (`SetMode(0)`) | eased back to the leader | at the leader at once | eased back |
 | A new area | on the leader at once | the same | the same |
 
+### The menus' and touch actions' calls
+
+`FldMain::CallEvent(name, fade)` sets step 0x1b and +0x28 = 0x11 (no control), calls
+`SetEventStep(fade, -1)` (`TouchFinish`; with `fade` a `Cr3FadeOut(0, 20)`) and queues the name for
+`EventExecute` - the function runs from the update after. The decompiler shows its call sites as
+`CallEvent(this, true)`: the name in `r1` read as the flag. The ARM code (`FldMain::Init`'s four
+and `FldMain::Update`'s fifteen, disassembled from the same library with `llvm-objdump`, one site's
+bytes checked against Ghidra's) passes `r2 = 0` at every one - no `CallEvent` fades. The world
+select (step 10, `WarpTask`), the chapter select (0xe), the shop and camp's, the pub's
+(`pub_checkA / G`), the party's (`party_talk`, `party_end`) and the touch actions' successes (steps
+0x16 .. 0x1a: the mark's gimmick's own function) all end through it. The library does not:
+`FldLibrary::Execute` ends in `CallAtMenuFinished` (step 1), and an entry's `library_disp` is called
+from the menu itself (`InterfaceEvent::CallScript`), at once.
+
+| | The original | CR2-U before | CR2-U now |
+|---|---|---|---|
+| A menu's or a touch action's function | from the update after (`EventExecute`), no control meanwhile | called at once | `queueEvent`, as a balloon's tap |
+| The library's `library_disp` | at once, from the menu | at once | unchanged |
+
+### A choice's aftermath, and a message's voice under the skip
+
+`EndBattleYNChoice` hands `BattleYNChoice::SetParamNumber` its 2: the buttons' close
+(`InterfaceCloseAnimeSet`) and `InterfaceMain +0x1c = 20`. `InterfaceMain::Update` counts it down
+into `BtlInterface +0x1b50` - 1 while it runs, 2 on its last update, 0 after. Only the battle reads
+that flag (`BtlCommand`'s option, advent, awake, item, getset, sopia, command, escape and target
+loops; `BtlGameover::Update`: the answer acted on while it is 1); nothing in the field does. The
+field's choice holds nothing off: as the port has it.
+
+`EvtWindow::ShowMessage` plays the message's voice (`PlayVoice(+0x216c)`) only when `IsSkip` is
+false and +0x2169 clear; `IsSkip` is the window's own fast-forward held, or `EvtSkip`'s button
+visible and touched. (The same test types the lines - 1.0 - or puts them up whole - 0.)
+
+| | The original | CR2-U before | CR2-U now |
+|---|---|---|---|
+| A voiced message set with the fast-forward or the skip button held | no voice | its voice | no voice (the test `UpdatePage`'s race already used) |
+
+### An event box's last step
+
+`FldMain::Update`'s step 2 runs `PlayerMove` (the stick into its locals) and then
+`CheckCollisionEvent`: a contact the physics found at the end of the last update runs
+`CollisionEventExec`, which takes the control away (+0x28 = 0x11). The tail then zeroes those locals
+whenever +0x28 is not 1, before `FldPlayer::Update` moves the leader - so the leader does not move
+in the update after the contact. The port's queue takes the control from the contact's own update,
+so its next update moves nothing either: the same. (Round 7's "one more step" was wrong.)
+
+| | The original | CR2-U before | CR2-U now |
+|---|---|---|---|
+| An event box's contact | no move the update after | the same | unchanged |
+
+### The lines not yet typed: against the reference video
+
+Rounds 17 and 18 read `NarrationWindowMenu`, `VistaConversationWindowMenu`,
+`ConversationWindowMenu`, `SystemWindowMenu` and `HelpWindowMenu`: `SetStringData` steps a new
+line's `MenuText` once (`AnnouncementWindowMenu`'s does not), and `Update` types the lines in turn,
+stopping at the first not done. From that they took every line of a page to show its first
+character from the start, and the port was made to. The reference video says otherwise: its
+first video (`BEf8y6MgOoE`, a cut-in talk on Android) at 473.0 s shows "Now let's g" on the first
+line and nothing on the second; at 473.5 s the first is whole and the second reads "We're gonn".
+`EvtWindow::ShowMessage` hands the window a line only once the typing has reached it (its loop
+stops past the current block), so the lines below do not exist yet. The change is undone: the
+port's lines below the one typing stay empty, as they always were. (Round 18 also found that
+round 17's version never took effect - it asked for the narration by a window id its layout does
+not set.)
+
+| | The reference video | CR2-U (rounds 17 - 18) | CR2-U now |
+|---|---|---|---|
+| A two-line cut-in page typing its first line | the second line empty | the second line's first character | the second line empty |
+
+### Earlier rounds against the reference video
+
+Round 19 checked code-read changes against the reference playlist's first video (`BEf8y6MgOoE`,
+Android): frames sought in the built-in browser, read as pixels, the background's shift between
+frames found by block matching.
+
+- **The camera's ease (round 14): confirmed.** A walk from 556.2 s: the scroll ramps up over about
+  0.3 s to 8 - 10 pixels an update, and after the joystick goes (between 558.85 and 559.0 s) it
+  tails off over about 0.6 s, halving each 0.1 s or so - not a dead stop; the leader, still,
+  drifts back to the screen's middle as it does. A camera fixed on the leader would stop at once.
+- **The encounter's wipe (round 8): corrected.** The hit at about 496.9 s: the black sweeps in
+  right to left, streaked, from 496.97 to 497.23 s; the battle's uncovering does the same from
+  498.83 to 499.1 s - each about 0.27 s, `encount_in` / `encount_out`'s own 0.25 s. Round 8 read
+  `FadeWindowMenu`'s speed (`+0x60 = 10 / frames`, 0.5 for 20) as half speed and made each 0.5 s;
+  the port's `kWipeSeconds` is now 0.25. (Black between them 1.6 s in the video: the battle's
+  loading, which the port has not.) The port's own frames (`--battle 57`, 0.06 - 0.3 s): the same
+  sweep, clear by 0.3 s.
+- **The leader frozen under the wipe (round 13): not verifiable here.** The camera still scrolls
+  into the wipe, and the black covers the middle within about 0.2 s; no frames separate the
+  leader's motion from it.
+- **The result window's close (round 12): consistent.** At 542.5 s the window slides out as the
+  battle goes white. The EXP's 3 s count (round 11) is not visible: the player taps it short.
+
+| | The reference video | CR2-U before | CR2-U now |
+|---|---|---|---|
+| The encounter's wipe, each way | about 0.27 s | 0.5 s | 0.25 s |
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
-Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (fourteen: the
+Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (nineteen: the
 second from the `FldMain::Update` row on, the third from the `FldUtilSetPopPoint` row on, the
 fourth - the cut-ins - from the `InterfaceMain::SetCutInWindow` row on, the fifth - the first
 field - from the `VistaConversationWindowMenu::SetParamNumber` row on, the sixth - its talks -
@@ -376,9 +471,13 @@ from the `Cr3EvtWindowShowYesNoButton` row on, the seventh - its events - from t
 row on, the tenth - a battle's end - the `BtlMainCtrl::StepAction` row, the eleventh - the result window -
 from the `BtlMainCtrl::StepAction / StepGameover` row on, the twelfth - an escape, the window's close -
 from the `BtlCommand::StepEscape` row on, the thirteenth - the leader's turns - from the
-`FldPlayer::SetDirection` row on, the fourteenth - the camera's ease - the `FldMap::CalcScroll` row).
+`FldPlayer::SetDirection` row on, the fourteenth - the camera's ease - the `FldMap::CalcScroll` row, the fifteenth - the menus' calls -
+the `FldMain::CallEvent` row, the sixteenth - the choice and the voice - the `EvtWindow::ShowMessage` row, the seventeenth - the
+lines' typing - the `MenuText::Step` row, the eighteenth - the other windows' lines - from the
+`VistaConversationWindowMenu` row on; the conclusion both drew was overturned by the reference video; the nineteenth - the wipe - the
+`FadeWindowMenu` row).
 `re/opening-audit-evidence.json` (never committed) holds the second session's records,
-`re/opening-audit-evidence-3.json` the third's, `-4.json` the fourth's, `-5.json` the fifth's, `-6.json` the sixth's, `-7.json` the seventh's, `-8.json` the eighth's, `-9.json` the ninth's, `-10.json` the tenth's, `-11.json` the eleventh's, `-12.json` the twelfth's, `-13.json` the thirteenth's and `-14.json` the fourteenth's; the first's bundle was overwritten by the second,
+`re/opening-audit-evidence-3.json` the third's, `-4.json` the fourth's, `-5.json` the fifth's, `-6.json` the sixth's, `-7.json` the seventh's, `-8.json` the eighth's, `-9.json` the ninth's, `-10.json` the tenth's, `-11.json` the eleventh's, `-12.json` the twelfth's, `-13.json` the thirteenth's, `-14.json` the fourteenth's, `-15.json` the fifteenth's, `-16.json` the sixteenth's, `-17.json` the seventeenth's, `-18.json` the eighteenth's and `-19.json` the nineteenth's; the first's bundle was overwritten by the second,
 so those IDs name records no longer on disk - each is a plain decompile of the named function,
 reproducible with `open_binary` and `batch_decompile` on the same library.
 
@@ -459,6 +558,11 @@ reproducible with `open_binary` and `batch_decompile` on the same library.
 | `FldPlayer::SetDirection / StopDirection / Update`, `FldDirectionManager::SetDirection / Update`; `FldMain::SetPlayerRotationToBalloon`, `ChangeCharacterExecute`, `FldPlayer::SetIdleAnim`, `FldSprint::Execute` and `FldMain::Update`'s step 0x1c and its tail read in the repo's own decompilation | `ev_abe9efd4757aa4b90cfc2b5e949a9253c5163ff699ef9f2a6f2a935211fc727e` |
 | Procedure search (`FldPlayer`, `FldDirectionManager`); references to `FldPlayer::m_bAnimationStop` (none direct: through the GOT) | `ev_ea47da234de35d0a5f1beec7928c719dc685323363203bef375084d222cd75c9`, `ev_d619f5c88494c40f3a3052122c4adcf02563ab30684eac1ae3a14cd060e67269` |
 | `FldMap::CalcScroll` assembly (the ease), the constant at `0x3bf6f0` (0); `FldMap::Update / CalcNewScreenPos / SetDirectScroll`, `FldMain::SetMapCameraAtNewArea`, `FldMain::Update`'s tail, `CheckTouchActionMark` and the gimmick lists' set-up read in the repo's own decompilation | `ev_43aae0a9701d8771873db84b7a70255fc08ca137a5280af649ba2375e7c8c6f1`, `ev_f92a6c94551f5e3f6899e179ac71743ec17fbe4d66aff4576a9b45adefd17812` |
+| `FldMain::CallEvent`'s references (19 call sites) and one site's bytes (`0x3bd4f8`: `ldr r1` the name, `mov r2, #0`, `bl CallEvent`); `CallEvent`, `SetEventStep`, `CallAtMenuFinished`, `FldLibrary::Execute` and `FldMain::Update`'s steps read in the repo's own decompilation; every site's `r2` from `llvm-objdump` of the same file. (Also in the bundle: an assembly listing read at the symbol table's address, which in Ghidra's image - 0x10000 higher - is another function; not used.) | `ev_09d1bb918d791e8b263082a5ee53e4c85bc98435bb4412754a5843108505f3d4`, `ev_7c832d843f26cb5ca2ae050df3955bde737525bcef8bd6c119a8f53fe256f9c2`, `ev_c3d8032c24c8fd63157d87fad664ed7580ca48700fa25cc8e20747412983c0f9` |
+| `EvtWindow::ShowMessage / IsSkip / PlayVoice`, `BattleYNChoice::SetParamNumber`, `InterfaceMain::EndBattleYNChoice`; `InterfaceMain::Update`'s countdown and the `+0x1b50` readers read in the repo's own decompilation | `ev_73f8b3f12d14a099be5c8235b5842cd4ef8ecb743c6181d6dc507e7e784a497b` |
+| `MenuText::Step / Initialize / SetSkipFlag`, `NarrationWindowMenu::SetStringData / Update`; `FldMain::Update`'s step 2 and tail (`PlayerMove`'s locals zeroed off control) and `MenuText::Render / MakeFontSpeedSupportTexture` read in the repo's own decompilation | `ev_8d6c02ce2476fc97b84422d0464e85843128c2ee04f0e7f5cf735804e82079b8` |
+| `VistaConversationWindowMenu / ConversationWindowMenu / SystemWindowMenu / HelpWindowMenu::SetStringData / Update`; `AnnouncementWindowMenu::SetStringData / Update` | `ev_ed22a6a097860806f8206195e164024e5c5073598133de2bd18a8492eecf0203`, `ev_3f881bfe982bba58e1dca2579ef1281d209a730a4c3542f80548baf3c1dfc428` |
+| `FadeWindowMenu::SetParamNumber / Update`, `Cr3Fade::FadeOut / Update` (the speed `10 / frames`, read again; the video decides its effect). (Also in the bundle: the same request made before the session was open, failed; not used.) | `ev_6924fc7c03adb80158f72486cc463cdad2893f5cff61b7759326a85f78ef5e19`, `ev_0e050e604344dcfa5889357d30f56d6c86c2870f9a2028187a0dbfb37b2e6751` |
 
 These are static observations of the shipped library, not traces of the original running: the
 update order and counts follow from the code, the visual result from the fade figures'
@@ -466,10 +570,6 @@ animations being linear (assumed, as before).
 
 ## Not settled
 
-- **The first character of each line.** `NarrationWindowMenu::SetStringData` makes a `MenuText` per
-  line of a block and steps each once; whether that shows each line's first character at once
-  (the typing then line after line) depends on `MenuText`'s renderer (`CustomFigure`), not read.
-  The port types the block from its first character.
 - **The vista window without a name.** `DeleteNamePlate` (and the close with a name up) turn
   `vstWin_talk` back and put the window's own texture resource (`+0x38`'s `+0x48`) into the
   figure's `+0x44 / +0x3c`, which `SetStringData` slot 0 had set to 0; what that draws for the
@@ -478,14 +578,6 @@ animations being linear (assumed, as before).
   is read from its assembly and `FldMain::Update`'s order (the script's `EventExecute` before
   `FldMap::Update`, in the repo's decompilation); no run of the original confirmed the frame.
   Nothing else moves the scroll in mode 1, so it holds there till `SetMode(0)`.
-- **A choice's aftermath.** `EndBattleYNChoice` sets `InterfaceMain +0x1c` to 20, counted down in
-  its `Update` into `BtlInterface +0x1b50` (a battle flag); what that holds off in the field, if
-  anything, was not traced. Not reproduced.
-- **The leader's last step into an event box.** `CollisionEventExec` runs after the next update's
-  `PlayerMove`, so the original's leader moves once more after the contact; the port's stops at it.
-- **The menus' calls.** The camp, the shop, the world select, the library and the pub end through
-  `CallEvent` too - the function the update after - but the port's menus still call at once (the
-  library looks at the result straight away). Not changed in this round.
 - **The camera's units.** The ease's one-pixel hold is the original's device pixel; the port
   holds within one pixel of the window it draws to. `GetPos_X / _Y` in the port still read the
   clamped scroll (`shownX_`), the original's the unclamped +0x30.
@@ -511,8 +603,11 @@ animations being linear (assumed, as before).
 - **The result window's close, timed.** It runs during the way out's white fade; no frame of it
   was captured (the explorer's runs take none), only the window's opening, whose parts slide in
   from the sides in about 0.2 s.
-- A voice is not played while the skip button is held (`ShowMessage`'s `IsSkip`); the port plays
-  it. Not in the opening's reach (its two narrations are skipped whole).
+- **The skipped voice, run.** No headless run held a skip across a voiced message: the opening's
+  two are skipped whole, and `--input fast` takes hold only once a button shows, after the
+  message's voice. Checked by reading only; the opening without a skip still voices 624 and 625.
+- **+0x2169.** `ShowMessage`'s second voice test is a window flag copied in with +0x2168 (an
+  `EvtWindow` set-up's four bytes); what sets it was not read. The port takes it as clear.
 
 ## Checks
 
@@ -601,6 +696,14 @@ each update's scroll and target (960-wide units): the target moves off while the
 scroll follows a fifth of the gap an update (15.2 -> 47.7 -> 95.7 -> 129.2 -> 142.9 -> 148.5 ->
 150.8 -> 151.7 toward 152.4) and holds 0.7 short, under a pixel. A bounded explore from d0105
 crossed four areas (each started on the leader) as before.
+
+The menus' calls, a bounded explore of t0101 (`--hours 0.05 --skip-battles`): the world select's
+`WarpTask` logged as queued at update 727 and called after 728 (again at 1119 / 1120, its script
+then ending and control back three updates after), as a balloon's tap's call is.
+
+The lines' typing, after undoing the change: the reference video's cut-in page (`BEf8y6MgOoE`,
+frames sampled every 0.5 s from 471 s, cropped to the window) types line after line with the line
+below empty; the port's `D01_01_0101_evt` lines type as before.
 
 (The second narration is `... \w60 \*`.) The captures are frames of the port, compared with the
 counts above, not with the original running.

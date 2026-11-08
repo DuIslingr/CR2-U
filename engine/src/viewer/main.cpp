@@ -1239,7 +1239,7 @@ struct Viewer {
         }
         audio.playSe(0x164, false);
         actionMark.endedAt = uiClock;
-        callGimmick(function);
+        queueEvent(function); // (FldMain steps 0x16 .. 0x1a: CallEvent - EventExecute the update after)
     }
     // the mouse in an iai (fx, fy: the screen's fractions; phase 0 pressed, 1 dragged)
     void iaiPointer(float fx, float fy, int phase) {
@@ -11161,12 +11161,12 @@ struct Viewer {
             game.selectChapter = world.dungeon;
             SDL_Log("chapter select: chapter %d", world.dungeon);
             world.stage = 0;
-            return callGimmick("chapter_select");
+            return queueEvent("chapter_select");
         }
         game.selectDungeon = world.dungeon, game.difficulty = world.level - 1;
         SDL_Log("world select: dungeon %d, level %d", world.dungeon, world.level);
         world.stage = 0;
-        callGimmick("WarpTask"); // (FldMain step 10: CallEvent("WarpTask"))
+        queueEvent("WarpTask"); // (FldMain step 10: CallEvent("WarpTask") - EventExecute the update after)
     }
     void worldTap(int id) {
         if (world.stage >= 3) {
@@ -11262,7 +11262,7 @@ struct Viewer {
         game.libraryId = r.id;
         library.stage = 2;
         SDL_Log("library: entry %d", r.id);
-        callGimmick("library_disp");
+        callGimmick("library_disp"); // (InterfaceEvent::CallScript from the menu: at once, not CallEvent)
         if (!script->running()) library.stage = 1, library.at = uiClock; // (no reading: the list again)
     }
     void libraryBack() {
@@ -11350,8 +11350,8 @@ struct Viewer {
     void pubEnd(int result) { // (PubMainMenu: ResultPubParameter - FldMain's CallEvent / CallAtMenuFinished)
         pub.stage = 0;
         SDL_Log("pub: %d", result);
-        if (result == 1) callGimmick("pub_checkA");
-        else if (result == 2) callGimmick("pub_checkG");
+        if (result == 1) queueEvent("pub_checkA"); // (CallEvent: the update after)
+        else if (result == 2) queueEvent("pub_checkG");
         else pendingBranch = true;
     }
     void pubTap(int id) {
@@ -11552,7 +11552,7 @@ struct Viewer {
     }
     void shopClose(const char* call = nullptr) {
         shop.stage = 0;
-        if (call) callGimmick(call); // (FldMain: CallEvent)
+        if (call) queueEvent(call); // (FldMain: CallEvent - EventExecute the update after)
         else pendingBranch = true;   // (back to the field)
     }
     void shopTap(int id) {
@@ -11851,13 +11851,13 @@ struct Viewer {
         auto stage = [&](int s) { party.stage = s, party.at = uiClock, party.focus = 0; };
         if (party.stage == 1) {
             if (id == 25) audio.playSe(0xb4, false), stage(2);
-            else if (id == 13) audio.playSe(0xb4, false), party.stage = 0, callGimmick("party_talk"); // (FldPartyOrganize 3)
+            else if (id == 13) audio.playSe(0xb4, false), party.stage = 0, queueEvent("party_talk"); // (FldPartyOrganize 3: CallEvent)
             else if (id == 100) audio.playSe(0xb5, false), party.stage = 0, pendingBranch = true;    // (2: the field)
         } else if (party.stage == 2) {
             if (id == 1 || id == 2) {
                 if (id == 1 && game.flag(0x3fa)) return (void)audio.playSe(0xb6, false); // (the first fixed: flag 0x3fa)
                 audio.playSe(0xb4, false), party.slot = id - 1, stage(3);
-            } else if (id == 100) audio.playSe(0xb5, false), party.stage = 0, callGimmick("party_end"); // (4)
+            } else if (id == 100) audio.playSe(0xb5, false), party.stage = 0, queueEvent("party_end"); // (4: CallEvent)
         } else if (party.stage == 3) {
             const std::vector<int> c = partyChoices();
             if (id >= 7000 && id < 7000 + int(c.size())) { // (a face: that one in the slot)
@@ -12268,7 +12268,11 @@ struct Viewer {
     // left (a FadeIn: every battle's start, BtlMainCtrl::StepBattleIn's FadeIn(3, 20)); `p` 0..1
     // (its animators at 10 / frames speed - FadeWindowMenu::SetParamNumber 3 -: 0.25 s at 0.5, the
     // reference's half a second)
-    static constexpr float kWipeSeconds = 0.5f;
+    // the encounter's wipe (Cr3FadeOut / FadeIn(3, 20): FadeWindowMenu's `encount` - encount_in to
+    // cover, encount_out to uncover): their own 0.25 s, as the reference video plays them (each
+    // sweep, right to left, about 0.27 s at 30 frames a second) - FadeWindowMenu's speed 10 / 20
+    // was read as half speed and gave 0.5 s
+    static constexpr float kWipeSeconds = 0.25f;
     float battleWipeAt = -1;
     void drawEncountWipe(float p, bool cover) {
         Mat4 camera = cr2::mat4Identity();

@@ -243,12 +243,14 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
         const auto own = windowText_.find(messageWindow_);
         const TextData& td = own != windowText_.end() ? own->second : text_;
         parsed_ = parseMessage(td.message(message_, language));
-        // (its voice - the text's trailer: EvtWindow::PlayVoice as its page starts, the last one stopped)
-        if (const int v = td.voice(message_); v >= 0 && soundHooks().playVoice) {
+        page_ = 0, pageTime_ = 0, revealed_ = 0, stop_ = 0, stopTime_ = 0, ended_ = false;
+        // (its voice - the text's trailer: EvtWindow::ShowMessage's PlayVoice, the last one stopped -
+        // unless IsSkip, the window's fast-forward or the skip button held: then none)
+        const bool skipping = (fastForward && fastForwardShown()) || skipHeld(); // (\m turns the window's off, not EvtSkip's)
+        if (const int v = td.voice(message_); v >= 0 && soundHooks().playVoice && !skipping) {
             if (soundHooks().stopAllVoices) soundHooks().stopAllVoices(0);
             soundHooks().playVoice(v);
         }
-        page_ = 0, pageTime_ = 0, revealed_ = 0, stop_ = 0, stopTime_ = 0, ended_ = false;
         pageStarted();
         if (parsed_.pages.empty()) message_ = 0;
         else ++messagesSet_;

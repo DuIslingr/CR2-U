@@ -95,7 +95,9 @@ Vita's builds - `tools/re_setup.sh`), the game's own scripts and a reference pla
       binary (three tables of 14 dungeons x 48 areas, found in the iPad's, Android's or Vita's
       executable), the walk counted in steps of 0.17, a draw every area's steps, the chance 5 more
       after each miss, the coupling picked by the area's weights (`battledata.dat`'s areas); SE
-      0xc9, the fade, the battle on the area's map and music, back to the field where it began;
+      0xc9 two updates after the hit, the wipe and the music's fade in the third, the battle's first
+      update the 28th (FldMain steps 0x1c .. 0x20, Cr3Fade's 20 updates; OPENING_AUDIT.md), on the
+      area's map and music, back to the field where it began;
       the field menu's switch (flags 0x40e, 0x40f) and SetEncountEnable (`cr2tool encounters`:
       181 maps with them, every area and coupling there)
 - [x] Battles' stage: the encounters' tables (`data\battledata.dat`), the map, the party and the

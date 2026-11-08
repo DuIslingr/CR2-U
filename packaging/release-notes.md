@@ -31,7 +31,9 @@ A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux an
   instead of vanishing. Talking to someone no longer snaps the leader round to face them (the
   scenes turn the leader themselves), a talk or an event box starts on the original's frame, and
   the leader can move again a few frames after an event ends, as in the original. Walking off an
-  area now fades to black before the next one, as the original does.
+  area now fades to black before the next one, as the original does. A random encounter keeps the
+  original's rhythm: the leader takes two more steps, then the sound and the wipe, and the battle
+  starts 1.4 s after the encounter instead of 0.65 s.
 - **Battles:** the results of a won battle no longer stay on screen over the next one. The next
   battle used to lose its HUD while the last results' panels came in over the fight (reported by
   [metastigma](https://github.com/metastigma)).

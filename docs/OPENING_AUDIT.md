@@ -199,17 +199,41 @@ box none (`CheckBalloonOne`); a key box tapped by anyone but Orlando runs `Messa
 Orlando the lock (`FldUnlock`); a box opened at the tap; an event box's function its name
 (`EventExecute` case 0xc: `Cr3Sprintf` to 7 bytes - the first six characters, `evt021`).
 
+### The first dungeon's encounters: from the hit to the battle
+
+`FldEncount::Update` (after `FldMap::Update` in each `FldMain::Update`): with the encounters on
+(`cr3_field_data +0x30`) and, once the field menu has their switch (flags 0x40e and 0x40f), it
+on (`CheckEncountInterface`), the leader's x / z distance adds up while not paused (+9, set by an
+event's start); each 0.17 a step, each area's steps (`SetData`'s table, 2 after `Reset`) a draw
+(`Pickout`: `lrand48() % 100` at most the chance a hit - `MakeCouplingID` -, else the chance + 5).
+A hit sets the state 10000; the next update's sets +0x1c and `SetBattle(-1)`; step 2 of the
+update after sees +0x1c (when no tap or press is read first) and goes to step 0x1c with SE 0xc9;
+0x1c saves the leader's place (`SaveWorkBeforeBattle`), stops its animation
+(`FldPlayer::m_bAnimationStop`) and falls into 0x1d: `Cr3FadeOut(3, 20)` - the wipe - and
+`StopBGM(20)` unless flag 0x7f7; 0x1e waits for `Cr3Fade` (`FadeOut`: +1/20 an update from 0,
+done at 1 - `WaitFadeFinish` is its state 0), 0x1f counts three updates, 0x20 makes `BtlMain`,
+which `GameMain::Update` runs from the next.
+
+| | The original | CR2-U before | CR2-U now |
+|---|---|---|---|
+| The hit's way to the battle | the leader walks two more updates (`PlayerMove` in step 2 before the check); SE 0xc9 in the second update after the hit; the wipe called in the third (its window's first step the fourth, covered 0.5 s later - `FadeWindowMenu` speed 10 / 20) with the music's 20-update fade; the battle's first update the 28th after the hit (1.4 s) | SE, wipe and music at the hit, the walk stopped there; the battle 0.65 s after the hit (the wipe's 0.5 s and three updates) | counted on the hit's updates (`encountStep`: `encount.updates`): walk to the second, SE then, wipe and music in the third, the battle started after the 27th |
+
+Also as the original already: the distance in x and z only, the 0.17 step, the draw every area's
+steps, the + 5 after a miss, the area's ten weighted couplings, the switch's flags, no count while
+an event runs; `SaveWorkBeforeBattle` keeps the leader's place and rotation for the return.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
-Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (seven: the
+Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (eight: the
 second from the `FldMain::Update` row on, the third from the `FldUtilSetPopPoint` row on, the
 fourth - the cut-ins - from the `InterfaceMain::SetCutInWindow` row on, the fifth - the first
 field - from the `VistaConversationWindowMenu::SetParamNumber` row on, the sixth - its talks -
 from the `Cr3EvtWindowShowYesNoButton` row on, the seventh - its events - from the
-`FldMain::CheckTouchEventExec_Tap` row on).
+`FldMain::CheckTouchEventExec_Tap` row on, the eighth - the encounters - from the
+`FldEncount::Update` row on).
 `re/opening-audit-evidence.json` (never committed) holds the second session's records,
-`re/opening-audit-evidence-3.json` the third's, `-4.json` the fourth's, `-5.json` the fifth's, `-6.json` the sixth's and `-7.json` the seventh's; the first's bundle was overwritten by the second,
+`re/opening-audit-evidence-3.json` the third's, `-4.json` the fourth's, `-5.json` the fifth's, `-6.json` the sixth's, `-7.json` the seventh's and `-8.json` the eighth's; the first's bundle was overwritten by the second,
 so those IDs name records no longer on disk - each is a plain decompile of the named function,
 reproducible with `open_binary` and `batch_decompile` on the same library.
 
@@ -271,6 +295,9 @@ reproducible with `open_binary` and `batch_decompile` on the same library.
 | `FldMain::CheckTouchEventExec_Tap / CallEvent / CollisionAdded (and its thunk) / CheckBalloonOne / CheckBalloon / CalcNearestBalloonNum` | `ev_a0b2a2fcea4e06d3c26b3c466ffc00ff5ae3d9597ea90f5319182b39868040f5` |
 | `FldMain::EventExecute / BranchAfterEvent / CheckCollisionEvent / CollisionEventExec / SetEventStep / CheckGimmickStart` | `ev_e1ca27669aa58f5fb54a86858c96a3a1ceacceffd070678016d0b8dd9edea534` |
 | Procedure search (`FldMain`'s touch, balloon, collision and event methods); `FldMain::Update`'s step switch read in the repo's own decompilation of the same library | `ev_39411471f573f9d842cd79b5a692c583187e3c890bd25cfb0e07ea6e95d2638c` |
+| `FldEncount::Update / Pickout / SetData / Reset / SetPosition / SetBattle / CheckEncountInterface / SetInterfaceMark`, `FldMain::SaveWorkBeforeBattle` | `ev_b9be37d33dd8f8c17f7b7bd27a768953c8e7dc198c6d9cc14f9c4648332f0759` |
+| `Cr3FadeOut`, `Cr3Fade::FadeOut / Update`, `FldMain::WaitFadeFinish`, `FadeWindowMenu::SetParamNumber` (speed 10 / frames; type 0x14's 0.6) | `ev_a991701993bbd7b6880d03d55a4c0cefd92699563791f06673ab32e1438129e9` |
+| Procedure search (`FldEncount`, `SaveWorkBeforeBattle`); `FldMain::Update`'s steps 0x1c .. 0x20 and its call of `FldEncount::Update` read in the repo's own decompilation | `ev_1e4a3345aba4a363569c163370e794f3ff18e4e3210b24804a5052353bfc6cfb` |
 
 These are static observations of the shipped library, not traces of the original running: the
 update order and counts follow from the code, the visual result from the fade figures'
@@ -303,6 +330,8 @@ animations being linear (assumed, as before).
 - **A finger left down at an event's end** holds control in step 1; the port's touches start a
   walk only on a press, so one held from the event never walks, and a press during the three
   updates is refused rather than held.
+- **The leader's pose under the wipe.** Step 0x1c stops the leader's animation
+  (`FldPlayer::m_bAnimationStop`); the port's leader keeps its idle motion under the wipe.
 - **The map name's last update.** The original deletes the menu in the `InterfaceMain::Update`
   whose step reaches the animation's end; the port shows it while `ticks x 0.05 s` is under its
   length. Within an update of each other; not counted exactly.
@@ -362,6 +391,10 @@ call, and when control is back):
 | `obj002_check_cap00` tapped | queued at update 204 (the tap read in 205), called after 205 - its script runs from 206 |
 | An event's end | control back three updates after the script's last (`t0101: control back after update 56`) |
 | `t0101_p3` walked into on t0113 | the exit taken through the fade and the branch (`exit t0101_p3`, then `play: to t0101_p3`), no longer at once |
+
+The encounters, `cr2view --data <obb> --play d0105 --explore <dir> --hours 0.03 --skip-battles`
+(bounded: `timeout -s KILL`): `d0106: an encounter (area 4, roll 6 of 20%): coupling 58`, then
+`play: battle 58 - an encounter ..., 27 updates after the hit` - the battle's first update the 28th.
 
 (The second narration is `... \w60 \*`.) The captures are frames of the port, compared with the
 counts above, not with the original running.

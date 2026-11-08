@@ -1500,7 +1500,9 @@ struct Viewer {
         int area = -1, steps = 2, chance = 0, count = 0;
         float x = 0, z = 0, walked = 0;
         int coupling = 0;  // (a hit's)
-        float fadeAt = -1; // (the hit's fade begun: uiClock)
+        float fadeAt = -1; // (the hit's wipe begun: uiClock)
+        float clock = 0;   // (the hit's updates: their time, and how many have passed)
+        int updates = 0;
     } encount;
     std::mt19937 encountRandom{std::random_device{}()};
     void encountSet(const float* p) {
@@ -1537,30 +1539,46 @@ struct Viewer {
         for (int k = 0; k < 10 && pick < 0; ++k)
             if (r <= (at += a->rates[k])) pick = k;
         if (pick < 0 || !battleData.coupling(a->couplings[pick])) return;
-        encount.coupling = a->couplings[pick];
+        encount.coupling = a->couplings[pick], encount.clock = 0, encount.updates = 0;
         SDL_Log("%s: an encounter (area %d, roll %d of %d%%): coupling %d", field.info().name.c_str(), encount.area, roll, encount.chance, encount.coupling);
     }
-    // the hit: the field held, SE 0xc9 and the fade, then the battle (FldMain steps 0x1c .. 0x20)
-    void encountStep() {
-        if (encount.fadeAt < 0) {
-            encount.fadeAt = uiClock;
-            audio.playSe(0xc9, false);
-            if (!game.flag(0x7f7)) audio.stopBgm(20);
-            return;
+    // the hit, on FldMain's updates from it (H, the hit's: FldEncount::Update - Pickout's hit sets
+    // its state 10000): in H+1 FldEncount raises +0x1c (SetBattle(-1)); in H+2 step 2 - the leader
+    // still moved first (PlayerMove) - sees it: step 0x1c, SE 0xc9; in H+3 0x1c and 0x1d:
+    // SaveWorkBeforeBattle, the leader's animation stopped, Cr3FadeOut(3, 20) - the wipe, its first
+    // step the update after, covered in 0.5 s - and StopBGM(20) unless flag 0x7f7; 0x1e waits for
+    // Cr3Fade's own twenty updates (its value + 1/20 an update: done in H+22), 0x1f counts three,
+    // 0x20 sets BtlMain in H+27 and GameMain makes and updates it in H+28, the battle's first.
+    // True while the leader still walks (H+1, H+2)
+    bool encountStep(float dt) {
+        constexpr float kTick = cr2::EventRuntime::kTick;
+        encount.clock += dt;
+        for (; encount.clock >= kTick; encount.clock -= kTick) {
+            ++encount.updates;
+            if (encount.updates == 2) audio.playSe(0xc9, false);
+            if (encount.updates == 3) {
+                encount.fadeAt = uiClock + kTick; // (its first step the update after)
+                if (!game.flag(0x7f7)) audio.stopBgm(20);
+            }
+            if (encount.updates >= 27) {
+                encount.clock = 0;
+                break;
+            }
         }
-        if (uiClock - encount.fadeAt < kWipeSeconds + 0.15f) return; // (the wipe's end - WaitFadeFinish -, then the field's three)
+        if (encount.updates < 27) return encount.updates < 2;
         int party[2];
         for (int k = 0; k < 2; ++k) party[k] = game.party[k] >= 0 ? game.party[k] + 1 : 0;
         const int id = encount.coupling, area = encount.area;
         encount.coupling = 0, encount.fadeAt = -1;
         returnMap = field.info().name, std::memcpy(returnPlayer, player, sizeof player), returnHeading = heading; // (SaveWorkBeforeBattle)
-        SDL_Log("play: battle %d - an encounter (characters %d, %d)", id, party[0], party[1]);
+        SDL_Log("play: battle %d - an encounter (characters %d, %d), %d updates after the hit", id, party[0], party[1], encount.updates);
         if (ex.on) exploreLog("  an encounter: coupling " + std::to_string(id) + (ex.grind > 0 ? " (" + std::to_string(ex.grind - 1) + " more to fight first)" : "")),
                     ex.grind = std::max(ex.grind - 1, 0);
         if (startBattle(id, party, area)) {
             startFight(2, 1u + uint32_t(battlesSkipped));
             fightingInFlow = true, randomBattle = true;
         }
+        return false;
     }
 
     // FldPlayer::Update's steps: walking one each 12th update (0.6 s), running each 7th, counted from
@@ -2914,8 +2932,10 @@ struct Viewer {
             updateSprint(dt);
             updateIai();
             fieldInput();
-            if (fieldMode && !eventMode && encount.coupling && !fieldScriptRunning() && !actionRunning()) encountStep();
-            else if (fieldMode && !eventMode) {
+            const bool hit = fieldMode && !eventMode && encount.coupling && !fieldScriptRunning() && !actionRunning();
+            if (hit && !encountStep(dt)) {
+                // (held: the wipe, then the battle)
+            } else if (fieldMode && !eventMode) {
                 const bool held = fieldScriptRunning() || keyLock.stage != 0 || changeStage != 0 || actionRunning();
                 walk(dt, held ? 0 : sx, held ? 0 : sy, run);
             }
@@ -12057,7 +12077,7 @@ struct Viewer {
                 fullFrameQuad(white, kScreen, rgba);
             }
         }
-        if (fieldMode && !battleMode && encount.fadeAt >= 0) drawEncountWipe((uiClock - encount.fadeAt) / kWipeSeconds, true); // (an encounter's: Cr3FadeOut(3, 20))
+        if (fieldMode && !battleMode && encount.fadeAt >= 0 && uiClock >= encount.fadeAt) drawEncountWipe((uiClock - encount.fadeAt) / kWipeSeconds, true); // (an encounter's: Cr3FadeOut(3, 20))
         if (battleMode && battleWipeAt >= 0 && battleClock - battleWipeAt < kWipeSeconds) drawEncountWipe((battleClock - battleWipeAt) / kWipeSeconds, false);
         cr2::EventRuntime* ev = activeEvents();
         if (!ev || !eventDrawingReady) return;

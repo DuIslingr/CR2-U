@@ -25,22 +25,42 @@ What the game does with them (the 38 functions that call the masks):
 | ○ | confirm; on the field the nearest touch action or balloon (FldMain::CheckTouchEventExec_Tap), a message's page (Cr3UtilGetTouchState ORs it into the touch), a result's or a special scene's tap |
 | × | back, cancel |
 | □ held | the messages' fast-forward, the staff roll's (VistaConversationWindowMenu, StaffrollMenu, the menus' texts) |
-| d-pad / left stick | the menus' cursors (repeating); on the field the stick walks - FldMain::PlayerMove takes its push as a finger's drag |
-| L / R | a scroll list's page (ScrollListMenu::PartsUpdate), the shop's character (ShopCutInPiupiuMenu) |
+| d-pad / left stick | the menus' cursors (repeating; a step SE 0xb3 where a circle button takes the focus - the lists scroll without one); on the field the stick walks - FldMain::PlayerMove takes its push as a finger's drag; the shop's equipment lists: Left / Right the kind, weapons, armour, accessories round (FUN_810c4650 / FUN_810c54ca, SE 0xb7) |
+| L / R | a scroll list's switch (ScrollListMenu::PartsUpdate: 0x200 / 0x400 its ScrollListSwitchButton's left / right) - the items' category (CampItemListMenu::Update), the equipment's character (CampEquipmentListMenu::Update_EquipView), the shop's equipment's character (ShopWepon Buy / SellListMenu, with ShopCutInPiupiuMenu's face), SE 0xb7; a list without a switch: nothing |
 | START | the title's "Please Touch" (with ○) |
 | △, SELECT | nothing |
+
+The screens' cursors, by the Vita's own updates:
+
+- **Battle** (BattleSoloMenu / the pair's, FUN_81078726; BattleSelectMenu, FUN_810771c2): the command
+  buttons and the targets both Up / Down round over those selectable (FUN_810452fe), SE 0xb3; ○ the
+  one in focus (0xb4), × back (0xb5).
+- **The camp** (CampTopMenu, FUN_81084c8e): Items, Equipment, Sopia, Options Up / Down round, past
+  Items greyed with none held; SE 0xb3.
+- **A question** (BattleYNChoice, FUN_8107beec - the System window's and the events' Yes / No): Yes
+  in focus as it opens, Up / Down the other (FUN_810452ba: SE 0xb3), ○ the one in focus, × No. The
+  quantity beside it (CampChooseQuantityMenu, FUN_8107d648) takes Left / Right alone.
+- **The pub's board** (PubTopMenu, FUN_810b7b62): the posters three a row and Check - Left / Right
+  along a row, past its end (or the last poster) Check, from Check Left the sixth (or the last) and
+  Right the fourth (or the first); Up / Down a row on, round, where a poster is; SE 0xb3. ○ on Check
+  the list, on a poster picks it.
 
 The field's tab (FieldMenuTabMenu, 0x81098da8) is opened by a touch even on the Vita; once open the
 d-pad steps round camp, encounters, save, map (the encounters left out while off), the one lit in
 diffuse colour (1, 2, 3), ○ choosing it.
 
 CR2-U maps a controller onto that by position (○ the right button, × the bottom one; the options'
-Graphics list has Swap ○ and ×), as the keys the menus take: ○ Return, × Backspace, the directions
-the arrows with the same repeat, L / R a page (the shop: its character), START the title, □ held
-the fast-forward. △ opens the field's tab - the port's own, as a controller has no touch. Where the
+Graphics list has Swap ○ and ×), as the keys the menus take (`Viewer::padButtonKey`, then
+`gameKey`): ○ Return, × Backspace, the directions the arrows with the same repeat, L / R PageUp /
+PageDown - a list's switch where it has one, else (CR2-U's) four rows on -, START the title, □ held
+the fast-forward. The focus of a question, the camp's buttons, the battle's commands and targets and
+the pub's board is lit once a key has moved one (a touch shows none). △ opens the field's tab - the port's own, as a controller has no touch. Where the
 touch releases have no cursor of the keyboard's either (the title's buttons and questions, the
 shop's first two menus, the party's), the keys and the controller now move a focus over the buttons
-in the game's own focused look. `CR2_PAD_SCRIPT` (tests) drives a virtual controller.
+in the game's own focused look. `CR2_PAD_SCRIPT` (tests) drives a virtual controller (`shot=<file.bmp>` saves the next frame, `quit`
+closes the window); the `viewer-pad-controls` CTest (`cr2view --selftest-pad-controls`) presses a
+virtual controller's buttons through the same mapping on the camp, the shop, a question and the pub
+without the game's files.
 
 On the field the mouse (or a finger) walks as the touch releases' do (FldMain::PlayerMove,
 FldPlayer::Update): put down where nothing else takes it and dragged, the leader goes along the line

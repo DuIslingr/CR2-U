@@ -354,6 +354,10 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     });
 }
 
+void EventRuntime::fadeOut(int colour, int frames) {
+    fade_.start(fadeColour(colour), frames, 0, 1, 1); // (as Cr3Fade.FadeOut: its first step the update after)
+}
+
 void EventRuntime::reset() {
     // Reusing a runtime for another room must act like fresh vista/window objects.
     // Keep the host's playback policy, language and manual selection, but no old input/UI.

@@ -28,7 +28,10 @@ A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux an
   of their window again instead of at its left. In the field, a scripted camera slide stops where
   the original's does (a step short of its end), a script that takes the camera without placing it
   keeps the view where it was instead of jumping, and the yes / no buttons slide out over 0.2 s
-  instead of vanishing.
+  instead of vanishing. Talking to someone no longer snaps the leader round to face them (the
+  scenes turn the leader themselves), a talk or an event box starts on the original's frame, and
+  the leader can move again a few frames after an event ends, as in the original. Walking off an
+  area now fades to black before the next one, as the original does.
 - **Battles:** the results of a won battle no longer stay on screen over the next one. The next
   battle used to lose its HUD while the last results' panels came in over the fight (reported by
   [metastigma](https://github.com/metastigma)).

@@ -86,7 +86,9 @@ their joints (FORMATS.md: `c208_00`, `eff104_01`, `tbox_07`, `evt021_00`); NPCs 
 objects, effects and boxes shown. A gimmick's touch / tap calls the script function of its id
 (an event box's: its first six characters, `evt021`). An event box without `_check` in its name
 fires on touch: the player's body entering its shape (a box, ball or capsule in its joint's frame,
-sized by the joint's scale / 100) calls the function once, until the player has left it again.
+sized by the joint's scale / 100) calls the function once, until the player has left it again -
+two updates on (FldMain::CollisionAdded in the update's physics, CollisionEventExec in the next,
+EventExecute's call in the one after), the leader's control taken at the touch.
 
 A `_check` gimmick is tapped (FldMain::CheckBalloon, CheckGimmickStart): each update the leader
 has control, every one shown with its event on and within its check length of the leader - NPCs
@@ -94,7 +96,14 @@ and objects 0.2 (FldNPC / FldObject +0x14), event boxes and effects 0.15 - gets 
 `balloon` figure through the interface's camera, over the gimmick by a height from a table by
 name - c001 0.21, obj002 0.23, ... - else NPCs 0.2, objects and events 0.25, effects 0.1), and
 a tap anywhere calls the nearest one's function (EventExecute: `c003_01`, `obj002_00`, `evt023`)
-with the leader turned to it. While any balloon is up, the attention mark shows too
+the update after the one that read it (CheckTouchEventExec_Tap: step 0x1b, the leader's control
+off), the leader not turned - a talk's script turns it (`ModelDir_Field('player', ...)`); only a
+sprint, a high jump or a key box's mark turn it themselves (FldPlayer::SetDirection, 10 updates).
+When the script is over, control is back three updates after its last (EventExecute: state 4
+seen, then 1000; BranchAfterEvent: step 1, which waits for no finger down) - the balloons with it,
+taps and the walk from the fourth. Walking into an exit (a pop point's box) fades to black over 5
+frames and changes the area in the twelfth update after the touch (CollisionEventExec, step 0x10's
+fade, 0x11's three updates, 0x12's ChangeAreaExecute; SE 0x152 to or from a sky map). While any balloon is up, the attention mark shows too
 (FldMain::SetAttentionMarkVisible -> InterfaceMain::SetCheckAreaParameter: CheckAreaExclamationMenu's
 `checkArea`, the "!" at the screen's corner, looping; gone with the balloons - EndCheckArea - and
 off once the field is being left). From a new game's state, `cr2tool fieldscript`: 136 to tap across

@@ -72,6 +72,7 @@ public:
     const EventScene& scene() const { return scene_; }
     bool sceneShown() const { return scene_.loaded() && !terminated_ && !drawSkip_; }
     const EventFade& fade() const { return fade_; }
+    void fadeOut(int colour, int frames); // (Cr3FadeOut from the host: FldMain's own - SetEventStep(true, n))
     // the face textures EvtScene.SetFaceTexture set (slot -> image)
     const std::map<int, std::string>& faces() const { return faces_; }
 

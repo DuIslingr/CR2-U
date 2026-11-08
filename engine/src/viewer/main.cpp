@@ -637,6 +637,23 @@ struct Viewer {
     // script's coroutine then running as the area's entry does (FldMain::CallEvent)
     std::set<std::string> insideEvents;
     bool pendingBranch = false;
+    // FldMain's own steps around a field event: a balloon's tap (CheckTouchEventExec_Tap, read in
+    // step 2 at the start of an update) or an event box walked into (CollisionAdded in the
+    // update's physics, CollisionEventExec in step 2 of the next) takes control at once and goes
+    // to step 0x1b, where EventExecute calls the function in the following update - pendingCall,
+    // called at the end of the next tick (the script then starting in the update after, as an
+    // area's entry does). The script's end hands control back in step 1 three updates on
+    // (EventExecute sees state 4, then 1000, BranchAfterEvent sets step 1, which gives control
+    // once no finger is down; CheckBalloon after it): controlHold, its taps and walk from the fourth
+    std::string pendingCall;
+    int pendingCallWait = 0;
+    int controlHold = 0;
+    bool fieldControl() const { return script && !script->running() && pendingCall.empty() && controlHold == 0; }
+    void queueEvent(const std::string& function) {
+        SDL_Log("%s: %s at update %d", field.info().name.c_str(), function.c_str(), script ? script->ticks() : 0);
+        pendingCall = function, pendingCallWait = 1;
+        balloons.clear(), nearestBalloon = -1;
+    }
     int fieldExitHold = -1; // (--play: an event's way out to a vista or battle - the updates FldMain spends on it)
     void touchEvents(const cr2::Vec3& p) {
         if (!script) return;
@@ -648,10 +665,9 @@ struct Viewer {
             now.insert(g.name);
             const auto st = script->gimmicks().find(g.id);
             const bool enabled = st == script->gimmicks().end() || st->second.event;
-            if (insideEvents.count(g.name) || !enabled || script->running()) continue;
+            if (insideEvents.count(g.name) || !enabled || !fieldControl()) continue;
             SDL_Log("%s: touched %s - %s", field.info().name.c_str(), g.name.c_str(), g.function.c_str());
-            if (!script->call(g.function)) SDL_Log("%s", script->error().c_str());
-            else if (!script->running() && playMode) pendingBranch = true; // (acted on at the next update: not mid-walk)
+            queueEvent(g.function); // (CollisionEventExec the update after, EventExecute the one after that)
         }
         insideEvents.swap(now);
     }
@@ -681,7 +697,7 @@ struct Viewer {
     }
     void checkBalloons() {
         balloons.clear(), nearestBalloon = -1;
-        if (!script || script->running()) return;
+        if (!fieldControl()) return; // (CheckBalloon: FldMain +0x28 == 1, the leader's control)
         float best = 30000;
         const std::vector<cr2::Gimmick>& gs = field.gimmicks();
         for (size_t i = 0; i < gs.size(); ++i) {
@@ -712,7 +728,7 @@ struct Viewer {
         float fx0 = 0, fy0 = 0, fx = 0, fy = 0, at = 0;
     } walkDrag;
     bool walkStart(float fx, float fy) {
-        if (!fieldTabShown() || fieldTabOpen) return false;
+        if (!fieldTabShown() || fieldTabOpen || !fieldControl()) return false;
         walkDrag = WalkDrag();
         walkDrag.down = true, walkDrag.fx0 = walkDrag.fx = fx, walkDrag.fy0 = walkDrag.fy = fy, walkDrag.at = uiClock;
         return true;
@@ -853,11 +869,13 @@ struct Viewer {
             script->events().touch(onConversationWindow(fx, fy));
             return;
         }
+        if (!fieldControl()) return; // (steps 0x1b and 1: no tap read)
         if (const int s = sprintAt(); s >= 0) return startSprint(s); // (FldMain: a sprint's before the balloons)
         if (actionMark.gimmick >= 0 && actionMark.startedAt < 0) return actionTapped(); // (then a touch action's)
         if (nearestBalloon < 0 || keyLock.stage != 0) return;
         const cr2::Gimmick& g = field.gimmicks()[size_t(nearestBalloon)];
-        heading = std::atan2(g.position[0] - player[0], g.position[2] - player[2]);
+        // (no turn: CheckGimmickStart turns the leader only to a sprint, a high jump or a key box's
+        // mark - FldPlayer::SetDirection over 10 updates; a talk's script turns it, ModelDir_Field)
         SDL_Log("%s: tapped %s - %s", field.info().name.c_str(), g.name.c_str(), g.function.c_str());
         std::string function = g.function;
         if (g.kind == cr2::Gimmick::Box) { // (FldMain's balloon of a box: opened, then its function - box_msg)
@@ -865,7 +883,7 @@ struct Viewer {
             else if (g.boxKind == 1) return startUnlock(nearestBalloon); // (FldUnlock first)
             else openBox(g);
         }
-        callGimmick(function);
+        queueEvent(function); // (step 0x1b; EventExecute the update after)
     }
     void callGimmick(const std::string& function) {
         if (!script->call(function)) SDL_Log("%s", script->error().c_str());
@@ -929,7 +947,7 @@ struct Viewer {
             k.gimmick = -1;
             openBox(g);
             audio.playSe(0x154, false);
-            callGimmick(g.function);
+            queueEvent(g.function); // (CallEvent: step 0x1b, EventExecute the update after)
             return;
         }
         if (k.stage == 1) return;
@@ -1629,7 +1647,7 @@ struct Viewer {
             // an exit: the area changes to the map its pop point names (FldMain::ChangeAreaExecute)
             const std::string exit = field.exitTouched(p, controller->radius);
             if (exit.empty()) exitsArmed = true;
-            else if (exitsArmed && exit.size() >= 5) exitTo = exit;
+            else if (exitsArmed && exit.size() >= 5 && fieldControl() && fieldExitHold < 0) exitTo = exit; // (CollisionAdded: the leader's control)
             touchEvents(p);
             checkBalloons();
             encountUpdate(p, fieldScriptRunning() || actionRunning() || changeStage != 0 || keyLock.stage != 0);
@@ -1645,7 +1663,14 @@ struct Viewer {
             // FldMap +0x79, IsCommonMap of where it goes)
             const auto to = std::find_if(table.begin(), table.end(), [&](const cr2::MapInfo& m) { return m.name == exitTo.substr(0, 5); });
             if (field.info().sharedBackground || (to != table.end() && to->sharedBackground)) audio.playSe(0x152, false);
-            enterMap(exitTo.substr(0, 5), exitTo);
+            // (CollisionEventExec, case 0: control off, step 0x10 with Cr3FadeOut(0, 5) -
+            // SetEventStep(true, 5); 0x10 waits for the fade, 0x11 counts three updates, 0x12 changes
+            // the area and calls its entry, run the update after: the twelfth after the contact's.
+            // The fade begun here, a step before the update CollisionEventExec runs in, keeps its
+            // hold to that update; the exit hold counts the updates from the fade's end)
+            game.next.popPoint = exitTo;
+            if (script) script->events().fadeOut(0, 5);
+            fieldExitHold = 6, pendingBranch = true;
             return;
         }
         const float a = std::clamp(stepClock / kSub, 0.0f, 1.0f);
@@ -2613,6 +2638,7 @@ struct Viewer {
             SDL_Log("%s: flag marks%s", map.c_str(), marks.c_str());
         }
         fieldClock = 0, fieldExitHold = -1;
+        pendingCall.clear(), pendingCallWait = 0, controlHold = 0;
         field.setSolidGimmicks([this](const cr2::Gimmick& g) {
             const auto it = script->gimmicks().find(g.id);
             return script->visible(g) && (it == script->gimmicks().end() || it->second.collision);
@@ -2664,7 +2690,7 @@ struct Viewer {
     // The field's script, a coroutine stepped at the game's 20 updates a second (its events'
     // scene, windows and fades with it); the leader held while it runs, as FldMain holds it
     float fieldClock = 0, pageSeconds = 3.0f;
-    bool fieldScriptRunning() const { return script && script->running(); }
+    bool fieldScriptRunning() const { return script && (script->running() || !pendingCall.empty() || controlHold > 0 || fieldExitHold >= 0); }
     // --input's tokens the field takes (fieldToken: the tab, the camp), one a 0.4 s while it is idle
     void fieldInput() {
         if (!inputScript.empty() && mystic.stage && uiClock - actionMark.startedAt > 1.0f && uiClock >= inputNext &&
@@ -2761,6 +2787,7 @@ struct Viewer {
         if (!script) return;
         fieldClock = std::min(fieldClock + dt, 0.25f);
         for (; fieldClock >= cr2::EventRuntime::kTick; fieldClock -= cr2::EventRuntime::kTick) {
+            if (controlHold > 0 && --controlHold == 0) checkBalloons(); // (step 1: control back, CheckBalloon after it)
             if (pendingBranch) {
                 pendingBranch = false;
                 if (fieldExitHold > 0) { // (FldMain's way out, steps 0x1d .. 0x20: the fade and the windows go on)
@@ -2780,6 +2807,17 @@ struct Viewer {
             updateKeyLock();
             updateActionMark();
             refreshLeader(); // (ChangeModel, ExeQuick)
+            if (!pendingCall.empty() && --pendingCallWait <= 0) { // (EventExecute's call: the script runs from the next update)
+                const std::string f = std::move(pendingCall);
+                pendingCall.clear();
+                SDL_Log("%s: %s called after update %d", field.info().name.c_str(), f.c_str(), script->ticks());
+                if (!script->call(f)) SDL_Log("%s", script->error().c_str());
+                else if (!script->running()) { // (over at once: still EventExecute's three updates, then step 1)
+                    controlHold = 3;
+                    if (playMode) pendingBranch = true;
+                }
+                continue;
+            }
             if (!wasRunning) continue;
             refreshGimmicks();
             if (script->events().scene().loaded()) syncEventFigures(script->events());
@@ -2787,6 +2825,8 @@ struct Viewer {
             checkBalloons();
             if (!script->running()) {
                 SDL_Log("%s: the script ended", field.info().name.c_str());
+                controlHold = 3; // (EventExecute: state 4 seen, 1000, BranchAfterEvent - step 1 in the third update)
+                SDL_Log("%s: control back after update %d", field.info().name.c_str(), script->ticks() + 3);
                 if (library.stage == 2) library.stage = 1, library.at = uiClock; // (an entry read: the shelf again)
                 else if (playMode) branchAfterField();
                 if (!fieldMode) return; // (gone to a vista)
@@ -10524,7 +10564,7 @@ struct Viewer {
             exploreLog("  game over: tried again, then 5 encounters fought first");
             return gameOverAnswer(true);
         }
-        if (battleMode || eventMode || credits.stage || (script && script->running())) { // (pages, results: tapped now and then)
+        if (battleMode || eventMode || credits.stage || (script && !fieldControl())) { // (pages, results: tapped now and then)
             if (ex.clock >= ex.nextTap) ex.nextTap = ex.clock + 1.0, tap();
             return;
         }

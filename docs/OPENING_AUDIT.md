@@ -175,16 +175,41 @@ notwithstanding; `CheckYesNoButton` returns 0, 1 or 2; `Cr3Util_Commit_ContData`
 common, player, field, flag, work, box, stats and achievement data into the continue record and
 `Save_ContData` writes `cont.dat` at once (the port's `onSave(1)`).
 
+### The first field's events: a tap, an event box, an exit, and control back
+
+`FldMain::Update` reads the first finger event at the update's start; in step 2 (the leader's
+control, +0x28 = 1) it runs `PlayerMove`, then `CheckCollisionEvent` (+0xcd90, set by
+`CollisionAdded` in the physics after the step switch) - `CollisionEventExec` - else a tap's
+`CheckTouchEventExec_Tap` (`CheckGimmickStart`: a sprint, a high jump, a key box's mark, the
+touch actions, else the nearest balloon - `CalcNearestBalloonNum`). Step 0x1b's `EventExecute`
+calls the function (`Cr3Event::Call`, run by `Cr3Event::Update` in the same update) and reports
+the end; `BranchAfterEvent` picks what follows; `CheckBalloon` runs after the step switch, only
+with +0x28 = 1.
+
+| | The original | CR2-U before | CR2-U now |
+|---|---|---|---|
+| A balloon's tap (`CheckTouchEventExec_Tap` cases 7 .. 0xb: step 0x1b, +0x28 = 0x11, +0xa1 = 0 - no control -, `SetEventStep(false)`: `FldController::TouchFinish`, no fade; a box opened there, `FldBox::Open`; `EventExecute` in step 0x1b of the next update: `RemoveCharacterController`, `Cr3Event::Call`) | the function's first update is the one after the update that read the tap; nothing moves or is tapped meanwhile; the leader is not turned (`CheckGimmickStart` turns it only to a sprint, a high jump or a key box's mark - `FldPlayer::SetDirection` over 10 updates; a talk's script turns it, `ModelDir_Field('player', ...)`) | called at the tap, between updates - a script starting an update early; the leader snapped to face the balloon | queued (`queueEvent`) and called at the end of the next update's tick; no turn |
+| An event box walked into (`CollisionAdded`: not a `_check` box, its event on, the leader in control - +0xcd94 = 0xc; `CollisionEventExec` in the next update's step 2: step 0x1b, control off, `SetEventStep(false, 5)` - no fade) | the function's first update is the second after the contact's | the first | the second (`touchEvents` queues it) |
+| The script's end (`EventExecute`: state 100 until `Cr3Event::GetState` is 4 - `CollectGarbage`, 1000 -, then 1000: `AddCharacterController`, done; `BranchAfterEvent` with nothing reserved: step 1, +0x28 = 0; step 1 gives control - +0x28 = 1, +0xa1 = 1, the touch actions valid - once `GetFirstSingleFingerEvent` has none, step 2 from the next update) | the balloons back in the third update after the script's last, taps and the walk read from the fourth; a finger left down holds it | at once, in the script's last update | `controlHold` (3 updates); `fieldControl()` gates the taps, the walk's start, the balloons, the event boxes and the exits |
+| An exit walked into (`CollisionAdded`: a jump point - +0xcd94 = 0; `CollisionEventExec` case 0: control off, step 0x10, +0x28 = 4, SE 0x152 to or from a sky map, `SetEventStep(true, 5)` - `Cr3FadeOut(0, 5)`; 0x10 waits for the fade, 0x11 counts three updates, 0x12 `ChangeAreaExecute` and the entry's `CallEvent`) | a fade to black over 5 frames; the new area's entry runs in the twelfth update after the contact's | the area changed in the contact's own update, no fade-out | the fade (`EventRuntime::fadeOut`) and the exit hold of an event's area change, counted from the fade's end (`fieldExitHold` 6); exits only with control |
+
+Also as the original already: the nearest balloon by distance (`CalcNearestBalloonNum`, from
+30000); a balloon for what is shown, valid, its event on and within its check length, an opened
+box none (`CheckBalloonOne`); a key box tapped by anyone but Orlando runs `Message_obox`, by
+Orlando the lock (`FldUnlock`); a box opened at the tap; an event box's function its name
+(`EventExecute` case 0xc: `Cr3Sprintf` to 7 bytes - the first six characters, `evt021`).
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
-Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (six: the
+Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (seven: the
 second from the `FldMain::Update` row on, the third from the `FldUtilSetPopPoint` row on, the
 fourth - the cut-ins - from the `InterfaceMain::SetCutInWindow` row on, the fifth - the first
 field - from the `VistaConversationWindowMenu::SetParamNumber` row on, the sixth - its talks -
-from the `Cr3EvtWindowShowYesNoButton` row on).
+from the `Cr3EvtWindowShowYesNoButton` row on, the seventh - its events - from the
+`FldMain::CheckTouchEventExec_Tap` row on).
 `re/opening-audit-evidence.json` (never committed) holds the second session's records,
-`re/opening-audit-evidence-3.json` the third's, `-4.json` the fourth's, `-5.json` the fifth's and `-6.json` the sixth's; the first's bundle was overwritten by the second,
+`re/opening-audit-evidence-3.json` the third's, `-4.json` the fourth's, `-5.json` the fifth's, `-6.json` the sixth's and `-7.json` the seventh's; the first's bundle was overwritten by the second,
 so those IDs name records no longer on disk - each is a plain decompile of the named function,
 reproducible with `open_binary` and `batch_decompile` on the same library.
 
@@ -243,6 +268,9 @@ reproducible with `open_binary` and `batch_decompile` on the same library.
 | `FldMap::SetCameraMove_Frame / InitCameraMoveWork / SetCameraMove_StartPos`; `FldMap::ExecuteCameraMove` assembly (`start + step x (frames - remaining)`, then `remaining - 1`) | `ev_2cafdf08fc2fab7dd3b69fab058740489521993dcad49a2fd03e6b1e8ce28e95`, `ev_d58f528edafa9d01136ebbd04aa1312fca86d1800d57ec7d522266c6c9daee95` |
 | `FldUtilGetFieldMapCameraPos_X / _Y`; `FldUtilSetFieldMapCameraPos` and `MoveCalcParameter` assembly (the negations) | `ev_ff113d4ff6dc7d77aff7a8fe603a9d76abb8820c30fdcbb695bef57d7757fd2b`, `ev_35bb82489d3df8bc8079b5c279e5d4c0afdacb0df51ebc73c81e7e12132eceb3`, `ev_bcd48d7d7e6aaa692f45f10de79bd0249cb0abbad9863ccac570cdea4b9d9efd` |
 | Procedure searches (the save, camera, player and choice natives; `FldMap`'s camera methods; `BattleYNChoice`, `FldDirectionManager`) | `ev_ce49c2dd1440032cc91d60062a96637b45be21a55c72a08a199f48ee66780bdb`, `ev_194c6cfd1efe763e206e44d5ab3cb68090fab983994c48844ded520d997615e9`, `ev_e7eeec6d10d2a6e257bb6245ee4107a806fd163022b5ca851f205fdd750d6206` |
+| `FldMain::CheckTouchEventExec_Tap / CallEvent / CollisionAdded (and its thunk) / CheckBalloonOne / CheckBalloon / CalcNearestBalloonNum` | `ev_a0b2a2fcea4e06d3c26b3c466ffc00ff5ae3d9597ea90f5319182b39868040f5` |
+| `FldMain::EventExecute / BranchAfterEvent / CheckCollisionEvent / CollisionEventExec / SetEventStep / CheckGimmickStart` | `ev_e1ca27669aa58f5fb54a86858c96a3a1ceacceffd070678016d0b8dd9edea534` |
+| Procedure search (`FldMain`'s touch, balloon, collision and event methods); `FldMain::Update`'s step switch read in the repo's own decompilation of the same library | `ev_39411471f573f9d842cd79b5a692c583187e3c890bd25cfb0e07ea6e95d2638c` |
 
 These are static observations of the shipped library, not traces of the original running: the
 update order and counts follow from the code, the visual result from the fade figures'
@@ -265,6 +293,16 @@ animations being linear (assumed, as before).
 - **A choice's aftermath.** `EndBattleYNChoice` sets `InterfaceMain +0x1c` to 20, counted down in
   its `Update` into `BtlInterface +0x1b50` (a battle flag); what that holds off in the field, if
   anything, was not traced. Not reproduced.
+- **The leader's last step into an event box.** `CollisionEventExec` runs after the next update's
+  `PlayerMove`, so the original's leader moves once more after the contact; the port's stops at it.
+- **The menus' calls.** The camp, the shop, the world select, the library and the pub end through
+  `CallEvent` too - the function the update after - but the port's menus still call at once (the
+  library looks at the result straight away). Not changed in this round.
+- **The marks' turns.** A sprint's, a high jump's or a key box's mark turns the leader over 10
+  updates (`FldPlayer::SetDirection`); the port turns it at once.
+- **A finger left down at an event's end** holds control in step 1; the port's touches start a
+  walk only on a press, so one held from the event never walks, and a press during the three
+  updates is refused rather than held.
 - **The map name's last update.** The original deletes the menu in the `InterfaceMain::Update`
   whose step reaches the animation's end; the port shows it while `ticks x 0.05 s` is under its
   length. Within an update of each other; not counted exactly.
@@ -313,6 +351,17 @@ The yes / no buttons' close is checked in `event-reset-tests` (`ShowYesNoButton`
 answer, `HideYesNoButton`: a closing age of -0.05 s in the hide's own update, 0 the update after,
 over within a second); no headless frame of a choice was taken - the first field has none, and the
 tutorial dungeon's `c004_evt` branches on its flags before reaching one.
+
+The field's events, `cr2view --data <obb> --play t0101 --explore <dir> --skip-battles --fps 60`,
+read from the log the viewer now writes (the field script's update count at the queue, at the
+call, and when control is back):
+
+| What | Logged |
+|---|---|
+| `evt002_box00` walked into | queued at update 47, called after 48 - its script runs from 49, the second after the contact |
+| `obj002_check_cap00` tapped | queued at update 204 (the tap read in 205), called after 205 - its script runs from 206 |
+| An event's end | control back three updates after the script's last (`t0101: control back after update 56`) |
+| `t0101_p3` walked into on t0113 | the exit taken through the fade and the branch (`exit t0101_p3`, then `play: to t0101_p3`), no longer at once |
 
 (The second narration is `... \w60 \*`.) The captures are frames of the port, compared with the
 counts above, not with the original running.

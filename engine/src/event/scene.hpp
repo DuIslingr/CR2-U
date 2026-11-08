@@ -18,6 +18,20 @@
 
 namespace cr2 {
 
+// FldDirectionManager::Update: each update a slerp from where the model stands toward the target
+// by i / n (i the update's count from 1), the shorter way round - so the share of the whole turn
+// done after u updates is 1 - (1 - 1/n)(1 - 2/n)..(1 - u/n): 0.1, 0.28, 0.5, 0.7 .. of 10 (between
+// two updates, straight). The leader's, an NPC's and an event model's turns alike.
+inline float directionShare(float u, int n) {
+    if (n <= 0 || u >= float(n)) return 1;
+    if (u <= 0) return 0;
+    const int i = int(u);
+    float left = 1;
+    for (int k = 1; k <= i; ++k) left *= 1 - float(k) / float(n);
+    const float next = left * (1 - float(i + 1) / float(n));
+    return 1 - (left + (next - left) * (u - float(i)));
+}
+
 struct EventModel {
     std::string name;     // the locator's ("v206_00")
     std::string figure;   // the figure it shows ("v206": the name up to its "_NN")

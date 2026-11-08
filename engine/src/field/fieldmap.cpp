@@ -209,6 +209,18 @@ void FieldMap::groundAxes(Vec3& right, Vec3& forward) const {
 
 FieldFrame FieldMap::frame(int w, int h, const float* focus) const { return frameAt(w, h, focus, nullptr); }
 
+void FieldMap::focusScroll(int w, int h, const float* focus, float& sx, float& sy) const {
+    const float W = float(std::max(w, 1)), H = float(std::max(h, 1));
+    const float vh = kVirtualWidth * H / W;
+    const float scale3d = 2.13f * W / H * info_.sceneScale();
+    const Mat4 vp = mat4Multiply(perspective(fovY_, kVirtualWidth / vh, near_, far_), mat4RigidInverse(cameraWorld_));
+    const float cx = vp[0] * focus[0] + vp[4] * focus[1] + vp[8] * focus[2] + vp[12];
+    const float cy = vp[1] * focus[0] + vp[5] * focus[1] + vp[9] * focus[2] + vp[13];
+    const float cw = vp[3] * focus[0] + vp[7] * focus[1] + vp[11] * focus[2] + vp[15];
+    sx = cw != 0 ? -(cx / cw) * W * scale3d : 0.0f;
+    sy = cw != 0 ? -(cy / cw) * H * scale3d : 0.0f;
+}
+
 FieldFrame FieldMap::frameScrolled(int w, int h, const float* focus, float scriptX, float scriptY) const {
     const float s[2] = {scriptX, scriptY};
     return frameAt(w, h, focus, s);

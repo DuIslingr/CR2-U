@@ -52,6 +52,11 @@ through a helper call Ghidra prints without its template argument - `Cr3Sound.Pl
 
 (`Cr3BindVectorStruct` adds the vector classes `tagCr3Vector3` / `tagCr3Vector4`.)
 
+A battle's own script is called at its steps (`Battle_Init`, `Battle_Start`, `Turn_Start`,
+`Command_Start` and `Command_End` round each action, `Battle_End` on a win). `Cr3Battle.Exit`
+(`Cr3BattleEvent_Exit`) ends the battle there and then through `BtlMain::NextMode`, before any
+result: battles 245, 279 and 282 call it from `Command_End` after one command (OPENING_AUDIT.md).
+
 `BindNativeClosure` adds one root function, `WaitFrame(n)`: the calling script's state becomes 3
 (waiting) with a count of n, and the VM suspends (`sq_suspendvm`) - each script runs as a
 coroutine the manager wakes again. The scripts' other waits (`WaitMessage`, `WaitTouch`, ...)
@@ -97,8 +102,9 @@ and objects 0.2 (FldNPC / FldObject +0x14), event boxes and effects 0.15 - gets 
 name - c001 0.21, obj002 0.23, ... - else NPCs 0.2, objects and events 0.25, effects 0.1), and
 a tap anywhere calls the nearest one's function (EventExecute: `c003_01`, `obj002_00`, `evt023`)
 the update after the one that read it (CheckTouchEventExec_Tap: step 0x1b, the leader's control
-off), the leader not turned - a talk's script turns it (`ModelDir_Field('player', ...)`); only a
-sprint, a high jump or a key box's mark turn it themselves (FldPlayer::SetDirection, 10 updates).
+off), the leader not turned by the tap - a talk's script turns it (`ModelDir_Field('player', ...)`);
+the leader stopping by a balloon or a touch action's mark turns to the nearer over 10 updates
+(FldMain::SetPlayerRotationToBalloon, FldPlayer::SetDirection; OPENING_AUDIT.md).
 When the script is over, control is back three updates after its last (EventExecute: state 4
 seen, then 1000; BranchAfterEvent: step 1, which waits for no finger down) - the balloons with it,
 taps and the walk from the fourth. Walking into an exit (a pop point's box) fades to black over 5
@@ -206,7 +212,8 @@ event motion (FldObject / FldNPC::SetEventAnim: bound over its idle, looping unl
 adds n of an item (Cr3UtilGetItem: 0..99), `ItemCheck(item)` says how many. `ChangeDirection
 (gimmick, target, updates)` turns an NPC to the leader ("player") or another gimmick, and
 `Cr3FieldMapCharacter.ChangeDirection(target, updates)` the leader to a gimmick (FldDirectionManager:
-a 1 / updates step an update - a talk's `ModelDir_Field('player', 'c007_01', 5)`).
+each update a slerp toward the target by i / updates from where it stands - a talk's
+`ModelDir_Field('player', 'c007_01', 5)`).
 `Cr3TabMenu.SetEnable` shows or hides the tab (cr3_field_data +0x33, saved; a new game's on, as
 the character change's +0x32). Flag marks (FldFlagMark: `SetFlagMark(gimmick)`, `ClearFlagMark`,
 `AllClearFlagMark` - the town's requests, by flags 1113..1119) put the `flag` figure where a

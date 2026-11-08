@@ -87,6 +87,9 @@ public:
     // the same with the scroll a script set (Cr3FieldMapCamera: x, y in a 960-wide screen's
     // pixels, the scroll's negation - FldUtilSetFieldMapCameraPos / SetDirectScroll), not the focus's
     FieldFrame frameScrolled(int w, int h, const float* focus, float scriptX, float scriptY) const;
+    // CalcNewScreenPos alone: the scroll (a window's pixels, unclamped) that puts `focus` at the
+    // screen's centre - FldMap::CalcScroll's target, which the scroll eases to
+    void focusScroll(int w, int h, const float* focus, float& sx, float& sy) const;
     // the camera's quake (FldMap +0x3c: added to the scroll's y after it is held in the painting -
     // DrawBackground, the midground half of it), in a 960-wide screen's pixels
     void setQuake(float y) { quakeY_ = y; }

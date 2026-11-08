@@ -247,19 +247,138 @@ has one, the music stopped over 20 and 1.1 s waited, the victory theme (BGM 15) 
 3, the announcement 6 with the victory motion and camera 0.1 s on, then the result window after a
 tap or 5 s (`result.stage` 1 .. 3); the game over's black fade of 20 when it reloads.
 
+### A battle's end: the last action, a win or a loss, a script's `Exit`
+
+`BtlMainCtrl::StepAction` runs the action controller until its state 5 (the action shown, the
+script's `Command_End` called) and decides in that same update: the party all down, step 5
+(`StepGameover`, or the field again when the battle allows a loss); the monsters all down, step 6 -
+`BtlResult +0x10 = 1`, its steps from the next update - after `+0x15 = 1`; else the next actor, or
+`StepTurnEnd` for the next turn. There is no pause of its own between the last action and the
+result. A script's `Exit` (`Cr3BattleEvent_Exit`, in `Command_End` for battles 245, 279 and 282,
+each after one command) calls `BtlMain::NextMode` there and then: the way out above starts at once,
+before any result or game over.
+
+| | The original | CR2-U before | CR2-U now |
+|---|---|---|---|
+| A win | the result's steps from the update after the last action's end | the same (`beginResult` once the action's show is over) | unchanged |
+| A script's `Exit` | the way out from the update after `Command_End` | the show's end and the script awaited, then 1.5 s more in story play before the way out | the way out at once: `stepBattleShow` no longer waits on the show or the script once the rules have exited, and the flow's 1.5 s hold is skipped |
+
+The port calls `Command_End` (`BattleRules::endAction`) only in its `ActionEnd` step, after the
+action has been shown, so the exit never cuts an action short.
+
+### The result window: its steps, update by update
+
+`TestApp::onUpdate` calls `GameMain::Update` once each 0.05 s at most - the battle too runs at 20
+updates a second. `BtlResult::Update` runs a step a update from a table (`BtlResult::BtlResult`:
+0x5bf95c, 27 steps): 0 .. 6 the victory (above), then 7 a tap or past 5 s, 8 the finger up, 9
+`ShowResult` (the HUD gone, the window, 0x10 "Victory!", the EXP and SP, the first of
+`ProcessLvup`'s 60 counts), 10 past 0.3 s, 11 SE 0xc5 looping, 12 `ProcessLvup` (a 60th of the EXP
+and HP each update, a tap all at once; then the SE stopped), 7, 8, 13 `ProcessLvup1` (the first
+member's levels, 0x11 / 0x12 and SE 0xc3 - none: straight on to 14), 7, 8, 14 `ProcessLvup2` the
+same for the second, 7, 8, 15 `ProcessResult` (the line cleared; the SP, Oz and drops given), 7, 8,
+16 the messages (each: the finger up, `ClearResultMessage`, the line and its SE, then a tap - no
+time limit), 17 `HideBattleResult`, 18 the end, which `StepResult` sees. Step 7's time counts from
+its last reset (steps 9, 10 and 7 itself reset it), so the first wait after the count ends 5 s after
+the 0.3 s, not after the count. A loss (`BtlGameover::Update`) was already as the original: the
+lose camera, the music stopped, 1.1 s, BGM 18, a tap, then the field or the black fade and the
+question.
+
+| | The original | CR2-U before | CR2-U now |
+|---|---|---|---|
+| The window | two updates after the victory's tap (steps 8, 9) | at the tap | two updates after |
+| The EXP going in | a 60th with the window, the SE 0.35 s on, the rest from 0.4 s, a 60th each update (3 s in all) | after the window's opening animation, over 2 s ("60 frames at 30 a second") | `resultStep`: the table's steps one each update, the count 60 updates |
+| After the count | a tap or 5 s from the 0.3 s' end, the level-up lines each a tap or 5 s, the line cleared for a tap or 5 s, then the messages | a tap or 5 s from the count's end, then the level-up lines and messages together, each a tap or 3 s | as the original |
+| The messages | a tap each, no time limit | a tap or 3 s | a tap each |
+
+### An escape, and the result window's close
+
+`BtlCommand::StepEscapeLoop` rolls `BtlCalc::Escape` once the yes / no is answered: away, the
+announcement 4 and `PlayVoiceEscapeSucceeded`, step 10; `StepEscapeSuccess` (the update after)
+zeroes its time, and `StepEscapeSuccessLoop` waits for 2 s, clears the line and sets step 0x1f
+(`cr3_battle_post[8] = 1`); `BtlMainCtrl::StepSetCommand` sends 0x1f to step 7, `StepBattleOut`, whose
+`NextMode` starts the way out. A failure waits 1 s (`StepEscapeFailLoop`) and the turn goes on.
+Neither has a pause after; nor have a win (`StepResult` at the result's step 18) or a loss
+(`StepGameover` at `BtlGameover`'s step 6): each goes to `StepBattleOut` the update after.
+
+`HideBattleResult` calls `InterfaceMain::EndResultWindow`, which hands every window
+`SetParamNumber(0x22, 3)`: `ResultMenu` takes it - `InterfaceCloseAnimeSet` (its `menurslt` and
+`seatrslt` parts backwards, `+0x5c 2`, from the frame they stand at; the EXP and SP numbers
+deleted) - and passes its children theirs: `SystemWindowMenu` 4 and `CharaStatusWindowMenu` 1, each
+its own `InterfaceCloseAnimeSet` the same way.
+
+| | The original | CR2-U before | CR2-U now |
+|---|---|---|---|
+| Away | the way out about 2.15 s after "got away" (the update after, 2 s, step 0x1f, `StepBattleOut`) | 2 s, then the port's own 1.5 s | 2 s and three updates; no pause of its own |
+| A win, a loss | `StepBattleOut` the update after the result's end or the loss's tap | the same, behind a 1.5 s hold that had always run out by then | no hold |
+| The result window's close | each part backwards from its frame, the numbers gone at once | the window kept whole through the way out's fade | the same: each part's time `min(open time, its length) - time since the close` |
+
+### The leader's turns, and its stop under the wipe
+
+`FldDirectionManager::Update` (from `FldPlayer::Update`, `FldNPC`'s and `EvtModel`'s alike) slerps
+the model's rotation from where it stands toward the target by `i / n` at its i-th update, the
+shorter way round: the share of the whole turn done is 0.1, 0.28, 0.50, 0.70, 0.85, 0.94 .. after
+one, two, three .. of 10 updates - quick, then easing in. The port turned an NPC, the leader and an
+event model in a straight line over the updates.
+
+Round 6 read the 10-update turn as the marks' own (`CheckGimmickStart`). It is not:
+`FldMain::SetPlayerRotationToBalloon`, called each update after `CalcNearestTouchActionMarkNum`,
+takes the nearer of the nearest balloon (`FldBalloon::m_nNearestBalloonNum`, its distance at
++0x28) and the nearest touch action's mark (+0x804, its distance at +0x18), and when
+`FldPlayer::m_bIdleTrig` is set - `SetIdleAnim`, the leader just stopped, cleared by the next
+`FldPlayer::Update` - or `FldMain +0xa2` - `ChangeCharacterExecute` as the new leader's lighting
+begins - turns the leader to it with `FldPlayer::SetDirection(.., 10)`. A walk begun stops it
+(`StopDirection`). The sprint sets the leader's rotation outright at each hop (`FldSprint::Execute`),
+as the port does. (The same nearest kind also moves the camera halfway toward a balloon or mark of
+kinds 0, 1, 3 and 5 - `FldMain::Update`'s tail -, not looked at here.)
+
+Step 0x1c sets `FldPlayer::m_bAnimationStop`, and `FldMain::Update` then skips `FldPlayer::Update`
+whole - the motion, the ground effects, the turn - until the battle.
+
+| | The original | CR2-U before | CR2-U now |
+|---|---|---|---|
+| A scripted turn (`ChangeDirection`, the leader's, an NPC's, an event model's) | 0.1, 0.28, 0.5 .. of the turn after one, two, three updates | in a straight line | `directionShare`, shared by the three |
+| The leader stopping by a balloon or a mark | turned to the nearer over 10 updates | not turned | `startIdleTurn`: the same, from the update it stops; a walk, a scripted turn or a new area stops it |
+| A change of leader | the new leader turned to the nearest | not turned | turned (from the swap: the original's two updates later) |
+| Under the encounter's wipe | the leader frozen from step 0x1c | its idle motion going on | its motion time held from the hit's third update |
+
+### The field camera's ease
+
+`FldMap::CalcScroll`'s decompilation drops a block as unreachable; its assembly (`0x3bf634`)
+does not: the target from `CalcNewScreenPos`, the scroll (`+0x30 / +0x34`, unclamped) moves by
+`(target - scroll) x FldMap +0x10` when the distance is over 1 (a screen pixel), else by 0 (the
+constant at `0x3bf6f0`), then `SetDirectScroll` and `CalcScrollStop` as before. `FldMain::Update`'s
+tail sets the target and +0x10 each update: the leader's model 0.045 above its feet, 0.2; or, when
+`SetPlayerRotationToBalloon`'s nearer target (+0x84) is a touch action's mark of kind 1, 3 or 5
+(`CheckTouchActionMark`: 1 the high jumps, 2 a list counted at +0xbf80, 3 the mystics, 4 the iais, 5
+the aims, 6 the hakkeis; a balloon's kinds are 7 .. 11) and +0x80 is set, the point halfway from the
+leader to the mark (y from the feet), 0.1. +0x80 is cleared with no target only while the leader
+has control, so an event keeps it. `FldMain::SetMapCameraAtNewArea` (from `Init` and
+`ChangeAreaExecute`) puts the scroll on the target at once; a script's camera sets it outright
+(`FldUtilSetFieldMapCameraPos`, `ExecuteCameraMove`), so mode 0 eases back from where that left it.
+
+| | The original | CR2-U before | CR2-U now |
+|---|---|---|---|
+| Following the leader | 0.2 of the way to the target each update, held within a pixel; 0.045 above the feet | centred on the feet every frame | `updateFieldCamera`: the same, at 20 updates a second, drawn on between them |
+| By a high jump's, mystic's or aim's mark | halfway to the mark, 0.1 an update | the leader | the same |
+| A script's camera let go (`SetMode(0)`) | eased back to the leader | at the leader at once | eased back |
+| A new area | on the leader at once | the same | the same |
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
-Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (nine: the
+Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (fourteen: the
 second from the `FldMain::Update` row on, the third from the `FldUtilSetPopPoint` row on, the
 fourth - the cut-ins - from the `InterfaceMain::SetCutInWindow` row on, the fifth - the first
 field - from the `VistaConversationWindowMenu::SetParamNumber` row on, the sixth - its talks -
 from the `Cr3EvtWindowShowYesNoButton` row on, the seventh - its events - from the
 `FldMain::CheckTouchEventExec_Tap` row on, the eighth - the encounters - from the
 `FldEncount::Update` row on, the ninth - the battle's way out - from the `BtlMainCtrl::StepBattleOut`
-row on).
+row on, the tenth - a battle's end - the `BtlMainCtrl::StepAction` row, the eleventh - the result window -
+from the `BtlMainCtrl::StepAction / StepGameover` row on, the twelfth - an escape, the window's close -
+from the `BtlCommand::StepEscape` row on, the thirteenth - the leader's turns - from the
+`FldPlayer::SetDirection` row on, the fourteenth - the camera's ease - the `FldMap::CalcScroll` row).
 `re/opening-audit-evidence.json` (never committed) holds the second session's records,
-`re/opening-audit-evidence-3.json` the third's, `-4.json` the fourth's, `-5.json` the fifth's, `-6.json` the sixth's, `-7.json` the seventh's, `-8.json` the eighth's and `-9.json` the ninth's; the first's bundle was overwritten by the second,
+`re/opening-audit-evidence-3.json` the third's, `-4.json` the fourth's, `-5.json` the fifth's, `-6.json` the sixth's, `-7.json` the seventh's, `-8.json` the eighth's, `-9.json` the ninth's, `-10.json` the tenth's, `-11.json` the eleventh's, `-12.json` the twelfth's, `-13.json` the thirteenth's and `-14.json` the fourteenth's; the first's bundle was overwritten by the second,
 so those IDs name records no longer on disk - each is a plain decompile of the named function,
 reproducible with `open_binary` and `batch_decompile` on the same library.
 
@@ -328,6 +447,18 @@ reproducible with `open_binary` and `batch_decompile` on the same library.
 | `BtlMain::NextMode`, `BtlMainCtrl::SetNextStep`, `BtlResult::Update / UpdateResult` | `ev_16c722dd1c8c0edc6f2a55e96469a2f223fbe94c3c0279b5455e4266a2b36c7c` |
 | `BtlWork::InitializeVariables / Initialize` (+0x1a starts 0), `Cr3BattleEvent_Exit`; `Cr3BattleEvent_SetParamI` (no +0x1a); `BtlGameover::Update`'s +0x1a = 1 read in the repo's decompilation | `ev_ecf88876626d0e2ea8231bb2b7243f4cda497c63be1c9b718f847ef5c50bc3f1`, `ev_0e0a54279243a90104c380956f92ffce55f9f6af55242e312fb99a60a595b910` |
 | Procedure searches (`BtlMainCtrl`'s steps, `BtlMain`, `BtlResult`; `BtlWork`'s set-up, `Cr3BattleEvent_*`) | `ev_1456ddd23f43bc6c706a6bd3197ed1e145cfd648824069cd324df4ac1a484716`, `ev_4af47a3bc0b309317076611a34bce82b12fea577a167f0ef71987c326cd7ebf3` |
+| `BtlMainCtrl::StepAction / StepTurnEnd / StepGameover` (the win, the loss and the next turn decided at the action controller's state 5) | `ev_7285beee371ea0bb77870c089477df77938107125cd30772fd8e7d3d6eda145f` |
+| `BtlMainCtrl::StepAction / StepGameover / StepResult / Update`, `BtlResult::Update / UpdateResult`, `BtlGameover::Update` | `ev_c56db03aa6af187aeb8bc9b8f4a04ac0680c7ae2b2d86d308f768257709f9686`, `ev_a4e64dff97db82ccf3ef91f1b642b6bda76c522a65fc97eaaa62cf1eff2cdddc` |
+| `BtlResult::BtlResult` (the table's address and length), `Initialize`, `ProcessLvup / ProcessLvup1 / ProcessLvup2 / ProcessResult / ShowResult`; the table's 27 steps read at 0x5bf95c | `ev_b1bfb069c74fc812d6efdfd1148052f8f0600a1f0d14bd84db390bf356da4d8e`, `ev_8ce0f222fe27b4c8a301efae53c2f2746b2239ffb7e0b2b2905ed26b80fb0cc5` |
+| `GameMain::Update`, `BtlMain::Update`, and their caller `TestApp::onUpdate` (an update each 0.05 s at most); procedure searches (`BtlMainCtrl`, `BtlResult`, `BtlGameover`, the main updates) | `ev_68da5eccf0c861bbb3ec1c0a417850c9d7b3800c585aff41d4c40dc9a833ed71`, `ev_67e1d29e92637d050b5bc4c23f316d6ba8c465d95f379e367bf16aa9be76dd04`, `ev_d632771cff2af237e1d85688771db511cef311e0961b9838562b32a2b0f63ee0`, `ev_32e0ca568c2b856de62325c42c3b1dc6713c74a9f6580fbd6f4c8bce4c4325f9`, `ev_91b0c08b5c727de5b0bb49c2a6849a08f69f3a2213ecc065f0a8fd9b09f7f55a` |
+| `BtlCommand::StepEscape / StepEscapeLoop / StepEscapeSuccess / StepEscapeSuccessLoop / StepEscapeFail / StepEscapeFailLoop / StepEscapeEnd`, `BtlInterfaceCtrl::ShowBattleResult / HideBattleResult` | `ev_ef32cf11bfefd7767e2aa91084cebe491b5bcea66b4f0f18008b1f669ec41b13` |
+| `BtlMainCtrl::StepSetCommand / StepBattleOut` | `ev_9a8114037369a7d328ef961f9e11b76f49e038228b833ae212eb92fcae05a314` |
+| `InterfaceMain::EndResultWindow / SetResultWindowParameter / _setParamNumber`, `ResultMenu::InterfaceCloseAnimeSet / InterfaceOpenAnimeSet / SetParamNumber / Update` | `ev_8a19771c1b9f723da1f030702ccb053b28f169ed06f1a3e60c53823f1407e8ce`, `ev_1d95b7cf0f4a65e03cfaed92e5f45784734bc670a860c8806a11820f25b182bf`, `ev_370fdcf20eaf076c49edd4b4789d0b54cd8bf1f7a7dee866b1da3220dfe1de96`, `ev_acc72254cac2c60c127f2a7f05cbd5ed0005683ce4943252f1b30f3be8134381` |
+| `SystemWindowMenu::SetParamNumber / InterfaceCloseAnimeSet`, `CharaStatusWindowMenu::SetParamNumber / InterfaceCloseAnimeSet`, `CharaStatusWindowBMenu::SetParamNumber` | `ev_b358579b3fda7f6c16f99dff0ee11235b8afb6fa938fd3fc9d6ac128c937e1f2` |
+| Procedure searches (the escape's steps, the result window's show and hide; `InterfaceMain`'s and `ResultMenu`'s; the system and status windows') | `ev_5b65c9e4c2bc1a92961aab42be452f5f2186f40102983607375c336f9734b1eb`, `ev_c74c8fe6aeaf35e1a2a6c33dc4202f5cea50362c821bfb3c48ebc28e890382cd`, `ev_57f1be8e693e79fbd3340ad390b7bd2b4e7b9ea8ad1b1424fe06fddf506cd67d` |
+| `FldPlayer::SetDirection / StopDirection / Update`, `FldDirectionManager::SetDirection / Update`; `FldMain::SetPlayerRotationToBalloon`, `ChangeCharacterExecute`, `FldPlayer::SetIdleAnim`, `FldSprint::Execute` and `FldMain::Update`'s step 0x1c and its tail read in the repo's own decompilation | `ev_abe9efd4757aa4b90cfc2b5e949a9253c5163ff699ef9f2a6f2a935211fc727e` |
+| Procedure search (`FldPlayer`, `FldDirectionManager`); references to `FldPlayer::m_bAnimationStop` (none direct: through the GOT) | `ev_ea47da234de35d0a5f1beec7928c719dc685323363203bef375084d222cd75c9`, `ev_d619f5c88494c40f3a3052122c4adcf02563ab30684eac1ae3a14cd060e67269` |
+| `FldMap::CalcScroll` assembly (the ease), the constant at `0x3bf6f0` (0); `FldMap::Update / CalcNewScreenPos / SetDirectScroll`, `FldMain::SetMapCameraAtNewArea`, `FldMain::Update`'s tail, `CheckTouchActionMark` and the gimmick lists' set-up read in the repo's own decompilation | `ev_43aae0a9701d8771873db84b7a70255fc08ca137a5280af649ba2375e7c8c6f1`, `ev_f92a6c94551f5e3f6899e179ac71743ec17fbe4d66aff4576a9b45adefd17812` |
 
 These are static observations of the shipped library, not traces of the original running: the
 update order and counts follow from the code, the visual result from the fade figures'
@@ -355,13 +486,16 @@ animations being linear (assumed, as before).
 - **The menus' calls.** The camp, the shop, the world select, the library and the pub end through
   `CallEvent` too - the function the update after - but the port's menus still call at once (the
   library looks at the result straight away). Not changed in this round.
-- **The marks' turns.** A sprint's, a high jump's or a key box's mark turns the leader over 10
-  updates (`FldPlayer::SetDirection`); the port turns it at once.
+- **The camera's units.** The ease's one-pixel hold is the original's device pixel; the port
+  holds within one pixel of the window it draws to. `GetPos_X / _Y` in the port still read the
+  clamped scroll (`shownX_`), the original's the unclamped +0x30.
+- **The marks' kind 2.** `CheckTouchActionMark`'s second list (counted at +0xbf80, its pointers at
+  +0x178) was not named; its marks take no halfway camera either way.
+- **The stop turn's mark distance.** The mark's distance (+0x18 of its +0x400 record) is taken as
+  the leader's to the mark's spot; how `CheckTouchActionMarkOne` measures it was not read.
 - **A finger left down at an event's end** holds control in step 1; the port's touches start a
   walk only on a press, so one held from the event never walks, and a press during the three
   updates is refused rather than held.
-- **The leader's pose under the wipe.** Step 0x1c stops the leader's animation
-  (`FldPlayer::m_bAnimationStop`); the port's leader keeps its idle motion under the wipe.
 - **The map name's last update.** The original deletes the menu in the `InterfaceMain::Update`
   whose step reaches the animation's end; the port shows it while `ticks x 0.05 s` is under its
   length. Within an update of each other; not counted exactly.
@@ -370,9 +504,13 @@ animations being linear (assumed, as before).
 - **The battle's last update before the next main.** `Exit` waits for `Cr3ResourceManager` to be
   empty; the port counts 24 updates from the end, as if the resources went at once. A slow unload
   would hold the original's white a little longer.
-- **The port's own pause before the end.** CR2-U ends a battle 1.5 s after its last action is
-  shown (or when its result window is dismissed); the original's end comes from `BtlResult`'s and
-  `StepBattleOut`'s steps, not timed against the port's here.
+- **An escape's update count.** `BtlCommand`'s time is taken as counted before its step, as
+  `BtlResult`'s and `BtlGameover`'s are, and `BtlCommand` as updated before `BtlMainCtrl`; neither
+  order was read, so the way out may start an update or two either side of the port's 2.15 s.
+  No story run escaped (the explorer never does); the battle-only view has no way out to time.
+- **The result window's close, timed.** It runs during the way out's white fade; no frame of it
+  was captured (the explorer's runs take none), only the window's opening, whose parts slide in
+  from the sides in about 0.2 s.
 - A voice is not played while the skip button is held (`ShowMessage`'s `IsSkip`); the port plays
   it. Not in the opening's reach (its two narrations are skipped whole).
 
@@ -433,6 +571,36 @@ The encounters, `cr2view --data <obb> --play d0105 --explore <dir> --hours 0.03 
 The battle's way out, the same bounded explore: battle 57 won, its result over at about 25.45 s,
 `play: the battle's way out over at 26.65 s` (1.2 s later), then `d0107: evt100 running`. The fade
 itself was not captured.
+
+A script's `Exit`, `cr2view --data <obb> --battle 279 --fight pair --fps 60 --run 30`: Amon's
+"Now bow before me." lands at 20.7 s, its action ends and `Command_End` exits the battle, logged as
+`battle over: its script's exit (26.3 s)`. The battle-only view logs 26.3 s with the old wait as
+well, since the action's show is over by `Command_End`; the 1.5 s saved is the story flow's hold,
+which a battle-only run does not reach. No story run up to battles 245, 279 or 282 was made.
+
+The result window, `cr2view --data <obb> --battle 57 --fight pair --fps 60 --run <s>` (no taps):
+`battle over: won (13.8 s)`, `result: victory at 15.0 s`, `result: the window at 20.1 s` (5 s and
+two updates after); at 30 s the line is blank (`ProcessResult`'s wait), at 32 s "Obtained 20 OZ!"
+held for a tap. A bounded explore from d0105 (a tap a second): battle 58 won at 15.1 s, the window
+at 17.4 s, `result: over at 21.52 s`, the way out over at 22.73 s.
+
+An escape, `cr2view --battle 57 --fight pair --seed 1 --input "escape yes"`: `escape: got away`
+(seeds 1 and 2; 3 failed). A bounded explore from d0105 after the hold's removal: battle 57 won,
+the window at 21.5 s, `result: over at 26.63 s`, the way out over at 27.85 s (24 updates). The
+window's first frames (`--battle 57`, 20.2 s and 20.35 s against its opening at 20.1 s): its
+parts sliding in from both sides, then whole.
+
+The stop turn, `cr2view --play t0101 --skip-battles --walk 0,1,1 --run <s>`: `t0101: the leader
+turns to the nearest balloon over 10 updates (-84 degrees)`; frames at 1.0, 1.25 and 2.0 s show
+the leader from walking up the room to facing the balloon. `--walk -1,0,1` turns it 109 degrees;
+four other short walks there and six on d0104 stopped with nothing near (no turn). The opening
+(`--play`, 40 s) runs as before. The wipe's freeze was not captured.
+
+The camera's ease, `cr2view --play t0101 --skip-battles --walk 0,1,1 --run 2` with a passing log of
+each update's scroll and target (960-wide units): the target moves off while the leader walks, the
+scroll follows a fifth of the gap an update (15.2 -> 47.7 -> 95.7 -> 129.2 -> 142.9 -> 148.5 ->
+150.8 -> 151.7 toward 152.4) and holds 0.7 short, under a pixel. A bounded explore from d0105
+crossed four areas (each started on the leader) as before.
 
 (The second narration is `... \w60 \*`.) The captures are frames of the port, compared with the
 counts above, not with the original running.

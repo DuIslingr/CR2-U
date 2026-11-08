@@ -661,12 +661,14 @@ banner, the party standing in its victory motion (bb03) under `Cam_Win_PCsolo_00
 `_PCpair_00` (a pair, both standing), `_PCfighter_00` or `_PCpartner_00`; a tap or 5 s; then the
 battle's windows go (HideBattleStatus) for the result window (InterfaceMain::
 SetResultWindowParameter: ResultMenu, CharaStatusWindowMenu, SystemWindowMenu - see
-`drawResult` for their parts). Each member gets the EXP (one down: half - CheckLvUp), and over 60
-frames (ProcessLvup; a tap: at once) its EXP goes in - the level rising as it passes the next's
+`drawResult` for their parts) two updates after the tap. Each member gets the EXP (one down: half -
+CheckLvUp), and after 0.3 s, over 60 updates - 3 s - (ProcessLvup; a tap: at once) its EXP goes in - the level rising as it passes the next's
 (lvup_exp: tools/gen_level_table.py -> engine/src/battle/leveltable.inc; Darwin 0 at 1, 15 at 2;
 Orlando 495 at 5, 885 at 6) - and its HP back to the most (Cr3RestorePlayerHP); NEXT the EXP to
-the next level, its bar the part of this level's gone. Then the window's messages, a tap each
-(announcebattle; the names from message\\charaname / sopianame / commandname / autoskillname /
+the next level, its bar the part of this level's gone. Then a tap or 5 s (counted from the 0.3 s'
+end), each member's level-up line with a tap or 5 s after it, the line cleared for a tap or 5 s
+more, then the window's messages, a tap each with no time limit (BtlResult's step table at
+0x5bf95c; OPENING_AUDIT.md) (announcebattle; the names from message\\charaname / sopianame / commandname / autoskillname /
 itemname, by number): ProcessLvup1 / 2 a member's levels gained (0x11 "%s leveled up!", 0x12 by
 %d); ProcessResult - CheckSpUp: each sopia the party carries, once, gets the SP (cr3_common_data
 +0x28c), rising a level each time it reaches its growth's next (chara_sopia_lvup_exp 0 100 300 800

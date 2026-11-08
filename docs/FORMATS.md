@@ -324,8 +324,10 @@ Draw order (`FldMain`): the background, the midground (half the scroll), the 3D 
 alpha-tested, transparent), the foreground. Scrolling (`CalcNewScreenPos`, `SetScrollStop`,
 `CalcScrollStop`): the offset = -(the player's NDC in the map camera) x the screen's size x the
 scale, clamped to +-(the painting's size x width / 960 - the screen's size), and applied to both
-cameras' screen matrices (`GetScreenMatrix`: offset / the screen's size, in NDC) - the player
-stays centred until the painting's edge.
+cameras' screen matrices (`GetScreenMatrix`: offset / the screen's size, in NDC). The player's
+point is 0.045 above its feet, and the offset eases there: `CalcScroll` moves it 0.2 of the way
+each update (0.1, to a point halfway to a high jump's, mystic's or aim's mark), not within a pixel;
+a new area starts on it (OPENING_AUDIT.md).
 
 Collision (`PhysicsSceneLoader::LoadScene`, `<map>c.phys` the walls and floors, `<map>p.phys`
 the exits' trigger volumes): a header (+4 version 1, +8 bodies, +0xc shapes, +0x10 surface names,

@@ -93,7 +93,8 @@ namespace {
 void hold(const EventModel& m, Mat34& p, float lead) {
     if (m.pinned) p.m[3] = m.pin[0], p.m[7] = m.pin[1], p.m[11] = m.pin[2];
     if (!m.turned) return;
-    const float a = m.turnSeconds > 0 ? std::clamp((m.turnTime + lead) / m.turnSeconds, 0.0f, 1.0f) : 1.0f;
+    const int frames = int(m.turnSeconds / 0.05f + 0.5f);
+    const float a = frames > 0 ? directionShare((m.turnTime + lead) / 0.05f, frames) : 1.0f;
     float d = std::remainder(m.turnTo - m.turnFrom, 6.2831853f); // (the shorter way round)
     const float yaw = m.turnFrom + d * a;
     const float sc = std::hypot(p.m[0], p.m[4], p.m[8]), c = std::cos(yaw), s = std::sin(yaw);

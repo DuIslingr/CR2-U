@@ -673,7 +673,7 @@ struct Viewer {
     }
     // an event's scene putting the leader at its p000 (FldUtilSetFieldMapPlayerPos / Rot)
     void placePlayer(const cr2::FieldScript::Placement& pl) {
-        if (pl.heading) heading = pl.yaw;
+        if (pl.heading) heading = pl.yaw, idleTurn.on = false; // (FldUtilSetFieldMapPlayerRot)
         if (!pl.position || !controller) return;
         controller->setPosition({pl.at[0], pl.at[1] + 0.17f, pl.at[2]}); // (dropped onto the floor, as on arriving)
         for (int k = 0; k < 10; ++k) controller->update({0, 0, 0});
@@ -696,7 +696,7 @@ struct Viewer {
         return x;
     }
     void checkBalloons() {
-        balloons.clear(), nearestBalloon = -1;
+        balloons.clear(), nearestBalloon = -1, nearestBalloonDist = 30000;
         if (!fieldControl()) return; // (CheckBalloon: FldMain +0x28 == 1, the leader's control)
         float best = 30000;
         const std::vector<cr2::Gimmick>& gs = field.gimmicks();
@@ -710,8 +710,97 @@ struct Viewer {
             const float d = std::hypot(g.position[0] - playerCur[0], g.position[1] - playerCur[1], g.position[2] - playerCur[2]); // (as of the update)
             if (d > reach) continue;
             balloons.push_back(i);
-            if (d < best) best = d, nearestBalloon = int(i);
+            if (d < best) best = d, nearestBalloon = int(i), nearestBalloonDist = d;
         }
+    }
+    // The field's camera in mode 0 (FldMap::CalcScroll, each update): the scroll's target is the
+    // screen position that centres the leader 0.045 above its feet (FldMain::Update's tail) - or,
+    // with the nearer of the nearest balloon and mark a high jump's, a mystic's or an aim's mark
+    // (SetPlayerRotationToBalloon's +0x80 / +0x84: kinds 1, 3, 5), the point halfway from the leader
+    // to it -, and the scroll moves 0.2 of the way there (0.1 for such a mark: FldMap +0x10), not at
+    // all within a pixel. A script's camera (mode 1) sets the scroll outright; a new area's
+    // start puts it on the leader (SetMapCameraAtNewArea). Kept in a 960-wide screen's units.
+    struct FieldCamera {
+        bool set = false, attention = false;
+        float cur[2] = {0, 0}, prev[2] = {0, 0}, at[3] = {0, 0, 0};
+        float clock = 0;
+    } fieldCam;
+    int camW = 0, camH = 0; // (the last frame's window: the scroll's units)
+    // the nearer of the nearest balloon and the touch action's mark (0 none, 1 the balloon, 2 the mark)
+    int nearestTarget(float* at, int& kind) const {
+        float best = 30000;
+        int which = 0;
+        if (nearestBalloon >= 0) {
+            const cr2::Gimmick& g = field.gimmicks()[size_t(nearestBalloon)];
+            at[0] = g.position[0], at[1] = g.position[1], at[2] = g.position[2], best = nearestBalloonDist, which = 1, kind = 7;
+        }
+        if (actionMark.gimmick >= 0 && script) {
+            if (const cr2::FieldScript::TouchAction* a = script->touchAction(field.gimmicks()[size_t(actionMark.gimmick)].name); a && !a->spots.empty()) {
+                const std::array<float, 3>& m = a->spots[a->markSpot()];
+                const float d = std::hypot(m[0] - playerCur[0], m[1] - playerCur[1], m[2] - playerCur[2]);
+                if (d < best) at[0] = m[0], at[1] = m[1], at[2] = m[2], which = 2, kind = actionMark.kind;
+            }
+        }
+        return which;
+    }
+    void updateFieldCamera(float dt) {
+        if (!fieldMode || camW <= 0) return;
+        constexpr float kTick = cr2::EventRuntime::kTick;
+        const float unit = float(camW) / 960.0f;
+        fieldCam.clock = std::min(fieldCam.clock + dt, 10 * kTick);
+        for (; fieldCam.clock >= kTick; fieldCam.clock -= kTick) {
+            std::memcpy(fieldCam.prev, fieldCam.cur, sizeof fieldCam.cur);
+            if (script && script->camera().scripted()) { // (mode 1: ExecuteCameraMove's SetDirectScroll)
+                fieldCam.cur[0] = -script->camera().x, fieldCam.cur[1] = -script->camera().y, fieldCam.set = true;
+                continue;
+            }
+            if (fieldControl()) { // (+0x80 kept as it was while the leader is not in control)
+                float at[3];
+                int kind = 0;
+                const int which = nearestTarget(at, kind);
+                fieldCam.attention = which == 2 && (kind == 1 || kind == 3 || kind == 5);
+                if (fieldCam.attention) std::memcpy(fieldCam.at, at, sizeof at);
+            }
+            float focus[3] = {player[0], player[1] + 0.045f, player[2]};
+            if (fieldCam.attention)
+                for (int k = 0; k < 3; ++k) focus[k] = player[k] + (fieldCam.at[k] - player[k]) * 0.5f;
+            float sx, sy;
+            field.focusScroll(camW, camH, focus, sx, sy);
+            sx /= unit, sy /= unit;
+            if (!fieldCam.set) {
+                fieldCam.cur[0] = fieldCam.prev[0] = sx, fieldCam.cur[1] = fieldCam.prev[1] = sy, fieldCam.set = true;
+                continue;
+            }
+            const float dx = sx - fieldCam.cur[0], dy = sy - fieldCam.cur[1];
+            if (std::hypot(dx, dy) * unit > 1.0f) { // (within a pixel: held)
+                const float k = fieldCam.attention ? 0.1f : 0.2f;
+                fieldCam.cur[0] += dx * k, fieldCam.cur[1] += dy * k;
+            }
+        }
+    }
+
+    // (SetPlayerRotationToBalloon: the nearer of the balloon and the mark - none, no turn)
+    void startIdleTurn() {
+        if (!(idleTrig || changeTurn) || !script) return;
+        changeTurn = false;
+        float tx = 0, tz = 0, best = 30000;
+        bool any = false;
+        if (nearestBalloon >= 0) {
+            const cr2::Gimmick& g = field.gimmicks()[size_t(nearestBalloon)];
+            tx = g.position[0], tz = g.position[2], best = nearestBalloonDist, any = true;
+        }
+        if (actionMark.gimmick >= 0) {
+            if (const cr2::FieldScript::TouchAction* a = script->touchAction(field.gimmicks()[size_t(actionMark.gimmick)].name); a && !a->spots.empty()) {
+                const std::array<float, 3>& m = a->spots[a->markSpot()];
+                const float d = std::hypot(m[0] - playerCur[0], m[1] - playerCur[1], m[2] - playerCur[2]);
+                if (d < best) tx = m[0], tz = m[2], any = true;
+            }
+        }
+        if (!any) return;
+        idleTurn.on = true, idleTurn.count = 0, idleTurn.from = heading, idleTurn.to = std::atan2(tx - player[0], tz - player[2]);
+        SDL_Log("%s: the leader turns to the nearest %s over 10 updates (%.0f degrees)", field.info().name.c_str(),
+                nearestBalloon >= 0 && tx == field.gimmicks()[size_t(nearestBalloon)].position[0] ? "balloon" : "mark",
+                std::remainder(idleTurn.to - idleTurn.from, 6.28318531f) * 57.29578f);
     }
 
     // A tap (Return, a click): the vista's page; the field's - its event's page, else the nearest
@@ -874,8 +963,8 @@ struct Viewer {
         if (actionMark.gimmick >= 0 && actionMark.startedAt < 0) return actionTapped(); // (then a touch action's)
         if (nearestBalloon < 0 || keyLock.stage != 0) return;
         const cr2::Gimmick& g = field.gimmicks()[size_t(nearestBalloon)];
-        // (no turn: CheckGimmickStart turns the leader only to a sprint, a high jump or a key box's
-        // mark - FldPlayer::SetDirection over 10 updates; a talk's script turns it, ModelDir_Field)
+        // (no turn at the tap: the leader turned to the nearest balloon or mark when it stopped -
+        // SetPlayerRotationToBalloon, startIdleTurn -; a talk's script turns it, ModelDir_Field)
         SDL_Log("%s: tapped %s - %s", field.info().name.c_str(), g.name.c_str(), g.function.c_str());
         std::string function = g.function;
         if (g.kind == cr2::Gimmick::Box) { // (FldMain's balloon of a box: opened, then its function - box_msg)
@@ -1557,6 +1646,7 @@ struct Viewer {
             ++encount.updates;
             if (encount.updates == 2) audio.playSe(0xc9, false);
             if (encount.updates == 3) {
+                leaderHeldAt = time, idleTurn.on = false; // (step 0x1c: m_bAnimationStop - FldPlayer::Update no more)
                 encount.fadeAt = uiClock + kTick; // (its first step the update after)
                 if (!game.flag(0x7f7)) audio.stopBgm(20);
             }
@@ -1569,7 +1659,7 @@ struct Viewer {
         int party[2];
         for (int k = 0; k < 2; ++k) party[k] = game.party[k] >= 0 ? game.party[k] + 1 : 0;
         const int id = encount.coupling, area = encount.area;
-        encount.coupling = 0, encount.fadeAt = -1;
+        encount.coupling = 0, encount.fadeAt = -1, leaderHeldAt = -1;
         returnMap = field.info().name, std::memcpy(returnPlayer, player, sizeof player), returnHeading = heading; // (SaveWorkBeforeBattle)
         SDL_Log("play: battle %d - an encounter (characters %d, %d), %d updates after the hit", id, party[0], party[1], encount.updates);
         if (ex.on) exploreLog("  an encounter: coupling " + std::to_string(id) + (ex.grind > 0 ? " (" + std::to_string(ex.grind - 1) + " more to fight first)" : "")),
@@ -1588,6 +1678,18 @@ struct Viewer {
     // 002, 004 .. 007, five of each at once, its animator once from its start, unturned)
     int stepState = 0, stepCount = 0;
     float groundClock = 0; // (the field's time: walk()'s)
+    // FldMain::SetPlayerRotationToBalloon, each update: with the leader just stopped (SetIdleAnim's
+    // m_bIdleTrig, that update's) or a change of leader (ChangeCharacterExecute's +0xa2), turned
+    // over 10 updates (FldPlayer::SetDirection) toward the nearer of the nearest balloon and the
+    // nearest touch action's mark; a walk begun stops it (StopDirection)
+    bool idleTrig = false, changeTurn = false;
+    struct IdleTurn {
+        bool on = false;
+        float from = 0, to = 0;
+        int count = 0;
+    } idleTurn;
+    float nearestBalloonDist = 30000;
+    float leaderHeldAt = -1; // (FldPlayer::m_bAnimationStop from the encounter's step 0x1c: the leader's time held)
     struct GroundFx {
         bool on = false;
         float at = 0, p[3] = {0, 0, 0};
@@ -1595,6 +1697,9 @@ struct Viewer {
     GroundFx groundFx[6][5];
     std::map<int, ViewFigure> groundFigs; // (kind x 5 + slot)
     void stepUpdate(int moving) { // (0 standing, 1 walking, 2 running)
+        idleTrig = stepState != 0 && moving == 0; // (SetIdleAnim; FldPlayer::Update clears it the update after)
+        if (moving != 0) idleTurn.on = false;     // (StopDirection)
+        if (idleTurn.on && ++idleTurn.count >= 10) idleTurn.on = false, heading = idleTurn.to; // (FldDirectionManager::Update)
         if (moving != stepState) return void((stepState = moving, stepCount = 0));
         if (moving == 0 || ++stepCount <= (moving == 1 ? 11 : 6)) return;
         stepCount = 0;
@@ -1649,7 +1754,7 @@ struct Viewer {
         cr2::Vec3 dir{right[0] * sx + forward[0] * sy, 0, right[2] * sx + forward[2] * sy};
         const float l = std::sqrt(dir[0] * dir[0] + dir[2] * dir[2]);
         const float speed = l > 0 ? (run ? 0.48f : 0.09f) : 0.0f;
-        if (l > 0) dir = {dir[0] / l * speed, 0, dir[2] / l * speed}, heading = std::atan2(dir[0], dir[2]);
+        if (l > 0) dir = {dir[0] / l * speed, 0, dir[2] / l * speed}, heading = std::atan2(dir[0], dir[2]), idleTurn.on = false;
         constexpr float kSub = cr2::CharacterController::kUpdate / cr2::CharacterController::kSubsteps; // (1/60 s)
         stepClock = std::min(stepClock + dt, 15 * kSub);
         std::string exitTo;
@@ -1668,8 +1773,12 @@ struct Viewer {
             else if (exitsArmed && exit.size() >= 5 && fieldControl() && fieldExitHold < 0) exitTo = exit; // (CollisionAdded: the leader's control)
             touchEvents(p);
             checkBalloons();
+            startIdleTurn();
             encountUpdate(p, fieldScriptRunning() || actionRunning() || changeStage != 0 || keyLock.stage != 0);
         }
+        if (idleTurn.on) // (between updates: the share at the update's fraction)
+            heading = turnBetween(idleTurn.from, idleTurn.to,
+                                  directionShare(float(idleTurn.count) + (float(substep) * kSub + stepClock) / cr2::CharacterController::kUpdate, 10));
         if (script && script->playerState().motionSerial != leaderMotionSerial) // (Cr3FieldMapCharacter.SetMotion)
             leaderMotionSerial = script->playerState().motionSerial, leaderMotion = script->playerState().motion,
             SDL_Log("leader: motion %s", leaderMotion.c_str());
@@ -2184,8 +2293,8 @@ struct Viewer {
                             gimmickFace[k].from = gimmickFace[k].yaw;
                             if (gimmickTarget(st->second.faceTarget, tx, tz)) gimmickFace[k].to = std::atan2(tx - g.place.m[3], tz - g.place.m[11]);
                         }
-                        const float a = std::clamp((float(script->ticks() - st->second.faceTick) + fieldClock / cr2::EventRuntime::kTick) / float(st->second.faceUpdates), 0.0f, 1.0f);
-                        gimmickFace[k].yaw = turnBetween(gimmickFace[k].from, gimmickFace[k].to, a);
+                        const float u = float(script->ticks() - st->second.faceTick) + fieldClock / cr2::EventRuntime::kTick;
+                        gimmickFace[k].yaw = turnBetween(gimmickFace[k].from, gimmickFace[k].to, directionShare(u, st->second.faceUpdates));
                         const float sc = std::hypot(g.place.m[0], g.place.m[4], g.place.m[8]), c = std::cos(gimmickFace[k].yaw), sn = std::sin(gimmickFace[k].yaw);
                         g.place.m[0] = c * sc, g.place.m[1] = 0, g.place.m[2] = sn * sc;
                         g.place.m[4] = 0, g.place.m[5] = sc, g.place.m[6] = 0;
@@ -2230,14 +2339,15 @@ struct Viewer {
                 if (leaderFace.serial != ps.faceSerial) {
                     float tx, tz;
                     leaderFace.serial = ps.faceSerial, leaderFace.from = heading, leaderFace.done = false;
+                    idleTurn.on = false; // (the same FldDirectionManager: the script's turn in its place)
                     leaderFace.to = gimmickTarget(ps.faceTarget, tx, tz) ? std::atan2(tx - player[0], tz - player[2]) : heading;
                 }
-                const float a = (float(script->ticks() - ps.faceTick) + fieldClock / cr2::EventRuntime::kTick) / float(ps.faceUpdates);
-                if (!leaderFace.done) heading = turnBetween(leaderFace.from, leaderFace.to, std::clamp(a, 0.0f, 1.0f)), leaderFace.done = a >= 1;
+                const float u = float(script->ticks() - ps.faceTick) + fieldClock / cr2::EventRuntime::kTick;
+                if (!leaderFace.done) heading = turnBetween(leaderFace.from, leaderFace.to, directionShare(u, ps.faceUpdates)), leaderFace.done = u >= float(ps.faceUpdates);
             }
             if (script && script->events().scene().loaded()) poseEventModels(script->events());
         }
-        pose(fig, time);
+        pose(fig, leaderHeldAt >= 0 && encount.coupling ? leaderHeldAt : time);
     }
 
     // A figure's meshes with their materials' render states; opaque meshes first, then those blending
@@ -2435,9 +2545,15 @@ struct Viewer {
                     cx += (c.toX - c.fromX) * k, cy += (c.toY - c.fromY) * k;
                 }
                 fr = field.frameScrolled(w, h, player, cx, cy);
+            } else if (fieldCam.set) { // (the eased scroll, drawn on between updates)
+                const float a = std::clamp(fieldCam.clock / cr2::EventRuntime::kTick, 0.0f, 1.0f);
+                fr = field.frameScrolled(w, h, player, -(fieldCam.prev[0] + (fieldCam.cur[0] - fieldCam.prev[0]) * a),
+                                         -(fieldCam.prev[1] + (fieldCam.cur[1] - fieldCam.prev[1]) * a));
             } else {
-                fr = field.frame(w, h, player);
+                const float focus[3] = {player[0], player[1] + 0.045f, player[2]};
+                fr = field.frame(w, h, focus);
             }
+            camW = w, camH = h;
             if (script) script->setShownScroll(-fr.scroll[0] / (float(w) / 960.0f), -fr.scroll[1] / (float(w) / 960.0f));
             fieldScene = fr.scene;
             dev->setCamera(fr.zNear, fr.zFar, fr.fovY * 3.14159265f / 180);
@@ -2576,6 +2692,7 @@ struct Viewer {
         float d = std::remainder(to - from, 6.28318531f);
         return from + d * a;
     }
+    static float directionShare(float u, int n) { return cr2::directionShare(u, n); } // (event/scene.hpp)
     void refreshGimmicks() {
         std::vector<std::string> want;
         for (const cr2::Gimmick& gm : field.gimmicks())
@@ -2682,6 +2799,8 @@ struct Viewer {
         std::memcpy(playerPrev, player, sizeof player);
         std::memcpy(playerCur, player, sizeof player);
         stepClock = 0, substep = 0;
+        idleTurn = IdleTurn(), idleTrig = changeTurn = false, leaderHeldAt = -1; // (a new area: no turn, no hold)
+        fieldCam = FieldCamera(); // (SetMapCameraAtNewArea: the scroll put on the leader)
         insideEvents.clear();
         { // (where the leader stands as the area starts: those boxes don't fire till it leaves them)
             for (const cr2::Gimmick& g : field.gimmicks())
@@ -2905,7 +3024,10 @@ struct Viewer {
             updateResult();
             // a fight of the flow over: its last action shown, a moment after (a win: its result)
             updateGameOver();
-            if (fightingInFlow && battleStep == BattleStep::Over && !battleScriptRunning() && battleClock > showEnd + 1.5f &&
+            const bool exitNow = battleRules && battleRules->exited(); // (Cr3BattleEvent_Exit: the way out at once)
+            // (no pause of its own: a win's StepResult, a loss's StepGameover, an escape's step 0x1f go
+            // to StepBattleOut the update after)
+            if (fightingInFlow && battleStep == BattleStep::Over && (exitNow || (!battleScriptRunning() && battleClock >= showEnd)) &&
                 (result.stage == 0 || result.stage >= 4) && gameOver.stage == 0) {
                 fightingInFlow = false;
                 beginBattleOut();
@@ -2933,6 +3055,7 @@ struct Viewer {
             if (!fieldScriptRunning() && !eventMode && keyLock.stage == 0 && changeStage == 0 && !encount.coupling && !optionsOpen && !settingsOpen)
                 dt *= float(settings.fieldSpeed);
             fieldUpdate(script && script->events().skipHeld() ? dt * 5 : dt);
+            updateFieldCamera(dt);
             updateChange(dt);
             updateSprint(dt);
             updateIai();
@@ -4372,7 +4495,10 @@ struct Viewer {
     // the fight's next step once the last is over and the script's call is
     void stepBattleShow() {
         if (!battleRules || battleFight == 0) return;
-        if (battleScriptRunning() || battleClock < showEnd) return;
+        // (a script's Exit - Cr3BattleEvent_Exit: BtlMain::NextMode there and then - waits for no
+        // action shown and no script; a win or a loss comes once the last action is over: StepAction,
+        // its controller's state 5)
+        if (!battleRules->exited() && (battleScriptRunning() || battleClock < showEnd)) return;
         if (battleRules->exitTimer() >= 0) return; // (its exit coming: before a win or a loss is shown)
         if (battleStep != BattleStep::Over && (battleRules->exited() || (battleRules->outcome() && battleStep != BattleStep::ActionEnd))) {
             if (!battleRules->exited() && battleRules->outcome() == 1) {
@@ -4404,6 +4530,7 @@ struct Viewer {
                 if (f.present && f.id >= 1 && f.id <= 9) game.mp[f.id - 1] = f.alive && f.has(3, 5) ? -1 : f.mp;
             }
             battleStep = BattleStep::Over;
+            SDL_Log("battle over: %s (%.1f s)", battleRules->exited() ? "its script's exit" : battleRules->outcome() == 1 ? "won" : "lost", battleClock);
             showIndex = showActions.size();
             setBattleCamera(battle.camera);
             return;
@@ -4487,7 +4614,9 @@ struct Viewer {
                     // (StepEscapeLoop: announcement 4 / 5, PlayVoiceEscapeSucceeded / Failed - voices 1 / 2)
                     announceQueue.clear(), commandShown = announce(away ? 4 : 5), commandShownStart = announceAt = battleClock;
                     partyVoice(away ? 1 : 2);
-                    showEnd = battleClock + (away ? 2.0f : 1.0f);
+                    // (away: StepEscapeSuccess the update after, StepEscapeSuccessLoop's 2 s, then step 0x1f -
+                    // StepSetCommand to StepBattleOut, NextMode the update after that: the way out 2.15 s on)
+                    showEnd = battleClock + (away ? 2.0f + 3 * cr2::EventRuntime::kTick : 1.0f);
                     if (away) {
                         battleStep = BattleStep::Over;
                         setBattleCamera(battle.camera);
@@ -4672,18 +4801,24 @@ struct Viewer {
     };
     struct BattleResultShow {
         int stage = 0; // 0 none, 1 the moment, 2 victory, 3 the window, 4 over
-        float start = 0, windowStart = 0, transferStart = 0, transferEnd = 0;
+        float start = 0, windowStart = 0;
         bool tapped = false;
         int exp = 0, sp = 0, oz = 0;
         ResultMember member[2];
-        std::vector<std::string> messages; // (once the EXP is in)
+        std::vector<std::string> messages; // (once the EXP is in: step 16's, after the level-ups)
         std::vector<int> messageSe;        // (each one's SE as it shows: BtlResult::Update's by its kind)
-        int message = -1;                  // (the one shown; -1 "Victory!")
-        float messageAt = 0;
+        std::string levelLine[2];          // (ProcessLvup1 / 2: a member's levels gained, if any)
+        std::string text;                  // (the window's line: 0x10 "Victory!" first)
         int loopSe = -1, levelShown[2] = {0, 0}; // (the transfer's SE 0xc5, looping; the levels chimed for)
-        bool counting = false, counted = false;
+        float windowAt = -1;               // (the window's update: two after the tap - steps 7, 8, then 9)
+        float closeAt = -1;                // (HideBattleResult: each part backwards from where it stands)
+        int step = 0, count = 0, sub = 0;  // (the step table's index; ProcessLvup's count, +0x170; step 16's, +0xc)
+        float timer = 0, nextTick = 0;     // (+0x20: the time since the last reset; the next update)
     } result;
-    static constexpr float kTransfer = 2.0f; // (ProcessLvup's 60 frames at 30 a second)
+    // BtlResult's steps after the victory (its table at 0x5bf95c, from step 8): one each game
+    // update (20 a second), the next taking effect the update after
+    static constexpr int kResultSteps[] = {8, 9, 10, 11, 12, 7, 8, 13, 7, 8, 14, 7, 8, 15, 7, 8, 16, 17, 18};
+    static constexpr int kLvupCount = 60; // (ProcessLvup: 60 updates, 3 s)
     // the battle's announcements (BtlAnnounceData, message\announcebattle.dat: u32 the records'
     // offset, the texts', the count; a record 0x20 bytes - eight languages' text offsets)
     // - and the names', the same: message\\charaname, sopianame, commandname, autoskillname,
@@ -4757,8 +4892,9 @@ struct Viewer {
             const ResultNow n = resultNow(r);
             const int up = n.level - r.level;
             const std::string name = messageText("charaname", r.id);
-            if (up == 1) out.push_back(formatAnnounce(announce(0x11), {name})), result.messageSe.push_back(0xc3); // (ProcessLvup1 / 2: SE 0xc3)
-            else if (up > 1) out.push_back(formatAnnounce(announce(0x12), {name, std::to_string(up)})), result.messageSe.push_back(0xc3);
+            const size_t k = size_t(&r - result.member);
+            if (up == 1) result.levelLine[k] = formatAnnounce(announce(0x11), {name}); // (ProcessLvup1 / 2, SE 0xc3)
+            else if (up > 1) result.levelLine[k] = formatAnnounce(announce(0x12), {name, std::to_string(up)});
             game.level[r.ch] = n.level, game.exp[r.ch] = n.exp;
         }
         // CheckSpUp: each sopia the party carries (once), its SP, a level each time it passes its
@@ -4801,6 +4937,8 @@ struct Viewer {
                 result.messageSe.push_back(0xc2); // (CheckDropSopia: 4)
                 game.sopiaOwned |= 1u << s, game.sopiaLevel[s] = 1, game.sopiaExp[s] = 0;
             }
+        for (const std::string& s : result.levelLine)
+            if (!s.empty()) SDL_Log("result: %s", s.c_str());
         for (const std::string& s : out) SDL_Log("result: %s", s.c_str());
     }
     bool announceHeld = false; // (the banner kept: the victory's)
@@ -4966,9 +5104,7 @@ struct Viewer {
         int exp, level, next, percent, hp;
     };
     ResultNow resultNow(const ResultMember& r) const {
-        const float p = result.stage >= 4 ? 1.0f : result.transferEnd > result.transferStart
-                                                       ? std::clamp((battleClock - result.transferStart) / (result.transferEnd - result.transferStart), 0.0f, 1.0f)
-                                                       : 0.0f;
+        const float p = result.stage >= 4 ? 1.0f : float(result.count) / float(kLvupCount);
         ResultNow n;
         n.exp = r.exp0 + int(float(r.gain) * p);
         n.level = std::max(r.level, 1);
@@ -5082,49 +5218,105 @@ struct Viewer {
             setBattleCamera(fighterUnit[1] < 0 ? "Cam_Win_PCsolo_00"
                             : battleRules->fighter(0).partner >= 0 && both ? "Cam_Win_PCpair_00"
                             : battleRules->fighter(0).alive ? "Cam_Win_PCfighter_00" : "Cam_Win_PCpartner_00");
-        } else if (result.stage == 2 && (tapped || t > 5.0f)) { // (ShowResult: the HUD gone, the window)
+        } else if (result.stage == 2 && result.windowAt < 0 && (tapped || t > 5.0f)) { // (step 7: a tap, or 5 s)
+            result.windowAt = battleClock + 2 * cr2::EventRuntime::kTick; // (step 8, then 9's ShowResult)
+        } else if (result.stage == 2 && result.windowAt >= 0 && battleClock >= result.windowAt) {
+            // (ShowResult: the HUD gone, the window, "Victory!" (0x10), the first of the 60 counts)
             result.stage = 3, result.start = result.windowStart = battleClock;
             SDL_Log("result: the window at %.1f s", battleClock);
             announceHeld = false, commandShown.clear();
-            UiFig& seat = uiFig("seatrslt_io");
-            poseUi(seat, "seatrslt_io", 0);
-            result.transferStart = battleClock + (seat.fig.animLoaded ? seat.fig.anim.duration() : 0.5f);
-            result.transferEnd = result.transferStart + kTransfer;
+            result.text = announce(16);
+            result.step = 2, result.count = 1, result.sub = 0, result.timer = 0;
+            result.nextTick = battleClock + cr2::EventRuntime::kTick;
+            for (int k = 0; k < 2; ++k) result.levelShown[k] = result.member[k].level;
         } else if (result.stage == 3) {
-            if (tapped && battleClock < result.transferEnd) result.transferStart = result.transferEnd = battleClock; // (all at once)
-            // (ProcessLvup: SE 0xc5 looping while the EXP goes in and the HP back - when there's any -,
-            // 0xc3 each level a member passes - CheckLvUp)
-            if (!result.counting && !result.counted && battleClock >= result.transferStart) {
-                result.counting = true;
-                bool any = false;
-                for (int k = 0; k < 2; ++k) {
-                    const ResultMember& r = result.member[k];
-                    result.levelShown[k] = r.level;
-                    any = any || (r.ch >= 0 && (r.gain > 0 || r.hp0 < r.hpMax));
-                }
-                if (any && battleClock < result.transferEnd) result.loopSe = audio.playSe(0xc5, true);
+            bool tap = tapped; // (a touch is the update's: lost if that update does not look)
+            for (; result.stage == 3 && battleClock >= result.nextTick; result.nextTick += cr2::EventRuntime::kTick) {
+                const bool tick = tap;
+                tap = false;
+                resultStep(tick);
             }
-            if (result.counting) {
-                for (int k = 0; k < 2; ++k)
+            if (tap) result.tapped = true; // (no update this frame: kept for the next)
+        }
+    }
+    // One of BtlResult::Update's steps (the window's, from step 8): +0x20 counted first, then the step
+    void resultStep(bool tapped) {
+        constexpr float kTick = cr2::EventRuntime::kTick;
+        constexpr int kSteps = int(sizeof(kResultSteps) / sizeof(kResultSteps[0]));
+        result.timer += kTick;
+        auto next = [&] { ++result.step; };
+        auto skipTo = [&](int code) { // (ProcessLvup1 / 2 with no level: to the next step of that code)
+            int i = result.step + 1;
+            while (i < kSteps && kResultSteps[i] != code) ++i;
+            result.step = i < kSteps ? i : kSteps - 1;
+        };
+        switch (result.step < kSteps ? kResultSteps[result.step] : 18) {
+        case 7: // (a tap, or past 5 s since the last reset)
+            if (tapped || result.timer > 5.0f) next(), result.timer = 0;
+            break;
+        case 8: next(); break; // (the finger up)
+        case 10: // (0.3 s)
+            if (result.timer > 0.3) next(), result.timer = 0;
+            break;
+        case 11: { // (SE 0xc5 looping while there is EXP or HP to go in)
+            bool any = false;
+            for (const ResultMember& r : result.member) any = any || (r.ch >= 0 && (r.gain > 0 || r.hp0 < r.hpMax));
+            if (any) result.loopSe = audio.playSe(0xc5, true);
+            next();
+            break;
+        }
+        case 12: // (ProcessLvup: a 60th each update - a tap all at once -, then its SE stopped)
+            if (result.count < kLvupCount) {
+                result.count = tapped ? kLvupCount : result.count + 1;
+                for (int k = 0; k < 2; ++k) // (CheckLvUp: 0xc3 each level a member passes)
                     if (result.member[k].ch >= 0 && resultNow(result.member[k]).level > result.levelShown[k])
                         result.levelShown[k] = resultNow(result.member[k]).level, audio.playSe(0xc3, false);
-                if (battleClock >= result.transferEnd) {
-                    if (result.loopSe >= 0) audio.stopSe(result.loopSe, 0);
-                    result.loopSe = -1, result.counting = false, result.counted = true;
-                }
+                if (result.count == kLvupCount) finishResult();
+                break;
             }
-            else if (battleClock >= result.transferEnd && result.message < 0 && (tapped || battleClock - result.transferEnd > 5.0f)) {
-                finishResult();
-                result.message = 0, result.messageAt = battleClock;
-                if (!result.messageSe.empty()) audio.playSe(result.messageSe[0], false);
-            } else if (result.message >= 0 && (tapped || battleClock - result.messageAt > 3.0f)) {
-                ++result.message, result.messageAt = battleClock;
-                if (size_t(result.message) < result.messageSe.size()) audio.playSe(result.messageSe[size_t(result.message)], false);
+            if (result.loopSe >= 0) audio.stopSe(result.loopSe, 0);
+            result.loopSe = -1;
+            next();
+            break;
+        case 13:
+        case 14: { // (ProcessLvup1 / 2: the member's levels gained, SE 0xc3 - else on to the next)
+            const int k = kResultSteps[result.step] - 13;
+            if (result.levelLine[k].empty()) {
+                skipTo(kResultSteps[result.step] + 1);
+                break;
             }
-            if (result.message >= int(result.messages.size()) && result.message >= 0) {
-                result.stage = 4;
-                SDL_Log("result: EXP %d, SP %d, Oz %d", result.exp, result.sp, result.oz);
+            result.text = result.levelLine[k];
+            audio.playSe(0xc3, false);
+            next();
+            break;
+        }
+        case 15: // (ProcessResult: the line cleared - the SP, Oz and drops given)
+            result.text.clear();
+            next();
+            break;
+        case 16: { // (each message: the finger up, cleared, shown with its SE, then a tap - no time limit)
+            const size_t i = size_t(result.sub >> 2);
+            if (i >= result.messages.size()) {
+                next();
+                break;
             }
+            const int part = result.sub & 3;
+            if (part == 2) {
+                result.text = result.messages[i];
+                if (i < result.messageSe.size()) audio.playSe(result.messageSe[i], false);
+            }
+            if (part != 3 || tapped) ++result.sub;
+            break;
+        }
+        case 17: // (HideBattleResult, the line cleared)
+            result.text.clear();
+            result.closeAt = battleClock;
+            next();
+            break;
+        default: // (18: StepResult sees the end)
+            result.stage = 4;
+            SDL_Log("result: over at %.2f s - EXP %d, SP %d, Oz %d", battleClock, result.exp, result.sp, result.oz);
+            break;
         }
     }
     // a number at a fighter's DummyDP01 (its bind pose's), as the hits' (DamageInfo00)
@@ -8296,10 +8488,22 @@ struct Viewer {
     }
     void drawResult(const Mat4& view, const Mat4& proj, int w, int h) {
         const float t = battleClock - result.windowStart;
+        // (EndResultWindow: ResultMenu, its SystemWindowMenu (4) and CharaStatusWindowMenu (1) each
+        // InterfaceCloseAnimeSet - its animation backwards (+0x5c 2) from the frame it stands at -, the
+        // EXP and SP numbers deleted)
+        const bool closing = result.closeAt >= 0;
+        auto partTime = [&](const std::string& fig, const std::string& anim) {
+            if (!closing) return t;
+            UiFig& u = uiFig(fig);
+            poseUi(u, anim, 0);
+            const float len = u.fig.animLoaded ? u.fig.anim.duration() : 0.0f;
+            return std::max(std::min(result.closeAt - result.windowStart, len) - (battleClock - result.closeAt), 0.0f);
+        };
         auto part = [&](const std::string& fig, const std::string& anim, const char* hide = nullptr) -> UiFig& {
+            const float pt = partTime(fig, anim);
             UiFig& u = uiFig(fig);
             u.fig.place = cr2::Mat34();
-            poseUi(u, anim, t);
+            poseUi(u, anim, pt);
             if (hide) // (a part the window does not use: its joint's meshes)
                 for (ViewMesh& vm : u.fig.meshes) {
                     const uint32_t j = vm.source.palette.empty() ? ~0u : vm.source.palette[0];
@@ -8311,7 +8515,7 @@ struct Viewer {
         part("menu", "menurslt_io");
         UiFig& seat = part("seatrslt_io", "seatrslt_io");
         float x, y;
-        if (battleClock >= result.transferStart) {
+        if (!closing) { // (ShowResult: the EXP and SP in from the window's update)
             if (uiJoint(seat, "call_dotNum_id01", x, y)) drawDigits(result.exp, 90, 6, x, y, proj);
             if (uiJoint(seat, "call_dotNum_id11", x, y)) drawDigits(result.sp, 90, 4, x, y, proj);
         }
@@ -8323,10 +8527,9 @@ struct Viewer {
             const ResultNow n = resultNow(r);
             rows[count++] = {r.id, n.level, n.hp, r.hpMax, r.mp, r.mpMax, n.next, n.percent};
         }
-        drawStatusWindows(rows, count, t, view, proj, true);
+        drawStatusWindows(rows, count, partTime("campwin", "campwin2_io"), view, proj, true);
         UiFig& sys = part("syswin_io", "syswin_io");
-        const std::string& text = result.message >= 0 && result.message < int(result.messages.size()) ? result.messages[size_t(result.message)] : announce(16);
-        if (uiJoint(sys, "typeM_L01", x, y)) drawUiText(text, 24, x, y, w, h, true);
+        if (!result.text.empty() && uiJoint(sys, "typeM_L01", x, y)) drawUiText(result.text, 24, x, y, w, h, true);
     }
     void drawBattleHud(int w, int h) {
         if (!(gameOver.stage > 0 && gameOver.hidden)) drawBattleHudParts(w, h);
@@ -10811,6 +11014,7 @@ struct Viewer {
             SDL_Log("%s: the leader now character %d", field.info().name.c_str(), script->leader());
             refreshLeader();
             changeStage = 2, changeFrames = 0;
+            changeTurn = true; // (+0xa2: the new leader turned to the nearest - set as the lighting begins)
             for (int c = 0; c < 3; ++c) fig.tint[c] = 0;
             return;
         }
@@ -13124,6 +13328,11 @@ int main(int argc, char** argv) {
         v.draw(w, h);
         dev->endFrame(false);
     };
+    { // (the field camera's units before the first frame is drawn: a run that only captures at its end)
+        int w = 0, h = 0;
+        frameSize(w, h);
+        v.camW = w, v.camH = h;
+    }
     if (v.playMode) { // --time: the game played that long first (60 frames a second), then --walk
         for (float t = 0; t + 0.5f / 60.0f < startTime; t += 1.0f / 60.0f) {
             v.advance(1.0f / 60.0f, 0, 0, false);

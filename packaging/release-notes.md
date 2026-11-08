@@ -34,7 +34,17 @@ A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux an
   area now fades to black before the next one, as the original does. A random encounter keeps the
   original's rhythm: the leader takes two more steps, then the sound and the wipe, and the battle
   starts 1.4 s after the encounter instead of 0.65 s. A battle's end fades to white with its music
-  before the field fades back in from white, instead of cutting to a white screen.
+  before the field fades back in from white, instead of cutting to a white screen. A battle that
+  its script ends (three of Amon's and the Tentacle's) leaves at once, as the original does,
+  instead of holding 1.5 s first. The result window keeps the original's pace: the EXP goes in
+  over 3 s instead of 2, each level-up line waits for a tap or 5 s, and the Oz, items and sopia
+  messages wait for a tap instead of moving on after 3 s. Getting away from a battle leaves after
+  about 2 s as in the original, not 3.5, and the result window slides away as the battle fades
+  out instead of staying whole. Characters turn as the original's do, quickly and then easing in,
+  instead of at an even pace; the leader turns toward a nearby balloon or mark on stopping, as in
+  the original, and stands still under an encounter's wipe. The field camera follows the leader
+  with the original's easing instead of being locked to it, leans toward a high jump's, mystic's
+  or aim's mark, and eases back after a scripted camera move.
 - **Vulkan: fewer hitches.** The renderer keeps the driver's compiled pipelines between runs
   (`vulkan-pipelines.bin` in the profile folder), so the start and each new screen don't compile
   them again. Measured on a scene here: 6.7 ms of pipeline compiling the first time, 0.1 ms the

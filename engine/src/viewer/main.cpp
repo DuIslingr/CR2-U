@@ -3575,7 +3575,7 @@ struct Viewer {
         for (BattleEffect& fx : battleEffects) unload(*fx.fig);
         battleEffects.clear();
         for (SceneEffect& fx : commandEffects) unload(*fx.fig);
-        commandEffects.clear();
+        commandEffects.clear(), pendingEffects.clear();
         for (int f = 0; f < 2; ++f) dropGuardObject(f);
         for (auto& [id, fx] : scene.effects)
             if (fx.fig) unload(*fx.fig);
@@ -3743,7 +3743,65 @@ struct Viewer {
     float showStart = 0; // (battle seconds)
     float showHitAt = 0, showEnd = 0;
     int showCamera2 = -1;
-    bool showHitDone = false;
+    // cameras later in an action (seconds into it): an item's and a sopia's on the one it is used on
+    // (ActionItemWaitLaunch / ActionSopiaWaitLaunch -> SetTargetCamera(false)), a sopia's caster's
+    struct TimedCamera {
+        float at = 0;
+        std::string name;
+        cr2::Mat34 place;
+    };
+    std::vector<TimedCamera> timedCameras;
+    bool showSopia = false; // (a party member's magic: action_table_sopia's waits)
+    // BtlActionCtrl::SetTargetCamera(false): the camera on the one an item or a sopia is used on -
+    // the foes (+0x4b 6) by the party: GetItemSopiaTargetGroup by the pattern (+2; 12, 13 the human
+    // ones); a party member: GetItemSopiaTarget(2 alone, 3 a pair, else which), a revival's
+    // Cam_Unit_PCrevival_00 at its place; a monster: GetItemSopiaTarget by the pattern - 11 a pair,
+    // else its size's 4 + 0..3 - in its DummyCP's frame (none for the patterns 7, 8, 10 .. 12; 8 cm
+    // nearer for pattern 4's by the party). The allies' (+0x4b 3: GetItemSopiaTargetGroup(+0x523))
+    // and a monster's on the party's side are not followed.
+    bool useTargetCamera(const ShowAction& a, const cr2::BattleData::Command* c, std::string& name, cr2::Mat34& place) {
+        name.clear(), place = cr2::Mat34();
+        const int target = a.hits.empty() ? -1 : a.hits.front().target;
+        const int p = battle.pattern;
+        int n = -1;
+        if (c && c->target == 3) return false;
+        if (c && c->target == 6) {
+            if (a.actor >= 0 && a.actor < 2) n = cr2::cameraItemSopiaTargetGroup(p == 10 ? 12 : p == 11 ? 13 : p + 2);
+        } else if (target >= 0 && target < 2) {
+            bool revives = false;
+            for (const auto& h : a.hits) revives = revives || h.revived;
+            if (revives) {
+                name = "Cam_Unit_PCrevival_00";
+                if (fighterUnit[target] >= 0)
+                    for (int r = 0; r < 3; ++r) place.m[r * 4 + 3] = battleUnits[size_t(fighterUnit[target])].home.m[r * 4 + 3];
+                return true;
+            }
+            n = cr2::cameraItemSopiaTarget(fighterUnit[1] < 0 ? 2 : battleRules->fighter(target).partner >= 0 ? 3 : target);
+        } else if (target >= 2) {
+            const cr2::BattleData::Monster* mo = battleData.monster(battleRules->fighter(target).id);
+            const int k = battleRules->fighter(target).partner >= 0 ? 11
+                          : p == 10                                 ? 10
+                          : p == 11                                 ? (target == 2 ? 8 : 9)
+                          : p == 12                                 ? 12
+                          : p == 9                                  ? 13
+                                                                    : (mo ? mo->size : 0) + 4;
+            n = cr2::cameraItemSopiaTarget(k);
+            if (p != 7 && p != 8 && p != 10 && p != 11 && p != 12 && fighterUnit[target] >= 0) {
+                place = targetFrame(battleUnits[size_t(fighterUnit[target])]);
+                if (p == 4 && a.actor >= 0 && a.actor < 2) place.m[11] -= 0.08f;
+            }
+        }
+        if (const char* nm = cr2::battleCameraName(n)) name = nm;
+        return !name.empty();
+    }
+    bool showHitDone = false, showItem = false;
+    std::set<int> itemCommands; // (the items' commands, +0x2e: an item's use goes by action_table_item)
+    bool itemCommand(int command) {
+        if (itemCommands.empty())
+            for (int id = 1; id < 300; ++id)
+                if (const cr2::BattleData::Item* it = battleData.item(id); it && it->command > 0) itemCommands.insert(it->command);
+        return itemCommands.count(command) != 0;
+    }
     struct Move {
         int unit = -1;
         cr2::Mat34 to;
@@ -4448,9 +4506,21 @@ struct Viewer {
         std::vector<uint8_t> d;
         if (archive.read("battleapos.skel", d) && cr2::parseSkeleton(d, battleApos)) battleAposWorld = battleApos.world(battleApos.basePose);
         showActions.clear(), showIndex = 0;
-        // the opening: Cam_Start_<pattern>_00 (BtlMainCtrl::StepBattleIn), then the turns
+        // the opening: Cam_Start_<pattern>_00 (BtlMainCtrl::StepBattleIn), then the turns. Its steps
+        // from the FadeIn(3, 20) (the uncovering, now): 6 passes the update after, 7 - with a first
+        // strike - waits 0.5 s and puts up its banner for 1.0 s (SetAnnounceTime 1.0), 8 waits over
+        // 1.0 s more, 9 the fade's 20 updates; 10 calls Battle_Start, 11 waits for the script, 12 the
+        // voice, 13, 14 the first turn the update after: Battle_Start 21 updates on (35 with the
+        // banner), the turn 5 after it. The reference video: a battle's command menu 1.25 s after
+        // its uncovering began, an assault's banner 0.57 s after. (It was a flat 3 s.)
         setBattleCamera(battle.startCamera);
-        showEnd = battleClock + 3.0f;
+        {
+            constexpr float kTick = cr2::EventRuntime::kTick;
+            const bool banner = battleRules && battleRules->advantage() != 0;
+            showEnd = battleClock + (banner ? 35 : 21) * kTick;
+            openingBannerAt = banner ? battleClock + 12 * kTick : -1;
+            openingTurnAt = -1, openingBannerShownAt = -1;
+        }
         SDL_Log("fight: %s", mode == 2 ? "pair" : "solo");
     }
 
@@ -4538,15 +4608,9 @@ struct Viewer {
         switch (battleStep) {
         case BattleStep::Opening: // (the opening over: StepBattleIn's Battle_Start)
             battleStep = BattleStep::TurnBegin;
-            // (StepBattleIn: the start's announcement - the leader's name; 91 a party of one)
-            if (battleRules->advantage() == 1) {
-                const bool solo = !battleRules->fighter(1).present;
-                announceQueue.push_back(formatAnnounce(announce(solo ? 91 : 1), {fighterName(0)}));
-            } else if (battleRules->advantage() == 2) {
-                announceQueue.push_back(announce(2));
-            }
             if (battleRules->advantage()) SDL_Log("start: %s", battleRules->advantage() == 1 ? "the party first" : "the monsters' assault");
             battleRules->script("Battle_Start");
+            openingTurnAt = battleClock + 5 * cr2::EventRuntime::kTick; // (steps 11 .. 14, the turn the update after)
             // (BtlSound::PlayVoiceBattleIn, with flag 0xbeb: the coupling's own voice, else 19 the party
             // first, 20 the assault, else by the means of the levels - the monsters' over the party's
             // by more than 4, 17; under by more than 4, 18; else 16 -, said by one standing at random)
@@ -4565,7 +4629,7 @@ struct Viewer {
             break;
         case BattleStep::TurnBegin:
             // (StepBattleIn: the start's announcement up its time before the first turn)
-            if (battleRules->turn() == 0 && battleRules->advantage() && (!announceQueue.empty() || battleClock - announceAt < 1.5f)) break;
+            if (battleRules->turn() == 0 && (battleScriptRunning() || battleClock < openingTurnAt)) break; // (StepBattleIn's 11 .. 14)
             battleRules->beginTurn();
             battleStep = BattleStep::TurnChoose;
             // (BtlCommand::StepInit: an armoured monster standing - its +0x48 bit 0 - the first time,
@@ -4625,7 +4689,7 @@ struct Viewer {
                 }
                 battleRules->chooseTurn(commandInput.pairTurn(), commandInput.orders());
                 placeParty(battleRules->fighter(0).partner >= 0);
-                SDL_Log("turn %d (%s)", battleRules->turn() + 1, commandInput.pairTurn() ? "pair" : "solo");
+                SDL_Log("turn %d (%s, %.2f s)", battleRules->turn() + 1, commandInput.pairTurn() ? "pair" : "solo", battleClock);
                 battleStep = BattleStep::ActionStart;
                 break;
             }
@@ -4634,7 +4698,7 @@ struct Viewer {
             if (ex.on && exploreOrders(pair, orders)) { // (the explorer's: as a careful player chooses)
                 battleRules->chooseTurn(pair, orders);
                 placeParty(battleRules->fighter(0).partner >= 0);
-                SDL_Log("turn %d (%s)", battleRules->turn() + 1, pair ? "pair" : "solo");
+                SDL_Log("turn %d (%s, %.2f s)", battleRules->turn() + 1, pair ? "pair" : "solo", battleClock);
                 battleStep = BattleStep::ActionStart;
                 break;
             }
@@ -4653,7 +4717,7 @@ struct Viewer {
             }
             battleRules->chooseTurn(pair, orders);
             placeParty(battleRules->fighter(0).partner >= 0);
-            SDL_Log("turn %d", battleRules->turn() + 1);
+            SDL_Log("turn %d (%.2f s)", battleRules->turn() + 1, battleClock);
             battleStep = BattleStep::ActionStart;
             break;
         }
@@ -4675,8 +4739,8 @@ struct Viewer {
                     if (e.healMp > 0) showNumber(e.target, e.healMp, 60);
                     SDL_Log("    %s: %d poison, %d HP back, %d MP back", battleRules->fighter(e.target).name.c_str(), e.damage, e.heal, e.healMp);
                 }
-                if (!battleRules->turnEndEvents().empty()) showEnd = battleClock + 1.2f;
-                SDL_Log("turn over; gauge %d, charge %d; MP %d %d", battleRules->gauge(), battleRules->charge(), battleRules->fighter(0).mp, battleRules->fighter(1).mp);
+                if (!battleRules->turnEndEvents().empty()) showEnd = battleClock + 1.5f; // (BtlTurnEnd::Update: step 4, 1.5 s, when any was applied - else straight to 5)
+                SDL_Log("turn over; gauge %d, charge %d; MP %d %d (%.2f s)", battleRules->gauge(), battleRules->charge(), battleRules->fighter(0).mp, battleRules->fighter(1).mp, battleClock);
                 battleStep = BattleStep::TurnBegin;
                 break;
             }
@@ -4786,7 +4850,9 @@ struct Viewer {
         spawnEffect("eff216", at);
         battleVoice(f, 10), battleSe(0x8b); // (ActionReviveMain: PlayVoiceRevive, SE 0x8b)
         SDL_Log("    %s revived: %d HP", battleRules->fighter(f).name.c_str(), battleRules->fighter(f).hp);
-        showEnd = battleClock + std::max(motionLength(bu, "bh01"), 1.0f) + 0.3f;
+        // (ActionReviveWait: on once motion 8 has played out - its idle, ActionDone; the line's 3.0 s
+        // runs on under what follows)
+        showEnd = battleClock + motionLength(bu, "bh01") + cr2::EventRuntime::kTick;
     }
     int shownGauge() const { return hudHeld() ? hudBefore.gauge : battleRules->gauge(); }
     int shownCharge() const { return hudHeld() ? hudBefore.charge : battleRules->charge(); }
@@ -5137,7 +5203,7 @@ struct Viewer {
         gameOver.over = (cp && cp->flag) || game.flag(0x7f9);
         announceQueue.clear();
         for (SceneEffect& fx : commandEffects) unload(*fx.fig);
-        commandEffects.clear();
+        commandEffects.clear(), pendingEffects.clear();
         for (BattleEffect& fx : battleEffects) unload(*fx.fig);
         battleEffects.clear();
         for (int f = 0; f < 2; ++f) dropGuardObject(f);
@@ -5337,13 +5403,19 @@ struct Viewer {
     }
     void beginShowAction(const ShowAction& a) {
         if (a.actor == 0 || a.actor == 1) lastPartyActor = a.actor;
+        launchLead = 0, showItem = false, showSopia = false, timedCameras.clear();
         showStart = battleClock, showHitDone = false;
         const cr2::BattleData::Command* c = battleData.command(a.command);
-        if (c && c->voice > 0) battleVoice(a.actor, c->voice, float(c->voiceDelay) * 0.05f, true); // (PlayVoiceCommand: +0x68 after +0x6a)
+        auto commandVoice = [&](float lead) { // (PlayVoiceCommand: +0x68 after +0x6a - an attack's in ActionAttackWaitAttackMotion, after its lead)
+            if (c && c->voice > 0) battleVoice(a.actor, c->voice, float(c->voiceDelay) * 0.05f + lead, true);
+        };
+        if (!a.hits.empty() && a.hits.front().failed) commandVoice(0);
         if (!a.hits.empty() && a.hits.front().failed) { // (ActionDontAction*: its announcement alone, a moment)
             for (Move& m : showMoves) m = Move();
             showHitAt = 0, showCamera2 = -1;
-            showEnd = battleClock + 1.5f;
+            // (action_table_dont_action: ActionDontActionAnnounce sets its line for 2.0 s, then
+            // ActionCommonCommandAnnounce - step 12 - waits till no announcement is left)
+            showEnd = battleClock + 2.0f + cr2::EventRuntime::kTick;
             if (c) SDL_Log("  %s: %s - not done", battleRules->fighter(a.actor).name.c_str(), c->name[1].c_str());
             return;
         }
@@ -5352,17 +5424,27 @@ struct Viewer {
             showHitAt = 0, showCamera2 = -1;
             showEnd = battleClock; // (action_table_empty: no announcement, no motion - the stance since the choice)
             SDL_Log("  %s: Defend (its stance)", battleRules->fighter(a.actor).name.c_str());
+            commandVoice(0);
             return;
         }
         for (int f : {a.actor, a.partner}) // (SetAttackMotion: HideAttachObject)
             if (f >= 0 && f < 2 && guardObjects[f]) guardObjects[f]->shown = false, guardReturn[f] = true;
+        SDL_Log("  action %s: %s (%.2f s)", battleRules->fighter(a.actor).name.c_str(), c ? c->name[1].c_str() : "?", battleClock);
         if (c && startScene(a, *c)) { // (an awakening's, an advent's, a monster's special: its scene)
             SDL_Log("  %s: %s", battleRules->fighter(a.actor).name.c_str(), c->name[1].c_str());
+            commandVoice(0);
             return;
         }
         std::string motion = c ? c->motion : "bb01";
+        if (c && motion.empty()) { // (BtlUtilData::GetMotionTypeFromCommand: none of its own - the plain attack's, the party's +0x44, a monster's +0x4c)
+            const cr2::Fighter& af = battleRules->fighter(a.actor);
+            int plain = af.attack;
+            if (a.actor >= 2)
+                if (const cr2::BattleData::Monster* mo = battleData.monster(af.id)) plain = mo->counter;
+            if (const cr2::BattleData::Command* pc = battleData.command(plain); pc && !pc->motion.empty()) motion = pc->motion;
+        }
         if (a.partner >= 0 && a.actor < 2) motion = "bp01"; // (the pair's command: +0x46, bp01)
-        float length = 0;
+        float length = 0, returned = -1;
         for (Move& m : showMoves) m = Move();
         const int target = a.hits.empty() ? -1 : a.hits.front().target;
         int slot = 0;
@@ -5379,11 +5461,25 @@ struct Viewer {
             if (first >= 2) i = x.id - 205, j = y.id - 205;
             return i >= 0 && i < 9 && j >= 0 && j < 9 ? float(kPairDelay[i][j]) / 20.0f : 0.0f;
         };
+        // (a physical attack's lead - action_table_attack_solo: ... 6 the announcement, 15
+        // ActionAttackStandby - the camera, the turn to the target, the attack motion asked for -,
+        // 16 ActionAttackWaitAttackMotion till that motion is the one playing: the steps run on in
+        // one update (ActionMain loops while the step changes), the motion's change takes its
+        // updates. The reference video: Lockjaw's hit 1.2 s after its camera - the motion's 1.05 -,
+        // Darwin's Slash's 0.67 s - 0.55: about three updates)
+        float lead = 0;
+        if (c && c->magic == 0 && a.actor >= 0 && fighterUnit[a.actor] >= 0) {
+            cr2::MotionTimes t0;
+            cr2::motionTimes(battleUnits[size_t(fighterUnit[a.actor])].figure, cr2::motionIndex(motion), t0);
+            if (t0.moveStart >= 0 && t0.move2End >= 0) lead = 3 * cr2::EventRuntime::kTick;
+        }
+        commandVoice(lead);
+        launchLead = lead;
         for (int f : {a.actor, a.partner}) {
             const int u = f >= 0 ? fighterUnit[f] : -1;
             if (u < 0) continue;
             BattleUnit& bu = battleUnits[size_t(u)];
-            const float delay = f == a.partner && a.partner >= 0 ? pairDelay(a.actor, a.partner) : 0.0f;
+            const float delay = lead + (f == a.partner && a.partner >= 0 ? pairDelay(a.actor, a.partner) : 0.0f);
             playMotion(bu, motion, battleClock + delay);
             length = std::max(length, motionLength(bu, motion) + delay);
             cr2::MotionTimes t;
@@ -5395,9 +5491,34 @@ struct Viewer {
                 m.start = t.moveStart + delay, m.end = t.moveEnd + delay;
                 m.back = t.move2Start + delay, m.backEnd = t.move2End + delay;
             }
-            if (f == a.actor) showHitAt = t.hit[0] >= 0 ? t.hit[0] : length * 0.5f;
+            if (f == a.actor) showHitAt = t.hit[0] >= 0 ? t.hit[0] + delay : length * 0.5f;
+            if (t.move2End >= 0) returned = std::max(returned, t.move2End + delay);
         }
-        showEnd = battleClock + std::max(length, 0.5f) + 0.3f;
+        // (the attack's end - 21 ActionAttackReturn, 23 ActionAttackWaitFinishReturn and 5 to the
+        // motion's second move's end - GetMotionTimeMoveEnd2, the actor back in place -, 22 / 26
+        // the turn back and the stance, 12 the announcements gone, 8 / 9 Command_End, 24
+        // ActionAttackWaitNextStart: 0.1 s - 1.6 s for command 0x130, 2.1 s for 0x145, 0x1a8 ..
+        // 0x1aa - then action state 3, the next actor's turn, while 25 finishes the turn back; the
+        // rest of the motion plays on under the next. The reference video: a Mantis's Lockjaw 2.6 s
+        // from its camera to the next actor's - the lead and its return's end at 2.35 -, Darwin's
+        // Slash 1.97 s - 1.60. A motion with no return keeps its length and 0.3 s.)
+        const float nextStart = a.command == 0x130 ? 1.6f : (a.command == 0x145 || (a.command >= 0x1a8 && a.command <= 0x1aa)) ? 2.1f : 0.1f;
+        showEnd = battleClock + (returned > 0 ? returned + nextStart + cr2::EventRuntime::kTick : std::max(length, 0.5f) + 0.3f);
+        // (an item - action_table_item: 30 ItemStandby, 32 ItemWaitLaunch's 2.0 s, the target's
+        // camera, 33 ItemWaitHit's 0.1 s and the hit, 34 ItemWaitMotion till its hit effect has
+        // played out and the user stands, then on: the hit 2.1 s in, the end with its effects)
+        showItem = itemCommand(a.command);
+        if (showItem) showHitAt = 2.1f, showEnd = 1e9f;
+        // (a party member's magic, motion bm01 - GetMotionTypeFromCommand 9: action_table_sopia - 35
+        // ActionSopiaStandby the motion, its launch effect, the voice; 36 WaitMagicMotion till bm01
+        // plays - three updates, as an attack's motion change -; 37 WaitLaunch 2.0 s; 38 Launch the
+        // hit's effect; 39 WaitHit the effect's +0x40 frames, then the numbers; 40 WaitEffect till
+        // the hit's effect has played out; 41 WaitMotion 0.2 s - 0.7 for command 0x3e -; 42
+        // WaitVoice. The reference video: Banish's 424 2.27 s after its banner, the next action's
+        // banner 1.93 s after that)
+        showSopia = !showItem && c && a.actor >= 0 && a.actor < 2 && a.partner < 0 && target >= 0 && motion.size() == 4 &&
+                    motion.compare(0, 2, "bm") == 0 && motion != "bm02";
+        if (showSopia) showHitAt = 3 * cr2::EventRuntime::kTick + 2.0f + float(cr2::effectSetting(c->hitEffect).hitWait) * 0.05f, showEnd = 1e9f;
         // its effects as it begins (ActionAttackWaitAttackMotion / ActionSopia / ItemStandby): a
         // shot (CreateShotEffect: the command's +0x40 3 - its plain attack's when it has no motion
         // of its own - +0x28 from the motion's effect place to the one hit, there at the hit, and
@@ -5439,14 +5560,14 @@ struct Viewer {
             // (j007's and m507's: CreateWarpEffect - a pair's, eff110 twice on the one acting -
             // and CreateAttackObject - an attack's, its plain or pair attack's launch effect)
             if (const BattleUnit* au = unitOf(a.actor); au && (au->figure.rfind("j007", 0) == 0 || au->figure.rfind("m507", 0) == 0)) {
-                if (a.partner >= 0) commandEffect("eff110", a.actor, true), commandEffect("eff110", a.actor, true);
+                if (a.partner >= 0) launchEffect("eff110", a.actor, true), launchEffect("eff110", a.actor, true);
                 const cr2::Fighter& af = battleRules->fighter(a.actor);
                 int plainId = a.partner >= 0 ? af.pairAttack : af.attack;
                 if (a.actor >= 2)
                     if (const cr2::BattleData::Monster* mo = battleData.monster(af.id)) plainId = a.partner >= 0 ? mo->pairAttack : mo->counter;
                 const cr2::BattleData::Command* pc = battleData.command(plainId);
                 if (a.command == plainId && pc && !pc->launchEffect.empty() && cr2::effectSetting(pc->launchEffect).pairLocator != 7) // (IsAttackAction: the attack's flow)
-                    commandEffect(pc->launchEffect, a.actor, a.partner >= 0);
+                    launchEffect(pc->launchEffect, a.actor, a.partner >= 0);
             }
             // (ActionSopiaMirror / CreateMirrorEffect: on each whose magic barrier turns it back,
             // eff227 - at its side's middle when its setting says 7 - and SE 0x92)
@@ -5457,14 +5578,43 @@ struct Viewer {
             }
             if (!c->launchEffect.empty()) {
                 const cr2::EffectSetting& ls = cr2::effectSetting(c->launchEffect);
-                if (ls.pairLocator != 7) commandEffect(c->launchEffect, a.actor, a.partner >= 0); // (ShowCommandLaunchEffect: its +0x32 7 left out - every caller passes true)
+                if (ls.pairLocator != 7) launchEffect(c->launchEffect, a.actor, a.partner >= 0); // (ShowCommandLaunchEffect: its +0x32 7 left out - every caller passes true)
             }
         }
         // its cameras (BtlActionCtrl::SetAttackCamera1 / 2): by the party - its kind (0 / 1 the
         // one, 2 alone, 3 a pair), the pattern's base and the target, one of two at random, the
         // next at the hit; by a monster - the base, which it is and its target (3 a pair)
         showCamera2 = -1;
-        if (target >= 0) {
+        if (showItem && a.actor < 2) {
+            // (ActionItemStandby: the user's - GetUseItem(GetPlayerCamNo): 2 alone, 3 a pair, else
+            // which; then ActionItemWaitLaunch's SetTargetCamera(false) on the one it is used on: a
+            // party member's GetItemSopiaTarget by the same numbering, Cam_Unit_PCrevival_00 at
+            // its place for a revival. The reference video, 2dy_mefNhEI 616.9 s: Marie's
+            // Chocolate - on her at the banner, on the one healed 2.00 s later.)
+            const bool alone = fighterUnit[1] < 0;
+            setBattleCamera(cr2::cameraUseItem(alone ? 2 : a.partner >= 0 ? 3 : a.actor));
+            TimedCamera tc;
+            tc.at = 2.0f;
+            if (useTargetCamera(a, c, tc.name, tc.place)) timedCameras.push_back(tc);
+            SDL_Log("    camera %s", battleCamera.c_str());
+        } else if (showSopia) {
+            // (36 ActionSopiaWaitMagicMotion: once bm01 is the motion playing, GetUseSopia(
+            // GetPlayerCamNo) on the caster; 37 ActionSopiaWaitLaunch: 2.0 s on, the one target's -
+            // SetTargetCamera(false); for one target of kind 0x10 the pattern's GetSet, of kind 3
+            // none - or the side's for more than one. The reference video, 2dy_mefNhEI 638.6 s:
+            // Marie's Banish - the banner, on her 0.17 s later, on the Executioner 2.03 s after.)
+            TimedCamera caster;
+            caster.at = 3 * cr2::EventRuntime::kTick;
+            if (const char* n = cr2::battleCameraName(cr2::cameraUseSopia(fighterUnit[1] < 0 ? 2 : a.actor))) caster.name = n, timedCameras.push_back(caster);
+            std::vector<int> struck;
+            for (const auto& h : a.hits)
+                if (std::find(struck.begin(), struck.end(), h.target) == struck.end()) struck.push_back(h.target);
+            TimedCamera tc;
+            tc.at = caster.at + 2.0f;
+            if (struck.size() == 1 && c && c->kind == 0x10) tc.name = battle.camera; // (GetGetSet: the pattern's)
+            else if (!struck.empty() && !(struck.size() == 1 && c && c->kind == 3)) useTargetCamera(a, c, tc.name, tc.place);
+            if (!tc.name.empty()) timedCameras.push_back(tc);
+        } else if (target >= 0) {
             const int base = cr2::cameraPattern(battle.pattern);
             const bool targetPair = battleRules->fighter(target).partner >= 0;
             if (a.actor < 2) {
@@ -5487,6 +5637,12 @@ struct Viewer {
             SDL_Log("  %s%s%s: %s", battleRules->fighter(a.actor).name.c_str(), a.partner >= 0 ? " + " : "",
                     a.partner >= 0 ? battleRules->fighter(a.partner).name.c_str() : "", c->name[1].c_str());
         if (c) commandShown = commandName(c->id), commandShownStart = battleClock;
+        // (ActionCommonAnnounce: a pair's attack - IsPairAction, IsAttackCommand - is named by the
+        // acting character's +0x46, its pair command: "Pair Attack", as the reference video shows,
+        // not the attack's own "Slash")
+        if (c && a.partner >= 0 && a.actor < 2 && c->id == battleRules->fighter(a.actor).attack)
+            if (const cr2::BattleData::Character* cd = battleData.character(battleRules->fighter(a.actor).id); cd && cd->pairAttack > 0)
+                commandShown = commandName(cd->pairAttack);
         if (!a.hits.empty() && a.hits.front().counter) commandShown = announce(0x47), commandShownStart = battleClock; // ("Counter")
     }
 
@@ -5514,11 +5670,31 @@ struct Viewer {
     // the fight's time going on: the next action (or turn), the hits as they land
     std::deque<std::string> announceQueue;
     float announceAt = -10;
+    float openingBannerAt = -1, openingBannerShownAt = -1, openingTurnAt = -1; // (StepBattleIn's banner and first turn)
     void updateBattleShow() {
         if (!battleRules || battleFight == 0) return;
+        runPendingEffects();
+        // (ActionItemWaitMotion: the hit's effect played out and the user standing, then WaitStep(3, 3.0) -
+        // ActionCommonWaitTime against the time since ActionCommonCommandStart)
+        // (both wait on the hit's effect alone - +0x48, ShowCommandHitEffect's -, not the launch's)
+        if (showItem && showHitDone && !hitEffectPlaying() && battleClock - showStart >= 3.0f) showItem = false, showEnd = battleClock + cr2::EventRuntime::kTick;
+        // (ActionSopiaWaitEffect, then ActionSopiaWaitMotion's 0.2 s - 0.7 for command 0x3e)
+        if (showSopia && showHitDone && !hitEffectPlaying() && showIndex < showActions.size())
+            showSopia = false, showEnd = battleClock + (showActions[showIndex].command == 0x3e ? 0.7f : 0.2f) + cr2::EventRuntime::kTick;
+        if (openingBannerAt >= 0 && battleClock >= openingBannerAt) { // (StepBattleIn's step 7: the first strike's banner)
+            openingBannerAt = -1;
+            const bool solo = !battleRules->fighter(1).present;
+            commandShown = battleRules->advantage() == 1 ? formatAnnounce(announce(solo ? 91 : 1), {fighterName(0)}) : announce(2);
+            commandShownStart = announceAt = openingBannerShownAt = battleClock;
+            SDL_Log("    announce: %s (%.2f s)", commandShown.c_str(), battleClock);
+        }
+        if (openingBannerShownAt >= 0 && battleClock - openingBannerShownAt >= 1.0f) { // (its 1.0 s: BtlAnnounce::Update, then Hide)
+            openingBannerShownAt = -1;
+            if (!announceHeld) commandShown.clear();
+        }
         if (!announceQueue.empty() && battleClock - announceAt > 1.5f) { // (each 1.5 s on the banner)
             commandShown = announceQueue.front(), commandShownStart = announceAt = battleClock;
-            SDL_Log("    announce: %s", commandShown.c_str());
+            SDL_Log("    announce: %s (%.2f s)", commandShown.c_str(), battleClock);
             announceQueue.pop_front();
         }
         stepBattleShow();
@@ -5526,6 +5702,12 @@ struct Viewer {
         updateScene();
         const ShowAction& a = showActions[showIndex];
         const float s = battleClock - showStart;
+        for (size_t k = 0; k < timedCameras.size();)
+            if (s >= timedCameras[k].at) {
+                setBattleCamera(timedCameras[k].name, timedCameras[k].place);
+                SDL_Log("    camera %s (%.2f s)", battleCamera.c_str(), battleClock);
+                timedCameras.erase(timedCameras.begin() + std::ptrdiff_t(k));
+            } else ++k;
         // the hits
         if (!scene.active && !showHitDone && s >= showHitAt) {
             showHitDone = true;
@@ -5612,15 +5794,16 @@ struct Viewer {
                 float p[3] = {bu.fig.place.m[3], bu.fig.place.m[7] + 0.15f, bu.fig.place.m[11]};
                 const int dj = bu.fig.skeleton.joint(cr2::nameHash("DummyDP01"));
                 if (dj >= 0) {
-                    std::vector<cr2::JointTransform> pp = bu.fig.skeleton.basePose;
-                    const std::vector<cr2::Mat34> ww = bu.fig.skeleton.world(pp, bu.fig.place);
+                    // (CreateDispNumber: BtlModel::GetPosition("DummyDP01") - the joint as the motion has
+                    // it now; the base pose left it at the model's feet)
+                    const std::vector<cr2::Mat34> ww = bu.fig.skeleton.world(bu.fig.posed.empty() ? bu.fig.skeleton.basePose : bu.fig.posed, bu.fig.place);
                     if (size_t(dj) < ww.size()) p[0] = ww[size_t(dj)].m[3], p[1] = ww[size_t(dj)].m[7], p[2] = ww[size_t(dj)].m[11];
                 }
                 // the hit's effect on it (BtlActionCtrl::HitEffect / ShowCommandHitEffect: the
                 // command's +0x18 - an attack's (+0x49 0) whose element beat the target's, eff218 ..
                 // eff220; a critical with the plain attack eff106 -, none here for a group's - its
                 // setting's locator 7: HitGroupEffect, once)
-                if (e.hit && !restore) {
+                if (e.hit) { // (a restore's too: Chocolate's eff213, the reference video's swirl on the one healed)
                     const cr2::BattleData::Command* ec = battleData.command(a.command);
                     bool plain = e.actor >= 0 && e.actor < 2 && a.command == battleRules->fighter(e.actor).attack; // (a monster's: its +0x4c)
                     if (e.actor >= 2)
@@ -6219,6 +6402,37 @@ struct Viewer {
     // setting's locator (a pair's action's +0x32) while the setting follows the position, else
     // put there once; `side` >= 0: a group's (HitGroupEffect), once at that side's middle
     std::vector<SceneEffect> commandEffects;
+    // the action's hit effect still playing (BtlActionCtrl +0x48: ShowCommandHitEffect's)
+    bool hitEffectPlaying() const {
+        if (showIndex >= showActions.size()) return false;
+        const cr2::BattleData::Command* c = battleData.command(showActions[showIndex].command);
+        if (!c || c->hitEffect.empty()) return false;
+        for (const SceneEffect& fx : commandEffects)
+            if (fx.set && fx.set->name && c->hitEffect == fx.set->name) return true;
+        return false;
+    }
+    // a launch effect at the end of a physical attack's lead (ActionAttackWaitAttackMotion:
+    // ShowCommandLaunchEffect, CreateWarpEffect), else at once
+    struct PendingEffect {
+        std::string name;
+        int target = -1;
+        bool pair = false;
+        float at = 0;
+    };
+    std::vector<PendingEffect> pendingEffects;
+    float launchLead = 0;
+    void launchEffect(const std::string& name, int target, bool pair) {
+        if (launchLead <= 0) return commandEffect(name, target, pair);
+        pendingEffects.push_back({name, target, pair, battleClock + launchLead});
+    }
+    void runPendingEffects() {
+        for (size_t i = 0; i < pendingEffects.size();)
+            if (battleClock >= pendingEffects[i].at) {
+                const PendingEffect e = pendingEffects[i];
+                pendingEffects.erase(pendingEffects.begin() + long(i));
+                commandEffect(e.name, e.target, e.pair);
+            } else ++i;
+    }
     void commandEffect(const std::string& name, int target, bool pair, int side = -1) {
         SceneEffect fx;
         fx.fig = std::make_unique<ViewFigure>();

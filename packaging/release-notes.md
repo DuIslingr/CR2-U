@@ -47,7 +47,23 @@ A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux an
   or aim's mark, and eases back after a scripted camera move. Closing a menu or finishing a touch
   action starts its scene on the next update, as the original does. A line's voice stays quiet
   while it is fast-forwarded or skipped, as in the original. An encounter's wipe, in and out,
-  takes a quarter of a second as in the original, not half a second.
+  takes a quarter of a second as in the original, not half a second. A battle's first turn comes
+  1.3 s after it appears instead of 3 s, and a first strike's banner shows for a second at the
+  original's moment, as the reference videos show. An attack starts its swing a moment after its
+  camera and hands over to the next fighter once the attacker is back in place, not after its whole
+  animation (a Mantis's attack 0.7 s shorter), as the reference video times them; a pair attack is
+  announced as "Pair Attack". An action that can't be
+  carried out holds its message for 2 seconds, an item takes effect 2 seconds after it is used, a
+  revival lasts its animation and poison at a turn's end holds 1.5 seconds, as the original's code
+  has them. Sopia skills without an animation of their own (Break Beat, Preemptive Strike, Seal
+  Strike, Dáinsleif ...) are swung with the character's attack, as in the original, instead of
+  landing at once with no movement. Using an item now looks the way it does in the reference
+  video: the camera is on the user, cuts to the one it's used on after 2 seconds, the item's
+  effect plays over them (a heal had none before), and the battle waits for it. Damage and heal
+  numbers appear at the chest, not at the feet. Casting a spell (Cocytus, ...) is timed as in the
+  reference video: the camera turns to the caster, then to the target 2 seconds later, where the
+  spell lands, and the battle waits for its effect, instead of landing within a second under an
+  attack's camera.
 - **Vulkan: fewer hitches.** The renderer keeps the driver's compiled pipelines between runs
   (`vulkan-pipelines.bin` in the profile folder), so the start and each new screen don't compile
   them again. Measured on a scene here: 6.7 ms of pipeline compiling the first time, 0.1 ms the

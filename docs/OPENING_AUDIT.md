@@ -458,10 +458,280 @@ frames found by block matching.
 |---|---|---|---|
 | The encounter's wipe, each way | about 0.27 s | 0.5 s | 0.25 s |
 
+Round 20, the same video, the screen's mean brightness frame by frame:
+
+- **The battle's way out (rounds 9, 12): confirmed.** The result window starts out at about
+  542.43 s; the white fade runs 542.6 - 543.6 s (1.0 s: 20 updates); the field fades in from white
+  544.1 - 545.1 s (1.0 s). The white held between them, 0.5 s, is the original's unloading and
+  loading (`Cr3ResourceManager::IsEmpty`, the field's set-up); the port holds it about 0.2 s.
+- **Walking off an area (round 7): confirmed.** Black over about 0.25 s (553.87 - 554.13 s: 5
+  updates), the next area fading in over about 1.0 s (554.57 - 555.53 s); 0.43 s of black between,
+  again with its loading.
+- **The typing (round 5): confirmed.** A cut-in line types 10 characters from 474.0 to 474.5 s:
+  one an update.
+
+### A battle's opening: from the uncovering to the first turn
+
+`BtlMainCtrl::StepBattleIn`, from its `Cr3Fade::FadeIn(3, 20)` (the uncovering): step 6 passes the
+update after (the fade's state is 1, not over 1); 7, with no first strike, goes straight to 9; with
+one it waits 0.5 s (+0x14, 0.05 an update) and puts up the banner - the leader's team (1, or 0x5b
+alone) or "Monster assault!!" (2) - with `SetAnnounceTime(1.0)` (the value in `r1` at both calls,
+read from the ARM code; `BtlAnnounce::Update` drops it after that long); 8 waits over 1.0 s; 9 waits
+for the fade's 20 updates; 10 calls `Battle_Start`; 11 waits for the script; 12 the voice; 13; 14
+the first turn (the menus, or the monsters' assault) the update after. Battle_Start comes 21 updates
+after the uncovering (35 with a banner), the turn 5 after it.
+
+The reference videos: `2dy_mefNhEI`, a battle uncovered from 485.0 s, its command menu at 486.25 s
+(1.25 s); `BEf8y6MgOoE`, an assault uncovered from 498.83 s, "Monster assault!!" at 499.40 s (0.57 s)
+until about 500.1 s. The port waited a flat 3.0 s for the opening, then (with a banner) 1.5 s more.
+
+| | The original (and the video) | CR2-U before | CR2-U now |
+|---|---|---|---|
+| The first turn, no first strike | 26 updates after the uncovering (the video's menu 1.25 s) | 3.05 s | 1.35 s (`turn 1` logged; the menu between 1.2 and 1.5 s in frames) |
+| A first strike's banner | 12 updates on, 1.0 s long (the video's 0.57 s on) | 3.0 s on, up to 3 s | 0.60 s on, 1.0 s |
+| The first turn after a banner | about 40 updates | about 4.5 s | 2.05 s |
+
+The voice (`PlayVoiceBattleIn`, step 12) now comes with `Battle_Start`, two updates early.
+
+### The dungeon's name against the reference video
+
+`BEf8y6MgOoE` enters the first forest at 161 s (its fade-in) and plays there to about 413 s: no
+dungeon name shows at its start, after its tutorial battle or as control comes back. The scripts'
+`MapNameDisp(map)` (in each dungeon's event script) puts it up once - unless story flag 1007 is set
+- 15 updates after an event calls it, and sets the flag; the forest's opening events do not call it
+there. A port run started on the map itself (`--play d0104`, no story flags) did show "The End
+Begins"; that start is not the story's, and the story's own run takes the same scripts and flags.
+No change.
+
+### An attack's end, and a pair attack's name
+
+`BtlActionCtrl` ends a plain attack with `ActionAttackReturn` (the move back over the motion's
+second move: `GetMotionTimeMoveStart2` .. `End2`), `ActionAttackWaitFinishReturn`
+(`WaitStep(5, GetMotionTimeMoveEnd2)`: on once the motion reaches the second move's end),
+`ActionAttackWaitFinishRotate` (the turn back, `IsEndMoveRotation`; `SetMoveRotation`'s 0.2 s), then
+`ActionCommandDone` - `JumpStep(0xb)`: `ActionCommonCommandEnd`, `ActionCommonEventCommandEnd`
+(`Command_End`), `ActionCommonDone`, `ActionDone`, one an update. The rest of the motion plays on
+under the next actor. The port waited for the whole motion and 0.3 s more.
+
+The reference video (`BEf8y6MgOoE`, camera cuts found frame by frame): a Mantis's Lockjaw from its
+cut at 522.90 s to the next actor's at 525.50 s - 2.60 s; its motion's second move ends 2.35 s in
+(the motion is 3.00 s). Darwin's Slash 520.93 - 522.90 s, 1.97 s; second move's end 1.60 s (2.00 s
+long). The port now ends an attack 0.3 s after the second move's end (the 0.2 s turn and the steps),
+the motion's length plus 0.3 s where it has none: Lockjaw 2.68 s (was 3.38 s).
+
+`ActionCommonAnnounce` names a pair's attack (`IsPairAction` and `IsAttackCommand`) by the acting
+character's +0x46 - its pair command - not the attack's: "Pair Attack" in the video (535.7 s); the
+port put up "Slash". It now takes the character's `pairAttack`.
+
+| | The original / video | CR2-U before | CR2-U now |
+|---|---|---|---|
+| Lockjaw, start to the next actor | 2.60 s | 3.38 s | 2.68 s |
+| A party pair attack's banner | "Pair Attack" | "Slash" | "Pair Attack" |
+| A pair attack's first hit, from its camera | about 0.9 s | 0.58 s | unchanged (open) |
+
+### A physical attack's lead
+
+Round 24's end was measured from the action's start; the swing itself does not start there.
+`ActionAttackStandby` sets the attack's camera, turns the actor to its target and asks for the
+attack motion (a pair's both actors' commands swapped for their +0x46 first);
+`ActionAttackStandbyMotion` starts the 0.2 s turn (`SetMoveRotation`) and the stance blend;
+`ActionAttackWaitAttackMotion` waits until the attack motion is the one playing (or 10 s), then the
+move, the launch SE and effects, the voice and `WaitStep` to the hit. Three updates, an update each.
+
+The reference video: Lockjaw's hit (its flash, "66") about 1.2 s after its camera, the motion's hit
+at 1.05 s; Darwin's Slash's flash at 521.6 s, 0.67 s after its camera at 520.93 s, the motion's at
+0.55 s. The port now starts a physical attack's motion (`magic` 0, a motion that moves out and
+back) three updates after the action begins and ends it three updates after the return - round
+24's 0.3 s now 0.15 s, the lead before it:
+
+| | The video | CR2-U (round 24) | CR2-U now |
+|---|---|---|---|
+| Lockjaw: the hit / the next actor | 1.2 s / 2.60 s | 1.05 s / 2.68 s | 1.25 s / 2.68 s |
+| Darwin's Slash: the hit / the next actor | 0.67 s / 1.97 s | 0.55 s / 1.90 s | about 0.7 s / 1.90 s |
+| A pair attack's first hit from its camera | about 0.9 s | 0.58 s | 0.72 s |
+
+Round 26: the command's voice (`PlayVoiceCommand`, after the command's +0x6a updates) and its
+launch effects (`ShowCommandLaunchEffect`, the j007 / m507 pair's eff110 and plain attack's) come in
+`ActionAttackWaitAttackMotion`, at the lead's end: a physical attack's now wait for it (the voice
+by its delay, the effects through a small queue run with the show); a scene's, Defend's and one
+not done's start with the action as before. The battle 57 pair fight still voices each action
+(2371, 2306, 2274 / 2409 ...).
+
+### The action step tables
+
+`BtlActionCtrl::SetActionTable` gives each actor a list of step numbers (`BtlActionTable::
+action_table_*`, pointers at 0x5afb28, sizes at 0x5af9c8, read from the file); `ActionCommandMain`
+calls step n through the member table the constructor fills at +0x390 (n x 8), and `ActionMain`
+runs the next step in the same update whenever one advances - steps cost no update of their own,
+only their waits do. The lists:
+
+| Table | Steps |
+|---|---|
+| attack_solo | 1 Init, 2 Standby, 10 CommandStart, 7 Command_Start, 9 the script, 6 Announce, 15 AttackStandby, 16 WaitAttackMotion, 5 WaitMotion (to the hit), 17 AttackCamera, 19 WaitHit, 18 Hit, 5, 21 Return, 23 WaitFinishReturn, 5 (to the return's end), 22 WaitRotate, 26 StandbyMotion (the turn back, the stance), 12 the announcements gone, 8 Command_End, 9, 24 WaitNextStart, 25 WaitFinishRotate, 11, 14 Done, 78 End |
+| attack_pair (the partner's) | 1, 2, 10, 6, 29 PairWaitDelayTime, 3 WaitTime, 27 PairStandby, 28 PairWaitAttackMotion, 19, 18, 5, 21, 23, 22, 5, 26, 12, 24, 25, 11, 14, 78 |
+| dont_action | 1, 2, 10, 7, 9, 77 DontActionAnnounce, 12, 8, 9, 11, 14, 78 |
+| item | 1, 2, 10, 7, 9, 6, 30 ItemStandby, 32 WaitLaunch, 33 WaitHit, 3, 34 WaitMotion, 3, 12, 11, 8, 9, 14, 78 |
+| sopia | 1, 2, 10, 7, 9, 6, 35 .. 40, 43 .. 49 (the mirror's), 13 Join, 12, 41, 42, 11, 8, 9, 14, 78 |
+| awake / advent | 1, 2, 10, 7, 9, 6, 50 .. 55 / 56 .. 66, 13, 12, ..., 8, 9, 11, 14, 78 |
+| dead | 67 .. 76 (the downed and the revivals), 78 |
+| empty | 1, 2, 10, 11, 14, 78 |
+
+What that settles:
+- **An attack's end** is `ActionAttackWaitNextStart`'s 0.1 s after the return (1.6 s for command
+  0x130, 2.1 s for 0x145 and 0x1a8 .. 0x1aa), then action state 3 and the next actor, while the
+  turn back finishes: the port's "three updates after the return" is that 0.1 s and an update,
+  and it now takes the special commands' times too. Round 25's account of the lead was wrong in
+  its steps: `StandbyMotion` (26) is the end's turn back, not the lead's; the lead is
+  `WaitAttackMotion` (16) waiting for the attack motion to be the one playing. The measured times
+  stand.
+- **One not done** shows its line for 2.0 s and step 12 (`ActionCommonCommandAnnounce`) waits till
+  no announcement is left: the port held it 1.5 s, now 2.0 s and an update.
+- **A pair:** the partner's list waits (29) for the leader's attack motion, then the pair delay
+  (3), then its own motion (27, 28) - as the port's `pairDelay`. Which of the two leads in the
+  video's pair attack, and so its 0.2 s, is still open.
+
+### A revival, and the turn's end
+
+The dead table's revival (73 `ActionReviveStandby`: "Regenerate", 0x5d, for 3.0 s; 74 the
+`Cam_Unit_PCrevival_00` camera; 75 `ActionReviveMain`: motion 8, the HP back at DummyDP01, the
+voice, SE 0x8b, eff216; 76 `ActionReviveWait`: on once that motion has played out, its idle, done)
+lasts its motion; the port held the longer of the motion and 1.0 s, and 0.3 s more - now the
+motion and an update (its line still the 3.0 s the port's banner gives any).
+
+`BtlTurnEnd::Update`: 1 the turn's script, 2 its wait, 3 the poison and the pools applied (their
+numbers, the HUD) and - when any was - 4, a wait of 1.5 s, else straight to 5. The port waited
+1.2 s; now 1.5 s. Battle 57 with Darwin poisoned (`--state 0:0`): the turn's end with "52 poison"
+and turn 2 at 7.97 s, against 6.48 s unpoisoned - 1.49 s. The revival was not run headless.
+
+### An item's use
+
+`action_table_item`: 30 `ActionItemStandby` (the item motion, the camera), 32
+`ActionItemWaitLaunch` - 2.0 s, then the target's camera and its wait motion -, 33
+`ActionItemWaitHit` - 0.1 s, then the hit, its SE, `WaitStep(3, 0.5)` (the float in `r2`; the step
+waits on the command's own time, +0x30 from `ActionCommonCommandStart`, so 0.5 s has long passed) -,
+34 `ActionItemWaitMotion` till the item's hit effect (+0x48) has played out and the user stands
+(the revivals' kinds 0x18 / 0x19 wait for the target's motion; `WaitStep(3, 0.5 / 3.0)` read the same
+way), then 12, 11, 8, 9, 14. The port landed an item's effect with the action's first update and
+ended it after its motion and 0.3 s; it now lands it 2.1 s in and ends an update after its effects
+are gone.
+
+Battle 57, Darwin using Chocolate (`--item 1:3`, the tutorials' flags set, `--input "solo items
+i1 0 attack 2"`): the action at 8.75 s, "+89 HP" at 10.9 s (was 8.8 s); frames at 9.6 s ("Chocolate"
+on the banner) and 11.0 s (the 89 on Darwin, his HP 515). No reference video shows an item used, so
+the 2.0 s rests on the code. (Round 31 found one: below.)
+
+### An item's use against the reference video
+
+Video 02 (`2dy_mefNhEI`), Marie using Chocolate on herself, read frame by frame (1/30 s, a frame
+difference over the whole picture and over the banner): the camera cuts to her, close, with
+"Chocolate" on the banner at 616.90 s; she raises her arm (618.25 s); the camera cuts to a wider
+shot of her at 618.90 s - 2.00 s on; the green "500" shows at her chest between 619.03 and
+619.10 s - 2.17 s on - with a cyan swirl and then a glow over her until about 620.2 s; she stands
+still from 620.35 s; the banner turns to the next action's ("Healing", an Executioner's) at
+621.23 s, 4.33 s after hers, and the camera cuts to it at 621.53 s. (A note of mine before the
+frames were read had the heal as 600; the frames show 500.)
+
+Against the code:
+- **The cameras.** `ActionItemStandby`, for the party: `BtlCameraTable::GetUseItem(GetPlayerCamNo)`
+  - 2 alone, 3 a pair, else which of the two -, the table's short `0x107 + n` (`this + (n + 0x108)
+  * 2 + 2`, the shorts from `this + 4`). `ActionItemWaitLaunch` adds the frame's time to +0x24 till
+  2.0, then `SetTargetCamera(false)`: a target of the party (not a group's, +0x4b 3 / 6) -
+  `GetItemSopiaTarget` by the same numbering (short `0x115 + n`), or `Cam_Unit_PCrevival_00` at
+  its place for a revival (the action's kind 0xc or command 0x67; the port takes a revived hit).
+  The port gave an item an attack's camera and never cut; it now films the user with
+  `Cam_Item_PCfighter_00` and cuts to `Cam_Unit_PCfighter_00` 2.01 s on (battle 57, Darwin's
+  Chocolate: 8.72 -> 10.73 s), as the video does at 2.00 s. A monster using an item, or one used on
+  a monster or a group, keeps the attack's cameras (the monster branch moves the camera to it and
+  turns it - not followed).
+- **The hit's effect.** `BtlActionCtrl::HitEffect` shows the command's hit effect (+0x18) on every
+  target hit (+0xf78), a restore's too; the port left the restores out. Chocolate's is `eff213` -
+  the video's swirl and glow, now drawn on Darwin from 11.3 s (frames at 11.3 / 11.8 s).
+- **The end.** `ActionItemWaitMotion`, not a revival: while the hit's effect (+0x48) is of kind 1
+  or 2 it waits; then with the user's motion of type 1 `WaitStep(3, 3.0f)` (r2 `0x40400000` at
+  0x36f5f0; a revival's `0.5f`) - step 3, `ActionCommonWaitTime`, passes once +0x30, the time since
+  `ActionCommonCommandStart` (summed each update in `ActionCommandMain`), reaches it. The port
+  ended an update after the hit's effects were gone (none, for a heal: 10.9 s, 2.2 s in); it now
+  waits for the effects and the 3.0 s: 12.45 s, 3.7 s in, the heal 1.65 s before the end. The video
+  has 2.16 s from the heal to the next banner; the 0.5 s between is not accounted for (the user's
+  motion of type 1, `eff213`'s length in the original, and the next action's own steps were not
+  timed).
+- **The numbers' place.** `BtlEtcCtrl::CreateDispNumber` places a number by
+  `BtlModel::GetPosition("DummyDP01")` - the joint where the motion has it. The port read the
+  skeleton's base pose, which leaves the joint at the model's origin (y 0 for Darwin and a Mantis):
+  every damage and heal number showed at the feet. It now reads the posed skeleton: Lockjaw's 89
+  and Chocolate's +89 at Darwin's chest (frames at 7.4 and 11.0 s), as the video's 500 on Marie and
+  693 on the Executioner (614.5 s).
+
+### A skill with no motion of its own
+
+`BtlActionCtrl::SetActionControl` sets an action's kind from `BtlUtilData::GetMotionTypeFromCommand`
+(1, 9, 11 a sopia's table; 5 .. 7 an attack's; 10 an item's; 2 a sopia's for a monster, none for the
+party; 12 a special's), and `SetActionTable` picks the table by it - an attack's (1) before an
+item's (3) or a sopia's (2). `GetMotionTypeFromCommand` reads the command's motion (+0x38); with
+none it takes the acting one's plain attack's - the party's +0x44, a monster's +0x4c. So Darwin's
+"Break Beat", "Dáinsleif", "Preemptive Strike" and "Seal Strike" (no motion of their own) swing his
+`bo01` through the attack table. The port played nothing for them and landed their hit with the
+action's first update (8.75 -> 8.8 s); it now takes the plain attack's motion: "Break Beat" in battle
+57 hits at 9.5 s, `bo01`'s lead and hit. The reference video's skills (`2dy_mefNhEI`'s "Blitz", 489 s)
+are swung at the target likewise; a sopia of its own motion ("Cocytus": `bm01`) keeps the port's
+timing - the sopia table's steps (`ActionSopiaWaitLaunch` 2.0 s, `ActionSopiaLaunch` 0.8 s,
+`ActionSopiaWaitHit` the effect's +0x40 updates, `ActionSopiaWaitMotion` 0.2 / 0.7 s, under
+conditions) are not ported.
+
+### A sopia cast against the reference video
+
+Video 02 (`2dy_mefNhEI`), Marie casting Banish on the Executioner, read frame by frame: "Banish" on
+the banner at about 638.60 s (between 638.57 and 638.63); the camera cuts to her at 638.77 s -
+0.17 s on -, to the Executioner at 640.80 s - 2.03 s after that - with the spell's flash already
+on it; "424" at its chest between 640.83 and 640.87 s - 2.27 s after the banner -; the next
+action's banner ("Healing") at 642.80 s, 1.93 s after the number.
+
+`action_table_sopia` (the step functions by `BtlActionCtrl`'s table at +0x390: 35 Standby, 36
+WaitMagicMotion, 37 WaitLaunch, 38 Launch, 39 WaitHit, 40 WaitEffect, 41 WaitMotion, 42 WaitVoice,
+43 Analyze, 44 .. 49 the Mirror's): 1, 2, 10, 7, 9, 6, 35 .. 40, 43 .. 49, 13, 12, 41, 42, 11, 8, 9, 14.
+- 35 `ActionSopiaStandby`: the voice, the launch SE; for motion 0x11 (bm01) that motion asked for
+  and the command's launch effect on the caster at once.
+- 36 `ActionSopiaWaitMagicMotion`: till the model's motion is `bm01` (`bg01` for motion 4), then
+  `GetUseSopia(GetPlayerCamNo)` - the table's short `0xf9 + n` (`this + (n + 0xf8) * 2 + 6`). The
+  motion's change takes its updates: the video's 0.17 s.
+- 37 `ActionSopiaWaitLaunch`: +0x24 summed to 2.0 s (motions 0, 0x11, 4, or kind 0x1e; else 0),
+  then for one target: kind 0x10 the pattern's `GetGetSet`, kind 3 none, else - motion types 2 and
+  0xb aside - `SetTargetCamera(false)`; for more than one, `SetTargetCamera(false)`.
+- 38 `ActionSopiaLaunch`: 0.8 s more for kind 0x1f, else none; `CalcCommandAction` and `HitEffect` -
+  the hit's effect on each target.
+- 39 `ActionSopiaWaitHit`: the hit effect's setting's +0x40 (u16) frames of 0.05 s, then
+  `ExecCommandAction` - the numbers. Of the table's 166 settings only four have one: eff210 20,
+  eff282 30, eff283 150, eff415 82 (the effect table now carries it: `hitWait`).
+- 40 `ActionSopiaWaitEffect`: while the hit's effect (+0x48) is playing; then the stance, and on
+  to 13 (43, the Analyze, for kind 0x1a).
+- 41 `ActionSopiaWaitMotion`: 0.2 s (0.7 for command 0x3e). 42 `ActionSopiaWaitVoice`: while the
+  command's voice plays, up to 5 s.
+
+`SetTargetCamera(false)`, read in full: by the command's +0x4b - 3 (the allies)
+`GetItemSopiaTargetGroup(+0x523 == 1)`; 6 (the foes) by the party
+`GetItemSopiaTargetGroup(pattern + 2; 12 / 13 for the patterns 10 / 11)` (short `0x123 + n`), by a
+monster as 3; else the one target - the party's `GetItemSopiaTarget(2 alone, 3 a pair, else which)`
+or `Cam_Unit_PCrevival_00` for a revival, a monster's `GetItemSopiaTarget` by the pattern (11 a
+pair; 10; 8 / 9 for pattern 11; 12; 13 for pattern 9; else its size's 4 + 0..3) moved to its
+`DummyCP` (the string at 0x4fe338) and turned with it, except under the patterns 7, 8, 10 .. 12
+(and 8 cm nearer under pattern 4 by the party).
+
+The port swung a party member's bm01 sopia like an attack: Cocytus (battle 57, `--input "solo
+sopia s55 2 attack 2"`, flags 53 / 54 / 55 / 61 / 62) hit 0.8 s after its banner under an attack's
+camera. It now follows the table for a party member's bm01 (not bm02, which `GetMotionTypeFromCommand`
+gives the item's table, nor a pair's): the caster's camera 3 updates in (`Cam_Magic_PCfighter_00`,
+8.75 -> 8.92 s), the target's 2.0 s after (`Cam_Unit_S_00`, 10.92 s), the hit then plus the
+effect's +0x40 frames (10.92 s: 2.17 s after the banner, the video's 2.27), the end once the hit's
+effect has played out (eff205's 2.0 s) and 0.2 s. Frames at 8.8 (the banner), 9.6 (Darwin, close),
+10.95 (the Mantis, 205) and 11.6 s (eff205's ice). Its end there is the battle's (won, 13.2 s:
+2.33 s after the hit; the video's next banner came 1.93 s after Banish's, whose effect is another).
+The item's target camera now goes through the same `SetTargetCamera` (a monster's, the foes'), and
+the item's end, like the sopia's, waits on the hit's effect alone (+0x48), not on the launch's.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
-Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (nineteen: the
+Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (twenty: the
 second from the `FldMain::Update` row on, the third from the `FldUtilSetPopPoint` row on, the
 fourth - the cut-ins - from the `InterfaceMain::SetCutInWindow` row on, the fifth - the first
 field - from the `VistaConversationWindowMenu::SetParamNumber` row on, the sixth - its talks -
@@ -475,9 +745,9 @@ from the `BtlCommand::StepEscape` row on, the thirteenth - the leader's turns - 
 the `FldMain::CallEvent` row, the sixteenth - the choice and the voice - the `EvtWindow::ShowMessage` row, the seventeenth - the
 lines' typing - the `MenuText::Step` row, the eighteenth - the other windows' lines - from the
 `VistaConversationWindowMenu` row on; the conclusion both drew was overturned by the reference video; the nineteenth - the wipe - the
-`FadeWindowMenu` row).
+`FadeWindowMenu` row, the twentieth - the battle's opening - the `BtlAnnounce` row).
 `re/opening-audit-evidence.json` (never committed) holds the second session's records,
-`re/opening-audit-evidence-3.json` the third's, `-4.json` the fourth's, `-5.json` the fifth's, `-6.json` the sixth's, `-7.json` the seventh's, `-8.json` the eighth's, `-9.json` the ninth's, `-10.json` the tenth's, `-11.json` the eleventh's, `-12.json` the twelfth's, `-13.json` the thirteenth's, `-14.json` the fourteenth's, `-15.json` the fifteenth's, `-16.json` the sixteenth's, `-17.json` the seventeenth's, `-18.json` the eighteenth's and `-19.json` the nineteenth's; the first's bundle was overwritten by the second,
+`re/opening-audit-evidence-3.json` the third's, `-4.json` the fourth's, `-5.json` the fifth's, `-6.json` the sixth's, `-7.json` the seventh's, `-8.json` the eighth's, `-9.json` the ninth's, `-10.json` the tenth's, `-11.json` the eleventh's, `-12.json` the twelfth's, `-13.json` the thirteenth's, `-14.json` the fourteenth's, `-15.json` the fifteenth's, `-16.json` the sixteenth's, `-17.json` the seventeenth's, `-18.json` the eighteenth's, `-19.json` the nineteenth's and `-20.json` the twentieth's; the first's bundle was overwritten by the second,
 so those IDs name records no longer on disk - each is a plain decompile of the named function,
 reproducible with `open_binary` and `batch_decompile` on the same library.
 
@@ -563,6 +833,7 @@ reproducible with `open_binary` and `batch_decompile` on the same library.
 | `MenuText::Step / Initialize / SetSkipFlag`, `NarrationWindowMenu::SetStringData / Update`; `FldMain::Update`'s step 2 and tail (`PlayerMove`'s locals zeroed off control) and `MenuText::Render / MakeFontSpeedSupportTexture` read in the repo's own decompilation | `ev_8d6c02ce2476fc97b84422d0464e85843128c2ee04f0e7f5cf735804e82079b8` |
 | `VistaConversationWindowMenu / ConversationWindowMenu / SystemWindowMenu / HelpWindowMenu::SetStringData / Update`; `AnnouncementWindowMenu::SetStringData / Update` | `ev_ed22a6a097860806f8206195e164024e5c5073598133de2bd18a8492eecf0203`, `ev_3f881bfe982bba58e1dca2579ef1281d209a730a4c3542f80548baf3c1dfc428` |
 | `FadeWindowMenu::SetParamNumber / Update`, `Cr3Fade::FadeOut / Update` (the speed `10 / frames`, read again; the video decides its effect). (Also in the bundle: the same request made before the session was open, failed; not used.) | `ev_6924fc7c03adb80158f72486cc463cdad2893f5cff61b7759326a85f78ef5e19`, `ev_0e050e604344dcfa5889357d30f56d6c86c2870f9a2028187a0dbfb37b2e6751` |
+| `BtlAnnounce::SetAnnounceTime / Update / SetAnnounce / ShowAnnounceWindow`; every `SetAnnounceTime` call's `r1` (1.0, 2.0, 3.0, -1) from `llvm-objdump` of the same file; `BtlMainCtrl::StepBattleIn`'s steps read in the repo's own decompilation | `ev_96c5721e6917557791c7a5c1e0b6966ed85e193c6c4c233a96ba403100c4a47e` |
 
 These are static observations of the shipped library, not traces of the original running: the
 update order and counts follow from the code, the visual result from the fade figures'
@@ -578,6 +849,14 @@ animations being linear (assumed, as before).
   is read from its assembly and `FldMain::Update`'s order (the script's `EventExecute` before
   `FldMap::Update`, in the repo's decompilation); no run of the original confirmed the frame.
   Nothing else moves the scroll in mode 1, so it holds there till `SetMode(0)`.
+- **The action controller's other waits.** Read now (rounds 27 - 30): the attack's, the one not
+  done's, the revival's, the turn's end, an item's; a skill without a motion takes the attack's.
+  A party member's bm01 sopia follows the sopia table (round 32); still the port's own: a
+  monster's sopia, a pair's, the bx / bb / bg ones, the Mirror's and Analyze's steps, `WaitVoice`, a
+  hit effect with a +0x40 wait (its effect is drawn at the hit, the original's at the launch), and
+  the allies' group camera (+0x523 not read). An item's end comes 0.5 s sooner after its heal than
+  the video's. A pair attack's first hit is about 0.2 s early against the video; which of the two
+  leads there was not traced.
 - **The camera's units.** The ease's one-pixel hold is the original's device pixel; the port
   holds within one pixel of the window it draws to. `GetPos_X / _Y` in the port still read the
   clamped scroll (`shownX_`), the original's the unclamped +0x30.

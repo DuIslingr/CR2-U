@@ -915,7 +915,7 @@ struct Viewer {
         if (overFast(fx, fy)) fastHeld = true; // (the fast-forward button: held, not a tap)
         else if (titleMenu.stage) titleClick(fx, fy);
         else if (yesNoClick(fx, fy)) {}
-        else if (battleMode && choosing) battleClick(fx, fy);
+        else if (battleMode && (choosing || gameOver.stage == 8)) battleClick(fx, fy); // (the commands; the game over's question)
         else if (vslash.stage == 1) vslashPointer(fx, fy, 0);
         else if (fieldMode && !eventMode && keyLock.stage != 0) unlockPointer(fx, fy, 0);
         else if (fieldMode && !eventMode && iai.stage) iaiPointer(fx, fy, 0);
@@ -2988,6 +2988,7 @@ struct Viewer {
     }
     void advance(float dt, float sx, float sy, bool run) {
         uiClock += dt;
+        noteAsk(); // (a question's focus: Yes as it opens)
         if (cr2::EventRuntime* ev = activeEvents()) {
             if (!inputScript.empty() && inputScript.front() == "fast" && uiClock >= fastUntil && (ev->fastForwardShown() || ev->skipButtonShown()))
                 inputScript.pop_front(), fastUntil = uiClock + 2.0f; // (each two seconds of it, one after the other)
@@ -3977,6 +3978,7 @@ struct Viewer {
     // A key the game's screens take (the keyboard's, and the controller's buttons as padButtonKey has
     // them); false - none took it (the model viewer's own keys then)
     bool gameKey(SDL_Keycode k) {
+        if (askKey(k)) return true; // (a question's focus; Return on No, Backspace - its No)
         if (yesNoShown()) { // (an event's yes / no: Y or Return yes, N or Backspace no)
             if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) answerYesNo(true);
             else if (k == SDLK_BACKSPACE || k == SDLK_N) answerYesNo(false);
@@ -3987,7 +3989,7 @@ struct Viewer {
             return true;
         }
         if (focusKey(k)) return true; // (the title's, the shop's and the party's buttons; the field's tab)
-        if (battleMode && choosing) return battleKey(k), true; // (the commands)
+        if (battleMode && (choosing || gameOver.stage == 8)) return battleKey(k), true; // (the commands; the game over's question)
         if (campOpen) return campKey(k), true;       // (the camp: Up / Down and Return, Backspace back)
         if (party.stage) return partyKey(k), true;   // (the party: 1 / 2, Left / Right, Return, Backspace)
         if (shop.stage) return shopKey(k), true;     // (the shop: 1 .. 4 its buttons, Up / Down, Left / Right, Return, Backspace; Y / N)
@@ -7707,8 +7709,8 @@ struct Viewer {
     }
     static void hideJoint(UiFig& u, const std::string& joint) { showJoint(u, joint, false); }
     // a circle button drawn at `id`: lit if it has the focus (else as its material is)
-    void focusLook(UiFig& c, int id) {
-        const bool on = buttonLook ? buttonLook(id) == 2 : focusScreen() && id == keyFocus;
+    void focusLook(UiFig& c, int id) { litLook(c, buttonLook ? buttonLook(id) == 2 : focusScreen() && id == keyFocus); }
+    void litLook(UiFig& c, bool on) {
         for (ViewMesh& vm : c.fig.meshes) {
             const uint32_t mi = vm.source.material;
             if (mi >= c.materials.size() || c.materials[mi] != "PRG_shiftR") continue;
@@ -9574,6 +9576,7 @@ struct Viewer {
             c.fig.place = cr2::Mat34();
             c.fig.place.m[3] = x, c.fig.place.m[7] = y;
             poseUi(c, "circlebtn_fr", float(n) / 20.0f);
+            litLook(c, !closing && askLit(n == 12));
             drawFigure(c.fig, view.data());
             float sx, sy, ex, ey;
             if (!closing && uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) yesNoRects.push_back({n == 11, sx, sy, ex, ey});
@@ -9589,6 +9592,42 @@ struct Viewer {
     bool yesNoShown() {
         cr2::EventRuntime* ev = activeEvents();
         return ev && ev->yesNoShown();
+    }
+    // A question's Yes / No (BattleYNChoice - the System window's questions and the events': its
+    // update FUN_8107beec): Yes in focus as it opens, Up / Down the other (FUN_810452ba: round, SE
+    // 0xb3), ○ the one in focus, × No; the focus lit (CircleBtn::SetForcusTarget) once a key has
+    // moved it - a touch shows none. (The title's and the save's - TitleYNChoice - keep their own.)
+    int askFocus = 0; // (0 Yes, 1 No)
+    int askWas = 0;   // (the question shown when last looked: askShown's)
+    int askShown() { // (which question is up: 0 none)
+        if (yesNoShown()) return 1;
+        if (battleMode && gameOver.stage == 8) return 2;
+        if (campOpen && (campUse == 2 || campUse == 3)) return 10 + campUse;
+        if (campOpen && campTakeSopia) return 14;
+        if (world.stage >= 3) return 20 + world.stage;
+        if (pub.stage == 3) return 30;
+        if (shop.stage == 4 || shop.stage == 5) return 40 + shop.stage;
+        return 0;
+    }
+    void noteAsk() { // (a question newly shown: Yes in focus - each update, and before a key)
+        const int shown = askShown();
+        if (shown != askWas) askFocus = 0;
+        askWas = shown;
+    }
+    bool askLit(bool no) const { return keysUsed && askFocus == (no ? 1 : 0); }
+    // the key as the question takes it: Up / Down taken here; Return with No in focus, and Backspace,
+    // turned to N (each screen's No); false - no question, or the key for the screen
+    bool askKey(SDL_Keycode& k) {
+        noteAsk();
+        if (!askWas || optionsAsk || settingsOpen || saveImport.active()) return false;
+        if (k == SDLK_UP || k == SDLK_DOWN) {
+            askFocus ^= 1, keysUsed = true;
+            audio.playSe(0xb3, false);
+            SDL_Log("question: %s in focus", askFocus ? "no" : "yes");
+            return true;
+        }
+        if (((k == SDLK_RETURN || k == SDLK_KP_ENTER) && askFocus == 1) || k == SDLK_BACKSPACE) k = SDLK_N;
+        return false;
     }
     bool yesNoClick(float fx, float fy) {
         if (!yesNoShown()) return false;
@@ -9637,7 +9676,8 @@ struct Viewer {
             c.fig.place = cr2::Mat34();
             c.fig.place.m[3] = x, c.fig.place.m[7] = y;
             poseUi(c, "circlebtn_fr", float(notice ? 0 : n) / 20.0f);
-            focusLook(c, n == 11 ? yes : no);
+            if (!titleStyle && !notice && !buttonLook) litLook(c, askLit(n == 12)); // (BattleYNChoice's focus)
+            else focusLook(c, n == 11 ? yes : no);
             drawFigure(c.fig, view.data());
             if (notice) drawUiText("OK", 26, x, y, w, h, false);
             float sx, sy, ex, ey;
@@ -12895,6 +12935,31 @@ int padControlsSelfTest() {
         press(right), press(R);
         check(v.shop.kind == 0 && v.shop.who == 0, "shop: the items' list has neither");
         v.shop = Viewer::Shop();
+
+        // a question (BattleYNChoice, FUN_8107beec): Yes in focus, Down No (SE 0xb3), ○ the one in focus
+        v.shop.stage = 5, v.shop.at = v.uiClock;
+        v.noteAsk();
+        check(v.askFocus == 0, "question: Yes in focus as it opens");
+        press(down);
+        check(v.askFocus == 1 && se(0xb3), "question: Down No, SE 0xb3");
+        press(circle);
+        check(v.shop.stage == 3, "question: ○ answers No (the shop's list again)");
+        v.shop.stage = 5;
+        v.noteAsk(), v.noteAsk();
+        v.shop.stage = 4, v.shop.count = 1; // (another question: Yes again)
+        v.noteAsk();
+        check(v.askFocus == 0, "question: the next one opens on Yes");
+        press(up), press(up);
+        check(v.askFocus == 0 && v.shop.count == 1, "question: Up / Down its focus, not the count");
+        press(cross);
+        check(v.shop.stage == 3, "question: × No");
+        v.shop = Viewer::Shop();
+        v.world.stage = 4;
+        v.noteAsk();
+        press(down), press(cross);
+        check(v.world.stage != 4, "question: the world select's × No");
+        v.world = decltype(v.world)();
+        v.noteAsk();
 
         // the buttons' keys: Swap ○ and × (the options'), △ Tab (CR2-U's: the field's tab), L / R in a menu alone
         v.settings.padSwap = true;

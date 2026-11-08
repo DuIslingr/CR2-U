@@ -11709,13 +11709,36 @@ struct Viewer {
             else if (id == 7602) audio.playSe(0xb5, false), pub.stage = 2, pub.at = uiClock;
         }
     }
+    // the board's focus moved by a direction (PubTopMenu's update, FUN_810b7b62): the posters three a
+    // row (1 .. 9 there, pub.focus + 1 here) and Check (0 there, -1 here). Left / Right along a row,
+    // past its end (or the last poster) Check; from Check Left the sixth (or the last), Right the
+    // fourth (or the first); Up / Down a row on, round, where there is a poster; each move SE 0xb3
+    void pubMove(SDL_Keycode k) {
+        const int count = int(pubPosters().size());
+        pub.focus = std::clamp(pub.focus, -1, count - 1);
+        int f = pub.focus + 1, to = f;
+        if (f == 0) {
+            if (k == SDLK_LEFT) to = std::min(count, 6);
+            else if (k == SDLK_RIGHT) to = count < 4 ? std::min(count, 1) : 4;
+        } else if (k == SDLK_RIGHT) to = f == count || f % 3 == 0 ? 0 : f + 1;
+        else if (k == SDLK_LEFT) to = (f - 1) % 3 != 0 ? f - 1 : 0;
+        else if (k == SDLK_UP || k == SDLK_DOWN) {
+            const int t = f + (k == SDLK_UP ? (f - 1 < 3 ? 6 : -3) : (f - 1 < 6 ? 3 : -6));
+            if (t >= 1 && t <= count) to = t;
+        }
+        if (to == f) return;
+        keysUsed = true;
+        pub.focus = to - 1;
+        audio.playSe(0xb3, false);
+        SDL_Log("pub: %s in focus", to ? ("poster " + std::to_string(to)).c_str() : "check");
+    }
     void pubKey(SDL_Keycode k) {
-        const int n = std::max(int(pubPosters().size()), 1);
         if (pub.stage == 4 && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
             const int count = pubListCount();
             pubTap(2000 + (pub.listFocus + (k == SDLK_LEFT ? count - 2 : 0)) % count + 1);
-        } else if (pub.stage == 1 && (k == SDLK_LEFT || k == SDLK_RIGHT)) pubTap(1000 + (pub.focus + (k == SDLK_LEFT ? n - 1 : 1)) % n);
-        else if (pub.stage == 1 && (k == SDLK_RETURN || k == SDLK_KP_ENTER)) pubTap(1000 + pub.focus);
+        } else if (pub.stage == 1 && (k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_UP || k == SDLK_DOWN)) pubMove(k);
+        else if (pub.stage == 1 && (k == SDLK_RETURN || k == SDLK_KP_ENTER)) pubTap(pub.focus < 0 ? 35 : 1000 + pub.focus); // (○: Check's
+            // list - PubTopMenu's 200 -, else the poster in focus picked)
         else if (pub.stage == 2 && (k == SDLK_RETURN || k == SDLK_KP_ENTER)) pubTap(game.globalWork[7] == pub.request ? 39 : 38);
         else if (pub.stage == 3 && (k == SDLK_Y || k == SDLK_RETURN)) pubTap(7601);
         else if (pub.stage == 3 && k == SDLK_N) pubTap(7602);
@@ -11745,7 +11768,7 @@ struct Viewer {
         const std::vector<int> posters = pubPosters();
         if (pub.stage == 1) {
             UiFig& board = part("posterbtn", "posterbtn");
-            pub.focus = std::clamp(pub.focus, 0, std::max(int(posters.size()) - 1, 0));
+            pub.focus = std::clamp(pub.focus, -1, int(posters.size()) - 1); // (-1: Check's)
             for (size_t k = 0; k < posters.size(); ++k) {
                 char jn[32];
                 std::snprintf(jn, sizeof jn, "call_pubPoster_io%02zu", k + 1);
@@ -11769,8 +11792,11 @@ struct Viewer {
                 if (game.flag(1250 + id) && uiJoint(p, "call_seal_id", mx, my)) part("seal_id", "seal_id", mx, my, 0.1f); // (PubTopMenu: 0.1 s - "New!")
                 if (int(k) == pub.focus && uiJoint(p, "call_faceSlct", mx, my)) part("faceslct", "faceslct", mx, my);
             }
-            if (!posters.empty()) help(posters[size_t(pub.focus)]);
+            if (pub.focus >= 0) help(posters[size_t(pub.focus)]);
+            auto keepLook = buttonLook;
+            buttonLook = [&](int id) { return id == 35 && pub.focus < 0 && keysUsed ? 2 : 1; }; // (Check in focus: lit)
             drawCommandMenu("checkbtn_io", t, view, {}, {}, 0, 0, 0, "checkbtn_io"); // (the list: circle 35 - PubTopMenu's 200)
+            buttonLook = keepLook;
             back();
         } else if (pub.stage == 4) { // (PubListMenu: posterIcon, each request's sign at call_posterS_idNN, the share done)
             UiFig& icons = part("postericon", "postericon");
@@ -12960,6 +12986,37 @@ int padControlsSelfTest() {
         check(v.world.stage != 4, "question: the world select's × No");
         v.world = decltype(v.world)();
         v.noteAsk();
+
+        // the pub's board (PubTopMenu, FUN_810b7b62): the posters three a row and Check
+        for (int f = 1201; f <= 1205; ++f) v.game.setFlag(f, true); // (five posted)
+        v.pub.stage = 1, v.pub.focus = 0;
+        const int posted = int(v.pubPosters().size());
+        check(posted == 5, "pub: five posted (" + std::to_string(posted) + ")");
+        press(right), press(right);
+        check(v.pub.focus == 2 && se(0xb3), "pub: Right along the row, SE 0xb3");
+        press(right);
+        check(v.pub.focus == -1 && se(0xb3), "pub: Right off the row's end Check");
+        press(right);
+        check(v.pub.focus == 3, "pub: Right from Check the fourth");
+        press(down);
+        check(v.pub.focus == 3 && v.audio.log.empty(), "pub: Down where no poster is, nothing");
+        press(up);
+        check(v.pub.focus == 0, "pub: Up a row");
+        press(up);
+        check(v.pub.focus == 0 && v.audio.log.empty(), "pub: Up round where no poster is, nothing");
+        press(left);
+        check(v.pub.focus == -1, "pub: Left off the row's start Check");
+        press(left);
+        check(v.pub.focus == 4, "pub: Left from Check the last (fewer than six)");
+        press(left), press(left), press(right);
+        check(v.pub.focus == 3, "pub: Left along the second row, off its start Check, Right the fourth again");
+        v.pub.focus = -1;
+        press(circle);
+        check(v.pub.stage == 4 && se(0xb4), "pub: ○ on Check the list");
+        v.pub.stage = 1, v.pub.focus = 1;
+        press(circle);
+        check(v.pub.stage == 2, "pub: ○ on a poster picks it");
+        v.pub = decltype(v.pub)();
 
         // the buttons' keys: Swap ○ and × (the options'), △ Tab (CR2-U's: the field's tab), L / R in a menu alone
         v.settings.padSwap = true;

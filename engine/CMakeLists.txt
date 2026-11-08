@@ -9,6 +9,12 @@ endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# The sources are UTF-8, and so must the text they hold stay. MSVC otherwise reads them in the
+# system's code page and stores narrow literals in it: the Windows release's Graphics list showed
+# "Swap ? and" (no ○ in Windows-1252, × a lone byte that swallowed the ":" after it), and the iPad's
+# and the Vita's staff-roll symbols (assets/release.cpp) came out as "?" too. GCC and Clang (MinGW
+# included) already take and keep UTF-8.
+add_compile_options("$<$<COMPILE_LANG_AND_ID:C,MSVC>:/utf-8>" "$<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(THIRD_PARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 

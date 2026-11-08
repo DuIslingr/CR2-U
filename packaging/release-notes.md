@@ -41,7 +41,9 @@ A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux an
   languages, not 8, so much of the text - the tutorial, battle announcements - came out in Japanese
   or Chinese.
 - **Windows:** settings, saves and the first-start setup work with a folder or user name in another
-  alphabet - a Cyrillic user name on a Russian Windows, for example.
+  alphabet - a Cyrillic user name on a Russian Windows, for example. The Graphics list's "Swap ○
+  and ×" row and its help show their symbols again (they came out "Swap ? and"), and so do the
+  iPad's and the Vita's staff-roll symbols: the Windows build now keeps its text in UTF-8.
 - **Options:** Import Vita Saves moved into the Graphics list (it used to cover Lock Orientation's
   button), and the title stays behind the Options.
 - **Exit:** closing the window no longer crashes on the way out.

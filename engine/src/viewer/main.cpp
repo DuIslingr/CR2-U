@@ -6599,15 +6599,16 @@ struct Viewer {
                 textQuads.push_back(q);
             };
             const std::vector<cr2::TextLine>& lines = ev->message().pages[size_t(ev->page())].lines;
+            // (EvtWindow::ShowMessage: each line is its own call with its `\c` - the pack's +0x31 -
+            // choosing the centred slots: a tutorial's "\n\c Moving" puts its title in the second
+            // centred slot under an empty first line)
             if (wl.nameTag) {
                 add(speaker, 0, 0, true);
-                const bool centred = !lines.empty() && lines[0].centred;
                 for (size_t i = 0; i < lines.size() && i < size_t(wl.linesPerPage); ++i)
-                    add(lines[i].text, (centred ? 1 + wl.linesPerPage : 1) + i, lines[i].colour, false);
+                    add(lines[i].text, (lines[i].centred ? 1 + wl.linesPerPage : 1) + i, lines[i].colour, false);
             } else if (wl.centredSlots) {
-                const bool centred = !lines.empty() && lines[0].centred;
                 for (size_t i = 0; i < lines.size() && i < size_t(wl.linesPerPage); ++i)
-                    add(lines[i].text, (centred ? size_t(wl.linesPerPage) : 0) + i, lines[i].colour, false);
+                    add(lines[i].text, (lines[i].centred ? size_t(wl.linesPerPage) : 0) + i, lines[i].colour, false);
             } else {
                 for (size_t i = 0; i < lines.size(); ++i) add(lines[i].text, i, lines[i].colour, false);
             }

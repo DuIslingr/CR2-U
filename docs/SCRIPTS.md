@@ -205,7 +205,11 @@ gimmick's balloon would be, but for those with a balloon now (FldMain::CheckEntr
 `SetBoxVisible(false)` hides the balloons, the flags and the touch actions' marks while an event
 plays (FldMain +0xa4, GimmickAllViewOff). A dungeon entered the first time shows its name
 (`MapNameDisp`: `EvtIntroduction.SetDungeonNum(n)` - MapTitleMenu, the language's `mapName`
-figure on its `mapNameDNN` animator, played once -, then waits while `GetVisible`). An NPC's
+figure on its `mapNameDNN` animator, played once, 1.95 s; InterfaceMain::SetMapNameMenuParameter's
+table maps dungeons 0 .. 13 to interfaces 0x54 .. 0x60, 0 and 1 both to `D01`; the menu is gone
+when its animation ends -, then waits while `GetVisible`). Only the dungeon scripts d01 .. d11 and
+d13 call it, each with its own number; d12 (the hub) has no `mapNameD12` animation and never shows
+one. An NPC's
 colours change with `ChangeModelColor(gimmick, n)` (FldNPC::ChangeTexture_Color: every
 material's textures `m<its number>a01` / `b01` / `c01` / `d01`, and their normal maps `..n`). The
 resident effects (FldEffectResident: fifteen made with the field - eff030, eff031, eff041, eff042,
@@ -651,7 +655,14 @@ camera, the moves, the animations and the fades where they are by then. The scri
   page's end and EvtWindow::Update ends the message, after the script's turn. A `\*` message
   (the prologue's narrations) is done for `CheckMessage` in the update after its last character
   types (EvtWindow::CheckMessage: the page's end, the text typed, EvtWindowMessage::CheckMessage's
-  byte past the page - the text's end), shown until the next message or `Close` (OPENING_AUDIT.md);
+  byte past the page - the text's end), shown until the next message or `Close` (OPENING_AUDIT.md).
+  Each line goes to its own slot by its own `\c` (ShowMessage: a pack per line, its +0x31 the
+  line's flag; HelpWindowMenu / VistaConversationWindowMenu / ConversationWindowMenu::SetStringData
+  take the centred slots - typeM_C11.., the vista's 21 / 22, the cut-ins' 05..07 - for it), so a
+  tutorial's `\n\c Moving` has its title centred under an empty first line. The vista window's
+  name line is `vstWin_talk` (0.05 s, two identical frames: joint 2 at x 0.512) played from
+  `SetStringData` slot 0 and back from `DeleteNamePlate` when a message has no name - a static
+  pose either way, so it shows and goes at once;
 - **the portraits** (`EvtFace`, through the dungeon scripts' `Cutin_*` helpers): `SetTexture(file,
   id)` loads a face, `Create(layout)` opens a layout (0 right, 1 both, 2 left, 3 the party's, 4 a
   single one), `ChangeTexture(layout, id)` shows a face in it, `SetColor(layout, 0.5)` dims who

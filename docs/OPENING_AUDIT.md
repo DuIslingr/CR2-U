@@ -109,14 +109,43 @@ when `CheckTitleSeqenceReaction` says it is over, `FldMain` is next, made and up
 after, its entry event with it. The port's title is its own flow (SCRIPTS.md) and was not
 compared further here.
 
+### The first field: its name, the vista window and the tutorials
+
+The first field's `D01_01_05_set`: `MapNameDisp(1)` (`EvtIntroduction.SetDungeonNum(1)`, then
+`GetVisible` each update), then `Tutorial_Field` (flag 66, area 4: `WaitFrame(20)`, SE 192,
+`Tutorial_016 / 018 / 019` - each `LoadTexture('tuto016_01')`, `SetTexture(0)`, `Tutorial_Start`
+(`LoadMessageData(4, 'AnnounceTutorialTxt')`, `Open(4)`, SE 184), `SetWindow(true)`, `Msg(78)`,
+`SetWindow(false)`, `Tutorial_End` (`Close(4)`, SE 185, `WaitFrame(10)`, `UnloadData(4)`)). The
+field's talks (`Msg_Open(0)`) use the vista window (`EvtVistaWindow` -> interface 0x21,
+`VistaConversationWindowMenu`: `vstWin` with `vstWin_io`, 0 s, and `vstWin_talk`, 0.05 s).
+
+| | The original | CR2-U before | CR2-U now |
+|---|---|---|---|
+| A centred line (`EvtWindowMessage::ReadPage` keeps a `\c` byte per line; `EvtWindow::ShowMessage` sends each line as its own pack, the line's byte at +0x31; `InterfaceMain::ChangeHelpWindowMessage` makes it param 5 - `HelpWindowMenu::SetStringData` with the slot + 3, `typeM_C11 ..` -, `VistaConversationWindowMenu::SetStringData` takes the slot + 2 (21 / 22), `ConversationWindowMenu`'s + 3 (05 .. 07) for any slot but the name's) | each line in its own slot by its own `\c`: message 78's page 1 is `\n \c Moving` - an empty first line, the title in the second centred slot | the page's first line decided for all its lines: "Moving" at the left, in `typeM_L02`; so every tutorial title and the announcements' second lines ("Lv. 51 to 60 unlocked!") | per line (`drawWindow`) |
+| The vista window's name line (`SetStringData` slot 0 plays `vstWin_talk` forward from 0 and sets +0x30; `EvtVistaWindow::SetMessage` calls `DeleteNamePlate` when the pack's name is empty: `vstWin_talk` back from where it is; the window's own first animation is `vstWin_io` backwards) | `vstWin_talk`'s two frames are the same pose (joint 2 at x 0.512, `vstWin_io`'s at 0): the line is there from the message's update, gone with the first nameless one; the text is stepped and drawn in state 1 alone - the update after `Open` (`vstWin_io` has no length) | `vstwin_talk` posed with a speaker, `vstwin_io` without; the text from the update after the open | the same |
+| The tutorial's picture (`FldUtilSetTutorialWindowCreate` -> interface 0x66, `InstructionsGraphicWindowMenu` on `tutorialPic`, 0 s: param 3 loads a texture - five at most -, 4 sets one as the material's colour sampler, 6 / 5 show / hide, 1 ends it; `Draw` renders while shown; `Update` steps it and is done once ended and its animation over) | shown at `Visible` as it is, the texture set before it | the same (`tutorialPicture`: drawn once shown and a texture number set; the scripts always set one first) | the same |
+| The dungeon's name (`Cr3SetIntroductionDungeonNum` -> `SetMapNameMenuParameter`: the table at 0x5343f0 maps dungeons 0 .. 13 to interfaces 0x54 .. 0x60, 0 and 1 both to 0x54; `MapTitleMenu::Initialize` makes the language's figure - 0x5af508: `mapName`, `mapName`, `mapNameFre`, `Ger`, `Spa`, `Chs`, `Cht`, `Kor` - with the animator `mapName` + `D01` .. `D13` by the interface, `ChangeAnime`; `Update` steps it and returns `IsEndCurrentAnime`, on which `InterfaceMain::Update` deletes it; `Cr3IntroductionGetVisible` is `SurvivalMapNameMenu`, param 2: whether it still exists) | the name for 1.95 s (`mapNameD01.anim`), `GetVisible` false once it is deleted | the same (`drawIntro`, `introSeconds` from the animation) | the same |
+
+Also as the original already: the help window's and the system window's tap-skip permits
+(`HelpWindowMenu::HelpWindowMenu` and `SystemWindowMenu::SystemWindowMenu` set +0x2e / +0x2f /
++0x30 to 1 - the typing may be skipped by a tap from the start, which settles the item below);
+`MapNameDisp` is called by the dungeon scripts d01 .. d11 and d13 alone, each with its own number,
+so the hub d12 - whose `mapNameD12.anim` does not exist - never asks for one (if it did, the
+original's menu would end in its first update, an uninitialised animator's length being 0 for
+`IsEndCurrentAnime`, the port's after 2 s); the pack's +0x30 byte (`GetTheme`'s +0x40, 0 for
+every window) is `MenuText::Initialize`'s bordered-text choice, not an alignment - the alignment
+is the slot joint's letter (`Cr3UtilSearchTextPosition`, `MenuText::SetTextOffsetData`), as the
+port has it.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
-Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (four: the
+Ghidra 12.1.2); functions by their exported names. Evidence IDs are the REA sessions' (five: the
 second from the `FldMain::Update` row on, the third from the `FldUtilSetPopPoint` row on, the
-fourth - the cut-ins - from the `InterfaceMain::SetCutInWindow` row on).
+fourth - the cut-ins - from the `InterfaceMain::SetCutInWindow` row on, the fifth - the first
+field - from the `VistaConversationWindowMenu::SetParamNumber` row on).
 `re/opening-audit-evidence.json` (never committed) holds the second session's records,
-`re/opening-audit-evidence-3.json` the third's and `-4.json` the fourth's; the first's bundle was overwritten by the second,
+`re/opening-audit-evidence-3.json` the third's, `-4.json` the fourth's and `-5.json` the fifth's; the first's bundle was overwritten by the second,
 so those IDs name records no longer on disk - each is a plain decompile of the named function,
 reproducible with `open_binary` and `batch_decompile` on the same library.
 
@@ -150,6 +179,23 @@ reproducible with `open_binary` and `batch_decompile` on the same library.
 | `ConversationWindowMenu::SetStringData / CheckStringDisplayEnd / CheckStringDisplayEndSend / Pose / CustomDraw`, `EvtCutinWindow::Open / Close / IsSkip / SetMessage / GetLinePerPage / GetTheme` | `ev_1907bb34814a71c653cf9681996d6f8f6d4ba4557c685131879d70b81647abb4` |
 | `InterfaceMain::SetMessageWindowParameterEmpty / EndMessageWindowStringDisplay / ChangeMessageWindowMessage / IsMessageWindowFastForward`, `Cr3UtilCheckHitTapCollision`, `VistaConversationWindowMenu::Initialize / Update / InterfaceOpenAnimeSet / InterfaceCloseAnimeSet` | `ev_6022cb605dfb1f3b30d86fe58f82bcf741dab7aba6f5ccd82bd3e85a904419d9` |
 | The fade colour tables at 0x51e208 (48 bytes) | `ev_e855b7b8c9e85282a529f88d42e04c330c84f2b6e9fa41df062d5857225339c9` |
+| `VistaConversationWindowMenu::SetParamNumber / SetStringData / CheckStringDisplayEnd / CheckStringDisplayEndSend / EndStringDisplay / ClearStringDisplay / TouchSimplePress / CustomDraw` | `ev_d4cb574606669f099bae4dfc2ee7e5e7685f0696495538c0c991149fb5a1dcb2` |
+| `EvtVistaWindow::Open / Close / SetMessage / IsSkip / GetLinePerPage / HasNameTag`, `InterfaceMain::ChangeVistaMessageWindowMessage / EndVistaMessageWindowStringDisplay / ChangeVistaMessageWindowString`, `VistaConversationWindowMenu::Pose` | `ev_0dd8341350cfb5b2e5e15ade79b95ff9a8cde681c0493b728de01cec1c23bd1c` |
+| `HelpWindowMenu::Initialize / Update / SetParamNumber / InterfaceOpenAnimeSet / InterfaceCloseAnimeSet / EndStringDisplay`, `InterfaceMain::SetHelpWindowParameter / EndHelpWindowStringDisplay / ChangeHelpWindowMessage`, `EvtTutoWindow::Open / Close / IsSkip / GetLinePerPage` | `ev_31483907d746d26e7a8ab2ea0a27ac26888031230c3b4741556636b39e66f1af` |
+| `FldUtilSetTutorialWindowCreate / Delete / Visible`, `FldUtilLoadTutorialTexture`, `FldUtilSetTutorialTexture`, `InterfaceMain::SetTutorialTexture / SetTutorialTextureNumber`, `CR3InterfaceEvent_*`, `Cr3SetIntroductionDungeonNum`, `Cr3IntroductionGetVisible` | `ev_fe266d31bbd39e46c83eb3dd28fc435288fc883d44db7ccbf922eb9ac62a224e` |
+| `InterfaceMain::SetVistaMessageWindowParameter / DeleteNamePlateVistaMessageWindow / SetMapNameMenuParameter / SurvivalMapNameMenu / CreateInterface`, `VistaConversationWindowMenu::DeleteNamePlate / VistaConversationWindowMenu`, `HelpWindowMenu::HelpWindowMenu` | `ev_d7d4bcd0949f97de5388d9b216d641320aa134b08f415fd43af0525bbe0baa3d` |
+| `MapTitleMenu::Initialize / Update / SetParamNumber / MapTitleMenu`, `SystemWindowMenu::SystemWindowMenu` | `ev_236c02124e43ca577b9ec0883721aeef7a308b27ce3855ebf9b7ca86915aea50` |
+| `InstructionsGraphicWindowMenu::InstructionsGraphicWindowMenu / Initialize / Update / SetParamNumber / Draw / CustomDraw`, `VistaConversationWindowMenu::Initialize / Update`, `InterfaceMain::IsVistaMessageWindowFastForward`, `MapTitle::MapTitle` | `ev_0a3af3f78379faa90b669104ae97af633510804f67b3517324626d8244fd38b7` |
+| `VistaConversationWindowMenu::Draw`, `InstructionsWindow::InstructionsWindow`, `InstructionsGraphicWindowMenu::SetTexture`, `InterfaceMain::VisibleTutorialTexture / UnVisibleTutorialTexture` | `ev_fba12c881fb62dc972a9a6e8d7e67370770f1ca62dc9bf52b7553217efbb8eb8` |
+| `MapTitleMenu::Draw`; `MapTitleMenu::Update` assembly (it returns `IsEndCurrentAnime`) | `ev_31a5d559b0a9f014e7bd8a352e2f53f331dc2ef8bf7bd1ce15d72efe075edfcb`, `ev_34d07dfdb11bd597b1d8592c920756f8d3e6e57ac004684f7c247998b76f9249` |
+| `SetMapNameMenuParameter` / `MapTitleMenu::Initialize` assembly (their tables by literal pool), the dungeon table at 0x5343f0 (56 bytes), the figure and suffix pointers at 0x5af508 (84 bytes), the strings at 0x50a300 (132 bytes) | `ev_3c797e0ba9a36dfe19b57d3596e954add6a1c36e944b646dd2da0955a4da057f`, `ev_6db27395a776c06307e37903bb5e32c7664d1ffd7ac24c4522d79f25d9bfa7a4`, `ev_036501e5427eb1a2e8ecd2447cd34576f20bb97a588405451d58cba1c78f42e0`, `ev_14d2761bece9b2053480b5526b50bbb928b12898f6832a0fba3106bd401fbd99`, `ev_7f5b3cb49f1b51c646f5aa95806d62fa30c622bfffce84d7fe8dd4c005b5066f` |
+| `InterfaceMain::Update` (an interface whose `Update` returns 1 is marked and deleted) | `ev_0c1ff9839f42e851e0b67ff97e989e99905edbe6d9686dfbf3796b610f686477` |
+| `MVGL::Interface::PartsBase::AddAnimator / IsEndCurrentAnime / ChangeAnime` | `ev_46bf45fb1662ad71678b209887e4c05b7f1616b00286b24f24f0da680b91b45c` |
+| `HelpWindowMenu::SetStringData`, `MenuText::Initialize / SetTextOffsetData / SetPosition` | `ev_f5bcd7f46cb8c7a6ffe3ec2b9e04d618cfb76f0fad6783ae986702a7b59a0578` |
+| `EvtWindow::NextPage / UpdatePage` | `ev_2e5df66f3aea72a734cf89e67c0feac63ca8f7519954afc90a1becf90f528abd` |
+| `EvtWindow::ShowMessage`, `EvtWindowPage::NextBlock`, `EvtTutoWindow / EvtAnnounceAWindow / EvtCutinWindow / EvtNarrationWindow::SetMessage`, `InterfaceMain::ChangeHelpWindowMessage / ChangeAnnouncementWindowMessage` | `ev_6d366c6a4a69109147b9867a31bfcf9eb0473fca3aba692a0fe8c63bd9daccfe` |
+| `EvtTutoWindow / EvtVistaWindow / EvtCutinWindow / EvtNarrationWindow::GetTheme`, `ConversationWindowMenu::SetStringData` | `ev_715dfadfdb946b2c6026b4c97504c227901f3d8d6242d0811958c53d32c86430` |
+| Procedure and string searches (the menus' names, `Tutorial_*`, the `dNN` suffixes), the `SetMapNameMenuParameter` reference | `ev_da625937e8a1d1435cdf172a6b693f4a00395f9c9c625fa630cc6a4f68563a4b`, `ev_93911e3803cd0b83f17d25688331607f04e12fa27c9236cd2502f55a51664a9b`, `ev_233c95d388de9f859445db5a42a01c3c00d98e72798ce9de02a80f3d0217d3d7`, `ev_34846b7b5c20236832a4602af2d7af28b95adf54a7fa93359f3aa86e85568030`, `ev_9b85ec1829acacd78611ae4cf1d986ab90bb3d512d2d0dacc539024d9006b530`, `ev_ba615bbd95aea9f925d20d5737ddf05575416362ac704d78a84095296a8566ad`, `ev_dafbf52e0c9a5bd2851e9b685839f6b97196fce7bb0e65c0ed1ecec418237f2a`, `ev_f2b27739daa943003e4778236291da6b36b9993dd7e979fe81d1d5c19c50fccb`, `ev_102fbdfcb409aa329e5e876bd8295261a74ffa1755719fd6c343f198019608b7`, `ev_118826059e0a3942feeeb224075785a568e75426e350edb0504df15d08704b68` |
 
 These are static observations of the shipped library, not traces of the original running: the
 update order and counts follow from the code, the visual result from the fade figures'
@@ -161,11 +207,13 @@ animations being linear (assumed, as before).
   line of a block and steps each once; whether that shows each line's first character at once
   (the typing then line after line) depends on `MenuText`'s renderer (`CustomFigure`), not read.
   The port types the block from its first character.
-- **A tap while typing** in the help (tutorial) and system windows: their handlers have the
-  narration's shape (`HelpWindowMenu` / `SystemWindowMenu::TouchGestureTap`: the block whole,
-  given a permit byte whose setting at their open was not traced). The port skips their typing on
-  a tap anywhere. (`AnnouncementWindowMenu`, which takes no tap, is the battle's, not an event
-  window's.)
+- **The vista window without a name.** `DeleteNamePlate` (and the close with a name up) turn
+  `vstWin_talk` back and put the window's own texture resource (`+0x38`'s `+0x48`) into the
+  figure's `+0x44 / +0x3c`, which `SetStringData` slot 0 had set to 0; what that draws for the
+  plate was not read. The port poses `vstwin_io` (the plate's joint at x 0) for a nameless line.
+- **The map name's last update.** The original deletes the menu in the `InterfaceMain::Update`
+  whose step reaches the animation's end; the port shows it while `ticks x 0.05 s` is under its
+  length. Within an update of each other; not counted exactly.
 - **The windows' tap areas as the figures stand**: the cut-ins' window's area is read from
   `msgWin` posed as drawn; the original's `Cr3UtilCheckHitCollision` was not read.
 - The battle's own end (`BtlMain`'s result steps and when it says it is done): not counted; the
@@ -196,6 +244,16 @@ its `FadeIn(0, 30)` from black:
 
 (Before the hand-over's ten updates were added, the same frames fell 0.5 s earlier, identical
 otherwise.)
+
+The first field's tutorial, `cr2view --data <obb> --play d0104 --call Tutorial_016 --fps 60 --run <s>
+--capture <bmp>` (the function run on the map's start point, which is where `D01_01_05_set` has
+it):
+
+| `--run` | the frame |
+|---|---|
+| 0.15 s | the picture (`tuto016_01`, the field itself) up at once, the help window still opening: no text |
+| 0.6 s | "Moving" typed, in the middle of the window's band - at its left before the per-line centring |
+| 3.0 s | the page held with its send cursor, the fast-forward button at the top right |
 
 (The second narration is `... \w60 \*`.) The captures are frames of the port, compared with the
 counts above, not with the original running.

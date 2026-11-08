@@ -4362,11 +4362,19 @@ struct Viewer {
         const bool target = commandInput.menu() == cr2::CommandInput::Menu::Target;
         // (the awakenings' list goes up and down)
         if (optionsKey(k)) return;
+        // (the Vita's: the command buttons Up / Down round - FUN_810452fe, the selectable ones -, the
+        // targets the same - BattleSelectMenu's update, FUN_810771c2 -, each step SE 0xb3; the lists -
+        // ScrollListMenu - scroll without one. Left / Right the targets too, the keyboard's)
+        using CI = cr2::CommandInput;
+        const bool list = commandInput.menu() == CI::Menu::Items || commandInput.menu() == CI::Menu::Advent ||
+                          commandInput.menu() == CI::Menu::Awake || commandInput.menu() == CI::Menu::Sopia;
+        const int was = menuCursor;
         if (k == SDLK_BACKSPACE) commandInput.back(), audio.playSe(0xb5, false), menuChanged(); // (InterfaceMain: 0xb5 back)
         else if (c.empty()) return;
-        else if (k == (target ? SDLK_RIGHT : SDLK_DOWN)) menuCursor = (menuCursor + 1) % int(c.size());
-        else if (k == (target ? SDLK_LEFT : SDLK_UP)) menuCursor = (menuCursor + int(c.size()) - 1) % int(c.size());
-        else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) choose(c[size_t(std::clamp(menuCursor, 0, int(c.size()) - 1))]);
+        else if (k == SDLK_DOWN || (target && k == SDLK_RIGHT)) menuCursor = (menuCursor + 1) % int(c.size());
+        else if (k == SDLK_UP || (target && k == SDLK_LEFT)) menuCursor = (menuCursor + int(c.size()) - 1) % int(c.size());
+        else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) return choose(c[size_t(std::clamp(menuCursor, 0, int(c.size()) - 1))]);
+        if (k != SDLK_BACKSPACE && menuCursor != was && !list) audio.playSe(0xb3, false);
     }
     // a click at the screen's (fx, fy) - 0..1 across, down: a button's tap area (UI units)
     void battleClick(float fx, float fy) {

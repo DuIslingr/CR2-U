@@ -795,7 +795,7 @@ banner down 3.0 s after it went up; it now keeps it while the turn's actions run
   controller) waits for the first's `ActionAttackWaitAttackMotion` flag (`+0x33c` by side), resets its
   +0x30 and `WaitStep(3, GetPairAttackDelayTime)` (`cr3_common_data`'s numbers, the table at 0x5362f4 /
   20); `ActionAttackPairWaitAttackMotion` then waits for the partner's motion (or 15 s). Which of the
-  two runs which table was not settled; the port's order is kept.
+  two runs which table was not settled here; round 40 settles it (the port's order holds).
 - *An escape's update count.* `BtlMain::Init` registers the task modules in order: `BtlMainCtrl`
   (+0x278) first, `BtlAnnounce`, `BtlActionCtrl`, `BtlMoveCtrl`, `BtlMotionCtrl`, the effects, the
   sound, `BtlCommand` (+0x34c), `BtlTurnEnd`, `BtlGameover`, `BtlResult`, the cameras ...;
@@ -1038,6 +1038,39 @@ in the original; the port does not reorder them). Battle 245, Megiddo's Blessing
 with status effects!" at 5.04 s into the action as before, the next action 4.33 s after it (4.45 s
 before). No reference clip with a status note was checked: the 1.05 s rests on the code.
 
+### Round 40: which of a pair runs which table, and the pair's delay
+
+Read in the repo's Ghidra output and `llvm-objdump` of the ARM library (the delay's caller is
+0x36e094 in the file).
+
+**Which of the two leads.** `SetActionOrder` walks the five slots and adds each one that can act
+(`CheckActionable`: valid, not dead, not the side that lost the first turn); after a slot in a pair
+(`IsPair`) it skips the next one, so only the lower of a pair - fighter 0, or monster slot 2 - is in
+the order. `SetActionQueue` puts that slot's task in the queue and, for a pair, its partner's
+(+0xb02) straight after. In `ActionCommand` the first of the pair to come (its side's +0x338 still 0)
+sets the side's +0x338 to 1 and +0x339 to itself and makes the partner's task active; its partner,
+coming next, finds +0x338 at 1 and raises it to 2 (and is cancelled instead for a command that is
+not an attack and is magic-type, or whose data's +0x48 is 4). `SetActionTable` then gives the one in +0x339
+`action_table_attack_solo` and the other `action_table_attack_pair`. The port's pair action has
+fighter 0 (or monster 2) as its actor, whose moves run first, and its partner after the delay:
+the same split. Nothing changed.
+
+**The pair's delay.** `ActionAttackPairWaitDelayTime` (the second's controller) calls
+`GetPairAttackDelayTime(cr3_common_data[leader + 1], cr3_common_data[second + 1])`: the literal pool
+gives the GOT slot 0x5ab660, an `R_ARM_RELATIVE` to 0x5c3978, `cr3_common_data` itself, and
+`ldrsb` reads byte `slot + 1`. Bytes 1 and 2 are the battle's two characters (from 0; set by the
+map select's party (`MapSelectMenu`), or `VistaMain::SetBattle` from `FldUtilGetBattleParty` for a battle a script
+calls), bytes 3 and 4 the active members (`Cr3UtilSetActivePartyMember`, set with 1 and 2 by the map
+select), byte 5 the first party set's. Nothing writes a monster's number there. `GetPairAttackDelayTime`
+takes the 9 x 9 table at 0x5362f4 for numbers 0 - 9 and, past 9, returns 0 unless both are 205 or
+less (`cmp r5, #205; cmple r4, #205; bgt`). So a monster pair's delay - the Shadows' (pattern 11,
+battles 47 - 51 and 305 - 309; the only monster pairs) in slots 2 and 3 - is the table's entry for
+the active members, bytes 3 and 4. The port took the monsters' own numbers less 205 (Hurt Shadow is
+205, Tough Shadow 206: 0.30 s); it now reads `game.party`, the port's bytes 3 and 4. A `--battle`
+run keeps the new game's members (0 and 2: 0.25 s) unless `--members` gives others; in the story it
+is whoever walks the field. Battle 47 (seed 12) runs the Shadows' Break Beat through as before. No
+reference clip of a Shadow pair attack was checked: this rests on the code.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
@@ -1181,8 +1214,8 @@ animations being linear (assumed, as before).
   the video (3 updates for the party, 5 for a monster), while the code (round 39) gives both the
   same 0.3 s blend - the banner's own delay in the video was not measured; an item's end comes
   0.5 s sooner after its heal than the video's (the end steps after `ActionItemWaitMotion` - 12, 11,
-  8, 9, 14 - take an update each; the next action's readiness was not checked on that clip); which
-  of a pair runs which table. (Round 35 read +0x523: the Pair turn's flag.)
+  8, 9, 14 - take an update each; the next action's readiness was not checked on that clip). (Round
+  35 read +0x523: the Pair turn's flag; round 40 which of a pair runs which table.)
 - **The camera's units.** The ease's one-pixel hold is the original's device pixel; the port
   holds within one pixel of the window it draws to. `GetPos_X / _Y` in the port still read the
   clamped scroll (`shownX_`), the original's the unclamped +0x30.

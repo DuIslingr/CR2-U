@@ -440,7 +440,8 @@ material's value: bonus_crtcl's fade -1 .. 0 about 1, brkInfo's colour -0.5 .. +
 0.99 (a flash, then the cream "Even" / "Player" / "Enemy"). A pair's attack: the second of the two after GetPairAttackDelayTime
 (ActionAttackPairWaitDelayTime: 0x5362f4, 9 x 9 floats in frames of 0.05 s - the first's character
 (cr3_common_data, from 0) the row, the second's the column; Darwin then Orlando 6, Orlando then
-Darwin 8; the shadows' pair, 205 .., the same table), its moves as late.
+Darwin 8; a monster pair - the Shadows' - by the active members, cr3_common_data's bytes 3 and 4,
+as the function reads byte slot + 1), its moves as late.
 
 The cameras: BtlCameraTable, also built in code (tools/gen_camera_table.py ->
 engine/src/battle/cameratable.inc), numbers into btl_camera_name_table (462 names: the joints of

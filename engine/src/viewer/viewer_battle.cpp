@@ -1907,16 +1907,19 @@ void Viewer::beginShowAction(const ShowAction& a) {
     const int target = a.hits.empty() ? -1 : a.hits.front().target;
     int slot = 0;
     // (ActionAttackPairWaitDelayTime: the pair's second after GetPairAttackDelayTime - by the two
-    // characters, the first's row, in frames of 0.05 s; the shadows' pair by their numbers 205 ..)
+    // characters, the first's row, in frames of 0.05 s. Its numbers are cr3_common_data[slot + 1]:
+    // bytes 1 and 2 the battle's two characters, 3 and 4 the active members (game.party) - so a
+    // monster pair's, slots 2 and 3, are the field party's, not the monsters'. Past 9 only 205
+    // itself would be read, and nothing puts a monster's number there)
     static const unsigned char kPairDelay[9][9] = {{0, 6, 5, 4, 3, 6, 0, 0, 0},       {8, 0, 8, 6, 4, 10, 4, 0, 0},
                                                    {10, 8, 0, 7, 6, 10, 2, 0, 0},     {13, 12, 13, 0, 7, 14, 7, 0, 0},
                                                    {12, 11, 11, 11, 0, 13, 7, 0, 0},  {11, 10, 10, 8, 7, 0, 5, 0, 0},
                                                    {23, 20, 20, 20, 15, 21, 0, 0, 0}, {24, 24, 24, 24, 0, 24, 24, 0, 0},
                                                    {24, 24, 24, 24, 0, 24, 24, 0, 0}};
     auto pairDelay = [&](int first, int second) {
-        const cr2::Fighter &x = battleRules->fighter(first), &y = battleRules->fighter(second);
-        int i = x.id - 1, j = y.id - 1; // (cr3_common_data's: from 0)
-        if (first >= 2) i = x.id - 205, j = y.id - 205;
+        int i = -1, j = -1; // (cr3_common_data's: from 0)
+        if (first < 2 && second < 2) i = battleRules->fighter(first).id - 1, j = battleRules->fighter(second).id - 1;
+        else if (first == 2 && second == 3) i = game.party[0], j = game.party[1]; // (bytes 3 and 4)
         return i >= 0 && i < 9 && j >= 0 && j < 9 ? float(kPairDelay[i][j]) / 20.0f : 0.0f;
     };
     // (a physical attack's lead - action_table_attack_solo: ... 6 the announcement, 15

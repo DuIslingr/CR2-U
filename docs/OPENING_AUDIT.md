@@ -1109,6 +1109,40 @@ about 4.2 s in. The user's stance does not explain it: bi01, started at the bann
 about 1.15 s after the heal); a script on `Command_End` / `Command_Start` in that battle (step 9 waits
 while one runs); the Executioner's readiness. Not settled.
 
+### Round 42: a boss battle's script calls, and the item's 0.5 s
+
+**The video's fight.** `2dy_mefNhEI` around 616 s is a boss: one large beast, Darwin and Marie, Darwin's
+Executioner (the awakening) landing its 693. `battle_221.nut`'s `Command_End` sets the awakening flags
+3001 / 3002 after command 352: the port's battle 221 (pattern `neron`, `m310`), whose script
+is its own (`Cr3BattleEvent_SetScript`, +0x237a; 49 battles, 221 - 349, the bosses).
+
+**What the picture does.** Frame differences over the whole picture, 1/30 s apart (the clip is 30
+frames a second over the game's 20): the swirl and glow change the picture until 620.37 s, about
+1.4 s after the heal - `eff213`'s animation is 1.50 s (`anim.py info`), and a normal effect
+(`BtlEffectTable` +0x3b 0) is destroyed when its time reaches its end (`ControlNormal`) - then
+nothing but the stance's sway (0.1 - 0.2) till the next banner at 621.23 s: 0.8 s still.
+
+**Where it goes.** With +0x237a set, step 7 (`ActionCommonEventCommandStart`) and step 8
+(`ActionCommonEventCommandEnd`) call `BtlEvent::CallScript` ("Command_Start", "Command_End"), which
+sets the event's state to 1; step 9 (`ActionCommonEvent`) waits while `BtlEvent::IsRunning` (the
+state `Update` last took, +0xc, or the asked one, +0x10). `BtlEvent::Update` - registered after the
+action controller, so later in the same update - calls the function at state 1 and sets 2; at 2,
+once `Cr3Event::GetState` is 4, sets 3; at 3 sets 0. Step 9 sees +0xc at 0 the update after that:
+four updates a call, the script's own work aside. No boss script's `Command_Start` / `Command_End`
+waits (221's and 349's set flags and parameters; 301, 318, 331 have none). So an action in a boss
+battle ends four updates later and the next one's banner comes four more after its start: 0.4 s.
+The port called the scripts synchronously, at no cost; it now holds four updates after each call in a
+battle with its own script. Battle 221 (`--fight solo`): Darwin's Slash 1.53 -> 1.72 s, the boss's
+Hammer of Tyranny 4.78 -> 5.12 s. Battle 57 (no script of its own) is as before.
+
+For the video's Chocolate the code now gives: the effect gone about 3.65 s after the banner, step 34
+the update after, Command_End's four, the next task added an update later, Command_Start's four - the
+next banner about 4.2 s after Chocolate's, against the video's 4.33 s. The last update or two
+(`Cr3Event`'s state 4 may take its own update) were not followed. The item itself could not be run in
+battle 221: its script keeps the Items command off early on (script switch 45).
+Not followed: `Turn_Start`, `Turn_End` and `Dead` go through the same `BtlEvent` calls in a boss
+battle and should cost the same four updates; the port still makes them at once.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
@@ -1250,11 +1284,11 @@ animations being linear (assumed, as before).
   pair's, the one not done's, the revival's, the turn's end, an item's, the whole sopia table with
   the Mirror; the actor's readiness (round 39). Left: a sopia's motion change is still counted from
   the video (3 updates for the party, 5 for a monster), while the code (round 39) gives both the
-  same 0.3 s blend - the banner's own delay in the video was not measured; an item's end comes
-  0.5 s sooner after its heal than the video's (round 41: the steps after it and the next action's
-  first steps run in one update; the user's stance is back by about 2.7 s; left `eff213`'s length in
-  the original, a battle script on `Command_End`, the next actor's readiness). (Round
-  35 read +0x523: the Pair turn's flag; round 40 which of a pair runs which table.)
+  same 0.3 s blend - the banner's own delay in the video was not measured; an item's end in the
+  video (round 42: a boss battle's `Command_End` and `Command_Start` calls, four updates each - now
+  about 4.2 s against the video's 4.33); a boss battle's `Turn_Start`, `Turn_End` and `Dead` calls
+  are still made at once. (Round 35 read +0x523: the Pair turn's flag; round 40 which of a pair runs
+  which table.)
 - **The camera's units.** The ease's one-pixel hold is the original's device pixel; the port
   holds within one pixel of the window it draws to. `GetPos_X / _Y` in the port still read the
   clamped scroll (`shownX_`), the original's the unclamped +0x30.

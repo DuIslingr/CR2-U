@@ -1226,6 +1226,11 @@ void Viewer::stepBattleShow() {
             actionDueAt = -1;
         }
         battleRules->startAction();
+        // (a battle with its own script - Cr3BattleEvent_SetScript, +0x237a: the bosses' -
+        // calls Command_Start in step 7 and waits in step 9 while BtlEvent::IsRunning: BtlEvent,
+        // updated after the action controller, calls it that update, then its state goes 2, 3,
+        // 0 an update each, and step 9 sees 0 the update after - four updates before the banner)
+        if (battleScript && battleScriptOk && battleScript->own()) showEnd = battleClock + 4 * cr2::EventRuntime::kTick;
         battleStep = BattleStep::ActionDo;
         break;
     case BattleStep::ActionDo: {
@@ -1271,6 +1276,8 @@ void Viewer::stepBattleShow() {
             break;
         }
         battleRules->endAction();
+        // (the same for Command_End: steps 8 and 9, four updates, then 14)
+        if (battleScript && battleScriptOk && battleScript->own()) showEnd = battleClock + 4 * cr2::EventRuntime::kTick;
         analyze.stage = 0, deathsQueued = false;
         battleStep = BattleStep::ActionStart;
         break;

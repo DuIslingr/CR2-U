@@ -1215,6 +1215,15 @@ at 0x3a0dcc). Nothing else stores to it: no `0x2165` / `0x2169` offset but those
 at `#0x65` / `#0x69` or wider store over it in the window's classes. So the test always finds it
 clear, as the port takes it. Settled.
 
+### Round 47: the skipped voice, run
+
+`--input fast` holds the window's fast-forward for 2 s a token once a button shows (the vista's
+skip button, at 14.77 s in `--play`), and the held fast-forward also hurries the vista on. With a
+note of each message's voice (a temporary log in `SetMessage`): three tokens (held till 20.82 s) -
+message 1 set under the hold, voice 624 not played; message 2 set after it, 625 played; six tokens
+(till 24.85 s) - both set under the hold, neither played; none - both played. As
+`EvtWindow::ShowMessage`'s `IsSkip` test has it. Settled.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
@@ -1371,9 +1380,6 @@ animations being linear (assumed, as before).
 - **The battle's last update before the next main.** `Exit` waits for `Cr3ResourceManager` to be
   empty; the port counts 24 updates from the end, as if the resources went at once. A slow unload
   would hold the original's white a little longer.
-- **The skipped voice, run.** No headless run held a skip across a voiced message: the opening's
-  two are skipped whole, and `--input fast` takes hold only once a button shows, after the
-  message's voice. Checked by reading only; the opening without a skip still voices 624 and 625.
 
 ## Checks
 

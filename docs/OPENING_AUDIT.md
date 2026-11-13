@@ -1156,7 +1156,9 @@ So the waiting step, first tried the update after the call, passes once `BtlEven
 table's four (it loops its steps within an update). The port made these calls at once; it now holds
 three updates after each in a battle with its own script: the menu after `Turn_Start`, the next turn
 (and the poison's 1.5 s) after `Turn_End`, a defeat's `DeadStart` after `Dead`. The poison's and the
-pools' numbers still show at the turn's end at once, those three updates before the original's.
+pools' numbers and the poison's SE come with case 3, after that wait (a later fix: they had come at
+the turn's end at once; battle 221 with Darwin poisoned, `--state 0:0`: the turn over at 11.08 s,
+his 305 at 11.25 s; battle 57 as before, the number with the turn's end, turn 2 1.5 s on).
 Battle 221 (`--fight solo`): turn 1 at 1.50 s (was 1.35), turn 2 at 12.95 s (12.63). Battle 57
 unchanged. `Battle_Start` (`StepBattleIn`) and `Battle_End` were not followed.
 

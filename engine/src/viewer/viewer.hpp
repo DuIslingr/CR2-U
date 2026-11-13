@@ -736,6 +736,8 @@ struct Viewer {
     // BtlUtilStatus::CheckActionReady: a fighter back in its stance - its motion bb01, bb04, bg01 or
     // bx02, not one still playing out (true for one without a figure)
     bool fighterReady(int f);
+    std::vector<cr2::BattleRules::Event> turnEndNumbers; // (the turn's end's poison and pools, shown at BtlTurnEnd's step 3)
+    float turnEndNumbersAt = -1;
     float actionDueAt = -1; // (ActionCommonStandby's wait for it began; -1 none)
     std::string actionWaitedOn; // (for the log)
     void poseBattle();

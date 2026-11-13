@@ -926,6 +926,7 @@ void Viewer::startFight(int mode, uint32_t seed) {
     glassRng.seed(seed); // (the game's lrand48: seeded by the clock)
     battleRules = std::make_unique<cr2::BattleRules>(battleData, seed);
     partyDeaths = 0, lastPartyActor = 0;
+    turnEndNumbers.clear(), turnEndNumbersAt = -1;
     battleWipeAt = battleClock; // (StepBattleIn's FadeIn(3, 20): the wipe off the battle)
     std::string err;
     int party[2] = {0, 0};
@@ -1205,16 +1206,11 @@ void Viewer::stepBattleShow() {
             }
             for (int f = 0; f < 2; ++f) setGuard(f, false), dropGuardObject(f); // (BtlTurnEnd: DeleteAll; the stance back)
             if (announceQueue.empty()) commandShown.clear(); // (BtlTurnEnd: ClearAnnounce)
-            for (const cr2::BattleRules::Event& e : battleRules->turnEndEvents()) { // (BtlTurnEnd: the poison's, the pools')
-                if (e.damage > 0) showNumber(e.target, e.damage, 20, true), battleSe(0x13); // (BtlTurnEnd: the poison's SE)
-                if (e.heal > 0) showNumber(e.target, e.heal, 50, true);
-                if (e.healMp > 0) showNumber(e.target, e.healMp, 60, true);
-                SDL_Log("    %s: %d poison, %d HP back, %d MP back", battleRules->fighter(e.target).name.c_str(), e.damage, e.heal, e.healMp);
-            }
             // (BtlTurnEnd::Update: step 1 Turn_End, 2 its wait - three updates more with the battle's own
-            // script -, 3 the poison and the pools, 4 1.5 s when any was applied, else straight to 5.
-            // The port shows the numbers at once, so with a script they come those updates early)
+            // script -, 3 the poison and the pools, their numbers and the poison's SE, 4 1.5 s when any
+            // was applied, else straight to 5)
             const float turnEndScript = ownBattleScript() ? 3 * cr2::EventRuntime::kTick : 0.0f;
+            turnEndNumbers = battleRules->turnEndEvents(), turnEndNumbersAt = battleClock + turnEndScript;
             if (!battleRules->turnEndEvents().empty()) showEnd = battleClock + turnEndScript + 1.5f;
             else if (turnEndScript > 0) showEnd = battleClock + turnEndScript;
             SDL_Log("turn over; gauge %d, charge %d; MP %d %d (%.2f s)", battleRules->gauge(), battleRules->charge(), battleRules->fighter(0).mp, battleRules->fighter(1).mp, battleClock);
@@ -2246,6 +2242,16 @@ void Viewer::updateBattleShow() {
     // (ActionSopiaWaitEffect, then ActionSopiaWaitMotion's 0.2 s - 0.7 for command 0x3e)
     if (showSopia && showHitDone && !hitEffectPlaying() && showIndex < showActions.size())
         showSopia = false, showEnd = battleClock + (showActions[showIndex].command == 0x3e ? 0.7f : 0.2f) + cr2::EventRuntime::kTick;
+    if (turnEndNumbersAt >= 0 && battleClock >= turnEndNumbersAt) { // (BtlTurnEnd's step 3: the poison's, the pools')
+        turnEndNumbersAt = -1;
+        for (const cr2::BattleRules::Event& e : turnEndNumbers) {
+            if (e.damage > 0) showNumber(e.target, e.damage, 20, true), battleSe(0x13); // (the poison's SE)
+            if (e.heal > 0) showNumber(e.target, e.heal, 50, true);
+            if (e.healMp > 0) showNumber(e.target, e.healMp, 60, true);
+            SDL_Log("    %s: %d poison, %d HP back, %d MP back (%.2f s)", battleRules->fighter(e.target).name.c_str(), e.damage, e.heal, e.healMp, battleClock);
+        }
+        turnEndNumbers.clear();
+    }
     if (openingBannerAt >= 0 && battleClock >= openingBannerAt) { // (StepBattleIn's step 7: the first strike's banner)
         openingBannerAt = -1;
         const bool solo = !battleRules->fighter(1).present;

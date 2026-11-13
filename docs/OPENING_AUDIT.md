@@ -1374,6 +1374,7 @@ animations being linear (assumed, as before).
 - **The skipped voice, run.** No headless run held a skip across a voiced message: the opening's
   two are skipped whole, and `--input fast` takes hold only once a button shows, after the
   message's voice. Checked by reading only; the opening without a skip still voices 624 and 625.
+
 ## Checks
 
 `ctest --test-dir engine/build -R event-reset` (the tap's 0.15 s and the two updates added to its

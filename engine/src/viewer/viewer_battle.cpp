@@ -625,7 +625,7 @@ void Viewer::inputToken(const std::string& t) {
             }
     SDL_Log("input %s%s", t.c_str(), ok ? "" : " (not taken)");
     if (!ok && commandInput.menu() == cr2::CommandInput::Menu::Sopia) // (what it offers)
-        for (const auto& sc : commandInput.sopiaCommands()) SDL_Log("  sopia %d: MP %d%s", sc.command, sc.mp, sc.selectable ? "" : " (not selectable)");
+        for (const auto& sc : commandInput.sopiaCommands()) SDL_Log("  sopia %d: MP %d%s %s", sc.command, sc.mp, sc.selectable ? "" : " (not selectable)", commandName(sc.command).c_str());
     menuChanged();
 }
 // the menu's choices in order (the buttons selectable, or the targets)

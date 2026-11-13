@@ -1036,7 +1036,8 @@ original's `CalcCommand` for a sopia comes at the launch), and the action's end 
 queue is empty, after its own waits (the attack table's 0.1 s `WaitNextStart` comes after step 12
 in the original; the port does not reorder them). Battle 245, Megiddo's Blessing: "Orlando is hit
 with status effects!" at 5.04 s into the action as before, the next action 4.33 s after it (4.45 s
-before). No reference clip with a status note was checked: the 1.05 s rests on the code.
+before). No reference clip with a status note was checked: the 1.05 s rests on the code (round 45
+checks one).
 
 ### Round 40: which of a pair runs which table, and the pair's delay
 
@@ -1182,6 +1183,24 @@ Cocytus (battle 57, `--flag 61 --input "solo sopia s55 2 attack 2"`) - the caste
 after the banner (was 0.17), the target's 2.00 s after that. The hit follows 2.0 s after the
 caster's camera, as the video's 424 (2.38 s after the banner) and 333 (2.36 s). Chocolate's banner (round 41's 616.90 s) reads
 the same again: it and the camera change together at 616.87 s.
+
+### Round 45: a note on the banner, against the reference video
+
+The video was scanned for banner texts (a mask of the banner strip's white text every second, kept
+when it differs from the last): its first note after an action's name is Darwin's Attach (Blaze) -
+"Blaze was added to Darwin" - at 1733 - 1736 s; the boss fight of rounds 42 - 44 shows none.
+Read 1/30 s apart (frames at 1/15 s for the text): "Attach (Blaze)" on the banner at about
+1732.50 s, the camera on Darwin at 1732.77 s (0.27 s: round 44's six updates), the cut to the
+one it lends Blaze to and the note in the same frame at 1734.87 s, 2.10 s after the caster's camera
+(Banish's 2.02 s: `ActionSopiaWaitLaunch` waits a flat 2.0 s for every bm01 cast - command 51, bm01,
+`eff224` with no hit wait - so the 0.08 s is the device's, not the code's). The note holds till
+1736.17 s - 1.30 s - when the element tutorial's window opens (`Tutorial_Element`, from
+`ActionCommonEventCommandEnd` the first time a command lends an element) and the banner goes: step 12
+waits out the note's 1.05 s, step 8 calls the tutorial, and its script call and window take the few
+updates more. The port queues a sopia's notes at its hit, skipping the name, and waits for the
+queue before the action's end and its tutorials: Darwin's Poison on battle 221's boss (`--flag 61
+--input "solo sopia s73 2 defend"`) - "Poison does not affect ???!" 2.32 s after the name, with the
+target's camera. The note's time and length match; not changed.
 
 ## Original-code evidence
 

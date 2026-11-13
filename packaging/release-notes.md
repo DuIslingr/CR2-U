@@ -35,9 +35,10 @@ reference videos, and their timing now matches:
   damage numbers appear at the chest, a magic barrier shows before turning a spell back on the
   caster, action names stay on the banner until the next action or the end of the turn, and a
   defeated monster vanishes as the blow lands. A fighter still reeling from a hit finishes that
-  motion before taking its turn. Status messages follow the action's name on the banner, a second
-  each, and the action waits for them to finish. A battle (including `--battle`) now fades out with
-  its music before the field fades back in.
+  motion before taking its turn. Using an item, a fighter raises an arm with the item's glow in the
+  hand (before, they just stood there). Status messages follow the action's name on the banner, a
+  second each, and the action waits for them to finish. A battle (including `--battle`) now fades
+  out with its music before the field fades back in.
 - **Results:** the victory pose plays once and holds behind the results (showing whoever landed the
   last blow after a solo turn, both after a Pair turn). EXP fills over 3 s, and level-ups and
   rewards wait for a tap. Escaping takes about 2 s.

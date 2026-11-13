@@ -1071,6 +1071,44 @@ run keeps the new game's members (0 and 2: 0.25 s) unless `--members` gives othe
 is whoever walks the field. Battle 47 (seed 12) runs the Shadows' Break Beat through as before. No
 reference clip of a Shadow pair attack was checked: this rests on the code.
 
+### Round 41: an item's motion, its launch effect, and its end
+
+`action_table_item` (the library's `action_table_item_data`, 0x5afa98): 1, 2, 10, 7, 9, 6, 30,
+32, 33, 3, 34, 3, 12, 11, 8, 9, 14, 78.
+
+**The motion.** `ActionItemStandby` asks for motion 0x12 (`SetNextMotion(.., 0x12, true)`): bi01,
+whatever the command's own motion. The sopia step's 0x11 (bm01) and a monster's 4 (bg01) confirm the
+numbering. The item's command carries bm02, which no fighter has, so the port played nothing: the
+user stood through the whole action. It now plays bi01 (Darwin and Marie 2.60 s, Orlando 3.35 s).
+The motion table gives bi01 a loop (flags 0xf; Marie 1.1 - 2.1 s), which `ActionItemWaitLaunch`'s
+`SetWaitMotion` ends at 2.0 s (`SetMotionLoop(false)`, bb01 next, `EndAnimation`). That is before
+the loop's end for every user, so the port plays the motion once.
+
+**The launch effect.** `ActionItemStandby` passes `GetMotionTimeEffectStart(0x12, 0)` - `0 / 20 +`
+the motion table's effect start, its +0x4c (`vldr s15, [r3, #400]` at 0x36c85c): 1.1 s, Orlando's
+1.15 s - to `ShowCommandLaunchEffect`, which makes the effect wait that long. It is the only caller.
+The port showed Chocolate's `eff104` at the banner; it now shows it at that mark, as the arm goes up.
+Battle 57 with Marie (`--party 1,3 --item 1:3 --flag 62 --input "solo attack 2 items i1 1"`):
+frames 0.3 s in (Marie standing), 1.25 s (her arm up, the glow in her hand) and 2.4 s (the swirl and
+"182"). The video has her arm up 1.35 s after the banner.
+
+**The end.** `ActionItemWaitMotion` (not a revival) waits while the hit's effect is of kind 1 or 2.
+It then waits for the user's motion type to be 1 - `BtlModel::GetMotionType`, by the motion name's
+second letter: `b` and `B` give 1, so bb01 - bb04 -, and only then does `WaitStep(3, 3.0)`. The
+port now waits for the user's stance too. None of the three's bi01 outlasts `eff213`, so the times
+do not change: Marie's Chocolate ends 3.63 s in, and the turn's next banner comes 3.70 s after hers
+(Orlando, battle 57: 3.83 -> 7.50 s).
+
+**The video's 0.5 s, not found.** `ActionMain` runs a task's steps in one update while the step
+changes (`do { ActionCommand } while (step changed && step != 0x4e)`), and the next task starts at
+that update's end once none is in action state 2. So 12, 11, 8, 9, 14 and the next task's 1, 2, 10,
+7, 9, 6 take one update together, and the next banner comes an update or two after step 34
+passes - as in the port. The video's 4.33 s from banner to banner therefore puts the end of step 34
+about 4.2 s in. The user's stance does not explain it: bi01, started at the banner, is over by about
+2.7 s. Left: `eff213`'s length in the original (the port's 1.5 s, the effect gone from the picture
+about 1.15 s after the heal); a script on `Command_End` / `Command_Start` in that battle (step 9 waits
+while one runs); the Executioner's readiness. Not settled.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
@@ -1213,8 +1251,9 @@ animations being linear (assumed, as before).
   the Mirror; the actor's readiness (round 39). Left: a sopia's motion change is still counted from
   the video (3 updates for the party, 5 for a monster), while the code (round 39) gives both the
   same 0.3 s blend - the banner's own delay in the video was not measured; an item's end comes
-  0.5 s sooner after its heal than the video's (the end steps after `ActionItemWaitMotion` - 12, 11,
-  8, 9, 14 - take an update each; the next action's readiness was not checked on that clip). (Round
+  0.5 s sooner after its heal than the video's (round 41: the steps after it and the next action's
+  first steps run in one update; the user's stance is back by about 2.7 s; left `eff213`'s length in
+  the original, a battle script on `Command_End`, the next actor's readiness). (Round
   35 read +0x523: the Pair turn's flag; round 40 which of a pair runs which table.)
 - **The camera's units.** The ease's one-pixel hold is the original's device pixel; the port
   holds within one pixel of the window it draws to. `GetPos_X / _Y` in the port still read the

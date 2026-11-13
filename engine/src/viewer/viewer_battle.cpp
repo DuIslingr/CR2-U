@@ -1902,6 +1902,9 @@ void Viewer::beginShowAction(const ShowAction& a) {
     const bool sopiaNoMotion = sopiaTable && kindLetter == 'm' && (a.command == 0x8f || a.command == 0x90 || a.command == 0x92);
     const bool sopiaWaitsMotion = sopiaTable && !sopiaNoMotion && (kindLetter == 'm' || kindLetter == 'g');
     if (sopiaNoMotion) motion = "bb01";
+    // (ActionItemStandby: SetNextMotion(0x12) - bi01 - whatever the command's own motion; the
+    // item's command has bm02, which no fighter has)
+    if (itemCommand(a.command)) motion = "bi01";
     float length = 0, returned = -1;
     for (Move& m : showMoves) m = Move();
     const int target = a.hits.empty() ? -1 : a.hits.front().target;
@@ -2076,7 +2079,14 @@ void Viewer::beginShowAction(const ShowAction& a) {
         }
         if (!c->launchEffect.empty()) {
             const cr2::EffectSetting& ls = cr2::effectSetting(c->launchEffect);
-            if (ls.pairLocator != 7) launchEffect(c->launchEffect, a.actor, a.partner >= 0); // (ShowCommandLaunchEffect: its +0x32 7 left out - every caller passes true)
+            // (ActionItemStandby: ShowCommandLaunchEffect with GetMotionTimeEffectStart(0x12, 0) -
+            // bi01's effect start in the motion table, 1.1 s / Orlando's 1.15 -: the effect made
+            // waiting, shown that long after - Chocolate's eff104 as the arm goes up)
+            cr2::MotionTimes it;
+            const BattleUnit* iu = showItem ? unitOf(a.actor) : nullptr;
+            if (ls.pairLocator != 7 && iu && cr2::motionTimes(iu->figure, cr2::motionIndex("bi01"), it) && it.effectStart > 0)
+                pendingEffects.push_back({c->launchEffect, a.actor, false, battleClock + it.effectStart});
+            else if (ls.pairLocator != 7) launchEffect(c->launchEffect, a.actor, a.partner >= 0); // (ShowCommandLaunchEffect: its +0x32 7 left out - every caller passes true)
         }
     }
     // its cameras (BtlActionCtrl::SetAttackCamera1 / 2): by the party - its kind (0 / 1 the
@@ -2190,10 +2200,12 @@ void Viewer::updateBattleShow() {
     if (!battleRules || battleFight == 0) return;
     runPendingEffects();
     if (!deaths.empty() && showIndex < showActions.size()) stepDeaths(false); // (ActionDead alongside the action)
-    // (ActionItemWaitMotion: the hit's effect played out and the user standing, then WaitStep(3, 3.0) -
-    // ActionCommonWaitTime against the time since ActionCommonCommandStart)
+    // (ActionItemWaitMotion: the hit's effect played out and the user's motion of type 1 - bb.. -
+    // back, then WaitStep(3, 3.0) - ActionCommonWaitTime against the time since
+    // ActionCommonCommandStart)
     // (both wait on the hit's effect alone - +0x48, ShowCommandHitEffect's -, not the launch's)
-    if (showItem && showHitDone && !hitEffectPlaying() && battleClock - showStart >= 3.0f) showItem = false, showEnd = battleClock + cr2::EventRuntime::kTick;
+    if (showItem && showHitDone && !hitEffectPlaying() && (showIndex >= showActions.size() || fighterReady(showActions[showIndex].actor)) && battleClock - showStart >= 3.0f)
+        showItem = false, showEnd = battleClock + cr2::EventRuntime::kTick;
     if (sopiaVoiceWait && battleClock - showStart >= sopiaLaunch &&
         !(commandVoiceSlot >= 0 && audio.playing(commandVoiceSlot) && battleClock - showStart - sopiaLaunch < 5.0f))
         sopiaVoiceWait = false, showEnd = battleClock + cr2::EventRuntime::kTick;

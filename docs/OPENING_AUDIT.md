@@ -1304,7 +1304,7 @@ animations being linear (assumed, as before).
   same 0.3 s blend - the banner's own delay in the video was not measured; an item's end in the
   video (round 42: a boss battle's `Command_End` and `Command_Start` calls, four updates each - now
   about 4.2 s against the video's 4.33); a boss battle's turn and defeat calls (round 43: three
-  updates each) (Round 35 read +0x523: the Pair turn's flag; round 40 which of a pair runs which
+  updates each). (Round 35 read +0x523: the Pair turn's flag; round 40 which of a pair runs which
   table.)
 - **The camera's units.** The ease's one-pixel hold is the original's device pixel; the port
   holds within one pixel of the window it draws to. `GetPos_X / _Y` in the port still read the

@@ -915,6 +915,12 @@ void Viewer::updateBattleScript(float dt) {
         if (!(battleScriptOk = battleScript->tick())) SDL_Log("battle script: %s", battleScript->error().c_str());
 }
 bool Viewer::battleScriptRunning() const { return battleScript && battleScriptOk && battleScript->running(); }
+// (a battle with its own script - Cr3BattleEvent_SetScript, +0x237a: the bosses' - makes its calls
+// through BtlEvent, updated after the action controller, BtlCommand and BtlTurnEnd: the call's
+// state goes 1, 2, 3, 0 an update each, and the step waiting on IsRunning sees 0 the update after.
+// A step machine taking one step an update - BtlCommand, BtlTurnEnd, ActionDead - waits three
+// updates more than without a script; the action's table, looping its steps, four)
+bool Viewer::ownBattleScript() const { return battleScript && battleScriptOk && battleScript->own(); }
 void Viewer::startFight(int mode, uint32_t seed) {
     battleFight = mode;
     glassRng.seed(seed); // (the game's lrand48: seeded by the clock)
@@ -1091,6 +1097,8 @@ void Viewer::stepBattleShow() {
         if (battleRules->turn() == 0 && (battleScriptRunning() || battleClock < openingTurnAt)) break; // (StepBattleIn's 11 .. 14)
         battleRules->beginTurn();
         battleStep = BattleStep::TurnChoose;
+        // (BtlCommand::StepInit's Turn_Start, StepEvent's wait: three updates more)
+        if (ownBattleScript()) showEnd = battleClock + 3 * cr2::EventRuntime::kTick;
         // (BtlCommand::StepInit: an armoured monster standing - its +0x48 bit 0 - the first time,
         // flag 54)
         for (int m = 2; m < 5; ++m) {
@@ -1203,7 +1211,12 @@ void Viewer::stepBattleShow() {
                 if (e.healMp > 0) showNumber(e.target, e.healMp, 60, true);
                 SDL_Log("    %s: %d poison, %d HP back, %d MP back", battleRules->fighter(e.target).name.c_str(), e.damage, e.heal, e.healMp);
             }
-            if (!battleRules->turnEndEvents().empty()) showEnd = battleClock + 1.5f; // (BtlTurnEnd::Update: step 4, 1.5 s, when any was applied - else straight to 5)
+            // (BtlTurnEnd::Update: step 1 Turn_End, 2 its wait - three updates more with the battle's own
+            // script -, 3 the poison and the pools, 4 1.5 s when any was applied, else straight to 5.
+            // The port shows the numbers at once, so with a script they come those updates early)
+            const float turnEndScript = ownBattleScript() ? 3 * cr2::EventRuntime::kTick : 0.0f;
+            if (!battleRules->turnEndEvents().empty()) showEnd = battleClock + turnEndScript + 1.5f;
+            else if (turnEndScript > 0) showEnd = battleClock + turnEndScript;
             SDL_Log("turn over; gauge %d, charge %d; MP %d %d (%.2f s)", battleRules->gauge(), battleRules->charge(), battleRules->fighter(0).mp, battleRules->fighter(1).mp, battleClock);
             battleStep = BattleStep::TurnBegin;
             break;
@@ -1230,7 +1243,7 @@ void Viewer::stepBattleShow() {
         // calls Command_Start in step 7 and waits in step 9 while BtlEvent::IsRunning: BtlEvent,
         // updated after the action controller, calls it that update, then its state goes 2, 3,
         // 0 an update each, and step 9 sees 0 the update after - four updates before the banner)
-        if (battleScript && battleScriptOk && battleScript->own()) showEnd = battleClock + 4 * cr2::EventRuntime::kTick;
+        if (ownBattleScript()) showEnd = battleClock + 4 * cr2::EventRuntime::kTick;
         battleStep = BattleStep::ActionDo;
         break;
     case BattleStep::ActionDo: {
@@ -1277,7 +1290,7 @@ void Viewer::stepBattleShow() {
         }
         battleRules->endAction();
         // (the same for Command_End: steps 8 and 9, four updates, then 14)
-        if (battleScript && battleScriptOk && battleScript->own()) showEnd = battleClock + 4 * cr2::EventRuntime::kTick;
+        if (ownBattleScript()) showEnd = battleClock + 4 * cr2::EventRuntime::kTick;
         analyze.stage = 0, deathsQueued = false;
         battleStep = BattleStep::ActionStart;
         break;
@@ -1479,6 +1492,15 @@ bool Viewer::stepDeaths(bool collect) {
         if (d.stage == 0 && m && m->deathMotion && battleClock - d.hitAt < motionLength(*u, "bd01")) {
             wait = true;
             continue;
+        }
+        // (action_table_dead: 67 Standby, 69 WaitAwake, 68 DeadEvent - Dead, with the battle's own
+        // script -, 9 its wait, 70 DeadStart: three updates more with the script)
+        if (d.stage == 0 && ownBattleScript()) {
+            if (d.scriptUntil < 0) d.scriptUntil = battleClock + 3 * cr2::EventRuntime::kTick;
+            if (battleClock < d.scriptUntil) {
+                wait = true;
+                continue;
+            }
         }
         if (d.stage == 0) {
             d.start = battleClock;

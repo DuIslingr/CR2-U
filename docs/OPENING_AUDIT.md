@@ -1143,6 +1143,23 @@ battle 221: its script keeps the Items command off early on (script switch 45).
 Not followed: `Turn_Start`, `Turn_End` and `Dead` go through the same `BtlEvent` calls in a boss
 battle and should cost the same four updates; the port still makes them at once.
 
+### Round 43: a boss battle's turn and defeat calls
+
+The other `BtlEvent` calls a battle with its own script makes: `Turn_Start` from
+`BtlCommand::StepInit` (then step 2, `StepEvent`, waits while `IsRunning`), `Turn_End` from
+`BtlTurnEnd::Update`'s case 1 (case 2 waits), `Dead` from the dead table's 68 `ActionDeadEvent`
+(`action_table_dead_data` 0x5af9f4: 67, 69, 68, 9, 70 .. 76; its 9 waits). `BtlCommand` and
+`BtlTurnEnd` take one step an update (`Update` dispatches the current one) and `ActionDead` runs
+`ActionCommandMain` once an update for each one downed; all three are registered before `BtlEvent`.
+So the waiting step, first tried the update after the call, passes once `BtlEvent` has gone 1, 2, 3,
+0 - the fourth update after the call instead of the first: three updates more, against the action
+table's four (it loops its steps within an update). The port made these calls at once; it now holds
+three updates after each in a battle with its own script: the menu after `Turn_Start`, the next turn
+(and the poison's 1.5 s) after `Turn_End`, a defeat's `DeadStart` after `Dead`. The poison's and the
+pools' numbers still show at the turn's end at once, those three updates before the original's.
+Battle 221 (`--fight solo`): turn 1 at 1.50 s (was 1.35), turn 2 at 12.95 s (12.63). Battle 57
+unchanged. `Battle_Start` (`StepBattleIn`) and `Battle_End` were not followed.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
@@ -1286,9 +1303,9 @@ animations being linear (assumed, as before).
   the video (3 updates for the party, 5 for a monster), while the code (round 39) gives both the
   same 0.3 s blend - the banner's own delay in the video was not measured; an item's end in the
   video (round 42: a boss battle's `Command_End` and `Command_Start` calls, four updates each - now
-  about 4.2 s against the video's 4.33); a boss battle's `Turn_Start`, `Turn_End` and `Dead` calls
-  are still made at once. (Round 35 read +0x523: the Pair turn's flag; round 40 which of a pair runs
-  which table.)
+  about 4.2 s against the video's 4.33); a boss battle's turn and defeat calls (round 43: three
+  updates each) (Round 35 read +0x523: the Pair turn's flag; round 40 which of a pair runs which
+  table.)
 - **The camera's units.** The ease's one-pixel hold is the original's device pixel; the port
   holds within one pixel of the window it draws to. `GetPos_X / _Y` in the port still read the
   clamped scroll (`shownX_`), the original's the unclamped +0x30.

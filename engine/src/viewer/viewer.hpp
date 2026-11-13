@@ -874,6 +874,7 @@ struct Viewer {
     bool battleScriptOk = true;
     void updateBattleScript(float dt);
     bool battleScriptRunning() const;
+    bool ownBattleScript() const;
 
     std::vector<std::pair<int, int>> stateArg; // (--state fighter:state)
     int chargeArg = -1;                        // (--charge: the gauge to begin with)
@@ -962,6 +963,7 @@ struct Viewer {
         int f = -1, stage = 0;
         float start = 0;
         float hitAt = 0; // (the blow that downed it: CheckDead, in Hit / Damage)
+        float scriptUntil = -1; // (the Dead call's wait, with the battle's own script)
     };
     std::vector<Death> deaths;
     bool deathsQueued = false;

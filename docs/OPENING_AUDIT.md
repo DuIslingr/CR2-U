@@ -1202,6 +1202,19 @@ queue before the action's end and its tutorials: Darwin's Poison on battle 221's
 --input "solo sopia s73 2 defend"`) - "Poison does not affect ???!" 2.32 s after the name, with the
 target's camera. The note's time and length match; not changed.
 
+### Round 46: the window's +0x2169
+
+`EvtWindow::NextPage` clears the page and reads it into the window's `+4`
+(`add r5, r0, #4`; `EvtWindowPage::Clear`, then `EvtWindowMessage::ReadPage(.., r5)`), so the
+window's +0x216c is the page's +0x2168 - the voice `ShowMessage` plays - and the window's +0x2169,
+its second voice test, is the page's +0x2165. `Clear` stores the page's +0x2158 .. +0x2165 a byte at
+a time (0x3a0d38 ..: 0, 0, then +0x2160 .. +0x2163 0, +0x2164 1 - the window's +0x2168, the page's end -
+and +0x2165 0) and `EvtWindowPage::NextBlock` sets +0x2165 to 0 again (`strb r8, [r4, r7]`, r8 0,
+at 0x3a0dcc). Nothing else stores to it: no `0x2165` / `0x2169` offset but those and reads
+(`UpdatePage`, `CheckDisplayEnd` read the window's +0x2165, the page's +0x2161), and no byte store
+at `#0x65` / `#0x69` or wider store over it in the window's classes. So the test always finds it
+clear, as the port takes it. Settled.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
@@ -1361,10 +1374,6 @@ animations being linear (assumed, as before).
 - **The skipped voice, run.** No headless run held a skip across a voiced message: the opening's
   two are skipped whole, and `--input fast` takes hold only once a button shows, after the
   message's voice. Checked by reading only; the opening without a skip still voices 624 and 625.
-- **+0x2169.** `ShowMessage`'s second voice test is a window flag; the page's +0x2168 is the
-  message's voice (round 33), and the flag likely not part of it; what sets it was not read. The
-  port takes it as clear.
-
 ## Checks
 
 `ctest --test-dir engine/build -R event-reset` (the tap's 0.15 s and the two updates added to its

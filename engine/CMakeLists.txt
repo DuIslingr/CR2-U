@@ -314,7 +314,18 @@ foreach(f shade_flags.h shading.glsl)
 endforeach()
 add_custom_target(cr_glsl DEPENDS ${GLSL_INCS})
 
-set(VIEWER_SOURCES src/viewer/main.cpp src/viewer/audio.cpp src/viewer/setup.cpp src/gfx/gl.cpp src/gfx/gl_device.cpp src/gfx/vk_device.cpp)
+set(VIEWER_SOURCES
+    src/viewer/main.cpp
+    src/viewer/viewer_gfx.cpp
+    src/viewer/viewer_battle.cpp
+    src/viewer/viewer_event.cpp
+    src/viewer/viewer_menus.cpp
+    src/viewer/audio.cpp
+    src/viewer/setup.cpp
+    src/gfx/gl.cpp
+    src/gfx/gl_device.cpp
+    src/gfx/vk_device.cpp
+)
 if(CR_VULKAN)
     list(APPEND VIEWER_SOURCES src/gfx/vk_fsr3.cpp src/gfx/vk_dlss.cpp src/gfx/vk_fsr4.cpp)
     if(APPLE) # (MetalFX's upscaler: Objective-C++)

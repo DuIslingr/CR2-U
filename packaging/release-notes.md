@@ -29,11 +29,18 @@ reference videos, and their timing now matches:
   leader, and characters turn smoothly.
 - **Encounters:** the leader takes two more steps before the wipe, which takes 0.25 s; the battle
   starts 1.4 s after the encounter.
-- **Battles:** the first turn comes 1.3 s in. Attacks, items, spells and sopia skills are paced and
-  framed as in the original, and damage numbers appear at the chest. A battle now fades out with its
-  music before the field fades back in.
-- **Results:** EXP fills over 3 s, and level-ups and rewards wait for a tap. Escaping takes about
-  2 s.
+- **Battles:** the first turn comes 1.3 s in. Attacks, items, spells (monsters' too), awakenings and
+  sopia skills are paced and framed as in the original: fighters run in again against two small
+  monsters instead of swinging in place, the second attack angle keeps the attacker in the shot,
+  damage numbers appear at the chest, a magic barrier shows before turning a spell back on the
+  caster, action names stay on the banner until the next action or the end of the turn, and a
+  defeated monster vanishes as the blow lands. A fighter still reeling from a hit finishes that
+  motion before taking its turn. Status messages follow the action's name on the banner, a second
+  each, and the action waits for them to finish. A battle (including `--battle`) now fades out with
+  its music before the field fades back in.
+- **Results:** the victory pose plays once and holds behind the results (showing whoever landed the
+  last blow after a solo turn, both after a Pair turn). EXP fills over 3 s, and level-ups and
+  rewards wait for a tap. Escaping takes about 2 s.
 - A line's voice stays quiet while you fast-forward or skip.
 
 ### Graphics

@@ -1160,6 +1160,27 @@ pools' numbers still show at the turn's end at once, those three updates before 
 Battle 221 (`--fight solo`): turn 1 at 1.50 s (was 1.35), turn 2 at 12.95 s (12.63). Battle 57
 unchanged. `Battle_Start` (`StepBattleIn`) and `Battle_End` were not followed.
 
+### Round 44: a sopia's motion change, measured again
+
+Earlier rounds read Marie's Banish banner at 638.60 s and the boss's Healing at 642.80 s, and
+the port waited 3 updates (the party) and 5 (a monster) before the caster's camera. Read again
+frame by frame, a frame difference over the banner's strip and over the whole picture, 1/30 s
+apart: the banner turns from "Break Beat" to "Banish" between 638.45 and 638.48 s (frames at 638.42
+and 638.55 s show the two names) and the camera cuts to Marie at 638.78 s - 0.30 s; "Healing"
+comes between 642.75 and 642.78 s and the camera cuts at 643.05 s - 0.28 s. The two are the same.
+
+That is the code's wait (round 39): `ActionSopiaStandby` asks for bm01 (a monster's bg01) with the
+start blend and `SetMotionBlendStart`, so the next update's `BtlMotionCtrl` starts it blending
+(`SetAnimationBlend(0.3)`, +0x68 set); `ActionSopiaWaitMagicMotion` waits for the model's name and
++0x68 clear, which `BtlModel::UpdateBlendAnimation` (`BtlModel::Update`, the model controller near
+the update's end) does once its summed time passes 0.3 s; the camera starts as the step moves on.
+The banner, queued the update the request is made, shows the next. Every party member's bm01 and
+the bosses' have the blend bit (flags 0xf). The port now waits six updates for both: Darwin's
+Cocytus (battle 57, `--flag 61 --input "solo sopia s55 2 attack 2"`) - the caster's camera 0.32 s
+after the banner (was 0.17), the target's 2.00 s after that. The hit follows 2.0 s after the
+caster's camera, as the video's 424 (2.38 s after the banner) and 333 (2.36 s). Chocolate's banner (round 41's 616.90 s) reads
+the same again: it and the camera change together at 616.87 s.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
@@ -1299,13 +1320,11 @@ animations being linear (assumed, as before).
   Nothing else moves the scroll in mode 1, so it holds there till `SetMode(0)`.
 - **The action controller's other waits.** Read and followed (rounds 27 - 33): the attack's, a
   pair's, the one not done's, the revival's, the turn's end, an item's, the whole sopia table with
-  the Mirror; the actor's readiness (round 39). Left: a sopia's motion change is still counted from
-  the video (3 updates for the party, 5 for a monster), while the code (round 39) gives both the
-  same 0.3 s blend - the banner's own delay in the video was not measured; an item's end in the
-  video (round 42: a boss battle's `Command_End` and `Command_Start` calls, four updates each - now
-  about 4.2 s against the video's 4.33); a boss battle's turn and defeat calls (round 43: three
-  updates each). (Round 35 read +0x523: the Pair turn's flag; round 40 which of a pair runs which
-  table.)
+  the Mirror; the actor's readiness (round 39). Left: an item's end in the video (round 42: a boss
+  battle's `Command_End` and `Command_Start` calls, four updates each - now about 4.2 s against the
+  video's 4.33); a boss battle's turn and defeat calls (round 43: three updates each). (Round 44: a
+  sopia's motion change - six updates, the video's banner times read again. Round 35 read +0x523:
+  the Pair turn's flag; round 40 which of a pair runs which table.)
 - **The camera's units.** The ease's one-pixel hold is the original's device pixel; the port
   holds within one pixel of the window it draws to. `GetPos_X / _Y` in the port still read the
   clamped scroll (`shownX_`), the original's the unclamped +0x30.

@@ -2007,15 +2007,20 @@ void Viewer::beginShowAction(const ShowAction& a) {
     // the hit's effect; 39 WaitHit the effect's +0x40 frames, then the numbers; 40 WaitEffect
     // till the hit's effect has played out; 41 WaitMotion 0.2 s - 0.7 for command 0x3e -; 42
     // WaitVoice. With no one to strike Launch goes to 42 at once. The reference video: Marie's
-    // Banish - the caster's camera 0.17 s after the banner, the 424 2.27 s, the next banner
-    // 1.93 s after that; the Executioner's Healing - its camera 0.27 s after the banner, the
-    // 333 2.33 s, the turn's end 2.17 s after that)
+    // Banish - the caster's camera 0.30 s after the banner, the 424 2.38 s, the next banner
+    // 1.93 s after that; the boss's Healing - its camera 0.28 s after the banner, the 333 2.36 s,
+    // the turn's end 2.17 s after that)
     showSopia = actionSopiaTable = sopiaTable;
     sopiaStruck.clear();
     for (const auto& h : a.hits)
         if (std::find(sopiaStruck.begin(), sopiaStruck.end(), h.target) == sopiaStruck.end()) sopiaStruck.push_back(h.target);
-    // (a bm01 with no one to strike: the motion asked for, +0x18 left 0 - no wait for it)
-    sopiaCast = sopiaWaitsMotion && !(kindLetter == 'm' && sopiaStruck.empty()) ? (a.actor < 2 ? 3 : 5) * cr2::EventRuntime::kTick : 0.0f;
+    // (36 waits for the motion's name and its blend's end, +0x68: the change in the next update's
+    // BtlMotionCtrl - SetMotionBlendStart -, then BtlModel::UpdateBlendAnimation's 0.3 s, done
+    // once its time passes it - the party's and the monsters' alike, every bm01 / bg01 blending in;
+    // the banner, set the same update, shows the next: six updates from it. The video: Marie's
+    // Banish 0.30 s, the boss's Healing 0.28 s. A bm01 with no one to strike: the motion asked
+    // for, +0x18 left 0 - no wait for it)
+    sopiaCast = sopiaWaitsMotion && !(kindLetter == 'm' && sopiaStruck.empty()) ? 6 * cr2::EventRuntime::kTick : 0.0f;
     sopiaLaunch = sopiaCast + (kindLetter == 'x' ? 0.0f : 2.0f);
     // (no one struck: Launch on to 42 at once - ActionSopiaWaitVoice, while the command's voice
     // plays, 5 s at most)
@@ -2140,8 +2145,8 @@ void Viewer::beginShowAction(const ShowAction& a) {
         // as its target's would be - 11 a pair's -, moved to its DummyCP unless its size is 4;
         // 37 ActionSopiaWaitLaunch, at its end: for one target of kind 0x10 the pattern's
         // GetSet, of kind 3 none, by motion types 2 / 11 (bg01, bx01) none, else - and for more
-        // than one - SetTargetCamera(false). The reference video, 2dy_mefNhEI 638.6 s: Marie's
-        // Banish - the banner, on her 0.17 s later, on the Executioner 2.03 s after.)
+        // than one - SetTargetCamera(false). The reference video, 2dy_mefNhEI 638.47 s: Marie's
+        // Banish - the banner, on her 0.30 s later, on the boss 2.03 s after.)
         TimedCamera caster;
         caster.at = sopiaCast;
         int k = -1;

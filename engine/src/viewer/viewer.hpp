@@ -1312,6 +1312,7 @@ struct Viewer {
         // panel (0xb) once it is gone (0x15: the fifth))
         float stepAt = -1, stepFrom = 0;
         int stepTicks = 0, stepTo = 0, stepAsk = 0;
+        bool contScripted = false; // (Tutorial_ContData called: once a title - GameTitleMenu +0x8c)
         float divaIn = 0, divaOut = -1; // (divaBtn_io: once from the title's start - coming in -, back from the tap - going)
         std::string notice; // (CR2-U's: told once the buttons are back - a save that couldn't be read)
     } titleMenu;

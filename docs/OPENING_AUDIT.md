@@ -2062,6 +2062,17 @@ awakenings, advents) drag too, and a press on the track off the thumb moves the 
 the middle where the original keeps a top row. Not run with a pointer (the headless runs drive the
 lists by keys).
 
+### Round 103: the title's continue question
+
+`GameTitleMenu` state 9 (Start: the buttons out): with continue data, `Tutorial_ContData` called
+once (+0x8c set, never cleared while the menu lives), then 10 the update after: the calendar
+(`cont.dat`), the choice with its own sound off, 0x68's message. Its Yes (state 5): SE 0xbe,
+`StopBGM(10)`, the choice ended, state 6 once it is gone - the data loaded, `Cr3FadeOut(0, 20)`,
+0x23's second -; its No: SE 0xb4, the calendar closed, state 7 once the choice is gone, the panel
+(0xb). The port's answers already were these (rounds 85, 93: Yes 0xbe and 1.25 s to the end, No
+0xb4 and the panel in the fifth update); it called `Tutorial_ContData` each time Start reached the
+question. Now once a title.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

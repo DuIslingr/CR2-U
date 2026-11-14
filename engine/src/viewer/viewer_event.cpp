@@ -954,7 +954,7 @@ void Viewer::updateTitle(float dt) {
     } else if (t.stage == 10 && age >= titleAnimLength("title", "title_in")) {
         t.start = uiClock;
         if (saveExists("cont.txt")) { // (the continue data: Tutorial_ContData, its calendar and question)
-            titleScript("Tutorial_ContData");
+            if (!t.contScripted) titleScript("Tutorial_ContData"), t.contScripted = true; // (state 9: once, +0x8c)
             titleAsk(104);
         } else {
             t.stage = 6;

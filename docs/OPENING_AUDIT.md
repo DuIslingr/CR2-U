@@ -1355,6 +1355,18 @@ tab back). Not followed: the child menus' own closes (the title, the status wind
 backwards with the rest here; the Emergency Exit's result 6, still at once; the opening's update
 (the camp made the update after the press, stepped once before its first drawing).
 
+### Round 55: the camp's way in
+
+`InterfaceMain` +0x1c is a touch lock: while above 0 `TouchSingleEvent` drops every touch
+(`TouchFlagInit`), and `Update` counts it down at its end. `SetCampWindowParameter` sets it to 30;
+`CampMenu::Update`'s state 0 clears it once `campBtn_io`'s opening has played (0.15 s). The camp is
+made by `FldCamp::Execute` in the update after the tab's press, before the interface's update,
+which steps it at once: drawn first at 0.05 s, the update after the press; ended in the third
+update after it, after that update's touches were read - the first taken in the fourth. The port
+drew the camp in the press's own update and took taps and keys at once; now (`campOpenedAt`) it
+draws nothing of it before the next update and takes none before the fourth. `--play d0104 --input
+"tab camp back"` as before (the tokens 0.4 s apart).
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

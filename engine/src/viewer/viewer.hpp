@@ -1563,6 +1563,11 @@ struct Viewer {
     // then Update's 7 and InterfaceMain's +0xbc = 1 the update after; FldMain's step 5 sees it the
     // next (CallAtMenuFinished: step 1) and step 1 gives control the one after. campCloseAt: the
     // release's clock; campCloseTicks: the updates since)
+    // (the camp opened: FldCamp::Execute makes it the update after the tab's press, stepped once
+    // before it is drawn; InterfaceMain +0x1c, 30, holds touches off till CampMenu's opening
+    // campBtn_io - 0.15 s - has played: the first taken in the fourth update after the press's)
+    float campOpenedAt = -10;
+    bool campOpening() const { return uiClock - campOpenedAt < 4 * cr2::EventRuntime::kTick; }
     float campCloseAt = -1, campCloseFrom = 0;
     int campCloseTicks = 0;
     float campPartTime(float length) const;

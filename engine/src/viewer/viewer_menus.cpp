@@ -1704,7 +1704,7 @@ void Viewer::fieldTabTap(int area) {
     }
 }
 void Viewer::openCamp() {
-    campOpen = true, campStart = uiClock, campList = 0, campCursor = 0, campCloseAt = -1, campCloseTicks = 0;
+    campOpen = true, campStart = campOpenedAt = uiClock, campList = 0, campCursor = 0, campCloseAt = -1, campCloseTicks = 0;
     fieldTabOpen = false, fieldTabAt = -10;
     optionsOpen = optionsAsk = false, manualStage = 0;
     SDL_Log("camp: open");
@@ -1792,6 +1792,7 @@ auto Viewer::statusOf(int ch) const -> StatusShown {
 }
 void Viewer::drawCamp(const Mat4& view, const Mat4& proj, int w, int h) {
     tapRects.clear();
+    if (uiClock - campOpenedAt < cr2::EventRuntime::kTick) return; // (made the update after the press)
     if (manualStage == 1) return drawManualList(view, w, h);
     if (manualStage == 2) return; // (the tutorial's picture and windows alone)
     if (optionsAsk) return drawOptionsAsk(view, w, h);
@@ -2631,7 +2632,7 @@ void Viewer::drawPubRequest(const Mat4& view, int w, int h) {
 
 // a camp button pressed (CampMenu::TouchSimpleRelease: 0xb4; InterfaceMain's camp step by it)
 void Viewer::campPress(int id) {
-    if (campCloseAt >= 0) return; // (state 1 on: the menu closing)
+    if (campCloseAt >= 0 || campOpening()) return; // (state 1 on: the menu closing; or still opening, +0x1c)
     if (campUse) return campUseTap(id);
     if (campLink) {
         if (id == 100) audio.playSe(0xb5, false), campLink = 0, campStart = uiClock;
@@ -2680,6 +2681,7 @@ void Viewer::campPress(int id) {
     }
 }
 void Viewer::campKey(SDL_Keycode k) {
+    if (campCloseAt >= 0 || campOpening()) return;
     keysUsed = true;
     if (optionsKey(k)) return;
     if (campUse) { // (whom: Left / Right, Return; how many: Left / Right, Return yes, Backspace no)

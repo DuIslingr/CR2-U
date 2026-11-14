@@ -2005,6 +2005,18 @@ colour while the finger is on them (`backLook`). A list's own back button
 (`ScrollListBackButton::ChangeTapButtonColor`, from `ScrollListMenu::TouchSimplePress`) does the same
 with `PRG_colorC`; the port's `scrlBack` too now.
 
+### Round 99: the party NPCs' fidget
+
+`FldNPC::CheckIdleAnime` (an NPC that is one of the party, c001 .. c006): its count +0x2c gains 1 a
+call and, at the `lrand48() % 1000 + 400` drawn last time, plays its fn02 once (none while flag
+1930 is on). It is called from `FldNPC::Update`, which `FldMain::GimmickDataUpdate` runs from
+`FldMain::Update` - once a game update. So the wait is 400 .. 1399 updates, 20 to 70 s. The port
+took the counts as 30ths (13 to 47 s). Now updates. The rest of the sweep for counts read as frames
+(the port's comments and constants naming frames, 30ths or 60ths): the battery's 20 (updates, 1 s -
+the port had it so), the effects' delays and hit waits (x 0.05), the script's `WaitFrame`, the
+fades', the quake's and the camera moves' frames (updates), the encounter wipe (checked against the
+reference video, round 19) - all as the port already counts them.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

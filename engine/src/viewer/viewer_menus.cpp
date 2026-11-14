@@ -1048,7 +1048,7 @@ void Viewer::drawResidents(const float* mvp) {
         drawFigure(f, mvp);
     }
 }
-float Viewer::fidgetWait() { return float(encountRandom() % 1000 + 400) / 30.0f; }
+float Viewer::fidgetWait() { return float(encountRandom() % 1000 + 400) * cr2::EventRuntime::kTick; } // (counted an update at a time: FldNPC::Update, from FldMain::GimmickDataUpdate)
 // where a turn's target is ("player", else a gimmick's id or name)
 bool Viewer::gimmickTarget(const std::string& target, float& x, float& z) const {
     if (target == "player") return x = player[0], z = player[2], true;

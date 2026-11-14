@@ -550,7 +550,7 @@ struct Viewer {
     std::vector<int> gimmickColor;   // (the colours each wears: ChangeModelColor's, -1 its own)
     std::vector<bool> gimmickShadow; // (an NPC's or a box's: its FldShadow)
     // FldNPC::CheckIdleAnime: an NPC that is one of the party (c001 .. c006) plays its fn02 once
-    // each 400 .. 1399 frames (lrand48 % 1000 + 400, 30 a second), then its fn01 again - none once
+    // each 400 .. 1399 updates (lrand48 % 1000 + 400: 20 to 70 s), then its fn01 again - none once
     // flag 1930 is on as its time comes (its counter run past)
     struct Fidget {
         bool party = false, playing = false;
@@ -2099,7 +2099,7 @@ struct Viewer {
     void partyKey(SDL_Keycode k);
     void drawParty(const Mat4& view, const Mat4& proj, int w, int h);
     void drawFieldUi(int w, int h);
-    // battery_id at a frame by the device's power (BatteryWindowMenu::Update, every 20 frames:
+    // battery_id at a frame by the device's power (BatteryWindowMenu::Update, every 20 updates - 1 s:
     // charging - 0.35 full, 0.3 under 30%, 0.25 under 60%, else 0.2; charged 0.2; discharging 0.15
     // under 30%, 0.1 under 60%, else 0.05; unknown 0) - SDL's power info; a machine without a
     // battery as charged

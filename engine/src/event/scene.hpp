@@ -44,6 +44,11 @@ struct EventModel {
     // blendSeconds (EvtMotionManager's two slots, linear)
     std::string blendFrom;
     float blendFromTime = 0, blendSeconds = 0;
+    // EvtMotionManager +0x1c left set: a ChangeAnimator in the update of a ChangeAnimatorBlend,
+    // before the manager's first update, binds its motion but leaves the blend's flag, and Update
+    // steps only the blend's animator - so the motion stays on its first frame till a later blend
+    // runs to its end
+    bool held = false;
     // its place on its locator: the scene's time, and where a move ends (SetMove)
     float sceneTime = 0, moveEnd = 0;
     bool moving = false;
@@ -67,6 +72,10 @@ struct EventModel {
     // about y to face the other over the frames, then held so
     bool turned = false;
     float turnFrom = 0, turnTo = 0, turnSeconds = 0, turnTime = 0;
+    // (FldDirectionManager, an update at a time: the count, its N, the yaw it left; still turning)
+    int turnCount = 0, turnUpdates = 0;
+    float turnYaw = 0;
+    bool turnActive = false;
     // its shadow (EvtModel::Init: a FldShadow for a c / v model, shown; EvtScene.ShadowVisible)
     bool shadow = true;
     // ChangeModelColor(model, n) (Cr3UtilMakeChangeTextureName: m<its number><a .. d>01 and its

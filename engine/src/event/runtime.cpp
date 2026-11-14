@@ -66,8 +66,20 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     // ChangeAnimator(model, "e826", loop): the model plays <figure>e826 from its start
     vm.setNative("EvtScene", "ChangeAnimator", [this](NativeCall& c) {
         if (EventModel* m = scene_.model(c.string(0))) {
-            m->animation = m->figure + c.string(1);
-            m->loop = c.boolean(2, true);
+            // (EvtMotionManager::SetMotion's direct path - blend -1 - binds it in slot 1 but leaves a
+            // running blend's state, its count zeroed: the next Update ends that blend, setting the
+            // held motion to the blend's target, now none, and slot 1 to nothing (asm 0x3a300c) -
+            // the model back on its own animation. In the blend's own update, before its first
+            // Update, the motion is bound but never stepped: `held`)
+            const bool running = m->blendSeconds > 0 && m->animTime > 0 && m->animTime <= m->blendSeconds + 1e-4f;
+            const bool pending = m->blendSeconds > 0 && m->animTime <= 0;
+            if (running) {
+                m->animation.clear(), m->loop = true, m->held = false;
+            } else {
+                m->animation = m->figure + c.string(1);
+                m->loop = c.boolean(2, true);
+                if (pending) m->held = true;
+            }
             m->animTime = 0;
             m->blendSeconds = 0;
         }
@@ -80,7 +92,7 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
             // (EvtMotionManager::SetMotion blends only from a motion it already holds, +0x24 - none
             // till a first ChangeAnimator(Blend): the figure's own animation is switched from at once)
             m->blendFrom = m->animation;
-            m->blendFromTime = m->animTime;
+            m->blendFromTime = m->held ? 0.0f : m->animTime;
             m->blendSeconds = m->animation.empty() ? 0.0f : std::max(c.number(3), 0.0f);
             m->animation = m->figure + c.string(1);
             m->loop = c.boolean(2, true);

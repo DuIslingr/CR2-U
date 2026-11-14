@@ -371,7 +371,8 @@ void Viewer::poseEventModels(cr2::EventRuntime& ev) {
         }
         f.place = ev.scene().placeAt(m, eventLead());
         f.tint[3] = m.alpha(eventLead()); // (ChangeAlpha)
-        pose(f, m.animTime + eventLead(), m.loop);
+        // (held, no blend running: its first frame - EvtMotionManager +0x1c, only a blend's target steps)
+        pose(f, m.held && m.blendSeconds <= 0 ? 0.0f : m.animTime + eventLead(), m.loop);
     }
 }
 
@@ -475,7 +476,8 @@ void Viewer::loadMessageWindow(const std::string& fontPath, std::vector<uint8_t>
                                                                        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
                                                                        "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Bold.ttc",
                                                                        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-                                                                       "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"})};
+                                                                       "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                                                                       "/system/fonts/NotoSansCJK-Regular.ttc"})}; // (Android's)
     if (fallbacks[0].empty())
         fallbacks = {cr2::TextRasterizer::firstFont({winFonts + "malgunbd.ttf", winFonts + "malgun.ttf",
                                                      "/System/Library/Fonts/AppleSDGothicNeo.ttc"}),

@@ -2340,6 +2340,27 @@ deaths waiting at DeadEvent while the script runs, and the next action after bot
 (T01_pub_2901, both Legions down) now comes while the second is still standing; run headless with
 both at 1 HP, the talk plays and the battle is won.
 
+### Round 114: the vista models' motion and turn edge cases
+
+Checked against `EvtMotionManager::SetMotion` / `Update` and `EvtModel::Update`; fixed:
+- A plain `ChangeAnimator` while a `ChangeAnimatorBlend` counts (16 times over the 70 events played
+  headless, e.g. v001 e001 7.65 s into a 10 s blend, v101 e503 1.4 s into 5 s): the direct path binds
+  its motion in slot 1 and zeroes the count (+0x14) but leaves the blend's state (+4 100, +0x1c), so
+  the next `Update` ends that blend there and then - the held motion (+0x24) set to the blend's
+  target, now none, and slot 1 bound to it (asm 0x3a300c: r2 = +0x28 = 0). The model goes back to its
+  own animation in slot 0 (`EvtModel::CreateModel`'s base animator), and the next blend switches at
+  once. A `ChangeAnimator` in the very update of the blend's call, before its first `Update`, binds
+  its motion but leaves +0x1c set, so `Update` steps only the blend's animator: the motion stays on
+  its first frame till a later blend runs to its end. The port had switched cleanly in both; it now
+  does as the original (`EventModel::held`).
+- A model's `ChangeDirection` while it follows a `SetMove`: each update `Cr3EvtSceneSetPosRot`
+  writes the locator's rotation first, then `FldDirectionManager::Update` slerps the figure's
+  rotation toward the target by count / N - so on a move each update's turn starts from the
+  locator's, its share growing straight, and once the count is through, the next update's locator
+  rotation is back over it. Standing, each step starts from the last (the compounding 0.1, 0.28, 0.5
+  .. of 10). The port computed the compounding share from where the turn began whatever the model
+  did; the turn is now stepped an update at a time from the right start.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

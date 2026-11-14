@@ -93,10 +93,16 @@ namespace {
 void hold(const EventModel& m, Mat34& p, float lead) {
     if (m.pinned) p.m[3] = m.pin[0], p.m[7] = m.pin[1], p.m[11] = m.pin[2];
     if (!m.turned) return;
-    const int frames = int(m.turnSeconds / 0.05f + 0.5f);
-    const float a = frames > 0 ? directionShare((m.turnTime + lead) / 0.05f, frames) : 1.0f;
-    float d = std::remainder(m.turnTo - m.turnFrom, 6.2831853f); // (the shorter way round)
-    const float yaw = m.turnFrom + d * a;
+    // (the yaw the last update left; between two updates, toward the next one's - from the
+    // locator's own turn there while it moves, else from this)
+    float yaw = m.turnYaw;
+    if (m.turnActive && lead > 0) {
+        const int next = m.turnCount + 1;
+        const float share = next >= m.turnUpdates ? 1.0f : float(next) / float(m.turnUpdates);
+        const float from = m.moving ? std::atan2(p.m[2], p.m[10]) : m.turnYaw;
+        const float to = from + std::remainder(m.turnTo - from, 6.2831853f) * share;
+        yaw += std::remainder(to - yaw, 6.2831853f) * std::clamp(lead / 0.05f, 0.0f, 1.0f);
+    }
     const float sc = std::hypot(p.m[0], p.m[4], p.m[8]), c = std::cos(yaw), s = std::sin(yaw);
     p.m[0] = c * sc, p.m[1] = 0, p.m[2] = s * sc;
     p.m[4] = 0, p.m[5] = sc, p.m[6] = 0;
@@ -133,6 +139,7 @@ void EventScene::turnTo(const std::string& name, const std::string& other, int f
     m->turnFrom = std::atan2(m->place.m[2], m->place.m[10]);
     m->turnTo = std::atan2(o->place.m[3] - m->place.m[3], o->place.m[11] - m->place.m[11]);
     m->turned = true, m->turnSeconds = float(std::max(frames, 0)) * 0.05f, m->turnTime = 0;
+    m->turnCount = 0, m->turnUpdates = std::max(frames, 0), m->turnYaw = m->turnFrom, m->turnActive = true;
 }
 
 void EventScene::pin(const std::string& name, float x, float y, float z) {
@@ -175,15 +182,33 @@ void EventScene::update(float dt) {
             if (m.sceneTime >= m.moveEnd) m.sceneTime = m.moveEnd, m.moving = false;
             place(m);
         }
+        const float before = m.animTime;
         m.animTime += dt;
+        if (m.blendSeconds > 0 && before < m.blendSeconds && m.animTime >= m.blendSeconds) m.held = false; // (the blend's end: +0x1c 0)
         m.alphaTime += dt;
         if (m.slideUpdates > 0 && m.slideTick < m.slideUpdates) { // (an update's step of a Move)
             const float k = float(++m.slideTick) / float(m.slideUpdates);
             for (int c = 0; c < 3; ++c) m.pin[c] = m.slideFrom[c] + (m.slideTo[c] - m.slideFrom[c]) * k;
             place(m);
         }
+        // (EvtModel::Update: a SetMove's locator writes its rotation first - Cr3EvtSceneSetPosRot -,
+        // then FldDirectionManager::Update slerps the figure's rotation toward the target by
+        // count / N. On a move each update's turn is from the locator's, a share growing straight;
+        // standing, from the last update's, compounding (directionShare's 0.1, 0.28, 0.5 ..). A turn
+        // over while it moves: the next update's locator rotation over it)
         if (m.turned) {
             m.turnTime += dt;
+            if (!m.turnActive && m.moving) m.turned = false;
+            else if (m.turnActive) {
+                ++m.turnCount;
+                const float from = m.moving && locators_.count(lower(m.name)) ? [&] {
+                    const Mat34 l = locator(m.name, m.sceneTime);
+                    return std::atan2(l.m[2], l.m[10]);
+                }() : m.turnYaw;
+                const float share = m.turnCount >= m.turnUpdates ? 1.0f : float(m.turnCount) / float(m.turnUpdates);
+                m.turnYaw = from + std::remainder(m.turnTo - from, 6.2831853f) * share;
+                if (m.turnCount >= m.turnUpdates) m.turnActive = false;
+            }
             place(m);
         }
     }

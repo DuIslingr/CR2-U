@@ -4001,7 +4001,7 @@ void Viewer::pubTap(int id) {
             pubSwitch(game.globalWork[7] == pub.request ? 3 : 11, 5);
         }
     } else if (pub.stage == 4) { // (PubListMenu: a tap shows a request's title; Back the board)
-        if (id == 100) audio.playSe(0xb5, false), pubSwitch(1, 5);
+        if (id == 100) audio.playSe(0xb5, false), pubSwitch(1, 2); // (state 4 -> 6: the list's posterIcon has no length - gone the next update, the board the one after)
         else if (id >= 2000 && id <= 2050) audio.playSe(0xb4, false), pub.listFocus = id - 2000;
     } else if (pub.stage == 3) { // (0xb: the choice closed - 0xc / 0xd wait for it to go)
         if (id == 7601) audio.playSe(0xb4, false), pubSwitch(12, 4);
@@ -4103,6 +4103,7 @@ void Viewer::drawPub(const Mat4& view, int w, int h) {
         drawCommandMenu("checkbtn_io", t, view, {}, {}, 0, 0, 0, "checkbtn_io"); // (the list: circle 35 - PubTopMenu's 200)
         buttonLook = keepLook;
         back();
+    } else if (pub.stage == 4 && pubSwitchAt >= 0) { // (the list told to close: gone at once)
     } else if (pub.stage == 4) { // (PubListMenu: posterIcon, each request's sign at call_posterS_idNN, the share done)
         UiFig& icons = part("postericon", "postericon");
         cr2::Texture* tex = texture("hud_posters");

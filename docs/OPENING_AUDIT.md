@@ -1796,6 +1796,21 @@ The menu classes no round had named, read for anything timed. No change came of 
 `FieldMenuTabMenu` belong to the battle's, the camp's and the field tab's rounds under their parts'
 names; their own `Update`s were not read here.
 
+### Round 83: the pub's list; the field's tab
+
+`PubListMenu`: a sign's tap (`TouchGestureTap`) - SE 0xb4, the sign lit, its help, the cursor moved
+- stays in the list, as the port had it. Back (`TouchSimpleRelease`: SE 0xb5, the result) is read by
+`PubMainMenu`'s state 4 the update after, which tells the list to close (state 6); the list's
+`Update` is done once its +4 - `posterIcon`, whose animation has no length - is at its end: that same
+update. State 6 makes the board (0x25) the update after it is gone: the second update after the
+Back, not round 79's fifth. Now the list's Back draws nothing from the tap and brings the board in
+the second update.
+`FieldMenuTabMenu::TouchCheckTap`, the tab: its own button toggles it - SE 0xba open / 0xbb shut, the
+tab's animation forward or back from where it is (+0x5c, the time kept) -, the others answer only
+once it is open and its animation ended (`CheckOpenMenu`), SE 0xb4; Map hidden in dungeon 12, Save
+by flag 0x3ea, the encounter button by 0x40e / 0x40f. The port's tab (`fieldTabTap`,
+`fieldTabAt`) already does each.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

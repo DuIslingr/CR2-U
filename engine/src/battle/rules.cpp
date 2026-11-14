@@ -1182,9 +1182,16 @@ void BattleRules::doAction(std::vector<Event>& out) {
     commandActor_ = nextAction().actor;
 }
 
-void BattleRules::endAction() {
+// (ActionCommonEventCommandEnd, step 8 of the actor's table - after its return and standby
+// motion, while the downed may still be on their way down: its script's Command_End)
+void BattleRules::commandEnd() {
     commandActor_ = nextAction().actor;
     callScript("Command_End");
+    commandEnded_ = true;
+}
+void BattleRules::endAction() {
+    if (!commandEnded_) commandEnd();
+    commandEnded_ = false;
     ++next_;
     turnOrder_.insert(turnOrder_.begin() + std::ptrdiff_t(next_), counters_.begin(), counters_.end()); // (the counters next)
     counters_.clear();

@@ -1017,6 +1017,7 @@ struct Viewer {
     };
     std::vector<Death> deaths;
     bool deathsQueued = false;
+    bool commandEndDone = false, tutorialChecked = false; // (the action's step 8 run; its tutorial looked for)
     void deathEffect(const char* name, int f, BattleUnit& u);
     bool stepDeaths(bool collect = true);
 

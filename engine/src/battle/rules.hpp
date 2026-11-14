@@ -170,6 +170,7 @@ public:
     const Order& nextAction() const { return turnOrder_[next_]; }
     void startAction();
     void doAction(std::vector<Event>& out);
+    void commandEnd(); // (Command_End alone: endAction calls it unless done)
     void endAction();
     void endTurn();
     // the turn's end's (BtlTurnEnd): the poison's damage (a tenth of the most HP, one left at
@@ -344,7 +345,7 @@ private:
         bool reserved = false, pair = false;
         int command[5] = {-1, -1, -1, -1, -1}, target[5] = {-1, -1, -1, -1, -1};
     } scripted_;
-    bool exited_ = false, escaped_ = false;
+    bool exited_ = false, escaped_ = false, commandEnded_ = false;
     float exitTimer_ = -1;
     void callScript(const char* f) { if (script) script(f); }
     int gauge_ = 0, break_ = 0;

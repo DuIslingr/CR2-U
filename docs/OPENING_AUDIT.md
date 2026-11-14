@@ -2326,6 +2326,20 @@ quality option (the original's 100 / 80 / 60 % render target; the port's own res
 upscalers), the orientation's storage and auto-rotate lock. Not ported: the achievements
 (`achievement_check` / `set_achievement`, cr3_achievement_data) and the store's title steps.
 
+### Round 113: Command_End while the downed fall
+
+The attack's table (`action_table_attack_solo`, read from the library: 1, 2, 10, 7, 9, 6, 15, 16, 5,
+17, 19, 18, 5, 21, 23, 5, 22, 26, 12, 8, 9, 24, 25, 11, 14, 78) reaches step 8,
+`ActionCommonEventCommandEnd`, after the attacker's return and standby motion and before its
+CommandEnd and Done; the downed run their own table alongside (`action_table_dead`: 67 Standby - a
++0x3a monster waits there for its damage motion, and Invoke(6) holds it -, 69, 68 DeadEvent, which
+waits while a battle script runs before calling Dead), and only the next action waits for them
+(`CheckStop`). The port ran Command_End (and the tutorials, the same step without a script of the
+battle's own) after every death had played out; it now runs them as the action's show ends, the
+deaths waiting at DeadEvent while the script runs, and the next action after both. battle_299's talk
+(T01_pub_2901, both Legions down) now comes while the second is still standing; run headless with
+both at 1 HP, the talk plays and the battle is won.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

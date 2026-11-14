@@ -1351,9 +1351,16 @@ void Viewer::stepBattleShow() {
         for (int f = 0; f < 2; ++f) // (back in its stance: ShowAttachObject - made again)
             if (guardReturn[f] && guardObjects[f] && battleRules->fighter(f).alive) guardObject(f, 0.5f), guardReturn[f] = false;
         if (stepAnalyze()) break;
-        if (stepDeaths()) break;
-        if (!regenPending.empty() || battleScriptRunning()) { // (a revival, a tutorial first)
-        } else if (!showActions.empty()) {
+        if (!commandEndDone) { // (step 8, ActionCommonEventCommandEnd: the actor's own steps over, the downed
+            commandEndDone = true; // still on their way - Command_End with the battle's own script, else the tutorials)
+            if (ownBattleScript()) {
+                battleRules->commandEnd();
+                showEnd = battleClock + 4 * cr2::EventRuntime::kTick; // (steps 8 and 9, four updates, then 14)
+                break;
+            }
+        }
+        if (!ownBattleScript() && regenPending.empty() && !battleScriptRunning() && !showActions.empty() && !tutorialChecked) {
+            tutorialChecked = true; // (a revival first)
             // (ActionCommonEventCommandEnd: a command lending an element - +0x70 / +0x71 1..3 -
             // the first time, flag 53 (CheckTutoScript_Element); else one standing with a state
             // shown, flag 55 (CheckTutoScript_Status))
@@ -1368,14 +1375,13 @@ void Viewer::stepBattleShow() {
             else if (status) battleTutorial("Tutorial_Status", 55);
             if (battleScriptRunning()) break;
         }
+        if (stepDeaths()) break; // (CheckStop: no next action while one is in its dead table)
         if (!regenPending.empty()) { // (the downed with state 33 back first)
             showRegen();
             break;
         }
         battleRules->endAction();
-        // (the same for Command_End: steps 8 and 9, four updates, then 14)
-        if (ownBattleScript()) showEnd = battleClock + 4 * cr2::EventRuntime::kTick;
-        analyze.stage = 0, deathsQueued = false;
+        analyze.stage = 0, deathsQueued = false, commandEndDone = tutorialChecked = false;
         battleStep = BattleStep::ActionStart;
         break;
     case BattleStep::Over: break;
@@ -1602,7 +1608,12 @@ bool Viewer::stepDeaths(bool collect) {
             continue;
         }
         // (action_table_dead: 67 Standby, 69 WaitAwake, 68 DeadEvent - Dead, with the battle's own
-        // script -, 9 its wait, 70 DeadStart: three updates more with the script)
+        // script, once none runs (Command_End's talk first) -, 9 its wait, 70 DeadStart: three
+        // updates more with the script)
+        if (d.stage == 0 && ownBattleScript() && battleScriptRunning()) {
+            wait = true;
+            continue;
+        }
         if (d.stage == 0 && ownBattleScript()) {
             if (d.scriptUntil < 0) d.scriptUntil = battleClock + 3 * cr2::EventRuntime::kTick;
             if (battleClock < d.scriptUntil) {

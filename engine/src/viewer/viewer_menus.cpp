@@ -1406,8 +1406,12 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                 if (!script->running()) script->tick();
                 // (the camp closing: InterfaceMain's +0xbc in the fourth update after the release's;
                 // FldMain's step 5 -> 1 the next, step 1's control the one after)
-                if (campOpen && campUseCloseAt >= 0 && ++campUseCloseTicks >= 4) {
+                if (campOpen && campUseCloseAt >= 0 && ++campUseCloseTicks >= (campUseCloseTarget == 4 ? 8 : 4)) {
                     campUseCloseAt = -1;
+                    if (campUseCloseTarget == 4) { // (state 8: the stat lines)
+                        if (const cr2::BattleData::Item* ri = battleData.item(campItem)) showRaised(campRaiseChar, *ri, campRaiseCount);
+                        continue;
+                    }
                     if (campUseCloseTarget == 2) campUse = 2, campCount = 1, campUseStart = uiClock - cr2::EventRuntime::kTick; // (the quantity's question)
                     else if (campUseCloseTarget == 1) campUse = 1, campUseStart = uiClock - cr2::EventRuntime::kTick;         // (the faces in again)
                     else campUse = 0, campItem = 0, campStart = campListOpenedAt = uiClock - cr2::EventRuntime::kTick;       // (the item list again)
@@ -2037,7 +2041,7 @@ void Viewer::showRaised(int ch, const cr2::BattleData::Item& it, int n) {
     campUpShown = 0, campUpAt = campUseStart = uiClock;
     campUse = campUpText.empty() ? 5 : 4;
 }
-void Viewer::useItemOn(int ch, int item, int n) { // (Cr3UtilParameterUpByItem, Cr3UpdatePlayerData; PlaySoundMPRecovery)
+void Viewer::useItemOn(int ch, int item, int n, bool show) { // (Cr3UtilParameterUpByItem, Cr3UpdatePlayerData; PlaySoundMPRecovery)
     const cr2::BattleData::Item* it = battleData.item(item);
     if (!it || n <= 0) return;
     if (it->usedUp) game.itemCount[item] = static_cast<short>(std::max(game.itemCount[item] - n, 0));
@@ -2050,7 +2054,7 @@ void Viewer::useItemOn(int ch, int item, int n) { // (Cr3UtilParameterUpByItem, 
     for (int k = 0; k < 5; ++k) any = any || it->param[k] != 0;
     if (any) audio.playSe(0xc6, false);
     SDL_Log("camp: %s x%d on %d: MP %d -> %d", it->name[1].c_str(), n, ch + 1, mp0, mp);
-    showRaised(ch, *it, n);
+    if (show) showRaised(ch, *it, n);
 }
 void Viewer::campUseBack(int target) {
     if (campUseCloseAt < 0) campUseCloseAt = uiClock, campUseCloseFrom = uiClock - campUseStart, campUseCloseTicks = 0, campUseCloseTarget = target;
@@ -2072,8 +2076,11 @@ void Viewer::campUseTap(int id) {
         if (id == 7101) campCount = std::max(campCount - 1, 1);
         else if (id == 7102) campCount = std::min(campCount + 1, most);
         else if (id == 7201) { // (yes: used, its effect)
-            if (campFace < int(chars.size())) useItemOn(chars[size_t(campFace)], campItem, campCount);
-            else campUse = 0, campItem = 0;
+            if (campFace < int(chars.size())) {
+                useItemOn(chars[size_t(campFace)], campItem, campCount, false);
+                campRaiseChar = chars[size_t(campFace)], campRaiseCount = campCount;
+                campUseBack(4);
+            } else campUse = 0, campItem = 0;
         } else if (id == 7202) audio.playSe(0xb5, false), campUseBack(1); // (state 5: the question gone, InFaceButton, state 0)
     } else if (campUse == 4) {
         if (id == 7300) campUpShown++, campUpAt = uiClock, campUseUpdate(); // (a tap: the next at once - +0xe4)

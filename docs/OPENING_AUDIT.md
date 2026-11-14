@@ -1447,9 +1447,18 @@ No (state 4, 2): the windows ended, state 5 waits for the choice's window to be 
 `InFaceButton` and state 0 - the faces in again, the lock cleared at their opening's end. The port
 showed the question, and on No the faces, in the tap's update; now the faces play out and the
 question comes in the fourth update (`campUseCloseTarget` 2), and No closes it and brings the faces
-back in the fourth (1). Left: the Yes - the item used at once, the choice's window closed, then
-`InCampHelpText` (`camphelp_io` 0.2 s, state 7) before the stat lines (state 8) - which the port
-still shows at once.
+back in the fourth (1). The Yes: round 62.
+
+### Round 62: the quantity's Yes
+
+State 4's Yes: the count taken off the items, `ItemUseChangeParameter`, `PlaySoundMPRecovery`, the
+choice, its message and the quantity ended, state 6; 6 waits for the choice's window to be gone (the
+fourth update), puts the camp's help text in (`InCampHelpText`, `camphelp_io` 0.2 s) and 7 waits
+for it - the eighth update -; 8 shows the stat lines. The port used the item and showed the lines in
+the Yes's update; now the item is used at once, the question plays back (`campUseCloseTarget` 4) and
+the lines come in the eighth update (`campRaiseChar`, `campRaiseCount`). Frames at 5.85 s (the
+question) and 6.4 s (the MP line, the statuses coming in): `--play d0104 --item 4:3 --input "tab camp
+items down down enter enter enter"`.
 
 ## Original-code evidence
 

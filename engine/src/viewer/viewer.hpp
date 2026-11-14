@@ -1588,6 +1588,9 @@ struct Viewer {
     float campUseCloseAt = -1, campUseCloseFrom = 0;
     int campUseCloseTicks = 0, campUseCloseTarget = 0; // (0 the item list, 2 the quantity's question - OutFaceButton, state 3 -, 1 the faces again - the question's No, state 5)
     void campUseBack(int target = 0);
+    // (the quantity's Yes: the item used at once; the choice's window gone in the fourth update, then
+    // InCampHelpText - 0.2 s, state 7 - and the stat lines, state 8, in the eighth)
+    int campRaiseChar = 0, campRaiseCount = 0;
     bool emergencyExit = false;
     // (a list made: InterfaceMain +0x1c 30 till its main frame's 0.2 s opening has played - state 1 -
     // its taps from the fourth update after the one it was made in)
@@ -1658,7 +1661,7 @@ struct Viewer {
     float campUpAt = 0;
     void campUseUpdate();
     void showRaised(int ch, const cr2::BattleData::Item& it, int n);
-    void useItemOn(int ch, int item, int n);
+    void useItemOn(int ch, int item, int n, bool show = true);
     void campUseTap(int id);
     void drawItemUse(const Mat4& view, const Mat4& proj, int w, int h);
     void campPickItem(int item);

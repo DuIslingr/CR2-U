@@ -1420,6 +1420,11 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                     closeCamp(), emergencyExit = true;
                     break;
                 }
+                if (campOpen && campEquipSwitchAt >= 0 && ++campEquipSwitchTicks >= 4) { // (the next mode's rows in)
+                    campEquipSwitchAt = -1, campEquipMode = campEquipSwitchMode, campEquipCursor = campEquipSwitchCursor;
+                    campStart = campListOpenedAt = uiClock;
+                    SDL_Log("camp: equipment mode %d", campEquipMode);
+                }
                 if (campOpen && campCategoryAt >= 0 && ++campCategoryTicks >= 4) { // (the other category in)
                     campCategoryAt = -1, campCategory = 1 - campCategory, campCursor = 0;
                     campStart = campListOpenedAt = uiClock;
@@ -1763,7 +1768,7 @@ float Viewer::campPartTime(float length) const {
     return std::max(std::min(campCloseFrom, length) - (uiClock - campCloseAt), 0.0f); // (played back from where it was)
 }
 void Viewer::closeCamp() {
-    campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1, campExitTicks = -1, campUseCloseAt = -1, campSopiaSwitchAt = -1, campCategoryAt = -1;
+    campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1, campExitTicks = -1, campUseCloseAt = -1, campSopiaSwitchAt = -1, campCategoryAt = -1, campEquipSwitchAt = -1;
     campOpen = false, campList = 0, campUse = 0, campItem = 0, campLink = 0;
     optionsOpen = optionsAsk = false, manualStage = 0, manualEvents.reset();
     SDL_Log("camp: closed");
@@ -2393,7 +2398,7 @@ void Viewer::campEquipPick(int id) {
     if (campEquipMode == 0) {
         if (id == 309 || (id >= 301 && id <= 307)) {
             audio.playSe(0xb4, false);
-            campEquipMode = id - 300, campEquipCursor = 0, campStart = uiClock;
+            campEquipSwitch(id - 300, 0);
         }
         return;
     }
@@ -2416,7 +2421,7 @@ void Viewer::campEquipPick(int id) {
     audio.playSe(199, false);
     clampMp(campEquipChar);
     SDL_Log("camp: %d equips %d in mode %d", campEquipChar + 1, id, campEquipMode);
-    campEquipMode = 0, campEquipCursor = 0, campStart = uiClock;
+    campEquipSwitch(0, 0);
 }
 // The explorer's camp (--explore), as a player keeps the pair fitted: for each of the two, the
 // best weapon, armour and accessory it can wear and has spare (by what they add, all told),
@@ -2483,8 +2488,8 @@ void Viewer::campTakeAnswer(bool yes) {
 void Viewer::campEquipBack() {
     audio.playSe(0xb5, false);
     if (campTakeSopia) return campTakeAnswer(false);
-    if (campEquipMode == 8) campEquipMode = campEquipPrevMode, campEquipCursor = campEquipPrevCursor, campStart = uiClock;
-    else if (campEquipMode) campEquipMode = 0, campEquipCursor = 0, campStart = uiClock;
+    if (campEquipMode == 8) campEquipSwitch(campEquipPrevMode, campEquipPrevCursor);
+    else if (campEquipMode) campEquipSwitch(0, 0);
     else campListBack();
 }
 void Viewer::campEquipView() { // (the change button tapped: Update_*Sopia's step 0xe)
@@ -2493,7 +2498,7 @@ void Viewer::campEquipView() { // (the change button tapped: Update_*Sopia's ste
     audio.playSe(0xb4, false);
     campEquipViewSopia = rows[size_t(campEquipCursor)].sopia;
     campEquipPrevMode = campEquipMode, campEquipPrevCursor = campEquipCursor;
-    campEquipMode = 8, campEquipCursor = 0, campStart = uiClock;
+    campEquipSwitch(8, 0);
 }
 void Viewer::campEquipChange(int dir) { // (another character: the eye buttons, Left / Right)
     const std::vector<int> chars = validChars();
@@ -2690,7 +2695,7 @@ void Viewer::drawPubRequest(const Mat4& view, int w, int h) {
 
 // a camp button pressed (CampMenu::TouchSimpleRelease: 0xb4; InterfaceMain's camp step by it)
 void Viewer::campPress(int id) {
-    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campCategoryAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return; // (state 1 on: the menu closing; or still opening, +0x1c)
+    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campCategoryAt >= 0 || campEquipSwitchAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return; // (state 1 on: the menu closing; or still opening, +0x1c)
     if (campUse) return campUseTap(id);
     if (campLink) {
         if (id == 100) audio.playSe(0xb5, false), campLink = 0, campStart = uiClock;
@@ -2731,6 +2736,11 @@ void Viewer::campPress(int id) {
 // the top's button acted on once its close is over (InterfaceMain::Update's camp results: 0x2d the
 // items, 0x2f / 0x30 / 0x3a / 0x33 the equipment, 0x36 the sopia, 0x2a the options, 0x73 / 0x6d
 // the links), made and stepped once in that update
+void Viewer::campEquipSwitch(int mode, int cursor) {
+    if (campEquipSwitchAt >= 0) return;
+    campEquipSwitchAt = uiClock, campEquipSwitchFrom = uiClock - campStart, campEquipSwitchTicks = 0;
+    campEquipSwitchMode = mode, campEquipSwitchCursor = cursor;
+}
 void Viewer::campCategorySwitch() {
     if (campCategoryAt >= 0 || campListOpening() || campListCloseAt >= 0) return;
     audio.playSe(0xb7, false);
@@ -2763,7 +2773,7 @@ void Viewer::campEnter(int id) {
     }
 }
 void Viewer::campKey(SDL_Keycode k) {
-    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campCategoryAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return;
+    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campCategoryAt >= 0 || campEquipSwitchAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return;
     keysUsed = true;
     if (optionsKey(k)) return;
     if (campUse) { // (whom: Left / Right, Return; how many: Left / Right, Return yes, Backspace no)

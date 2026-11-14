@@ -1580,6 +1580,12 @@ struct Viewer {
     // lock cleared when they are)
     // (the items' category - CampItemListMenu: SE 0xb7 from the tab or the arrows, the rows out to a
     // side, state 4: at their end the other category's made and in, state 5: the lock cleared once in)
+    // (the equipment's modes - CampEquipmentListMenu::Update_EquipView / _Weapon ...: a slot picked, a
+    // piece worn - SE 199 -, Back: +0x1c 30, the rows out (0.2 s); the next mode's rows made and in from
+    // the left when they are out - the fourth update -, the lock cleared once in)
+    float campEquipSwitchAt = -1, campEquipSwitchFrom = 0;
+    int campEquipSwitchTicks = 0, campEquipSwitchMode = 0, campEquipSwitchCursor = 0;
+    void campEquipSwitch(int mode, int cursor);
     float campCategoryAt = -1, campCategoryFrom = 0;
     int campCategoryTicks = 0;
     void campCategorySwitch();
@@ -1610,6 +1616,7 @@ struct Viewer {
     float campListTime() const {
         if (campSopiaSwitchAt >= 0) return std::max(std::min(campSopiaSwitchFrom, 0.2f) - (uiClock - campSopiaSwitchAt), 0.0f);
         if (campCategoryAt >= 0) return std::max(std::min(campCategoryFrom, 0.2f) - (uiClock - campCategoryAt), 0.0f);
+        if (campEquipSwitchAt >= 0) return std::max(std::min(campEquipSwitchFrom, 0.2f) - (uiClock - campEquipSwitchAt), 0.0f);
         return campListCloseAt < 0 ? uiClock - campStart : std::max(std::min(campListCloseFrom, 0.2f) - (uiClock - campListCloseAt), 0.0f);
     }
     float campPartTime(float length) const;

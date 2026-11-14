@@ -1484,6 +1484,19 @@ the fourth update, taps from the fifth after that. `viewer-pad-controls` settles
 its checks. `--play d0104 --item 4:3 --item 110:1 --input "tab camp items down category ..."`: the
 second category shown (a second `category` 0.4 s on falls in the lock).
 
+### Round 65: the equipment's modes
+
+`CampEquipmentListMenu::Update` runs a mode's own update (`Update_EquipView`, `_Weapon`, `_Armor`,
+`_Accessory`, `_HumanSopia`, `_MonsterSopia`, `_SopiaDetail`, `_OwnSkill`). A slot picked in the view,
+a piece worn (SE 199), Back from a slot's list, the sopia's skills and back: +0x1c 30 and
+`ScrollItemRightOut`, then the next mode's state 0 makes its rows when the old are out and brings
+them in from the left (`ScrollItemLeftIn`) in that update, state 1 clearing the lock once they are
+in. The port changed the mode in the tap's update; now `campEquipSwitch` plays the rows out (0.2 s)
+and changes the mode in the fourth update, taps from the fifth after. The piece is worn at once, as
+the original's data change is. `--play d0104 --input "tab camp equip down enter ... back ..."`:
+the weapons' list (mode 1), the view (0), the camp, out. Not followed: L / R's character change
+(`CharaChange`).
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

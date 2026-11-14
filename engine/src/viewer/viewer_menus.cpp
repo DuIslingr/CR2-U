@@ -2230,13 +2230,14 @@ void Viewer::campUseTap(int id) {
         const int most = std::max(int(game.itemCount[campItem]), 1);
         if (id == 7101) campCount = std::max(campCount - 1, 1);
         else if (id == 7102) campCount = std::min(campCount + 1, most);
-        else if (id == 7201) { // (yes: used, its effect)
+        else if (id == 7201) { // (yes: used, its effect - CharaSelectButtonMenu leaves the choice's sound on: its 0xb4)
+            audio.playSe(0xb4, false);
             if (campFace < int(chars.size())) {
                 useItemOn(chars[size_t(campFace)], campItem, campCount, false);
                 campRaiseChar = chars[size_t(campFace)], campRaiseCount = campCount;
                 campUseBack(4);
             } else campUse = 0, campItem = 0;
-        } else if (id == 7202) audio.playSe(0xb5, false), campUseBack(1); // (state 5: the question gone, InFaceButton, state 0)
+        } else if (id == 7202) audio.playSe(0xb4, false), campUseBack(1); // (state 5: the question gone, InFaceButton, state 0; the choice's 0xb4)
     } else if (campUse == 4) {
         if (id == 7300) campUpShown++, campUpAt = uiClock, campUseUpdate(); // (a tap: the next at once - +0xe4)
     } else if (campUse == 3) {

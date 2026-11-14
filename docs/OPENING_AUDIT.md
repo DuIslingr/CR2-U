@@ -1934,6 +1934,10 @@ Screen, Reset Data) and the title's clear-data ones (0x66, then 0x67 over the sa
 on and add nothing: 0xb4 for either answer. The port played 0xb5 for the world select's and the
 pub's No, 0xbe for the clear-data Yes, and nothing for the options' answers. Now each as above; the
 options' Title Screen and Instructions buttons play their 0xb4 (`OptionMenu::Update` states 3 / 4).
+The camp's: `CampItemDirectUseMenu` (Emergency Exit, 0x73) and the monster sopia's question
+(`Update_MonsterSopia`, 0x8a) turn it off - 0xb4 / 0xb5 and 199 / 0xb4, as the port had -;
+`CharaSelectButtonMenu`'s how-many question (0x74) leaves it on: 0xb4 for Yes (with the MP's sound,
+`PlaySoundMPRecovery`) and for No, where the port played nothing and 0xb5. Now 0xb4 both.
 
 ## Original-code evidence
 

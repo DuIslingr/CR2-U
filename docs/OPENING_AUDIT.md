@@ -1367,6 +1367,25 @@ drew the camp in the press's own update and took taps and keys at once; now (`ca
 draws nothing of it before the next update and takes none before the fourth. `--play d0104 --input
 "tab camp back"` as before (the tokens 0.4 s apart).
 
+### Round 56: the camp's buttons and its lists' Back
+
+`CampMenu::TouchSimpleRelease` treats Items (0x10), Equip (0x11), Sopia (0x12), Options (0x14) and
+the links (0xc9, 0xca with a request) as Back: SE 0xb4, the result (1, 2, 3, 4, 8, 7),
+`InterfaceCloseAnimeSet`, its status menus told to close (the title, 0x2c, too for Options and the
+links - kept over the lists), state 1. So the list is made only when the menu returns 7, by
+`InterfaceMain::Update`'s camp results (0x2d the items, 0x2f / 0x30 / 0x3a / 0x33 the equipment, 0x36
+the sopia, 0x2a the options, 0x73 / 0x6d the links): in the fourth update after the release, stepped
+once there. A list's Back (`CampItemListMenu` and the others, state 2) plays its main frame back -
+the list's parts are 0.2 s - and returns 6 the update it reaches its start, the fourth after the
+release, on which `InterfaceMain` makes the camp again (`SetCampWindowParameter`: its 30-update lock,
+cleared by its opening's end): the camp drawn from that update, its taps from the third after.
+
+The port switched in the release's update both ways. Now a top button starts the close as Back does
+(`campCloseTarget`) and `campEnter` opens its list at the close's end; a list's Back
+(`campListBack`, the equipment's top too) plays the list's parts backwards (`campListTime`) and makes
+the camp again in the fourth tick, with its opening and lock. `--play d0104 --input "tab camp
+items back back"` (and `equip`, `sopia`): each list and the camp come and go as before, later.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

@@ -1569,7 +1569,17 @@ struct Viewer {
     float campOpenedAt = -10;
     bool campOpening() const { return uiClock - campOpenedAt < 4 * cr2::EventRuntime::kTick; }
     float campCloseAt = -1, campCloseFrom = 0;
-    int campCloseTicks = 0;
+    int campCloseTicks = 0, campCloseTarget = 100; // (the button that closed it: 100 Back, else the list it opens)
+    void campEnter(int id);
+    // (a list's Back - CampItemListMenu / the sopia's / the equipment's state 2: its main frame,
+    // 0.2 s, played back; at its start, in the fourth update, it returns 6 and InterfaceMain makes the
+    // camp again - SetCampWindowParameter - stepped once in that update, its opening and lock again)
+    float campListCloseAt = -1, campListCloseFrom = 0;
+    int campListCloseTicks = 0;
+    void campListBack();
+    float campListTime() const {
+        return campListCloseAt < 0 ? uiClock - campStart : std::max(std::min(campListCloseFrom, 0.2f) - (uiClock - campListCloseAt), 0.0f);
+    }
     float campPartTime(float length) const;
     int campList = 0; // (0 none, 16 the items, 18 the sopia)
     int campCategory = 0, campCursor = 0;

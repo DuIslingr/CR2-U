@@ -824,12 +824,14 @@ void Viewer::titleButton(int id) {
             t.stage = 9;
         }
     } else if (t.stage == 6) {
+        if (t.stepAt >= 0) return; // (the panel going: +0x1c 30)
+        auto step = [&](int ask) { t.stepAsk = ask, t.stepTo = 7, t.stepAt = uiClock, t.stepFrom = uiClock - t.start, t.stepTicks = 0; };
         if (id == 9) { // (New Game: NewGame's question - with clear data 102)
             audio.playSe(0xb4, false);
-            titleAsk(saveInfo("save1.txt").flags.count(5) ? 102 : 101);
+            step(saveInfo("save1.txt").flags.count(5) ? 102 : 101);
         } else if (id == 10 && saveExists("save1.txt")) {
             audio.playSe(0xb4, false);
-            titleAsk(107);
+            step(107);
         } else if (id == 100) { // (CreateTitleMenu(true): the buttons back)
             audio.playSe(0xb5, false);
             t.stage = 4, t.start = uiClock;
@@ -838,7 +840,7 @@ void Viewer::titleButton(int id) {
 }
 void Viewer::titleAnswer(bool yes) {
     TitleMenu& t = titleMenu;
-    if (t.stage != 7) return;
+    if (t.stage != 7 || t.stepAt >= 0) return;
     if (!t.notice.empty()) { // (told: the buttons again)
         audio.playSe(0xb4, false);
         t.notice.clear();
@@ -847,18 +849,21 @@ void Viewer::titleAnswer(bool yes) {
     }
     const int ask = t.ask;
     audio.playSe(yes ? 0xbe : 0xb4, false);
+    // (No: EndBattleYNChoice, state 0x15 - the panel (0xb) once the choice is gone, the fifth update. Yes: the
+    // same wait (0x16 / 0x11), then Cr3FadeOut(0, 20) and the 1.0 s count (0x23): the fade from the fifth)
+    auto toPanel = [&] { t.stepTo = 6, t.stepAt = uiClock, t.stepFrom = uiClock - t.start, t.stepTicks = 0; };
     if (ask == 104) { // (the autosave: resumed, else the panel)
-        if (yes) t.action = 3, t.stage = 8, t.ask = 0, t.doneAt = uiClock + 1.0f;
-        else t.stage = 6, t.start = uiClock;
+        if (yes) t.action = 3, t.stage = 8, t.ask = 0, t.doneAt = uiClock + 1.25f;
+        else toPanel();
     } else if (ask == 101 || ask == 103) {
-        if (yes) t.action = 1, t.stage = 8, t.ask = 0, t.doneAt = uiClock + 1.0f;
-        else t.stage = 6, t.start = uiClock;
+        if (yes) t.action = 1, t.stage = 8, t.ask = 0, t.doneAt = uiClock + 1.25f;
+        else toPanel();
     } else if (ask == 102) { // (with the clear data: Cr3UtilResetWork(true) - what it carries over)
-        if (yes) t.action = 4, t.stage = 8, t.ask = 0, t.doneAt = uiClock + 1.0f;
+        if (yes) t.action = 4, t.stage = 8, t.ask = 0, t.doneAt = uiClock + 1.25f;
         else titleAsk(103);
     } else if (ask == 107) {
         if (yes) t.action = 2, t.stage = 8, t.ask = 108, t.doneAt = uiClock + 2.0f; // ("Load complete." a second, then the fade)
-        else t.stage = 6, t.start = uiClock;
+        else toPanel();
     }
 }
 void Viewer::titleToken(const std::string& tok) {
@@ -918,7 +923,7 @@ void Viewer::updateTitle(float dt) {
             if (!titleEvents->tick()) SDL_Log("title: %s", titleEvents->error().c_str());
         if (!titleEvents->running()) titleEvents.reset();
     }
-    if (!inputScript.empty() && uiClock >= inputNext && !titleRunning() && (t.stage == 3 || (t.stage >= 5 && t.stage <= 9)) && t.stage != 8 &&
+    if (!inputScript.empty() && uiClock >= inputNext && !titleRunning() && t.stepAt < 0 && (t.stage == 3 || (t.stage >= 5 && t.stage <= 9)) && t.stage != 8 &&
         !(t.stage == 7 && uiClock - t.start < 0.5f)) {
         titleToken(inputScript.front());
         inputScript.pop_front();
@@ -955,6 +960,16 @@ void Viewer::updateTitle(float dt) {
         t.stage = 5, t.start = uiClock;
     }
     if (t.stage == 9) updateManual(dt);
+    if (t.stepAt >= 0) { // (a step: the next made the fifth update)
+        titleStepClock = std::min(titleStepClock + dt, 0.25f);
+        for (; titleStepClock >= cr2::EventRuntime::kTick; titleStepClock -= cr2::EventRuntime::kTick)
+            if (++t.stepTicks >= 5) {
+                t.stepAt = -1;
+                if (t.stepTo == 7) titleAsk(t.stepAsk);
+                else t.stage = t.stepTo, t.start = uiClock;
+                break;
+            }
+    } else titleStepClock = 0;
     if (t.stage == 9 && optionsCloseAt >= 0) { // (the options closing: gone the fourth update, the buttons the fifth)
         optionsCloseClock = std::min(optionsCloseClock + dt, 0.25f);
         for (; optionsCloseClock >= cr2::EventRuntime::kTick; optionsCloseClock -= cr2::EventRuntime::kTick)
@@ -1039,7 +1054,7 @@ void Viewer::drawTitle() {
     const Mat4 proj = uiProjection(screenW, screenH), view = cr2::mat4Multiply(proj, camera);
     cr2::SceneLighting l;
     dev->setLighting(l);
-    const float age = uiClock - tm.start;
+    float age = uiClock - tm.start;
     static const float kScreen[24] = {-1, -1, 0, 0, 1, -1, 1, 0, 1, 1, 1, 1, -1, -1, 0, 0, 1, 1, 1, 1, -1, 1, 0, 1};
     const Mat4 id = cr2::mat4Identity();
     if (tm.stage == 1) { // (logoInc, from black over 20 frames)
@@ -1095,6 +1110,7 @@ void Viewer::drawTitle() {
     if (titleRunning()) return;
     if (tm.stage == 5 || tm.stage == 4) drawTitleButtons(ti, view, 0); // (CircleButtonPose: following their joints)
     const bool panel = tm.stage == 6; // (a question: the panel gone - DeleteCircleButton, its parts, the calendar)
+    if (tm.stepAt >= 0) age = std::max(std::min(tm.stepFrom, 0.2f) - (uiClock - tm.stepAt), 0.0f); // (a step: the panel or the question played back)
     if (tm.stage == 7 && tm.ask == 107) { // (Load: CreateLoadTitle - menu with menuLoad_io)
         UiFig& mn = uiFig("menu");
         mn.fig.place = cr2::Mat34();

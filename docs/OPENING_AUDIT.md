@@ -1825,6 +1825,24 @@ update, taps from the fifth), SE 0xb7 for both; the d-pad's Left / Right the sam
 `viewer-pad-controls` settles the switch before its checks. `--call ReserveShop --oz 5000 --input
 "buy weapons char kind back back back"`: through to the field.
 
+### Round 85: the title's panel and its questions
+
+`GameTitleMenu::Update`, the Start panel (state 0xc, read from its buttons' +0x84): New (9) or Load
+(10) - the panel's parts played back from where they are (`newlyBtn_io`, `bossIcon_io`, the calendar,
+the back button: 0.2 s), +0x1c 30, state 0xd / 0x18: once `newlyBtn_io` ends (the fourth update) the
+parts deleted and the choice made (`SetYNChoiceTWindowParameter`), the message the update after (0xe:
+0x65, or 0x66 with the clear data's flag 5; 0x19: 0x6b), +0x1c 5. A No (0x10 / 0x12 / 0x1a ...):
+`EndBattleYNChoice`, state 0x15, the panel made again (0xb) once the choice is gone (0.2 s: the
+fifth update). A Yes to start or continue: SE 0xbe, `StopBGM(10)`, the same wait (0x16 / 0x11), then
+`Cr3UtilResetWork`, `Cr3FadeOut(0, 20)` and 0x23 counting 1.0 s before the title is done. The 0x66's
+No changes the message to 0x67 over the same choice with +0x1c 20 and 0.5 s before it is read
+(0x13). The port asked at the tap, went back to the panel at the No, and faded the last second from
+the Yes. Now New / Load play the panel back and ask in the fifth update, a No plays the question back
+and makes the panel in the fifth, a Yes to start / continue ends 1.25 s on (the fade from the
+fifth update); taps and `--input` tokens wait meanwhile. `--title --input "tap start new no new
+yes"`: the question, the panel, the question, a new game. The load's own path after its Yes
+("Load complete.") was not gone through.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

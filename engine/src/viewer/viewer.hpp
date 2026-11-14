@@ -1290,6 +1290,11 @@ struct Viewer {
         bool tapped = false;
         int action = 0;     // for the main loop: 1 a new game, 2 the save, 3 the continue data
         float doneAt = 0;
+        // (GameTitleMenu's steps: New / Load - the panel's parts back (0.2 s), state 0xd: the question once
+        // newlyBtn_io ends, its message the update after (0xe / 0x19: the fifth); No - the choice closed, the
+        // panel (0xb) once it is gone (0x15: the fifth))
+        float stepAt = -1, stepFrom = 0;
+        int stepTicks = 0, stepTo = 0, stepAsk = 0;
         float divaIn = 0, divaOut = -1; // (divaBtn_io: once from the title's start - coming in -, back from the tap - going)
         std::string notice; // (CR2-U's: told once the buttons are back - a save that couldn't be read)
     } titleMenu;
@@ -1613,7 +1618,8 @@ struct Viewer {
     // - counts 1.0 s, the twentieth update, before its 6)
     float campLinkCloseAt = -1, campLinkCloseFrom = 0;
     int campLinkCloseTicks = 0;
-    float optionsCloseClock = 0; // (the title's options closing: its updates counted)
+    float optionsCloseClock = 0;
+    float titleStepClock = 0; // (the title's steps: its updates counted) // (the title's options closing: its updates counted)
     float optionsCloseAt = -1, optionsCloseFrom = 0;
     int optionsCloseTicks = 0;
     void optionsBack();

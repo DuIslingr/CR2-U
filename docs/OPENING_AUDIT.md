@@ -1357,6 +1357,9 @@ animations being linear (assumed, as before).
   `vstWin_talk` back and put the window's own texture resource (`+0x38`'s `+0x48`) into the
   figure's `+0x44 / +0x3c`, which `SetStringData` slot 0 had set to 0; what that draws for the
   plate was not read. The port poses `vstwin_io` (the plate's joint at x 0) for a nameless line.
+  The reference video's vista scenes (`2dy_mefNhEI` 0 - 140 s and 170 - 222 s, the plate read
+  every 1.5 - 2 s) have a name on every line - Darwin, Conor, Li Hua, Araki, Marie -: no nameless
+  line there to compare.
 - **The camera slide's hold.** That `ExecuteCameraMove` leaves the scroll a step short of its end
   is read from its assembly and `FldMain::Update`'s order (the script's `EventExecute` before
   `FldMap::Update`, in the repo's decompilation); no run of the original confirmed the frame.

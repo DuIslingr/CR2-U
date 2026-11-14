@@ -1588,6 +1588,11 @@ struct Viewer {
     void campEquipSwitch(int mode, int cursor);
     // (the camp's options' Back - CampOptionMenu state 2: OptionMenu::InterfaceCloseAnimeSet, its parts
     // played back; once seatOpt_io's 0.2 s is - +8 - it returns 6 and the camp is made again)
+    // (a link's Back: ScenarioFlowMenu - SE 0xb5, state 1, its scenariosBG's 0 s over - returns 6 in
+    // that update, the camp made again at once; CampPubDetailMenu - +0x1c 120, SE 0xb5, its close, +0x54
+    // - counts 1.0 s, the twentieth update, before its 6)
+    float campLinkCloseAt = -1, campLinkCloseFrom = 0;
+    int campLinkCloseTicks = 0;
     float optionsCloseAt = -1, optionsCloseFrom = 0;
     int optionsCloseTicks = 0;
     void optionsBack();

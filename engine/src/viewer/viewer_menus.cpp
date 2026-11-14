@@ -1420,6 +1420,10 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                     closeCamp(), emergencyExit = true;
                     break;
                 }
+                if (campOpen && campLinkCloseAt >= 0 && ++campLinkCloseTicks >= 20) { // (the pub's request: 6 after its second)
+                    campLinkCloseAt = -1, campLink = 0;
+                    campStart = campOpenedAt = uiClock - cr2::EventRuntime::kTick;
+                }
                 if (campOpen && optionsCloseAt >= 0 && ++optionsCloseTicks >= 4) { // (6: the camp made again)
                     optionsCloseAt = -1, optionsOpen = false;
                     campStart = campOpenedAt = uiClock - cr2::EventRuntime::kTick;
@@ -1773,7 +1777,7 @@ float Viewer::campPartTime(float length) const {
     return std::max(std::min(campCloseFrom, length) - (uiClock - campCloseAt), 0.0f); // (played back from where it was)
 }
 void Viewer::closeCamp() {
-    campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1, campExitTicks = -1, campUseCloseAt = -1, campSopiaSwitchAt = -1, campCategoryAt = -1, campEquipSwitchAt = -1, optionsCloseAt = -1;
+    campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1, campExitTicks = -1, campUseCloseAt = -1, campSopiaSwitchAt = -1, campCategoryAt = -1, campEquipSwitchAt = -1, optionsCloseAt = -1, campLinkCloseAt = -1;
     campOpen = false, campList = 0, campUse = 0, campItem = 0, campLink = 0;
     optionsOpen = optionsAsk = false, manualStage = 0, manualEvents.reset();
     SDL_Log("camp: closed");
@@ -2667,7 +2671,8 @@ void Viewer::drawScenarios(const Mat4& view, const Mat4& proj, int w, int h) {
     if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
 }
 void Viewer::drawPubRequest(const Mat4& view, int w, int h) {
-    const float t = uiClock - campStart;
+    // (its Back: InterfaceCloseAnimeSet - the parts played back -, then its second's wait)
+    const float t = campLinkCloseAt < 0 ? uiClock - campStart : std::max(std::min(campLinkCloseFrom, 0.2f) - (uiClock - campLinkCloseAt), 0.0f);
     const int req = game.globalWork[7];
     UiFig& win = uiFig("pubwin_io");
     win.fig.place = cr2::Mat34();
@@ -2702,10 +2707,13 @@ void Viewer::drawPubRequest(const Mat4& view, int w, int h) {
 
 // a camp button pressed (CampMenu::TouchSimpleRelease: 0xb4; InterfaceMain's camp step by it)
 void Viewer::campPress(int id) {
-    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campCategoryAt >= 0 || campEquipSwitchAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return; // (state 1 on: the menu closing; or still opening, +0x1c)
+    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campCategoryAt >= 0 || campEquipSwitchAt >= 0 || campLinkCloseAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return; // (state 1 on: the menu closing; or still opening, +0x1c)
     if (campUse) return campUseTap(id);
     if (campLink) {
-        if (id == 100) audio.playSe(0xb5, false), campLink = 0, campStart = uiClock;
+        if (id != 100) return;
+        audio.playSe(0xb5, false);
+        if (campLink == 201) campLink = 0, campStart = campOpenedAt = uiClock - cr2::EventRuntime::kTick; // (6 at once: the camp again)
+        else if (campLinkCloseAt < 0) campLinkCloseAt = uiClock, campLinkCloseFrom = uiClock - campStart, campLinkCloseTicks = 0;
         return;
     }
     if (id == 201) scenarioScroll = 0;
@@ -2780,7 +2788,7 @@ void Viewer::campEnter(int id) {
     }
 }
 void Viewer::campKey(SDL_Keycode k) {
-    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campCategoryAt >= 0 || campEquipSwitchAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return;
+    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campCategoryAt >= 0 || campEquipSwitchAt >= 0 || campLinkCloseAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return;
     keysUsed = true;
     if (optionsKey(k)) return;
     if (campUse) { // (whom: Left / Right, Return; how many: Left / Right, Return yes, Backspace no)

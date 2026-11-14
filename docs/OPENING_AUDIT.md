@@ -1517,6 +1517,18 @@ the Back's update; now in the camp `optionsBack` plays the parts back (each from
 makes the camp again in the fourth update. The title's and the battles' options are as they were.
 `--play d0104 --flag 84 --input "tab camp options back back back"`: the options, the camp, out.
 
+### Round 68: the camp's links, Back
+
+The scenarios (`ScenarioFlowMenu`, 0x73): Back - SE 0xb5, state 1 - waits for its +0x14,
+`scenariosBG`, whose animation has no length, so it returns 6 in the release's update and
+`InterfaceMain` makes the camp again there, its opening and lock. The pub's request
+(`CampPubDetailMenu`, 0x6d): Back - +0x1c 120, SE 0xb5, `InterfaceCloseAnimeSet`, +0x54 - then
+`Update` adds the update's time to +0x44 and returns 6 at 1.0, the twentieth update. The port went
+back to the camp in the Back's update, its parts from 0; now the scenarios' Back makes the camp as
+the original (stepped once, its lock), and the request's plays its parts back and waits its second
+(`campLinkCloseAt`) first. `--play d0104 --input "tab camp scenarios back back back"`: the
+scenarios, the camp, out. The request's Back was not run (it needs flag 0x4b0 and a request).
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

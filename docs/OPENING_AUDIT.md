@@ -1948,7 +1948,9 @@ before turning, so a turn cut short stays where the last update left it. The por
 direction at once. Now `walk` turns `walkTurnAt` 0.45 of the way at each update while moving, shows
 the turn between updates toward the next one's (as the idle turn does), and keeps the last update's
 heading when the leader stops; another's change of the heading (a script, an action) is taken as
-the new start. A reversal is about 90% done in four updates (0.2 s). (`FldMain::ChangeCharacterExecute`
+the new start. From standing, `FldPlayer::Update`'s state 0 sets the walk or run and calls
+`StopDirection` instead - the turn begins the update after; the port waits the same. A reversal is
+about 90% done in four updates (0.2 s). (`FldMain::ChangeCharacterExecute`
 counts its 16 / 32 in 60ths - `dt x 60` an update - as the port does; nothing changed there.)
 
 ## Original-code evidence

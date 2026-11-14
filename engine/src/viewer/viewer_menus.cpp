@@ -961,8 +961,9 @@ void Viewer::walk(float dt, float sx, float sy, bool run) {
         playerCur[0] = p[0], playerCur[1] = p[1] - 0.02f, playerCur[2] = p[2];
         if (++substep < cr2::CharacterController::kSubsteps) continue;
         substep = 0;
+        const bool wasMoving = stepState != 0; // (FldPlayer::Update from standing: StopDirection, no turn that update)
         stepUpdate(speed == 0 ? 0 : run ? 2 : 1);
-        if (walkTurnOn && speed != 0) walkTurnAt = turnBetween(walkTurnAt, target, 0.45f); // (SetDirectionAtMove)
+        if (walkTurnOn && speed != 0 && wasMoving) walkTurnAt = turnBetween(walkTurnAt, target, 0.45f); // (SetDirectionAtMove)
         // an exit: the area changes to the map its pop point names (FldMain::ChangeAreaExecute)
         const std::string exit = field.exitTouched(p, controller->radius);
         if (exit.empty()) exitsArmed = true;
@@ -973,7 +974,8 @@ void Viewer::walk(float dt, float sx, float sy, bool run) {
         encountUpdate(p, fieldScriptRunning() || actionRunning() || changeStage != 0 || keyLock.stage != 0);
     }
     if (walkTurnOn) { // (between updates: toward the next update's turn, at the update's fraction)
-        if (speed != 0) heading = turnBetween(walkTurnAt, turnBetween(walkTurnAt, target, 0.45f), (float(substep) * kSub + stepClock) / cr2::CharacterController::kUpdate);
+        if (speed != 0 && stepState != 0) heading = turnBetween(walkTurnAt, turnBetween(walkTurnAt, target, 0.45f), (float(substep) * kSub + stepClock) / cr2::CharacterController::kUpdate);
+        else if (speed != 0) heading = walkTurnAt; // (the first moving update still to come: no turn yet)
         else heading = walkTurnAt, walkTurnOn = false; // (stopped: where the last update left it)
         walkShown = heading;
     }

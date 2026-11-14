@@ -1560,6 +1560,16 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                     optionsCloseAt = -1, optionsOpen = false;
                     campStart = campOpenedAt = uiClock - cr2::EventRuntime::kTick;
                 }
+                if (campOpen && (campTakeStage == 1 || campTakeStage == 3) && ++campTakeTicks >= 4) {
+                    if (campTakeStage == 1) { // (state 6: the question)
+                        campTakeStage = 2, campTakeSopia = campTakePending, campUseStart = uiClock;
+                        campTakeName = menuName(0x29 + campTakeFrom);
+                    } else { // (9: the view again; 8: the list in again)
+                        campTakeStage = 0;
+                        if (campTakeYes) campEquipMode = 0, campEquipCursor = 0;
+                        campStart = campListOpenedAt = uiClock;
+                    }
+                }
                 if (campOpen && campEquipSwitchAt >= 0 && ++campEquipSwitchTicks >= 4) { // (the next mode's rows in)
                     campEquipSwitchAt = -1, campEquipMode = campEquipSwitchMode, campEquipCursor = campEquipSwitchCursor;
                     if (campEquipSwitchChar >= 0) campEquipChar = campEquipSwitchChar, campEquipSwitchChar = -1;
@@ -1919,6 +1929,7 @@ float Viewer::campPartTime(float length) const {
 }
 void Viewer::closeCamp() {
     campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1, campExitTicks = -1, campUseCloseAt = -1, campSopiaSwitchAt = -1, campCategoryAt = -1, campEquipSwitchAt = -1, optionsCloseAt = -1, campLinkCloseAt = -1;
+    campTakeStage = 0, campTakeSopia = 0;
     campOpen = false, campList = 0, campUse = 0, campItem = 0, campLink = 0;
     optionsOpen = optionsAsk = false, manualStage = 0, manualEvents.reset();
     SDL_Log("camp: closed");
@@ -2566,7 +2577,8 @@ void Viewer::campEquipPick(int id) {
                 for (int k = 5; k < 8; ++k)
                     if (game.equip[c][k] == s) {
                         audio.playSe(0xb4, false);
-                        campTakeSopia = s, campTakeFrom = c, campUseStart = uiClock;
+                        campTakePending = s, campTakeFrom = c;
+                        campTakeStage = 1, campTakeTicks = 0, campTakeAt = uiClock, campTakeFromT = campListTime();
                         return;
                     }
         eq[campEquipMode] = static_cast<short>(s);
@@ -2627,20 +2639,24 @@ void Viewer::clampMp(int ch) { // (Cr3UtilAdjustment: the MP within the most)
     if (game.mp[ch] >= 0) game.mp[ch] = std::min(game.mp[ch], statsOf(ch).maxMp);
 }
 void Viewer::campTakeAnswer(bool yes) {
-    if (yes) {
+    if (campTakeStage != 2) return;
+    if (yes) { // (state 7: the sopia off the other, on this one, at once)
         for (int k = 5; k < 8; ++k)
             if (game.equip[campTakeFrom][k] == campTakeSopia) game.equip[campTakeFrom][k] = 0;
         clampMp(campTakeFrom);
         game.equip[campEquipChar][campEquipMode] = static_cast<short>(campTakeSopia);
         clampMp(campEquipChar);
         audio.playSe(199, false);
-        campEquipMode = 0, campEquipCursor = 0, campStart = uiClock;
     } else audio.playSe(0xb4, false);
+    campTakeYes = yes, campTakeStage = 3, campTakeTicks = 0, campTakeAt = uiClock, campTakeFromT = uiClock - campUseStart;
     campTakeSopia = 0, campTakeFrom = -1;
 }
 void Viewer::campEquipBack() {
+    if (campTakeStage) { // (the question: Back as its No; its rows or choice going: nothing)
+        if (campTakeStage == 2) campTakeAnswer(false);
+        return;
+    }
     audio.playSe(0xb5, false);
-    if (campTakeSopia) return campTakeAnswer(false);
     if (campEquipMode == 8) campEquipSwitch(campEquipPrevMode, campEquipPrevCursor);
     else if (campEquipMode) campEquipSwitch(0, 0);
     else campListBack();
@@ -2664,7 +2680,14 @@ void Viewer::campEquipChange(int dir) { // (another character: the eye buttons, 
     campEquipSwitchChar = chars[size_t((k + dir + int(chars.size())) % int(chars.size()))];
 }
 void Viewer::drawEquipment(const Mat4& view, const Mat4& proj, int w, int h) {
-    const float t = campListTime();
+    if (campTakeStage >= 2) { // (the list and its windows gone: the question alone - played back as it closes)
+        const float qt = campTakeStage == 2 ? uiClock - campUseStart : std::max(std::min(campTakeFromT, 0.2f) - (uiClock - campTakeAt), 0.0f);
+        const int who = campTakeStage == 2 ? campTakeFrom : -1;
+        if (who >= 0) drawAsk(formatAnnounce(announce(0x8a), {menuName(0x29 + who)}), qt, view, w, h, 7201, 7202);
+        else if (campTakeStage == 3) drawAsk(formatAnnounce(announce(0x8a), {campTakeName}), qt, view, w, h, 0, 0);
+        return;
+    }
+    const float t = campTakeStage == 1 ? std::max(std::min(campTakeFromT, 0.2f) - (uiClock - campTakeAt), 0.0f) : campListTime(); // (the rows going)
     const std::vector<EquipRow> rows = equipRows();
     campEquipCursor = std::clamp(campEquipCursor, 0, std::max(int(rows.size()) - 1, 0));
     const EquipRow* focused = rows.empty() ? nullptr : &rows[size_t(campEquipCursor)];
@@ -2759,10 +2782,6 @@ void Viewer::drawEquipment(const Mat4& view, const Mat4& proj, int w, int h) {
         float sx, sy, ex, ey;
         if (uiJoint(cb, "tapAreaS01", sx, sy) && uiJoint(cb, "tapAreaE01", ex, ey)) tapRects.push_back({7350, sx, sy, ex, ey});
     } else campChangeAt = -1;
-    if (campTakeSopia) {
-        const std::string who = menuName(0x29 + campTakeFrom);
-        drawAsk(formatAnnounce(announce(0x8a), {who}), uiClock - campUseStart, view, w, h, 7201, 7202);
-    }
 }
 void Viewer::scrollScenarios(float dy) { scenarioScroll = std::clamp(scenarioScroll + dy, 0.0f, game.flag(1) ? 1.472f : 0.704f); }
 void Viewer::drawScenarios(const Mat4& view, const Mat4& proj, int w, int h) {
@@ -2853,7 +2872,7 @@ void Viewer::drawPubRequest(const Mat4& view, int w, int h) {
 
 // a camp button pressed (CampMenu::TouchSimpleRelease: 0xb4; InterfaceMain's camp step by it)
 void Viewer::campPress(int id) {
-    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campCategoryAt >= 0 || campEquipSwitchAt >= 0 || campLinkCloseAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return; // (state 1 on: the menu closing; or still opening, +0x1c)
+    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campCategoryAt >= 0 || campEquipSwitchAt >= 0 || campLinkCloseAt >= 0 || campExitTicks >= 0 || campTakeStage == 1 || campTakeStage == 3 || campOpening() || campListOpening()) return; // (state 1 on: the menu closing; or still opening, +0x1c)
     if (campUse) return campUseTap(id);
     if (campLink) {
         if (id != 100) return;
@@ -2934,7 +2953,7 @@ void Viewer::campEnter(int id) {
     }
 }
 void Viewer::campKey(SDL_Keycode k) {
-    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campCategoryAt >= 0 || campEquipSwitchAt >= 0 || campLinkCloseAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return;
+    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campCategoryAt >= 0 || campEquipSwitchAt >= 0 || campLinkCloseAt >= 0 || campExitTicks >= 0 || campTakeStage == 1 || campTakeStage == 3 || campOpening() || campListOpening()) return;
     keysUsed = true;
     if (optionsKey(k)) return;
     if (campUse) { // (whom: Left / Right, Return; how many: Left / Right, Return yes, Backspace no)

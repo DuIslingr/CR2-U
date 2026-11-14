@@ -2017,6 +2017,25 @@ the port had it so), the effects' delays and hit waits (x 0.05), the script's `W
 fades', the quake's and the camera moves' frames (updates), the encounter wipe (checked against the
 reference video, round 19) - all as the port already counts them.
 
+### Round 100: the camp's sopia lists
+
+`CampEquipmentListMenu`'s sopia modes, read against the port:
+- `Update_HumanSopia` (Darwin's): a pick - SE 199, the sopia on (`Cr3UtilChangeEquipSopia`), then the
+  Back path (+0x48 4): the rows out and the view in the fourth update - as the port does (round 65).
+- `Update_SopiaDetail` (the change button's: its tap SE 0xb4 in `ScrollListMenu::TouchGestureTap_super`,
+  action 0xe): Back - the rows out, the previous list's in, the focus kept, the fourth update - as
+  the port's `campEquipSwitch` to the previous mode.
+- `Update_MonsterSopia`, a sopia another of the party wears: SE 0xb4, +0x1c 30, the rows out to the
+  right, the help hidden, the side windows (0x34, 0x35) closed, the change button hidden; state 6
+  makes the question (0x8a with the wearer's name; the choice's own sound off) once the rows are out,
+  the fourth update. Its Yes: SE 199, the sopia off the other and on this one at once, the choice
+  ended, then once it is gone (state 9, the fourth) 0xc and the view again. Its No: SE 0xb4, then
+  once it is gone (state 8) the list made again and in. The port asked in the pick's update over the
+  list and changed to the view at the Yes. Now `campTakeStage` plays the list and its windows back,
+  asks in the fourth update with nothing under the question, and after the answer plays the
+  question back and brings the view (Yes) or the list (No) in the fourth; Back during the question
+  is its No. Not run: it needs a monster sopia another member wears.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

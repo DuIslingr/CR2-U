@@ -1766,6 +1766,14 @@ struct Viewer {
     int campEquipViewSopia = 0, campEquipPrevMode = 0, campEquipPrevCursor = 0;
     float campChangeAt = -1;
     int campTakeSopia = 0, campTakeFrom = -1; // (a sopia another wears, asked for)
+    // (Update_MonsterSopia: the pick of one another wears - SE 0xb4, +0x1c 30, the rows out and the side windows
+    // closed, state 6: the question (0x8a) once they are out, the fourth update; its Yes (199, the sopia moved at
+    // once) or No (0xb4): the choice closed, then - once it is gone, the fourth - the view again (9: 0xc) or the
+    // list in again (8). campTakeStage: 1 the rows going, 2 asking, 3 the choice going)
+    int campTakeStage = 0, campTakeTicks = 0, campTakePending = 0;
+    float campTakeAt = 0, campTakeFromT = 0;
+    bool campTakeYes = false;
+    std::string campTakeName; // (the question's name, kept for its close)
     struct EquipRow {
         int id = 0; // (300 + the mode a view row opens; an item; 400 + a sopia; 399 Remove)
         std::string name;

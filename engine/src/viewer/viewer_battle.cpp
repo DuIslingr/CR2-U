@@ -2028,10 +2028,14 @@ void Viewer::beginShowAction(const ShowAction& a) {
         cr2::motionTimes(bu.figure, cr2::motionIndex(motion), t);
         Move& m = showMoves[slot++];
         m.unit = u;
-        if (target >= 0 && t.moveStart >= 0 && t.moveEnd >= t.moveStart && aposPlace(aposName(f, target), m.to)) {
-            m.active = true;
-            m.start = t.moveStart + delay, m.end = t.moveEnd + delay;
-            m.back = t.move2Start + delay, m.backEnd = t.move2End + delay;
+        if (target >= 0 && aposPlace(aposName(f, target), m.to)) {
+            m.face = true; // (RotTarget)
+            if (t.turnStart >= 0 && t.turnEnd >= t.turnStart) m.turn = t.turnStart + delay, m.turnEnd = t.turnEnd + delay;
+            if (t.moveStart >= 0 && t.moveEnd >= t.moveStart) {
+                m.active = true;
+                m.start = t.moveStart + delay, m.end = t.moveEnd + delay;
+                m.back = t.move2Start + delay, m.backEnd = t.move2End + delay;
+            }
         }
         if (f == a.actor) showHitAt = t.hit[0] >= 0 ? t.hit[0] + delay : length * 0.5f;
         if (t.move2End >= 0) returned = std::max(returned, t.move2End + delay);
@@ -2267,15 +2271,30 @@ void Viewer::poseBattleShow() {
     for (const Move& m : showMoves) {
         if (m.unit < 0) continue;
         BattleUnit& bu = battleUnits[size_t(m.unit)];
-        if (!m.active) {
+        if (!m.active && !m.face) {
             bu.fig.place = bu.home;
             continue;
         }
-        float k = 0;
-        if (s >= m.start) k = m.end > m.start ? std::min((s - m.start) / (m.end - m.start), 1.0f) : 1.0f;
-        if (m.back >= 0 && s >= m.back) k = m.backEnd > m.back ? 1.0f - std::min((s - m.back) / (m.backEnd - m.back), 1.0f) : 0.0f;
-        if (m.back < 0 && s >= showEnd - showStart - 0.3f) k = 0;
-        cr2::Mat34 p = k < 0.5f ? bu.home : m.to; // (the turn: at the move's middle)
+        float k = 0; // (the way there: SetMovePosition, the place alone)
+        if (m.active) {
+            if (s >= m.start) k = m.end > m.start ? std::min((s - m.start) / (m.end - m.start), 1.0f) : 1.0f;
+            if (m.back >= 0 && s >= m.back) k = m.backEnd > m.back ? 1.0f - std::min((s - m.back) / (m.backEnd - m.back), 1.0f) : 0.0f;
+            if (m.back < 0 && s >= showEnd - showStart - 0.3f) k = 0;
+        }
+        // the facing: the apos's from the start, back to its own over the turn (or the end's 0.2 s)
+        const float t0 = m.turn >= 0 ? m.turn : showEnd - showStart - 0.2f, t1 = m.turn >= 0 ? m.turnEnd : showEnd - showStart;
+        float back = s <= t0 ? 0.0f : t1 > t0 ? std::min((s - t0) / (t1 - t0), 1.0f) : 1.0f;
+        if (!m.face) back = 1.0f;
+        cr2::Mat34 p = back <= 0 ? m.to : bu.home; // (wholly turned: the apos's own; wholly back: its own)
+        if (back > 0 && back < 1) { // (between: its own turned about y by what is left of the turn)
+            auto yawOf = [](const cr2::Mat34& x) { return std::atan2(x.m[2], x.m[0]); };
+            const float d = std::remainder(yawOf(m.to) - yawOf(bu.home), 6.28318531f) * (1.0f - back);
+            const float c = std::cos(d), sn = std::sin(d);
+            for (int col = 0; col < 3; ++col) { // (Ry(d) x its own: rows 0 and 2 mixed)
+                const float a0 = bu.home.m[col], a2 = bu.home.m[8 + col];
+                p.m[col] = c * a0 + sn * a2, p.m[8 + col] = -sn * a0 + c * a2;
+            }
+        }
         for (int r = 0; r < 3; ++r) p.m[r * 4 + 3] = bu.home.m[r * 4 + 3] + (m.to.m[r * 4 + 3] - bu.home.m[r * 4 + 3]) * k;
         bu.fig.place = p;
     }
@@ -2738,9 +2757,12 @@ void Viewer::runStep(const cr2::SpecialStep& st) {
     case kSpecialDash: // (SetMovePosition: to its aPos by the target over the time)
         if (actorUnit && scene.target >= 0 && aposPlace(aposName(scene.actor, scene.target), showMoves[0].to)) {
             Move& m = showMoves[0];
-            m.unit = fighterUnit[scene.actor], m.active = true;
+            m.unit = fighterUnit[scene.actor], m.active = true, m.face = true; // (ActionAwakeStandby's RotTarget)
             m.start = st.time, m.end = st.time + std::max(st.f[0], 0.0f), m.back = -1, m.backEnd = -1;
         }
+        break;
+    case kSpecialReturnDirection: // (ActionSpecialReturnDirection: SetMoveRotation back to its own over the time)
+        if (showMoves[0].active) showMoves[0].turn = st.time, showMoves[0].turnEnd = st.time + std::max(st.f[0], 0.0f);
         break;
     case kSpecialReturn:
         if (showMoves[0].active) showMoves[0].back = st.time, showMoves[0].backEnd = st.time + std::max(st.f[0], 0.0f);

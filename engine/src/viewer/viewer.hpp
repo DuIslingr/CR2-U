@@ -802,6 +802,11 @@ struct Viewer {
         cr2::Mat34 to;
         float start = -1, end = -1, back = -1, backEnd = -1;
         bool active = false;
+        // (BtlActionCtrl::RotTarget at the attack's standby: the actor faced to its apos's rotation at once;
+        // ActionAttackWaitRotate: turned back over the motion's turn - GetMotionTimeRotStart .. End -, else
+        // ActionAttackStandbyMotion's 0.2 s at the end)
+        bool face = false;
+        float turn = -1, turnEnd = -1;
     } showMoves[2];
     bool aposPlace(const std::string& name, cr2::Mat34& out);
     std::string aposName(int actor, int target);

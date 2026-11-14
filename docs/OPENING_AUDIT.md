@@ -2089,6 +2089,23 @@ in the fifth (0.15 s menus) or sixth update; taps wait meanwhile and until the n
 driver); `enter` goes through the menu. `--battle 57 --fight manual --flag 84 --input "enter x16"`:
 the choices made, the turn at 4.95 s, the battle won.
 
+### Round 105: an attacker's facing
+
+`BtlActionCtrl::RotTarget` (from `ActionAttackStandby`, `ActionAttackPairStandby`, `ActionAwakeStandby`,
+`ActionCommonWaitRotTarget`): the actor's model given its apos's rotation (the place it would strike
+from) at once, when the action stands by - whether or not its motion moves. `BtlMoveCtrl::SetMovePosition`
+(the dash and the way back, `ActionSpecialDash` / `Return`) moves the place alone. The turn back is
+its own move: `ActionAttackWaitRotate` waits for the motion's turn (`GetMotionTimeRotStart`) and slerps
+the rotation back to the model's own over `RotEnd - RotStart` (`SetMoveRotation`); a motion without a
+turn is turned back by `ActionAttackStandbyMotion`, over 0.2 s, at the end; in a special scene
+`ActionSpecialReturnDirection` does it over its time. The port turned the actor at the middle of its
+dash and back at the middle of its return, an action without a dash not at all, and left the
+special scenes' ReturnDirection unhandled. Now `poseBattleShow` faces the actor (and its partner)
+to the apos from the action's start, keeps the dash's place apart from the facing, and turns it back
+over the motion's turn time (else the last 0.2 s); a special scene's Dash faces the actor and its
+ReturnDirection turns it back. Captured: battle 57, Orlando's Slash at 2.0 / 3.3 s - facing the
+Mantis through the dash. Not compared with footage.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

@@ -2097,6 +2097,7 @@ void Viewer::drawCamp(const Mat4& view, const Mat4& proj, int w, int h) {
     UiFig& bk = uiFig("btlback");
     bk.fig.place = cr2::Mat34();
     poseUi(bk, "btlback_in", campPartTime(0.15f));
+    backLook(bk);
     drawFigure(bk.fig, view.data());
     float sx, sy, ex, ey;
     if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
@@ -2324,6 +2325,7 @@ void Viewer::drawItemUse(const Mat4& view, const Mat4& proj, int w, int h) {
     UiFig& bk = uiFig("btlback");
     bk.fig.place = cr2::Mat34();
     poseUi(bk, "btlback_in", t);
+    backLook(bk);
     drawFigure(bk.fig, view.data());
     float sx, sy, ex, ey;
     if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
@@ -2808,6 +2810,7 @@ void Viewer::drawScenarios(const Mat4& view, const Mat4& proj, int w, int h) {
     UiFig& bk = uiFig("btlback");
     bk.fig.place = cr2::Mat34();
     poseUi(bk, "btlback_in", t);
+    backLook(bk);
     drawFigure(bk.fig, view.data());
     float sx, sy, ex, ey;
     if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
@@ -2842,6 +2845,7 @@ void Viewer::drawPubRequest(const Mat4& view, int w, int h) {
     UiFig& bk = uiFig("btlback");
     bk.fig.place = cr2::Mat34();
     poseUi(bk, "btlback_in", t);
+    backLook(bk);
     drawFigure(bk.fig, view.data());
     float sx, sy, ex, ey;
     if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
@@ -4078,6 +4082,7 @@ void Viewer::drawPub(const Mat4& view, int w, int h) {
         u.fig.place = cr2::Mat34();
         u.fig.place.m[3] = x, u.fig.place.m[7] = y;
         poseUi(u, anim, tt >= 0 ? tt : t);
+        if (std::strcmp(fig, "btlback") == 0) backLook(u);
         drawFigure(u.fig, view.data());
         return u;
     };
@@ -4482,6 +4487,7 @@ void Viewer::drawShop(const Mat4& view, const Mat4& proj, int w, int h) {
         UiFig& bk = uiFig("btlback");
         bk.fig.place = cr2::Mat34();
         poseUi(bk, "btlback_in", t);
+        backLook(bk);
         drawFigure(bk.fig, view.data());
         float sx, sy, ex, ey;
         if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
@@ -4638,6 +4644,7 @@ void Viewer::drawParty(const Mat4& view, const Mat4& proj, int w, int h) {
         UiFig& bk = uiFig("btlback");
         bk.fig.place = cr2::Mat34();
         poseUi(bk, "btlback_in", partT(0.15f));
+        backLook(bk);
         drawFigure(bk.fig, view.data());
         float sx, sy, ex, ey;
         if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});

@@ -783,6 +783,22 @@ void Viewer::battleKey(SDL_Keycode k) {
     if (k != SDLK_BACKSPACE && menuCursor != was && !list) audio.playSe(0xb3, false);
 }
 // a click at the screen's (fx, fy) - 0..1 across, down: a button's tap area (UI units)
+bool Viewer::underPointer(UiFig& u) {
+    float sx, sy, ex, ey;
+    if (!pointerDown || screenW <= 0 || !uiJoint(u, "tapAreaS01", sx, sy) || !uiJoint(u, "tapAreaE01", ex, ey)) return false;
+    const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+    const float px = (pointerFx - 0.5f) * float(screenW) / k, py = (0.5f - pointerFy) * float(screenH) / k;
+    return px >= std::min(sx, ex) && px <= std::max(sx, ex) && py >= std::min(sy, ey) && py <= std::max(sy, ey);
+}
+void Viewer::backLook(UiFig& b) {
+    const bool on = underPointer(b);
+    for (ViewMesh& vm : b.fig.meshes) {
+        const uint32_t mi = vm.source.material;
+        if (mi >= b.materials.size() || b.materials[mi] != "PRG_colorO") continue;
+        vm.material.params[0x33] = on ? std::vector<float>{1.0f, 2.0f, 3.0f, 1.0f} : vm.baseMaterial.params[0x33];
+        if (vm.material.params[0x33].empty()) vm.material.params.erase(0x33);
+    }
+}
 bool Viewer::noPickTapped(float fx, float fy) { // (a list's focused row that can't be picked: SE 0xb6, nothing else)
     const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
     const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
@@ -3256,14 +3272,7 @@ void Viewer::drawCommandMenu(const std::string& anim, float t, const Mat4& view,
         // CircleBtn::ChangeTapButtonColor: focused (2) PRG_shiftR's texture half across
         // (OffsetSet1 U 0.5), not selectable (0.5) every material's colour at half
         int look = buttonLook ? buttonLook(n) : focusScreen() && n == keyFocus ? 2 : 1;
-        { // (CircleBtn::CheckTap on the press and the move: the one under the finger lit - ChangeTapButtonColor 2)
-            float sx, sy, ex, ey;
-            if (look == 1 && pointerDown && uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey) && screenW > 0) {
-                const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
-                const float px = (pointerFx - 0.5f) * float(screenW) / k, py = (0.5f - pointerFy) * float(screenH) / k;
-                if (px >= std::min(sx, ex) && px <= std::max(sx, ex) && py >= std::min(sy, ey) && py <= std::max(sy, ey)) look = 2;
-            }
-        }
+        if (look == 1 && underPointer(c)) look = 2; // (CircleBtn::CheckTap on the press and the move: the one under the finger lit - ChangeTapButtonColor 2)
         for (ViewMesh& vm : c.fig.meshes) {
             const uint32_t mi = vm.source.material;
             if (mi < c.materials.size() && c.materials[mi] == "PRG_shiftR") vm.material.params[0x5e] = {look == 2 ? 0.5f : 0.0f, 0.0f};
@@ -3568,6 +3577,7 @@ void Viewer::drawChoosing(const Mat4& view, int w, int h) {
         UiFig& bk = uiFig("btlback");
         bk.fig.place = cr2::Mat34();
         poseUi(bk, "btlback_in", t);
+        backLook(bk);
         drawFigure(bk.fig, view.data());
         float sx, sy, ex, ey;
         if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});

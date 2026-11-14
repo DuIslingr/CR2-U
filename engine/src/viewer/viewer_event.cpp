@@ -1147,6 +1147,7 @@ void Viewer::drawTitle() {
         UiFig& bk = uiFig("btlback");
         bk.fig.place = cr2::Mat34();
         poseUi(bk, "btlback_in", age);
+        backLook(bk);
         drawFigure(bk.fig, view.data());
         float sx, sy, ex, ey;
         if (tm.stage == 6 && uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
@@ -1464,6 +1465,7 @@ void Viewer::drawOptions(const Mat4& view, const Mat4& proj, int w, int h) {
     UiFig& bk = uiFig("btlback");
     bk.fig.place = cr2::Mat34();
     poseUi(bk, "btlback_in", optionsPartTime(0.15f));
+    backLook(bk);
     drawFigure(bk.fig, view.data());
     float sx, sy, ex, ey;
     if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});

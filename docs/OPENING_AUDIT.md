@@ -1998,6 +1998,10 @@ look. The menus call it on the press and on each move as well as on the release,
 while a finger is on it and goes plain when the finger slides off. The port lit a button only for
 the keys' focus. Now `drawCommandMenu` draws the button under a held pointer (`pointerFx / Fy`,
 kept from the press and its moves) lit too.
+The back button (`BattleBack::CheckTouch`, called the same way): `ChangeTapButtonColor(true)` sets
+`PRG_colorO`'s colour to (1, 2, 3), (1, 1, 1) off it. The port's back buttons (the camp's, the
+shop's, the pub's, the party's, the options', the title's panel, a battle's lists) now take that
+colour while the finger is on them (`backLook`).
 
 ## Original-code evidence
 

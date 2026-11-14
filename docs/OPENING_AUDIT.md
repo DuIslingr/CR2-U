@@ -1476,7 +1476,9 @@ animations being linear (assumed, as before).
   the Pair turn's flag; round 40 which of a pair runs which table.)
 - **Round-second waits.** The original's 1.5 / 2.0 / 2.5 / 3.0 s float sums pass an update late
   (round 52); the launch waits, the item's end, the turn end, the escape and an action not done
-  follow it (round 53); the revival's 3.0 s banner not yet.
+  follow it (round 53). The revival's 3.0 s entry never runs out on the screen: the revival comes
+  inside the turn's actions, so the next action's `ActionCommonAnnounce` clears it (`ClearAnnounce`)
+  or `CheckAllActionDone` hides the window at the turn's end, which waits for no entry. Settled.
 
 ## Checks
 

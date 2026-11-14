@@ -1413,6 +1413,18 @@ pop point, the white fade, the music, the SE, the flag, then the exits' hold). `
 36:1 --input "tab camp items enter enter enter enter"` (and d0301): the camp closed, then the fade and
 t0101 at t0101_p1. (d0104 has flag 0x3e9 set: the item is greyed there.)
 
+### Round 59: back from an item's use
+
+The use menus (case 9: `CharaStatusWindowBMenu` 0x2f, `CharaStatusCapacityMenu` 0x30,
+`CharaSelectButtonMenu` 0x2e - whom). The whom's Back: state 2, its main part played back, and in the
+update it reaches its start it returns 7 with +0xb8 = 1 - the camp's result 1 to `InterfaceMain`,
+which makes the item list again (0x2d), its opening and lock. The Emergency Exit's No goes the same
+way after the choice's window closes. The port went back to the list in the release's update; now
+`campUseBack` plays the use's parts back (0.2 s) and makes the list again in the fourth update, its
+taps from the fourth after. `--play d0104 --item 4:3 --input "tab camp items down down enter back
+back back"`: Plum picked, back to the list, back to the camp, out. Left: the quantity's question
+(`CampChooseQuantityMenu`, state 3 on) and what follows a use (the port's 1.0 s, then the list).
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

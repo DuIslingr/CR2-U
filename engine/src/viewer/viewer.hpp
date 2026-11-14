@@ -1582,6 +1582,12 @@ struct Viewer {
     // sees it the next: step 0x10 to t0101_p1, Cr3FadeOut(1, 20), the music out over 20, SE 0x14f,
     // flag 0x3ed)
     int campExitTicks = -1;
+    // (the use's Back - CharaSelectButtonMenu state 2, its 0.2 s played back - or the Emergency Exit's No
+    // - the choice's window closing: 7 with result 1 in the fourth update, InterfaceMain making the
+    // item list again, 0x2d, its opening and lock)
+    float campUseCloseAt = -1, campUseCloseFrom = 0;
+    int campUseCloseTicks = 0;
+    void campUseBack();
     bool emergencyExit = false;
     // (a list made: InterfaceMain +0x1c 30 till its main frame's 0.2 s opening has played - state 1 -
     // its taps from the fourth update after the one it was made in)

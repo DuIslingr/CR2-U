@@ -1406,6 +1406,10 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                 if (!script->running()) script->tick();
                 // (the camp closing: InterfaceMain's +0xbc in the fourth update after the release's;
                 // FldMain's step 5 -> 1 the next, step 1's control the one after)
+                if (campOpen && campUseCloseAt >= 0 && ++campUseCloseTicks >= 4) { // (the item list again)
+                    campUseCloseAt = -1, campUse = 0, campItem = 0;
+                    campStart = campListOpenedAt = uiClock - cr2::EventRuntime::kTick;
+                }
                 if (campOpen && campExitTicks >= 0 && ++campExitTicks >= 5) { // (+0xbc = 2)
                     closeCamp(), emergencyExit = true;
                     break;
@@ -1741,7 +1745,7 @@ float Viewer::campPartTime(float length) const {
     return std::max(std::min(campCloseFrom, length) - (uiClock - campCloseAt), 0.0f); // (played back from where it was)
 }
 void Viewer::closeCamp() {
-    campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1, campExitTicks = -1;
+    campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1, campExitTicks = -1, campUseCloseAt = -1;
     campOpen = false, campList = 0, campUse = 0, campItem = 0, campLink = 0;
     optionsOpen = optionsAsk = false, manualStage = 0, manualEvents.reset();
     SDL_Log("camp: closed");
@@ -2044,11 +2048,15 @@ void Viewer::useItemOn(int ch, int item, int n) { // (Cr3UtilParameterUpByItem, 
     SDL_Log("camp: %s x%d on %d: MP %d -> %d", it->name[1].c_str(), n, ch + 1, mp0, mp);
     showRaised(ch, *it, n);
 }
+void Viewer::campUseBack() {
+    if (campUseCloseAt < 0) campUseCloseAt = uiClock, campUseCloseFrom = uiClock - campUseStart, campUseCloseTicks = 0;
+}
 void Viewer::campUseTap(int id) {
+    if (campUseCloseAt >= 0) return;
     const std::vector<int> chars = validChars();
     const cr2::BattleData::Item* it = battleData.item(campItem);
     if (campUse == 1) {
-        if (id == 100) { campUse = 0, audio.playSe(0xb5, false); return; }
+        if (id == 100) { audio.playSe(0xb5, false), campUseBack(); return; }
         const int k = id - 7000;
         if (k < 0 || k >= int(chars.size())) return;
         if (k != campFace) { campFace = k, audio.playSe(0xb3, false); return; }
@@ -2071,11 +2079,11 @@ void Viewer::campUseTap(int id) {
             game.itemCount[36] = static_cast<short>(std::max(game.itemCount[36] - 1, 0));
             audio.playSe(0xb4, false);
             campExitTicks = 0;
-        } else if (id == 7202) campUse = 0, campItem = 0, audio.playSe(0xb5, false);
+        } else if (id == 7202) audio.playSe(0xb5, false), campUseBack();
     }
 }
 void Viewer::drawItemUse(const Mat4& view, const Mat4& proj, int w, int h) {
-    const float t = uiClock - campUseStart;
+    const float t = campUseCloseAt < 0 ? uiClock - campUseStart : std::max(std::min(campUseCloseFrom, 0.2f) - (uiClock - campUseCloseAt), 0.0f);
     const cr2::BattleData::Item* it = battleData.item(campItem);
     const std::string name = it ? itemName(campItem) : "";
     if (campUse == 3) return drawAsk(formatAnnounce(announce(0x73), {name}), t, view, w, h, 7201, 7202);

@@ -1779,6 +1779,23 @@ the fourth update; input on the options waits meanwhile; the battle's `--input` 
 it. `--battle 57 --fight solo --flag 84 --input "options back"`: `battle: the options closed` four
 updates after the Back.
 
+### Round 82: the small menus, checked
+
+The menu classes no round had named, read for anything timed. No change came of them:
+- `CharaTradeMenu` (the field's change button): `chrTrade` with its own one-frame animation (0 s) -
+  the port's pose 0 is it -; its tap SE 0xb4 and +0x1c 1 (the swap asked); its close the same frame
+  played back, nothing to wait for.
+- `CheckAreaExclamationMenu`, `FastForwardMenu`, `LoadingMarkMenu`, `VistaFastButtonMenu`: each
+  `Update` returns done the update `SetParamNumber(.., 1)` sets +0x10 (the close's `ChangeAnime`, where
+  there is one, not waited for): gone the update they are told.
+- `GimmickRockBreakMenu` (`rockBreak`, 0.75 s, done at its end): reached only through
+  `InterfaceWindow.SetEffectRockBreak` (`CR3InterfaceEvent_RockBreak`), which no script in the data
+  calls - unused.
+- `PlayTimeWindowMenu`: the camp's clock, with the camp's parts (rounds 54 - 69).
+`BattleStatusMenu`, `BreakWindowMenu` (the break and charge gauges), `CampSopiaStatusMenu` and
+`FieldMenuTabMenu` belong to the battle's, the camp's and the field tab's rounds under their parts'
+names; their own `Update`s were not read here.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

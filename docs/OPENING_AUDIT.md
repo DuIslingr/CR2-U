@@ -1658,6 +1658,39 @@ t0101 `--call evt023` with a bounded explore (a pick put in for a run, not kept)
 reading (`library_disp` four updates on), the list again, Back, `library: closed` ten updates on,
 then the field.
 
+### Round 76: the party's organization
+
+`FldPartyOrganize` (step 0xc) makes `PartyOrganizationMenu` 0x4f (`SetPartyOrganizationParameter`,
++200 1), then reads its result once it is gone: 2 `CallAtMenuFinished`, 3 `CallEvent` (`party_talk`), 4
+`CallEvent` (`party_end`) - the menu's +0xa0 (`SetParamNumber` 2). Its `TouchSimpleRelease`:
+- the console (taps once its +8, `console_io` played to half its length, is in): Organize (0x19) -
+  +0x1c 120, `FirstInterfaceCloseAnimeSet` (the console and the back button back from where they
+  are), SE 0xb4, state 2 -; Back (100) - SE 0xb5, state 3, +0xa0 2 -; Talk (0xd) - SE 0xb4, state 3,
+  +0xa0 3. State 3 returns 1 once the console is back (0.25 s: the fifth update); state 2 goes to
+  0xf there: `SetSelectActorScene` (`partyBtn` on `partyBtn1_io`, the two cut-in windows -
+  `SetCutInWindow` 4 / 3 -, `partyUnder`, the back button), `SetHelpWindow` and 0x1b, on which
+  `InterfaceMain` makes `PartySelectTitleMenu` 0x50: the title comes with the slots, not with the
+  console. State 4 clears the lock once `partyBtn` is in (+0x7c).
+- the slots (+0x1c 30, `ActorInterfaceCloseAnimeSet`: `partyBtn`, the back button and `partyUnder`
+  back, `EndCutInWindow`): a slot - SE 0xb4, state 8 / 0xc: once `partyBtn` is back (0.2 s, the fourth
+  update) `SetHeroSelectScene` (`partyBtn2_io`, the faces' window), state 9 / 0xd clearing the lock
+  once it is in -; Back (100) - SE 0xb5, `CloseHelpWindow`, state 6: 0x1c - the title told to close,
+  back from where it is (0.45 s), a menu of its own - and state 7, which returns 1 once `partyBtn` is
+  back: `party_end`.
+- the faces (`TouchGestureTap`): a face not selected - SE 0xb3, the cursor moved to it (its
+  after-image) -; the selected one (the first face to begin with) - SE 0xb4, +0x1c 30, the parts
+  back, +0x90 its character: state 10 puts it in the slot (cr3_common_data +3 / +4), 0xb makes the
+  slots again once the parts are back. Back: the same without a character.
+The port changed every scene in the release's update, showed the title from the console on, and
+took a face at its first tap. Now `partySwitch` plays the scene's parts back (console 0.25 s, the
+rest 0.2 s, the back button 0.15 s, the cut-in windows' 0.2 s) and makes the next in the fifth /
+fourth update, taps from the fifth update after (`party.inTicks`, at the open too); the title is
+made with the slots and closes on its own after their Back (`partyTitleOutAt`); a face tap selects
+it (SE 0xb3), a tap on the selected one takes it, the character set when the slots come back. The
+explore taps the face twice. t0101 `--call ReserveParty` with a bounded explore (a sequence put in
+for a run, not kept: Organize, slot 2, the second face twice, Back): the slots five updates on, the
+faces four, the party 0,2 -> 0,3 four after the second tap, `party_end` queued four after Back.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

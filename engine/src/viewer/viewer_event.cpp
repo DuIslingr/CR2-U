@@ -718,6 +718,7 @@ void Viewer::resetSessionUi() {
     saveFailed = false;
     world.stage = shop.stage = party.stage = library.stage = pub.stage = credits.stage = 0;
     worldSwitchAt = worldOutAt = -1, worldInTicks = 5;
+    partyTitleOutAt = -1;
     paused = fieldTabOpen = false;
     script.reset();
     event.reset();

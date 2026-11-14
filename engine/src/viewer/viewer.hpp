@@ -2028,7 +2028,16 @@ struct Viewer {
         int stage = 0; // 0 shut, 1 the console, 2 the two, 3 a slot's choice
         int slot = 0, focus = 0;
         float at = 0;
+        // (PartyOrganizationMenu: each step closes its parts first - the console's +8 (console_io from half
+        // its length, 0.25 s: the fifth update), the slots' +4 (partyBtn1/2_io, 0.2 s: the fourth), the back
+        // button, the cut-in windows (EndCutInWindow) - then the next scene (states 0xf, 8, 0xb), or 1 (done:
+        // FldPartyOrganize's result). The next scene's taps once its part is in (+0x1c 0: the fifth update))
+        float switchAt = -1, switchFrom = 0;
+        int switchTicks = 0, switchLen = 0, switchTo = 0, inTicks = 5, pick = -1; // (to: 0 the field, 10 party_talk, 11 party_end)
+        float titleAt = -1; // (PartySelectTitleMenu 0x50: made by the 0x1b of Organize's step, not with the console)
     } party;
+    float partyTitleOutAt = -1, partyTitleOutFrom = 0; // (the slots' Back: 0x1c - the title back from where it was, past the menu's end)
+    void partySwitch(int to, int ticks);
     std::vector<int> partyChoices() const;
     void partyTap(int id);
     void partyKey(SDL_Keycode k);

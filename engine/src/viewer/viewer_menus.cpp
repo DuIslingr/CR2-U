@@ -1437,6 +1437,24 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                         break;
                     }
                 }
+                if (party.stage && party.switchAt >= 0 && ++party.switchTicks >= party.switchLen) { // (the step's next scene)
+                    const int to = party.switchTo;
+                    party.switchAt = -1;
+                    if (to == 0 || to == 10 || to == 11) {
+                        party.stage = 0;
+                        SDL_Log("party: closed (%d)", to);
+                        if (to == 0) pendingBranch = true; // (FldPartyOrganize 2: CallAtMenuFinished)
+                        else queueEvent(to == 10 ? "party_talk" : "party_end"); // (3 / 4: CallEvent)
+                        break;
+                    }
+                    if (to == 2 && party.stage == 1) party.titleAt = uiClock; // (0x1b: the title made)
+                    if (to == 2 && party.stage == 3 && party.pick >= 0) {
+                        game.party[party.slot] = party.pick;
+                        SDL_Log("party: %d, %d", game.party[0], game.party[1]);
+                    }
+                    party.pick = -1;
+                    party.stage = to, party.at = uiClock, party.focus = 0, party.inTicks = 0;
+                } else if (party.stage && party.switchAt < 0 && party.inTicks < 5) ++party.inTicks;
                 if (library.stage == 1 && library.closeAt < 0 && library.inTicks < 5) ++library.inTicks;
                 if (library.stage == 1 && library.closeAt >= 0) {
                     ++library.closeTicks;
@@ -1624,7 +1642,7 @@ void Viewer::branchAfterField() {
     }
     if (n.party) { // (FldMain step 0xc: the party)
         n.party = false;
-        party = PartyMenu(), party.stage = 1, party.at = uiClock;
+        party = PartyMenu(), party.stage = 1, party.at = uiClock, party.inTicks = 0; // (the console in first: state 0)
         SDL_Log("party: open");
         return;
     }
@@ -3414,11 +3432,13 @@ void Viewer::exploreStep(float& sx, float& sy) {
         if (pub.stage) return pubKey(SDLK_BACKSPACE);
         if (library.stage) return libraryKey(SDLK_BACKSPACE);
         if (party.stage) { // (the pair: the one a touch action wants taken in)
+            if (party.switchAt >= 0 || party.inTicks < 5) return; // (a step running, the scene not in)
             const std::vector<int> c = partyChoices();
             const auto at = std::find(c.begin(), c.end(), ex.needChar);
             if (party.stage == 1) return partyTap(at == c.end() ? 100 : 25);
             if (party.stage == 2) return partyTap(at == c.end() ? 100 : game.flag(0x3fa) || game.party[0] == 0 ? 2 : 1);
             if (at == c.end()) return partyTap(100);
+            if (int(at - c.begin()) != party.focus) return partyTap(7000 + int(at - c.begin())); // (selected first, then taken)
             exploreLog("  party: character " + std::to_string(ex.needChar + 1) + " taken in");
             ex.needChar = -1;
             for (auto it = ex.blocked.begin(); it != ex.blocked.end();) it = it->first == ex.key ? ex.blocked.erase(it) : std::next(it);
@@ -4449,25 +4469,30 @@ std::vector<int> Viewer::partyChoices() const {
         if (game.flag(1011 + ch) && game.party[0] != ch && game.party[1] != ch) c.push_back(ch);
     return c;
 }
+void Viewer::partySwitch(int to, int ticks) {
+    party.switchAt = uiClock, party.switchFrom = uiClock - party.at, party.switchTicks = 0;
+    party.switchLen = ticks, party.switchTo = to;
+}
 void Viewer::partyTap(int id) {
-    auto stage = [&](int s) { party.stage = s, party.at = uiClock, party.focus = 0; };
-    if (party.stage == 1) {
-        if (id == 25) audio.playSe(0xb4, false), stage(2);
-        else if (id == 13) audio.playSe(0xb4, false), party.stage = 0, queueEvent("party_talk"); // (FldPartyOrganize 3: CallEvent)
-        else if (id == 100) audio.playSe(0xb5, false), party.stage = 0, pendingBranch = true;    // (2: the field)
-    } else if (party.stage == 2) {
+    if (party.switchAt >= 0 || party.inTicks < 5) return; // (a step running; the next scene not in: +0x1c)
+    if (party.stage == 1) { // (FirstInterfaceCloseAnimeSet: the console and the back button back, +0x1c 120)
+        if (id == 25) audio.playSe(0xb4, false), partySwitch(2, 5);       // (state 2, then 0xf: the slots)
+        else if (id == 13) audio.playSe(0xb4, false), partySwitch(10, 5); // (3, +0xa0 3: CallEvent)
+        else if (id == 100) audio.playSe(0xb5, false), partySwitch(0, 5); // (3, +0xa0 2: the field)
+    } else if (party.stage == 2) { // (ActorInterfaceCloseAnimeSet, +0x1c 30)
         if (id == 1 || id == 2) {
             if (id == 1 && game.flag(0x3fa)) return (void)audio.playSe(0xb6, false); // (the first fixed: flag 0x3fa)
-            audio.playSe(0xb4, false), party.slot = id - 1, stage(3);
-        } else if (id == 100) audio.playSe(0xb5, false), party.stage = 0, queueEvent("party_end"); // (4: CallEvent)
+            audio.playSe(0xb4, false), party.slot = id - 1, partySwitch(3, 4); // (state 8 / 0xc: the faces)
+        } else if (id == 100) { // (state 6: 0x1c - the title closed -, 7: done, +0xa0 4: CallEvent)
+            audio.playSe(0xb5, false), partySwitch(11, 4);
+            if (party.titleAt >= 0) partyTitleOutAt = uiClock, partyTitleOutFrom = uiClock - party.titleAt;
+        }
     } else if (party.stage == 3) {
         const std::vector<int> c = partyChoices();
-        if (id >= 7000 && id < 7000 + int(c.size())) { // (a face: that one in the slot)
-            game.party[party.slot] = c[size_t(id - 7000)];
-            audio.playSe(0xb4, false);
-            SDL_Log("party: %d, %d", game.party[0], game.party[1]);
-            stage(2);
-        } else if (id == 100) audio.playSe(0xb5, false), stage(2);
+        if (id >= 7000 && id < 7000 + int(c.size())) { // (TouchGestureTap: another face selected - SE 0xb3 -, the selected one taken)
+            if (id - 7000 != party.focus) return (void)(audio.playSe(0xb3, false), party.focus = id - 7000);
+            audio.playSe(0xb4, false), party.pick = c[size_t(id - 7000)], partySwitch(2, 4); // (+0x90: state 10, 0xb - the slots again)
+        } else if (id == 100) audio.playSe(0xb5, false), partySwitch(2, 4);
     }
 }
 void Viewer::partyKey(SDL_Keycode k) {
@@ -4485,19 +4510,23 @@ void Viewer::partyKey(SDL_Keycode k) {
     if (k == SDLK_BACKSPACE) partyTap(100);
 }
 void Viewer::drawParty(const Mat4& view, const Mat4& proj, int w, int h) {
-    const float t = uiClock - party.at;
+    const float open = uiClock - party.at;
+    auto partT = [&](float length) { // (in from the scene's making; played back from where it was in a step)
+        return party.switchAt < 0 ? open : std::max(std::min(party.switchFrom, length) - (uiClock - party.switchAt), 0.0f);
+    };
+    const float t = partT(0.2f);
     auto keepLook = buttonLook;
     buttonLook = nullptr;
-    { // (PartySelectTitleMenu: `menu` on menuPty_io, in once - held after the first stage, as the shop's)
+    if (party.titleAt >= 0 && partyTitleOutAt < 0) { // (PartySelectTitleMenu: `menu` on menuPty_io, in once from Organize's step)
         UiFig& title = uiFig("menu");
         title.fig.place = cr2::Mat34();
-        poseUi(title, "menupty_io", t + (party.stage > 1 ? 10.0f : 0.0f));
+        poseUi(title, "menupty_io", uiClock - party.titleAt);
         drawFigure(title.fig, view.data());
     }
     auto back = [&] {
         UiFig& bk = uiFig("btlback");
         bk.fig.place = cr2::Mat34();
-        poseUi(bk, "btlback_in", t);
+        poseUi(bk, "btlback_in", partT(0.15f));
         drawFigure(bk.fig, view.data());
         float sx, sy, ex, ey;
         if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
@@ -4509,7 +4538,7 @@ void Viewer::drawParty(const Mat4& view, const Mat4& proj, int w, int h) {
         char tex[24];
         std::snprintf(tex, sizeof tex, ch == 5 ? "cutIn006_L02" : "cutIn00%d_L01", ch + 1);
         f.place = cr2::Mat34();
-        pose(f, cr2::EventRuntime::kCutInSeconds, false);
+        pose(f, std::min(partT(cr2::EventRuntime::kCutInSeconds), cr2::EventRuntime::kCutInSeconds), false); // (SetCutInWindow with the scene; EndCutInWindow in a step)
         cr2::Texture* face = texture(tex);
         for (ViewMesh& vm : f.meshes) vm.texture = face ? face : texture(vm.baseMaterial.diffuse());
         drawFigure(f, view.data());
@@ -4554,7 +4583,8 @@ void Viewer::drawParty(const Mat4& view, const Mat4& proj, int w, int h) {
     if (party.stage == 1) { // (console_io to half its length, as ShopSecondMenu's: Initialize's ChangeAnimeTime)
         UiFig& con = uiFig("console_io");
         poseUi(con, "console_io", 0);
-        drawCommandMenu("console_io", std::min(t, con.fig.animLoaded ? con.fig.anim.duration() * 0.5f : t), view, {}, {}, w, h, 0, "console_io");
+        const float half = con.fig.animLoaded ? con.fig.anim.duration() * 0.5f : 0.25f;
+        drawCommandMenu("console_io", std::min(partT(half), half), view, {}, {}, w, h, 0, "console_io");
         back();
     } else if (party.stage == 2) {
         portrait(4, game.party[0]), portrait(3, game.party[1]);
@@ -4627,6 +4657,16 @@ void Viewer::drawFieldUi(int w, int h) {
         drawWalkStick(view);
     }
     if (worldOutAt >= 0) drawWorldOut(view);
+    if (partyTitleOutAt >= 0) { // (the party's title: its own close, past the menu's)
+        const float tt = std::min(partyTitleOutFrom, 0.45f) - (uiClock - partyTitleOutAt);
+        if (tt <= 0) partyTitleOutAt = -1;
+        else {
+            UiFig& title = uiFig("menu");
+            title.fig.place = cr2::Mat34();
+            poseUi(title, "menupty_io", tt);
+            drawFigure(title.fig, view.data());
+        }
+    }
     if (!campOpen && campTitleCloseAt >= 0) { // (the camp's title: its own close, past the camp's)
         const float tt = std::min(campTitleCloseFrom, 0.45f) - (uiClock - campTitleCloseAt);
         if (tt <= 0) campTitleCloseAt = -1;

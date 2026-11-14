@@ -1534,12 +1534,14 @@ int main(int argc, char** argv) {
                     if (const SDL_Keycode key = v.padButtonKey(SDL_GamepadButton(e.gbutton.button))) pushKey(key);
                 } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
                     v.pointerCancelled = false;
+                    v.pointerDown = true;
                     dragging = true;
                     float fx, fy;
                     screenFraction(e.button.x, e.button.y, fx, fy);
                     if (!v.menuPointerDown(fx, fy)) v.pointerActivate(fx, fy);
                 }
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                    if (v.pointerDown) v.pointerDown = false, v.pointerLifted = true;
                     if (v.pointerCancelled) continue; // an interrupted gesture cannot activate or finish anything
                     float fx, fy;
                     screenFraction(e.button.x, e.button.y, fx, fy);

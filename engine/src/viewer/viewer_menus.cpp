@@ -201,6 +201,7 @@ void Viewer::cancelPointerInput() {
     if (iai.stage == 2) iai.stage = 1;
     if (aim.stage == 2) aim.stage = 1;
     pointerCancelled = true;
+    pointerDown = false; // (a gesture cut off - the app paused, the focus lost: no finger left to wait for)
     padHeldOver.cancel();
 }
 bool Viewer::consumeInputCancel(crinput::CancelWatch& cancel) {
@@ -1266,7 +1267,9 @@ void Viewer::fieldUpdate(float dt) {
     if (!script) return;
     fieldClock = std::min(fieldClock + dt, 0.25f);
     for (; fieldClock >= cr2::EventRuntime::kTick; fieldClock -= cr2::EventRuntime::kTick) {
-        if (controlHold > 0 && --controlHold == 0) checkBalloons(); // (step 1: control back, CheckBalloon after it)
+        // (step 1: control back once no finger is down nor lifted this update, CheckBalloon after it)
+        if (controlHold > 0 && !(controlHold == 1 && (pointerDown || pointerLifted)) && --controlHold == 0) checkBalloons();
+        pointerLifted = false;
         if (pendingBranch) {
             pendingBranch = false;
             if (fieldExitHold > 0) { // (FldMain's way out, steps 0x1d .. 0x20: the fade and the windows go on)

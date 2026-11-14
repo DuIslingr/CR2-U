@@ -1224,6 +1224,32 @@ message 1 set under the hold, voice 624 not played; message 2 set after it, 625 
 (till 24.85 s) - both set under the hold, neither played; none - both played. As
 `EvtWindow::ShowMessage`'s `IsSkip` test has it. Settled.
 
+### Round 48: a finger left down at an event's end
+
+`FldMain::Update` reads `GetFirstSingleFingerEvent` once at the start of each update; step 1 gives
+control (step 2, +0x28 = 1, the touch actions on) only in an update where it returns nothing, and
+step 2 takes a press as a walk or a touch action only when the event has bit 0 and the last
+update had none (+0x6c, the last update's flags, stored at the end of each).
+`InputDeviceTouchScreen::GetFirstSingleFingerEvent` returns `touchUtilInfo` +0x490, which
+`touchUtilUpdate` rebuilds every update. It sorts last update's list by flags - 1 to +0x1c, 2 to
++0x20, 4 to +0x24, 8 to +0x28 (put back on the free list +0x18), none to +0x18 - and folds +0x1c
+and +0x24 into +0x20. Then, for each touch now down, it finds the element by its id in +0x20:
+- none: a free element with flags 1, a press;
+- found and within the move threshold: flags 2, and 0x22 once past the long-press time;
+- found and moved: flags 4.
+The elements left in +0x20, fingers gone, get 8 (0x18, 0x48 with a tap or a flick). +0x490 is
+then those releases, the presses, the held, the moved and +0x28. So a finger on the screen puts an
+event in the list every update, and its lifting one more. Step 1 waits through all of them: a
+finger held from the event, or put down during the three updates, keeps control off - the touch
+actions hidden, no walk, no tap - until the update after the one it is lifted in.
+
+The port gave control three updates on whatever the finger did (a held finger never walked, as its
+walk starts only on a press, but the balloons and taps came back under it). It now keeps the last of
+the three while the pointer is down or was lifted since the last update (`pointerDown`,
+`pointerLifted`; a cancelled gesture clears it). `--play d0104` in real time with
+`CR2_MOUSE_SCRIPT="1:down=0.5,0.5 6:up"`: the entry script's end at 3.16 s, control held, the
+finger lifted in the update at 6.06 s, control back at 6.11 s; with no finger, at 3.20 s as before.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
@@ -1374,9 +1400,6 @@ animations being linear (assumed, as before).
 - **The camera's units.** The ease's one-pixel hold is the original's device pixel; the port
   holds within one pixel of the window it draws to. `GetPos_X / _Y` in the port still read the
   clamped scroll (`shownX_`), the original's the unclamped +0x30.
-- **A finger left down at an event's end** holds control in step 1; the port's touches start a
-  walk only on a press, so one held from the event never walks, and a press during the three
-  updates is refused rather than held.
 - **The map name's last update.** The original deletes the menu in the `InterfaceMain::Update`
   whose step reaches the animation's end; the port shows it while `ticks x 0.05 s` is under its
   length. Within an update of each other; not counted exactly.

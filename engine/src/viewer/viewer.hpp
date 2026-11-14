@@ -239,6 +239,10 @@ struct Viewer {
     std::string pendingCall;
     int pendingCallWait = 0;
     int controlHold = 0;
+    // (GetFirstSingleFingerEvent: touchUtilUpdate rebuilds its list each update - a press (1), a
+    // finger held (2, 0x22) or moved (4), and the update's releases (8, 0x18, 0x48) -, so step 1
+    // waits for an update with no finger down and none lifted in it)
+    bool pointerDown = false, pointerLifted = false;
     bool fieldControl() const;
     void queueEvent(const std::string& function);
     int fieldExitHold = -1; // (--play: an event's way out to a vista or battle - the updates FldMain spends on it)

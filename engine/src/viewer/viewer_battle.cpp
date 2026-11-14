@@ -1149,7 +1149,7 @@ void Viewer::stepBattleShow() {
                 partyVoice(away ? 1 : 2);
                 // (away: StepEscapeSuccess the update after, StepEscapeSuccessLoop's 2 s, then step 0x1f -
                 // StepSetCommand to StepBattleOut, NextMode the update after that: the way out 2.15 s on)
-                showEnd = battleClock + (away ? 2.0f + 3 * cr2::EventRuntime::kTick : 1.0f);
+                showEnd = battleClock + (away ? kWait2s + 3 * cr2::EventRuntime::kTick : 1.0f); // (the loop's 2.0 s: +0x20 summed from StepEscapeSuccess's 0 - 41 updates; the failure's 1.0 s, 20)
                 if (away) {
                     battleStep = BattleStep::Over;
                     setBattleCamera(battle.camera);
@@ -1211,7 +1211,7 @@ void Viewer::stepBattleShow() {
             // was applied, else straight to 5)
             const float turnEndScript = ownBattleScript() ? 3 * cr2::EventRuntime::kTick : 0.0f;
             turnEndNumbers = battleRules->turnEndEvents(), turnEndNumbersAt = battleClock + turnEndScript;
-            if (!battleRules->turnEndEvents().empty()) showEnd = battleClock + turnEndScript + 1.5f;
+            if (!battleRules->turnEndEvents().empty()) showEnd = battleClock + turnEndScript + kWait1_5s; // (case 4: +0x10 summed from case 3's 0, 1.5 <= it - 31 updates)
             else if (turnEndScript > 0) showEnd = battleClock + turnEndScript;
             SDL_Log("turn over; gauge %d, charge %d; MP %d %d (%.2f s)", battleRules->gauge(), battleRules->charge(), battleRules->fighter(0).mp, battleRules->fighter(1).mp, battleClock);
             battleStep = BattleStep::TurnBegin;
@@ -1885,7 +1885,7 @@ void Viewer::beginShowAction(const ShowAction& a) {
         showHitAt = 0, showCamera2 = -1;
         // (action_table_dont_action: ActionDontActionAnnounce sets its line for 2.0 s, then
         // ActionCommonCommandAnnounce - step 12 - waits till no announcement is left)
-        showEnd = battleClock + 2.0f + cr2::EventRuntime::kTick;
+        showEnd = battleClock + kWait2s + cr2::EventRuntime::kTick; // (BtlAnnounce: its first update, then 2.0 s summed - 41)
         if (c) SDL_Log("  %s: %s - not done", battleRules->fighter(a.actor).name.c_str(), c->name[1].c_str());
         return;
     }

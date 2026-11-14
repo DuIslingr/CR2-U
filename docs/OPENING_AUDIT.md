@@ -1311,6 +1311,22 @@ port keeps in round seconds - `BtlTurnEnd`'s 1.5 s, the escape's 2.0 s (`StepEsc
 +0x20), the revival's 3.0 s banner, the opening's and the field's - each needs its own sum's start
 and comparison read.
 
+### Round 53: more round-second waits
+
+- **The turn's end.** `BtlTurnEnd::Update` adds the update's time to +0x10 at its top; case 3 sets it
+  to 0 at its end; case 4 passes once `1.5 <= ` it - in its 31st update. The port waited 1.5 s; now
+  31 updates. Battle 57, Darwin poisoned (`--state 0:0 --flag 55 --fight pair --seed 1`): the turn
+  over at 6.60 s, turn 2 at 8.17 s (8.10 before).
+- **The escape.** `StepEscapeSuccess` sets `BtlCommand` +0x20 to 0 and step 0xb;
+  `StepEscapeSuccessLoop` passes once the sum (added at `Update`'s top) is no longer under 2.0 - its
+  41st update. The port's 2.0 s is now 41 updates; the failure's 1.0 s lands on its 20th, as before.
+- **An action not done.** `ActionDontActionAnnounce` puts its line up for 2.0 s; `BtlAnnounce` shows
+  an entry on its first update and then sums to its time (1.0 s: 21 updates), so 2.0 s holds 42. The
+  port's 41 are now 42.
+Left: the banner window's 3.0 s in the port (its own close, not an announce time) and the
+revival's 3.0 s entry, read together with the banner's drawing; the field's and the opening's
+waits are counted in updates already.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
@@ -1459,8 +1475,8 @@ animations being linear (assumed, as before).
   sopia's motion change - six updates, the video's banner times read again. Round 35 read +0x523:
   the Pair turn's flag; round 40 which of a pair runs which table.)
 - **Round-second waits.** The original's 1.5 / 2.0 / 2.5 / 3.0 s float sums pass an update late
-  (round 52); the launch waits and the item's end follow it, the turn end's 1.5 s, the escape's
-  2.0 s, the revival's 3.0 s and the field's and the opening's round waits not yet.
+  (round 52); the launch waits, the item's end, the turn end, the escape and an action not done
+  follow it (round 53); the revival's 3.0 s banner not yet.
 
 ## Checks
 

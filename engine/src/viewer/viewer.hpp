@@ -612,7 +612,7 @@ struct Viewer {
     // meanwhile (BtlMain +0x18 till Term)
     // (the original's waits sum its fixed 0.05f frame time: 2.0 s is reached in the 41st update
     // (forty make 1.9999998), 3.0 s in the 61st; 0.5, 1.0 and the shorter ones exactly - round 52)
-    static constexpr float kWait2s = 41 * cr2::EventRuntime::kTick, kWait3s = 61 * cr2::EventRuntime::kTick;
+    static constexpr float kWait1_5s = 31 * cr2::EventRuntime::kTick, kWait2s = 41 * cr2::EventRuntime::kTick, kWait3s = 61 * cr2::EventRuntime::kTick;
     static constexpr float kBattleOutSeconds = 25 * cr2::EventRuntime::kTick;
     float battleOutAt = -1;
     void beginBattleOut();

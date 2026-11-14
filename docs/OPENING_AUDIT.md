@@ -2001,7 +2001,9 @@ kept from the press and its moves) lit too.
 The back button (`BattleBack::CheckTouch`, called the same way): `ChangeTapButtonColor(true)` sets
 `PRG_colorO`'s colour to (1, 2, 3), (1, 1, 1) off it. The port's back buttons (the camp's, the
 shop's, the pub's, the party's, the options', the title's panel, a battle's lists) now take that
-colour while the finger is on them (`backLook`).
+colour while the finger is on them (`backLook`). A list's own back button
+(`ScrollListBackButton::ChangeTapButtonColor`, from `ScrollListMenu::TouchSimplePress`) does the same
+with `PRG_colorC`; the port's `scrlBack` too now.
 
 ## Original-code evidence
 

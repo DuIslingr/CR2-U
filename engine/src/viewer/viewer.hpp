@@ -1262,7 +1262,8 @@ struct Viewer {
         bool loaded = false;
     };
     bool underPointer(UiFig& u); // (its tapAreaS01 .. E01 under the held pointer)
-    void backLook(UiFig& b);     // (BattleBack::CheckTouch: PRG_colorO's colour (1, 2, 3) while a finger is on it)
+    void backLook(UiFig& b, const char* material = "PRG_colorO"); // (BattleBack::CheckTouch: the material's colour (1, 2, 3)
+                                                                  // while a finger is on it; ScrollListBackButton's PRG_colorC)
     std::map<std::string, UiFig> uiFigs;
     bool loadingUi = false; // (uiFig loading its figure: left unsmoothed)
     UiFig& uiFig(const std::string& name);

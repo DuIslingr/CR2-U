@@ -790,11 +790,11 @@ bool Viewer::underPointer(UiFig& u) {
     const float px = (pointerFx - 0.5f) * float(screenW) / k, py = (0.5f - pointerFy) * float(screenH) / k;
     return px >= std::min(sx, ex) && px <= std::max(sx, ex) && py >= std::min(sy, ey) && py <= std::max(sy, ey);
 }
-void Viewer::backLook(UiFig& b) {
+void Viewer::backLook(UiFig& b, const char* material) {
     const bool on = underPointer(b);
     for (ViewMesh& vm : b.fig.meshes) {
         const uint32_t mi = vm.source.material;
-        if (mi >= b.materials.size() || b.materials[mi] != "PRG_colorO") continue;
+        if (mi >= b.materials.size() || b.materials[mi] != material) continue;
         vm.material.params[0x33] = on ? std::vector<float>{1.0f, 2.0f, 3.0f, 1.0f} : vm.baseMaterial.params[0x33];
         if (vm.material.params[0x33].empty()) vm.material.params.erase(0x33);
     }
@@ -3491,6 +3491,7 @@ void Viewer::drawSkillList(const std::vector<ListRow>& rows, int focused, float 
     UiFig& bk = uiFig("scrlback");
     bk.fig.place = cr2::Mat34();
     poseUi(bk, "scrlback_io", t);
+    backLook(bk, "PRG_colorC"); // (ScrollListBackButton::ChangeTapButtonColor)
     drawFigure(bk.fig, view.data());
     float sx, sy, ex, ey;
     if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});

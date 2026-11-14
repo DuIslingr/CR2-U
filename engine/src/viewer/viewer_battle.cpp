@@ -783,6 +783,14 @@ void Viewer::battleKey(SDL_Keycode k) {
     if (k != SDLK_BACKSPACE && menuCursor != was && !list) audio.playSe(0xb3, false);
 }
 // a click at the screen's (fx, fy) - 0..1 across, down: a button's tap area (UI units)
+bool Viewer::noPickTapped(float fx, float fy) { // (a list's focused row that can't be picked: SE 0xb6, nothing else)
+    const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+    const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+    for (const TapRect& r : tapRects)
+        if (r.id == kRowNoPick && x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1))
+            return audio.playSe(0xb6, false), true;
+    return false;
+}
 void Viewer::battleClick(float fx, float fy) {
     if (gameOver.stage == 8) { // (the question's Yes / No)
         const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
@@ -795,6 +803,7 @@ void Viewer::battleClick(float fx, float fy) {
     }
     if (!choosing) return;
     if (battleScriptRunning()) return tap(); // (a tutorial's talk over the commands: its page first)
+    if (noPickTapped(fx, fy)) return;
     if (manualStage == 2) { // (a tap: the tutorial's page)
         if (manualEvents) manualEvents->advance();
         return;
@@ -3389,7 +3398,8 @@ void Viewer::drawSkillList(const std::vector<ListRow>& rows, int focused, float 
         }
         float sx, sy, ex, ey; // (a tap: the focused row's pick, another's focus - its id + 1000)
         if (uiJoint(b, "tapAreaS01", sx, sy) && uiJoint(b, "tapAreaE01", ex, ey))
-            tapRects.push_back({k == fi ? (r.selectable ? r.id : -1) : 1000 + k, sx, sy, ex, ey});
+            tapRects.push_back({k == fi ? (r.selectable ? r.id : kRowNoPick) : 1000 + k, sx, sy, ex, ey}); // (ScrollListMenu: the
+            // focused row not to be picked - +0xa0 1 - SE 0xb6)
     }
     // the focused row's help (scrlWin: its lines at typeS_L01, typeS_L02)
     if (fi < int(rows.size()) && !rows[size_t(fi)].help.empty()) {

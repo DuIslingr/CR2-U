@@ -3002,6 +3002,7 @@ bool Viewer::fieldClick(float fx, float fy) {
         return true;
     }
     if (saveStage == 2) return true;
+    if (noPickTapped(fx, fy)) return true;
     if (party.stage) { // (the party's buttons, faces)
         const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
         const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;

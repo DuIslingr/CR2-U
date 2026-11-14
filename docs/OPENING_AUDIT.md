@@ -1968,6 +1968,15 @@ After rounds 88 and 89, the other counts read again for their unit:
   88, 89) were the only others found by their constants (`60.0` in the library: also the cut-in
   window's placing, the field camera's units and the game over's choice - places, not times).
 
+### Round 96: a row that can't be picked
+
+`ScrollListMenu::TouchGestureTap_super`: a tap on a shown row away from the focused one scrolls the
+list to it (`SetListScrollItemCount`); on the focused one it picks it (action 5) unless the row is
+not selectable (+0xa0 1: too dear, no MP, not to be sold ...), which plays SE 0xb6 and nothing else.
+The port gave such a row no tap at all. Now `drawSkillList` marks it (`kRowNoPick`) and a tap on it
+plays 0xb6 - in the field's menus (the shop, the camp's lists, the world select, the library, the
+pub, the manual) and in a battle's lists.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

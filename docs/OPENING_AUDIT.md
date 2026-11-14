@@ -1541,6 +1541,20 @@ title away with the camp; now after Back the title keeps playing out over the fi
 (`campTitleCloseAt`) till it ends. Frames at 4.2 and 4.3 s (`--play d0104 --input "tab camp back"`):
 the field, its tab back, the title fading.
 
+### Round 70: the dungeon's map
+
+The tab's Map (`CheckTouchEventExec_Press`: step 6, `FldDungeonMap::Init`) - `FldDungeonMap::Execute`
+makes it the update after (`SetDungeonMapParameter`: +0x1c 30, `DungeonMapMenu`, 0x67) and waits for
+`EndCheckDungeonMap` - the menu gone -, then `CallAtMenuFinished`. The map clears no lock of its own:
+the 30 count down, touches taken from the thirty-first update after the press. Its tap
+(`TouchGestureTap`, after its +0x68): +0x1c 30, +100 = 1, its picture's `mapPic` played back (+0x5c 2;
+`mapPic_in` / `_out` 0.2 s), and `Update` returns `IsEndCurrentAnime` - the menu gone at its end, the
+fourth update -; step 6 sees it the next and step 1 gives control the one after. The port opened
+the map in the press's update, took taps at once and closed it in the tap's; now the map is drawn
+from the update after the press, holds taps for thirty, plays back on the closing tap (`mapClose`,
+`mapTime`) and is gone in the fourth update, control two later. `--play d0104 --input "tab map close
+x6"`: the first three `close`s fall in the lock, the fourth closes it. (+0x68's start was not found.)
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

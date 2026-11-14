@@ -1420,6 +1420,11 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                     closeCamp(), emergencyExit = true;
                     break;
                 }
+                if (mapOpen && mapCloseAt >= 0 && ++mapCloseTicks >= 4) { // (the map gone)
+                    mapOpen = false, mapCloseAt = -1, controlHold = 2;
+                    SDL_Log("field: the map closed");
+                    break;
+                }
                 if (campOpen && campLinkCloseAt >= 0 && ++campLinkCloseTicks >= 20) { // (the pub's request: 6 after its second)
                     campLinkCloseAt = -1, campLink = 0;
                     campStart = campOpenedAt = uiClock - cr2::EventRuntime::kTick;
@@ -1635,7 +1640,7 @@ bool Viewer::gameKey(SDL_Keycode k) {
     if (pub.stage) return pubKey(k), true;       // (the pub: the arrows, Return, Backspace; Y / N)
     if (library.stage == 1) return libraryKey(k), true; // (the library: Up / Down, Return, Backspace)
     if (mapOpen) { // (the map: any key closes it)
-        audio.playSe(0xb5, false), mapOpen = false;
+        mapClose();
         return true;
     }
     if (saveStage) { // (saving: Return yes, Backspace no)
@@ -1669,7 +1674,8 @@ void Viewer::drawDungeonMap(const Mat4& view) {
         0, 0, 0, 0, 0, 0, 0, 2183, 2184, 0, 0, 2185, 0, 0, 2186, 0, 2187, 0, 0, 0, 0, 0, 0, 0, 0, 2188, 0, 2189, 0, 0, 0, 0, 0, 2190,
         0, 0, 0, 0, 2191, 2192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2193, 0, 0, 0, 2194, 0, 0, 0, 0, 0, 2195, 0, 0, 0, 2196, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2197, 0}; // (the library's, 0x535794)
-    const float t = uiClock - mapStart;
+    if (uiClock - mapStart < cr2::EventRuntime::kTick) return; // (made the update after the press)
+    const float t = mapTime(); // (played back as it closes)
     const int d = std::clamp(dungeonNum(), 0, 13);
     char suffix[8];
     std::snprintf(suffix, sizeof suffix, d == 0 ? "t01" : "d%02d", d);
@@ -1756,7 +1762,7 @@ void Viewer::fieldTabTap(int area) {
     } else if (area == 3 && dungeonNum() != 12) { // (FldDungeonMap)
         audio.playSe(0xb4, false);
         fieldTabOpen = false, fieldTabAt = -10;
-        mapOpen = true, mapStart = uiClock;
+        mapOpen = true, mapStart = uiClock, mapCloseAt = -1;
         SDL_Log("field: map of dungeon %d, area %d", dungeonNum(), areaNum());
     } else if (area == 4 && !game.flag(0x3ea)) { // (FldSaveLoad)
         audio.playSe(0xb4, false);
@@ -1767,6 +1773,11 @@ void Viewer::fieldTabTap(int area) {
         encountersOff = !encountersOff;
         SDL_Log("field: encounters %s", encountersOff ? "off" : "on");
     }
+}
+void Viewer::mapClose() {
+    if (mapCloseAt >= 0 || mapOpening()) return; // (still held: +0x1c)
+    audio.playSe(0xb5, false);
+    mapCloseAt = uiClock, mapCloseFrom = uiClock - mapStart, mapCloseTicks = 0;
 }
 void Viewer::openCamp() {
     campTitleCloseAt = -1;
@@ -2859,7 +2870,7 @@ void Viewer::campKey(SDL_Keycode k) {
 // a click on the field's UI (the tab, the camp): false - none of it there (the field's own tap)
 bool Viewer::fieldClick(float fx, float fy) {
     if (mapOpen) { // (any tap: closed)
-        audio.playSe(0xb5, false), mapOpen = false;
+        mapClose();
         return true;
     }
     if (saveStage == 2) return true;
@@ -2936,7 +2947,7 @@ bool Viewer::fieldToken(const std::string& t) {
     else if (t == "camp" && fieldTabShown()) fieldTabOpen = true, fieldTabAt = -10, fieldTabTap(2);
     else if (t == "map" && fieldTabShown()) fieldTabOpen = true, fieldTabAt = -10, fieldTabTap(3);
     else if (t == "save" && fieldTabShown()) fieldTabOpen = true, fieldTabAt = -10, fieldTabTap(4);
-    else if (t == "close" && mapOpen) audio.playSe(0xb5, false), mapOpen = false;
+    else if (t == "close" && mapOpen) mapClose();
     else if (saveStage == 1 && (t == "yes" || t == "no")) saveAnswer(t == "yes");
     else if (!campOpen) return false;
     else if (settingsOpen && (t == "up" || t == "down" || t == "left" || t == "right" || t == "enter"))
@@ -3330,7 +3341,7 @@ void Viewer::exploreStep(float& sx, float& sy) {
         ex.nextTap = ex.clock + 0.5;
         if (saveStage == 1) return saveAnswer(true);
         if (campOpen) return campPress(100);
-        if (mapOpen) return void(mapOpen = false);
+        if (mapOpen) return mapClose();
         if (shop.stage) return exploreShop();
         if (pub.stage) return pubKey(SDLK_BACKSPACE);
         if (library.stage) return libraryKey(SDLK_BACKSPACE);

@@ -1568,6 +1568,15 @@ struct Viewer {
     // campBtn_io - 0.15 s - has played: the first taken in the fourth update after the press's)
     float campOpenedAt = -10;
     bool campOpening() const { return uiClock - campOpenedAt < 4 * cr2::EventRuntime::kTick; }
+    // (the dungeon's map - FldDungeonMap, DungeonMapMenu 0x67: made the update after the tab's press,
+    // InterfaceMain +0x1c 30 counted down - no tap for thirty updates -; a tap: +0x1c 30, +100, the
+    // map's mapPic played back (0.2 s) and the menu gone at its end, the fourth update; FldMain's step 6
+    // sees it the next, CallAtMenuFinished, step 1's control the one after)
+    float mapCloseAt = -1, mapCloseFrom = 0;
+    int mapCloseTicks = 0;
+    void mapClose();
+    bool mapOpening() const { return uiClock - mapStart < 31 * cr2::EventRuntime::kTick; }
+    float mapTime() const { return mapCloseAt < 0 ? uiClock - mapStart : std::max(std::min(mapCloseFrom, 0.2f) - (uiClock - mapCloseAt), 0.0f); }
     float campCloseAt = -1, campCloseFrom = 0;
     // (the camp's title, CampTitleMenu 0x2c: told to close with the camp it plays menuCamp_io back - 0.45 s,
     // nine updates - and goes when that ends, after the camp: still going out over the field)

@@ -53,6 +53,7 @@ AppImage). On Android it is `Android/data/local.preservation.chaosrings2/files/`
 ├── android/   the 2.1.2 APK and main.212.com.square_enix.chaosrings2gp.obb (or the .xapk, or the .apks and OBB)
 ├── ios/       the iPad 2.1.0 .ipa, or its app (ChaosRings2enHD.app, or Payload/ChaosRings2enHD.app as unzipped)
 ├── vita/      PCSG00498/ as installed (eboot.bin, sce_sys/, CR2/) - or a NoNpDrm dump as dumped
+├── font/      optional: your own fonts (.ttf, .otf, .ttc) over the game's
 ├── fsr4/      optional: AMD's FSR 4 files (see Settings)
 ├── textures/  optional: export/ and hd/ for HD textures
 └── models/    optional: export/ and hd/ for HD models
@@ -68,6 +69,10 @@ AppImage). On Android it is `Android/data/local.preservation.chaosrings2/files/`
 - An `.xapk`, an `.apks` or a `.zip` of the APK and OBB in `android/` is unpacked once on the next
   start into `android/unpacked/` (about **1 GB** of free space for the OBB; that start takes a while,
   with a progress window). Later starts reuse it; the bundle itself can be deleted afterwards.
+- **Fonts:** a font in `font/` takes the game's font's place (one without Japanese / Chinese /
+  Korean characters), or goes before the system's for the characters it lacks (one with them; a
+  "bold" one first). Empty, the game's own font is used. `--font`, `CR2_FONT` and
+  `CR2_FONT_FALLBACK` come first; `font/README.txt` has the details.
 - An `.ipa` in `ios/` is unpacked once on the next start into its `ChaosRings2enHD.app` there (with a
   progress window); the `.ipa` can be deleted afterwards.
 - The release downloads already contain these folders, each with a `README.txt` saying what goes

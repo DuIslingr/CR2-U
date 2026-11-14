@@ -752,6 +752,7 @@ struct Viewer {
     int systemOptions[5] = {-1, -1, -1, -1, -1};
     void readSystem();
     void applySystem();
+    std::vector<std::string> ownCjkFonts; // (font/'s fonts with Japanese / Chinese / Korean: the fallbacks, first)
     int deviceLanguage();
     void setVersionUpFlags();
     void writeSystem();

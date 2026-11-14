@@ -41,6 +41,9 @@ public:
     Image render(const std::string& utf8, int sizePx, int& width, int& height, std::vector<float>* penX = nullptr,
                  int border = 0);
 
+    // whether the font file has every code point of `utf8`: 1 yes, 0 no, -1 not a font FreeType reads
+    static int covers(const std::string& path, const std::string& utf8);
+
     // the first of the candidates that loads (empty ones skipped)
     static std::string firstFont(const std::vector<std::string>& candidates);
 

@@ -83,6 +83,42 @@ std::string upscaleName(const cr2::UpscaleSettings& u) {
 // Where a copy of the game is looked for without --data: beside the executable (Android: the app's
 // folder on the shared storage, reachable over USB - Android/data/local.preservation.chaosrings2/
 // files/), beside an AppImage or a macOS .app (their base paths are inside them), the working directory
+// Your own fonts: the .ttf / .otf / .ttc files in a game folder's font/ (the first game folder holding one wins,
+// its files by name). One with Japanese / Chinese / Korean glyphs goes before the system's fallbacks for the
+// characters the game's font lacks (one named "...bold..." first, as the system's are the bold Noto); one
+// without takes the game's own font's place. Nothing there: as before
+struct OwnFonts {
+    std::string main, cjk, cjkBold;
+};
+std::vector<std::string> dataPlaces();
+OwnFonts ownFonts() {
+    OwnFonts own;
+    for (const std::string& place : dataPlaces()) {
+        std::error_code ec;
+        std::vector<std::filesystem::path> files;
+        for (const auto& entry : std::filesystem::directory_iterator(std::filesystem::u8path(place + "font"), ec)) {
+            std::string ext = entry.path().extension().u8string();
+            for (char& c : ext) c = char(std::tolower(static_cast<unsigned char>(c)));
+            if (entry.is_regular_file(ec) && (ext == ".ttf" || ext == ".otf" || ext == ".ttc")) files.push_back(entry.path());
+        }
+        std::sort(files.begin(), files.end());
+        for (const auto& file : files) {
+            const std::string path = file.u8string();
+            const int cjk = cr2::TextRasterizer::covers(path, "\xe3\x81\x82\xe6\xbc\xa2"); // (あ漢)
+            if (cjk < 0) {
+                SDL_Log("font/: %s isn't a font this can read", path.c_str());
+                continue;
+            }
+            std::string name = file.filename().u8string();
+            for (char& c : name) c = char(std::tolower(static_cast<unsigned char>(c)));
+            std::string& slot = !cjk ? own.main : name.find("bold") != std::string::npos ? own.cjkBold : own.cjk;
+            if (slot.empty()) slot = path;
+        }
+        if (!files.empty()) break;
+    }
+    return own;
+}
+
 std::vector<std::string> dataPlaces() {
     std::vector<std::string> out;
     auto add = [&](std::string p) {
@@ -1126,7 +1162,12 @@ int main(int argc, char** argv) {
         // its OBB (assets/00001: the Regular face it draws English in), else the system's
         std::string dataDir = data.substr(0, data.find_last_of("/\\") == std::string::npos ? 0 : data.find_last_of("/\\") + 1);
         const char* envFont = SDL_getenv("CR2_FONT");
-        std::string fp = cr2::TextRasterizer::firstFont({fontPath, envFont ? envFont : "", dataDir + "font/TBGoPro-Bold.otf"});
+        const OwnFonts own = ownFonts(); // (font/ in the game folder: after --font and CR2_FONT, before the game's own)
+        if (!own.main.empty()) SDL_Log("font/: %s", own.main.c_str());
+        v.ownCjkFonts.clear();
+        for (const std::string& f : {own.cjkBold, own.cjk})
+            if (!f.empty()) v.ownCjkFonts.push_back(f), SDL_Log("font/: %s (for the characters the font lacks)", f.c_str());
+        std::string fp = cr2::TextRasterizer::firstFont({fontPath, envFont ? envFont : "", own.main, dataDir + "font/TBGoPro-Bold.otf"});
         std::vector<uint8_t> apkFont;
         std::string apkFontFrom;
         if (fp.empty() && !cr2::androidFile(data, "assets/00001", apkFont, &apkFontFrom)) {

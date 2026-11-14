@@ -483,6 +483,8 @@ void Viewer::loadMessageWindow(const std::string& fontPath, std::vector<uint8_t>
                                                      "/System/Library/Fonts/AppleSDGothicNeo.ttc"}),
                      cr2::TextRasterizer::firstFont({winFonts + "msyhbd.ttc", winFonts + "msyh.ttc",
                                                      "/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc"})};
+    if (!(fb && *fb)) // (font/'s Japanese / Chinese / Korean fonts before the system's - CR2_FONT_FALLBACK first)
+        fallbacks.insert(fallbacks.begin(), ownCjkFonts.begin(), ownCjkFonts.end());
     std::string fallback;
     for (const std::string& f : fallbacks) {
         if (f.empty() || !font.loaded()) continue;

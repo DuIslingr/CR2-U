@@ -98,6 +98,21 @@ bool TextRasterizer::addFallback(const std::string& path, std::string* error) {
     return true;
 }
 
+int TextRasterizer::covers(const std::string& path, const std::string& utf8) {
+    FT_Library lib = nullptr;
+    FT_Face f = nullptr;
+    if (FT_Init_FreeType(&lib)) return -1;
+    int got = -1;
+    if (!FT_New_Face(lib, path.c_str(), 0, &f)) {
+        got = 1;
+        for (uint32_t cp : codePoints(utf8))
+            if (!FT_Get_Char_Index(f, cp)) got = 0;
+        FT_Done_Face(f);
+    }
+    FT_Done_FreeType(lib);
+    return got;
+}
+
 Image TextRasterizer::render(const std::string& utf8, int sizePx, int& width, int& height, std::vector<float>* penX, int border) {
     Image img;
     width = height = 0;
@@ -214,6 +229,7 @@ bool TextRasterizer::addFallback(const std::string& path, std::string* error) {
     if (error) *error = path + ": built without FreeType";
     return false;
 }
+int TextRasterizer::covers(const std::string&, const std::string&) { return -1; }
 Image TextRasterizer::render(const std::string&, int, int& width, int& height, std::vector<float>*, int) {
     width = height = 0;
     return Image();

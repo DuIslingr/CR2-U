@@ -1923,6 +1923,18 @@ a volume bar let go: the effects' sets the SE volume and plays SE 0xc6 - the por
 sets the voice volume and plays voice 0x8d4 - the port played nothing; now it does (the keyboard's
 Left / Right on that bar too).
 
+### Round 93: the questions' sounds
+
+`BattleYNChoice::TouchSimpleRelease`: Yes (circle 0xb) or No (0xc) plays SE 0xb4 while its +0x59 is
+set - on from the constructor; `SEPermitBattleYNChoicePushBottom(false)` (param 7) clears it,
+`(true)` (8) sets it. The shop's, the save's and the title's New Game (0x65) and Load (0x6b)
+questions turn it off and play their own (200 / 199 / 0xbd / 0xbe for Yes, 0xb4 for No); the world
+select's, the chapter select's and the pair's questions, the pub's give-up, the options' (Title
+Screen, Reset Data) and the title's clear-data ones (0x66, then 0x67 over the same choice) leave it
+on and add nothing: 0xb4 for either answer. The port played 0xb5 for the world select's and the
+pub's No, 0xbe for the clear-data Yes, and nothing for the options' answers. Now each as above; the
+options' Title Screen and Instructions buttons play their 0xb4 (`OptionMenu::Update` states 3 / 4).
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

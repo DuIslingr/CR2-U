@@ -3803,7 +3803,7 @@ void Viewer::worldBack() {
 }
 void Viewer::worldAnswer(bool yes) {
     if (world.stage < 3 || worldSwitchAt >= 0 || worldInTicks < 5) return;
-    audio.playSe(yes ? 0xb4 : 0xb5, false);
+    audio.playSe(0xb4, false); // (BattleYNChoice's own: 0xb4 either way - +0x59, left on here)
     if (world.stage == 4) { // (yes: ChangeCoupling - the pair the party, cr3_common_data +1..+4 - then the levels; no: the dungeons again)
         int pair[2];
         if (yes && worldPair(game, world.dungeon, pair)) {
@@ -4012,7 +4012,7 @@ void Viewer::pubTap(int id) {
         else if (id >= 2000 && id <= 2050) audio.playSe(0xb4, false), pub.listFocus = id - 2000;
     } else if (pub.stage == 3) { // (0xb: the choice closed - 0xc / 0xd wait for it to go)
         if (id == 7601) audio.playSe(0xb4, false), pubSwitch(12, 4);
-        else if (id == 7602) audio.playSe(0xb5, false), pubSwitch(2, 4);
+        else if (id == 7602) audio.playSe(0xb4, false), pubSwitch(2, 4); // (the choice's own 0xb4 either way)
     }
 }
 // the board's focus moved by a direction (PubTopMenu's update, FUN_810b7b62): the posters three a

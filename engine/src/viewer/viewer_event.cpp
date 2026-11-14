@@ -853,7 +853,9 @@ void Viewer::titleAnswer(bool yes) {
         return;
     }
     const int ask = t.ask;
-    audio.playSe(yes ? 0xbe : 0xb4, false);
+    // (101 and 107 turn the choice's sound off - SEPermitBattleYNChoicePushBottom(false) - and play 0xbe
+    // for Yes themselves; 102 / 103 leave it on: the choice's 0xb4 either way)
+    audio.playSe(yes && ask != 102 && ask != 103 ? 0xbe : 0xb4, false);
     // (No: EndBattleYNChoice, state 0x15 - the panel (0xb) once the choice is gone, the fifth update. Yes: the
     // same wait (0x16 / 0x11), then Cr3FadeOut(0, 20) and the 1.0 s count (0x23): the fade from the fifth)
     auto toPanel = [&] { t.stepTo = 6, t.stepAt = uiClock, t.stepFrom = uiClock - t.start, t.stepTicks = 0; };
@@ -1182,11 +1184,13 @@ void Viewer::optionTap(int id) {
     switch (id) {
     case 3101:
         if (optionsCloseAt >= 0) break;
+        audio.playSe(0xb4, false); // (OptionMenu::Update state 3 / 4: SE 0xb4)
         if (titleOptions()) optionsReset = 1;
         optionsCloseAt = uiClock, optionsCloseFrom = uiClock - optionsStart, optionsCloseTicks = 0, optionsCloseTarget = 1;
         break;
     case 3102: // (BattleOptionMenu 4 -> 9 -> 0x22: InstructionsWindowMenu, the tutorials' list)
         if (optionsCloseAt >= 0) break;
+        audio.playSe(0xb4, false);
         optionsCloseAt = uiClock, optionsCloseFrom = uiClock - optionsStart, optionsCloseTicks = 0, optionsCloseTarget = 2;
         break;
     case 3111: if (titleOptions()) saveImport.begin("cr2", SDL_GetKeyboardFocus()); break;
@@ -1208,6 +1212,7 @@ void Viewer::optionTap(int id) {
         do optionLanguage = (optionLanguage + 1) % 8; while (optionLanguage >= copyLanguages());
         break;
     case 3201: // (8: the music stopped, InterfaceMain to the title, 0x1d)
+        audio.playSe(0xb4, false); // (the choice's own sound, left on)
         if (optionsReset == 1) { // (TitleOptionMenu 6: the second question)
             optionsReset = 2, optionsAskStart = uiClock;
             break;
@@ -1222,6 +1227,7 @@ void Viewer::optionTap(int id) {
         break;
     case 3202: // (7: the options again, once the choice is gone)
         if (optionsCloseAt >= 0) break;
+        audio.playSe(0xb4, false);
         optionsCloseAt = uiClock, optionsCloseFrom = uiClock - optionsAskStart, optionsCloseTicks = 0, optionsCloseTarget = 3;
         break;
     default: break;

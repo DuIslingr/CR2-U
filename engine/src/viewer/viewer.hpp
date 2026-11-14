@@ -603,12 +603,14 @@ struct Viewer {
     // The battle's way out (BtlMain::NextMode - StepBattleOut's, Cr3BattleEvent_Exit's - then
     // BtlMain::UpdateStep): step 1, the update after, Cr3Fade's FadeOut over 20 updates - white
     // (colour 1), black once the game over reloaded (BtlWork +0x1a), none for coupling 282 - with
-    // the music's StopBgm(20); step 2 counts past 1.0 s (21 updates) and releases the music; 3 waits
-    // for the fade and ends the scene (Term); 4 waits for the resources to go and makes the next
-    // main (Exit), which GameMain runs from the update after - the field's evt100 (its
-    // Battle_FadeIn: white over 20) about 24 updates after the battle was over. The battle's
-    // scene goes on under the fade meanwhile (BtlMain +0x18 till Term)
-    static constexpr float kBattleOutSeconds = 24 * cr2::EventRuntime::kTick;
+    // the music's StopBgm(20); step 2 counts past 1.0 s (20 updates: twenty 0.05f sum to 1.0000001)
+    // and releases the music; 3 waits for the fade and ends the scene (Term: BtlModel::Cleanup's
+    // Cr3ResourceManager::Unload queues each resource for three Procs, one at each update's end); 4
+    // waits for the queue to empty - the third update after Term - and makes the next main (Exit),
+    // which GameMain runs from the update after - the field's evt100 (its Battle_FadeIn: white over
+    // 20) 25 updates after the battle was over. The battle's scene goes on under the fade
+    // meanwhile (BtlMain +0x18 till Term)
+    static constexpr float kBattleOutSeconds = 25 * cr2::EventRuntime::kTick;
     float battleOutAt = -1;
     void beginBattleOut();
     void leaveBattle();

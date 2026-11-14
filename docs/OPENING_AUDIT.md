@@ -232,7 +232,7 @@ step 8, where `BtlMainCtrl` does nothing more. `Cr3BattleEvent_Exit` (a script's
 `UpdateStep` before the scene: step 1, once `Cr3Fade` is idle, `Cr3Fade::FadeOut` over 20 updates -
 white (colour 1) unless `BtlWork +0x1a` is set (black: `BtlGameover::Update` sets it when it
 reloads the save or the continue data), none for coupling 282 (0x11a) - and `BtlSound::StopBgm(20)`;
-step 2 counts its time past 1.0 s (21 updates) and releases the music; step 3 waits for the fade,
+step 2 counts its time past 1.0 s (20 updates - round 51) and releases the music; step 3 waits for the fade,
 hides the battle's status and ends the scene (`Term`, `+0x18 = 0`); step 4 waits for
 `Cr3ResourceManager::IsEmpty` and calls `Exit`, which makes the next main - `GameMain` runs it from
 the update after. The field's `FldMain::Init` (mode 1) calls `evt100`, whose `Battle_FadeIn` fades
@@ -1280,6 +1280,20 @@ drew it until the script asked `GetVisible`. It now replays the same float sum (
 `GetVisible` and the drawing both. Not run to a map name headless (`D01_01_05_set` in d0105 with
 flag 1504 waits on its event first); the count rests on the code. Settled.
 
+### Round 51: the battle's way out, its last updates
+
+`BtlMain::UpdateStep`'s step 3 ends the scene with `Term`, whose models' `BtlModel::Cleanup` call
+`Cr3ResourceManager::Unload`: a resource in the manager's loaded list (every one it loaded) is moved
+to its release queue with a count of 3 (`puVar1[4] = 3`). `Cr3ResourceManager::Proc`, called once
+an update at `TestApp::onUpdate`'s end (after `GameMain::Draw`, at 0x2ac020), counts every entry
+down and deletes it at 0; `IsEmpty` is the queue empty. So step 4, first tried the update after
+`Term`, finds it empty in the third: `Exit` two updates later than if the resources went at once.
+And step 2's "past 1.0 s" sums the fixed 0.05f: twenty of them make 1.0000001, so it passes in its
+20th update, not the 21st this list had. From the update the battle is over (E): step 1 the fade
+and `StopBgm(20)` at E+1, step 2 E+2 .. E+21, step 3 `Term` at E+22, step 4 empty at E+25, `Exit`.
+The port's `kBattleOutSeconds` is now 25 updates (24 before). Settled from the code; the escape run
+(`--battle 57 --fight pair --seed 1 --input "escape yes"`) takes its way out as before, a tick later.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
@@ -1427,9 +1441,6 @@ animations being linear (assumed, as before).
   video's 4.33); a boss battle's turn and defeat calls (round 43: three updates each). (Round 44: a
   sopia's motion change - six updates, the video's banner times read again. Round 35 read +0x523:
   the Pair turn's flag; round 40 which of a pair runs which table.)
-- **The battle's last update before the next main.** `Exit` waits for `Cr3ResourceManager` to be
-  empty; the port counts 24 updates from the end, as if the resources went at once. A slow unload
-  would hold the original's white a little longer.
 
 ## Checks
 

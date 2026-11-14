@@ -77,9 +77,11 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     // EvtMotionManager::SetMotion counts the value / 0.05 updates; ChangeAnimator passes -1: none)
     vm.setNative("EvtScene", "ChangeAnimatorBlend", [this](NativeCall& c) {
         if (EventModel* m = scene_.model(c.string(0))) {
-            m->blendFrom = m->animation.empty() ? m->figure : m->animation;
+            // (EvtMotionManager::SetMotion blends only from a motion it already holds, +0x24 - none
+            // till a first ChangeAnimator(Blend): the figure's own animation is switched from at once)
+            m->blendFrom = m->animation;
             m->blendFromTime = m->animTime;
-            m->blendSeconds = std::max(c.number(3), 0.0f);
+            m->blendSeconds = m->animation.empty() ? 0.0f : std::max(c.number(3), 0.0f);
             m->animation = m->figure + c.string(1);
             m->loop = c.boolean(2, true);
             m->animTime = 0;

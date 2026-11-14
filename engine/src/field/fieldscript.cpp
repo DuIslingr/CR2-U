@@ -174,6 +174,7 @@ void FieldScript::bind() {
         const int n = c.integer(0);
         if (n < 1 || n > 12) return;
         playerAlpha_.motion = kMotions[n], playerAlpha_.motionLoop = true, ++playerAlpha_.motionSerial, playerAlpha_.motionTick = ticks_;
+        playerAlpha_.motionBlend = float(c.integer(1)) * 0.05f;
     });
     vm.setNative("Cr3System", "RefreshMemory", [](NativeCall&) {}); // (Cr3UtilRefreshMemory: the resources' cache freed - nothing to free here)
     vm.setNative("Cr3FieldMapCamera", "QuakeStart", [this](NativeCall& c) {

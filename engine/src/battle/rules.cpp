@@ -358,7 +358,7 @@ int BattleRules::damage(int actor, int target, const BattleData::Command& c, boo
     // Damage1
     float d;
     if (c.kind == 7) {
-        d = float(t.maxHp - t.hp) * float(c.power + y) / 100.0f - float(param(target, 1) * 3 / 2);
+        d = float(a.maxHp - a.hp) * float(c.power + y) / 100.0f - float(param(target, 1) * 3 / 2); // (Damage1: the actor's HP lost)
     } else {
         int atk = param(actor, c.magic ? 1 : 0);
         if (pair) atk += param(a.partner, c.magic ? 1 : 0);

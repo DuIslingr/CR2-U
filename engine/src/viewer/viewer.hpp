@@ -504,6 +504,12 @@ struct Viewer {
     std::string leaderMotion; // (a script's: held while the leader stands)
     int leaderMotionSerial = 0;
     void playMotion(ViewFigure& f, const char* motion);
+    // the leader's motion blended in (FldMotionManager::SetMotion with a blend: the motion before
+    // goes on stepping - every animator steps each update - under the new one's weight, 0 the update
+    // after, then n / (blend / 0.05)); a blend of 0 or less: at once
+    void leaderPlay(const char* motion, float blend);
+    void stepLeaderBlend(float dt);
+    float leaderBlend = 0, leaderBlendClock = 0;
     std::string animStatus() const;
     void pose(ViewFigure& f, float t, bool loop = true);
 

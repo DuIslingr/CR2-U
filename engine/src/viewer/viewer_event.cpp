@@ -353,7 +353,7 @@ void Viewer::poseEventModels(cr2::EventRuntime& ev) {
                 f.blendLoaded = archive.read(from, d) && f.blendAnim.parse(d) && f.blendAnim.joints() == int(f.skeleton.basePose.size());
             }
             f.blendAbsolute = m.blendFrom == m.figure;
-            f.blendTime = m.blendFromTime + m.animTime + eventLead();
+            f.blendTime = m.blendFromTime; // (EvtMotionManager::Update: while +0x1c is set only the new one, +0x28, steps - the old holds its pose)
             f.blendWeight = blendAt / m.blendSeconds;
         }
         // EvtModel::ChangeTexture_Face: the j<NNN>face material's colour texture

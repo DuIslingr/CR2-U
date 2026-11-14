@@ -37,6 +37,7 @@ struct GimmickState {
     // its idle; looping unless SetMotionLoop says not), `motionSerial` counting each one set
     std::string motion;
     bool motionLoop = true;
+    float motionBlend = 0; // (the leader's: Cr3FieldMapCharacter.SetMotion's frames x 0.05 - FldMotionManager's blend)
     int motionSerial = 0;
     int motionTick = 0; // (when: FieldScript::ticks())
     // its alpha (ChangeAlpha(from, to, updates): FldAlphaManager - from by a step an update to `to`)

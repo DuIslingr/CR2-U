@@ -2235,6 +2235,39 @@ boxes. The iOS HD build (made from the 2.0.0 sources) has the same game rules as
 differences are the platform's (Game Center, the store, the save paths, a fit offset table, the BGM
 loop units).
 
+### Round 110: the vista models' motions and the touch actions
+
+Checked against `EvtMotionManager`, `FldMotionManager`, `FldSprint` / `FldHighJump` and the touch
+actions' starts; fixed:
+- A vista model's blend (`ChangeAnimatorBlend`, the scripts' ModelAnim idles e001 .. e007, e500 ..
+  e506 over 3, 8 or 10 s): `EvtMotionManager::Update` steps only the new animator (+0x28) while the
+  blend runs (+0x1c), so the motion going out holds the pose it had at the call (asm 0x3a2f98). The
+  port kept it playing; it now holds.
+- `EvtMotionManager::SetMotion` blends only from a motion it already holds (+0x24, 0 from `Init`;
+  only `ChangeAnimator` / `ChangeAnimatorBlend` set it). A model's first motion is switched to at
+  once; the port faded from the figure's own animation.
+- The leader's touch-action motions never showed: `walk()` still runs during an action (held, speed
+  0) and set the leader's idle motion every frame, over the sprint's fj01 / fj02 / fj03 and the
+  hakkei's fp02 .. fp06 (seen headless on d0210: each frame back to fn01). It now leaves the leader's
+  motion to a running action.
+- The jumps blend (`FldMotionManager::SetMotion` with a blend: the motion before keeps stepping under
+  the new one's weight, 0 the update after, then n / (blend / 0.05)): fj01 over 0.1 (the crouch and
+  the landing, asm 0x3b5938), fj02 over 0.15 (0x3b55c8), fj03 from its first frame over the air left
+  less 0.2 (0x3b57fc .. 0x3b5804) - where the port had started it part-way through -, fn01 over 0.15
+  at the end (0x3b5a0c). `Cr3FieldMapCharacter.SetMotion(n, frames)` blends over frames x 0.05
+  (`FldUtilFieldMapPlayerSetMotion`). FldPlayer's own walking and standing motions switch at once
+  (`SetMotion(int, bool)` passes -1.0, asm 0x3bf310), as the port's.
+- A touch action's start turns the leader to its mark over 10 updates (`CheckGimmickStart`,
+  `CheckTouchActionStartOne`: `FldPlayer::SetDirection(.., 10)`); the hop then sets the direction at
+  once. The port snapped.
+- Damage kind 7 takes the actor's lost HP (`Damage1`), not the target's (no command uses it).
+
+Read and matching: iai, hakkei, aim, mystic, the unlock, the sprint's gravity, hop and radius, the
+characters each action needs, the boxes, the vista models' Move / SetMove / PlayEffect / colour /
+alpha, the vista camera and lights. Open: a `ChangeAnimator` inside a running blend (the original's
+leaves the blend's state and drops to the base pose when it ends); a model's turn while it follows a
+`SetMove` timeline (linear in the original, compounding in the port).
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

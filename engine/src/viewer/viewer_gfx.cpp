@@ -623,6 +623,24 @@ void Viewer::playMotion(ViewFigure& f, const char* motion) {
     if (it != f.anims.end() && (!f.animLoaded || f.anims[f.animIndex] != want)) loadAnim(f, size_t(it - f.anims.begin()));
 }
 
+void Viewer::leaderPlay(const char* motion, float blend) {
+    const std::string want = fig.name.substr(0, fig.name.size() - 5) + motion + ".anim";
+    if (blend > 0 && fig.animLoaded && fig.anims[fig.animIndex] != want) {
+        fig.blendAnim = fig.anim, fig.blendLoaded = true, fig.blendAbsolute = fig.absolute, fig.blendLoop = true;
+        fig.blendTime = time, fig.blendWeight = 0, leaderBlend = blend, leaderBlendClock = 0;
+    } else if (blend <= 0) {
+        fig.blendWeight = 1, fig.blendLoaded = false, leaderBlend = 0;
+    }
+    playMotion(fig, motion);
+    time = 0; // (the animator rewound: +0x3c from +0x44)
+}
+void Viewer::stepLeaderBlend(float dt) {
+    if (leaderBlend <= 0) return;
+    leaderBlendClock += dt, fig.blendTime += dt;
+    fig.blendWeight = std::clamp((leaderBlendClock - cr2::EventRuntime::kTick) / leaderBlend, 0.0f, 1.0f);
+    if (fig.blendWeight >= 1) leaderBlend = 0, fig.blendLoaded = false;
+}
+
 std::string Viewer::animStatus() const {
     if (!fig.skinned) return "";
     if (!fig.animLoaded) return " - base pose";

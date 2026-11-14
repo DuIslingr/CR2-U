@@ -450,12 +450,13 @@ void Viewer::actionTapped() {
     const cr2::Gimmick& g = field.gimmicks()[size_t(actionMark.gimmick)];
     const std::vector<std::array<float, 3>>& spots = script->touchAction(g.name)->spots;
     const size_t ms = script->touchAction(g.name)->markSpot();
-    heading = std::atan2(spots[ms][0] - player[0], spots[ms][2] - player[2]); // (FldPlayer::SetDirection to its mark)
+    // (CheckTouchActionStartOne / CheckGimmickStart: FldPlayer::SetDirection to its mark over 10 updates)
+    idleTurn.on = true, idleTurn.count = 0, idleTurn.from = heading, idleTurn.to = std::atan2(spots[ms][0] - player[0], spots[ms][2] - player[2]);
     if (actionMark.kind == 1) {
         sprint = Sprint();
         sprint.to = spots;
         sprint.stage = 1, sprint.jump = true;
-        playMotion(fig, "fj01"), time = 0;
+        leaderPlay("fj01", 0.1f); // (FldHighJump: the crouch blended over 0.1)
     } else if (actionMark.kind == 4) {
         iai = Iai();
         iai.stage = 1;
@@ -712,8 +713,9 @@ void Viewer::startSprint(int i) {
     sprint = Sprint();
     sprint.to = script->touchAction(g.name)->spots;
     sprint.stage = 1;
-    heading = std::atan2(g.position[0] - player[0], g.position[2] - player[2]); // (FldPlayer::SetDirection to it)
-    playMotion(fig, "fj01"), time = 0;
+    // (CheckGimmickStart: FldPlayer::SetDirection to it over 10 updates - the hop then sets it at once)
+    idleTurn.on = true, idleTurn.count = 0, idleTurn.from = heading, idleTurn.to = std::atan2(g.position[0] - player[0], g.position[2] - player[2]);
+    leaderPlay("fj01", 0.1f); // (FldSprint::Execute: the crouch blended over 0.1 - asm 0x3b5938)
     SDL_Log("%s: sprint %s - %zu spots", field.info().name.c_str(), g.name.c_str(), sprint.to.size());
 }
 void Viewer::sprintHop() {
@@ -726,9 +728,9 @@ void Viewer::sprintHop() {
     s.T = std::max((r - s.v) / -0.98f, (-s.v - r) / -0.98f);
     if (s.T <= 0) s.T = 0.1f;
     s.vx = (to[0] - s.from[0]) / s.T, s.vz = (to[2] - s.from[2]) / s.T;
-    heading = std::atan2(to[0] - s.from[0], to[2] - s.from[2]);
+    heading = std::atan2(to[0] - s.from[0], to[2] - s.from[2]), idleTurn.on = false;
     s.t = 0, s.air = 0, s.stage = 2;
-    playMotion(fig, "fj02"), time = 0;
+    leaderPlay("fj02", 0.15f); // (the hop over 0.15 - 0x3b55c8)
     audio.playSe(0x155, false);
     if (s.jump) audio.stopAllVoices(0), audio.playVoice(0x8fa);
 }
@@ -742,14 +744,12 @@ void Viewer::updateSprint(float dt) {
     }
     const float t = std::min(s.t, s.T);
     player[0] = s.from[0] + s.vx * t, player[1] = s.from[1] + s.v * t - 0.49f * t * t, player[2] = s.from[2] + s.vz * t;
-    if (s.air == 0 && s.t >= 0.15f) { // (fj03, ending as it lands)
+    if (s.air == 0 && s.t >= 0.15f) { // (fj03 from its start, blended in over the air left less 0.2 - 0x3b57fc .. 0x3b5804)
         s.air = 1;
-        playMotion(fig, "fj03");
-        const float d = fig.animLoaded ? fig.anim.duration() : 0.0f;
-        time = std::max(d - (s.T - s.t - 0.2f), 0.0f);
+        leaderPlay("fj03", s.T - s.t - 0.15f - 0.05f);
     } else if (s.air == 1 && s.t >= s.T - 0.2f) {
         s.air = 2;
-        playMotion(fig, "fj01"), time = 0;
+        leaderPlay("fj01", 0.1f); // (the landing's crouch over 0.1)
     }
     if (s.t < s.T) {
         std::memcpy(playerPrev, player, sizeof player), std::memcpy(playerCur, player, sizeof player);
@@ -764,7 +764,7 @@ void Viewer::updateSprint(float dt) {
         return;
     }
     s.stage = 0; // (on the last: idle, the controller there)
-    playMotion(fig, "fn01");
+    leaderPlay("fn01", 0.15f); // (over 0.15 - 0x3b5a0c)
     controller->setPosition({player[0], player[1] + 0.02f, player[2]});
     for (int k = 0; k < 4; ++k) controller->update({0, 0, 0});
     const cr2::Vec3& p = controller->position();
@@ -1008,9 +1008,11 @@ void Viewer::walk(float dt, float sx, float sy, bool run) {
                               directionShare(float(idleTurn.count) + (float(substep) * kSub + stepClock) / cr2::CharacterController::kUpdate, 10));
     if (script && script->playerState().motionSerial != leaderMotionSerial) // (Cr3FieldMapCharacter.SetMotion)
         leaderMotionSerial = script->playerState().motionSerial, leaderMotion = script->playerState().motion,
-        SDL_Log("leader: motion %s", leaderMotion.c_str());
+        leaderPlay(leaderMotion.c_str(), script->playerState().motionBlend), SDL_Log("leader: motion %s", leaderMotion.c_str());
     if (speed != 0) leaderMotion.clear(); // (moving again: its own motions)
-    playMotion(fig, !leaderMotion.empty() ? leaderMotion.c_str() : speed == 0 ? "fn01" : run ? "ff02" : "ff01");
+    // (FldPlayer's own motions, at once - not while a touch action plays its own: FldSprint,
+    // FldHighJump, FldHakkei set the leader's motion themselves)
+    if (!actionRunning()) playMotion(fig, !leaderMotion.empty() ? leaderMotion.c_str() : speed == 0 ? "fn01" : run ? "ff02" : "ff01");
     if (!exitTo.empty()) {
         SDL_Log("exit %s", exitTo.c_str());
         // FldMain::CollisionEventExec: SE 0x152 leaving or entering a sky map (the table's +0x15 -
@@ -1652,6 +1654,7 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
         updateFieldCamera(dt);
         updateChange(dt);
         updateSprint(dt);
+        stepLeaderBlend(dt);
         updateIai();
         fieldInput();
         const bool hit = fieldMode && !eventMode && encount.coupling && !fieldScriptRunning() && !actionRunning();

@@ -1258,7 +1258,7 @@ finger lifted in the update at 6.06 s, control back at 6.11 s; with no finger, a
 960. +0x30 / +0x34 are set by `SetDirectScroll`, which passes them by reference to
 `CalcScrollStop`: without +0x79 it clamps them in place to the painting's limits (+0x48 .. +0x54)
 and copies them to +0x40 / +0x44, the scroll drawn; with +0x79 (the shared background) it leaves
-them and draws 0.4 of them. Round 33's note had +0x30 always unclamped. The port's `GetPos_X / _Y`
+them and draws 0.4 of them. This list's earlier note had +0x30 always unclamped. The port's `GetPos_X / _Y`
 read the scene's scroll (`shownX_`, from `FieldMap`'s `out.scroll`): clamped the same way, or not
 with a shared background, whose painting the port moves 0.4 - as the original. Not changed. The
 ease's one-pixel hold stays the drawn picture's pixel (the device's in the original, the window's

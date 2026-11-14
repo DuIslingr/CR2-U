@@ -1829,7 +1829,7 @@ void Viewer::drawCamp(const Mat4& view, const Mat4& proj, int w, int h) {
     if (optionsAsk) return drawOptionsAsk(view, w, h);
     if (settingsOpen) return drawSettings(view, w, h);
     if (optionsOpen) return drawOptions(view, proj, w, h);
-    if (campUse && campUse != 5) return drawItemUse(view, proj, w, h);
+    if (campUse) return drawItemUse(view, proj, w, h); // (5: the picker's close played, then nothing till the list again)
     if (campLink == 201) return drawScenarios(view, proj, w, h);
     if (campLink == 202) return drawPubRequest(view, w, h);
     const float t = uiClock - campStart;
@@ -2022,7 +2022,9 @@ void Viewer::drawCapacity(int ch, const int* change, float t, const Mat4& view, 
 void Viewer::campUseUpdate() { // (Update 8, 9: each 3 s; after the last, a second, then back to the list)
     if (campUse == 4 && uiClock - campUpAt >= 3.0f) campUpShown++, campUpAt = uiClock;
     if (campUse == 4 && campUpShown >= campUpText.size()) campUse = 5, campUseStart = uiClock;
-    if (campUse == 5 && uiClock - campUseStart >= 1.0f) campUse = 0, campItem = 0;
+    // (state 8's end: InterfaceCloseAnimeSet and 1.0 s - twenty updates -, then 7 with result 1: the
+    // item list made again, its opening and lock)
+    if (campUse == 5 && uiClock - campUseStart >= 1.0f) campUse = 0, campItem = 0, campStart = campListOpenedAt = uiClock - cr2::EventRuntime::kTick;
 }
 void Viewer::showRaised(int ch, const cr2::BattleData::Item& it, int n) {
     const std::string who = menuName(0x28 + ch + 1);
@@ -2083,7 +2085,8 @@ void Viewer::campUseTap(int id) {
     }
 }
 void Viewer::drawItemUse(const Mat4& view, const Mat4& proj, int w, int h) {
-    const float t = campUseCloseAt < 0 ? uiClock - campUseStart : std::max(std::min(campUseCloseFrom, 0.2f) - (uiClock - campUseCloseAt), 0.0f);
+    const float t = campUse == 5 ? std::max(0.2f - (uiClock - campUseStart), 0.0f)
+                  : campUseCloseAt < 0 ? uiClock - campUseStart : std::max(std::min(campUseCloseFrom, 0.2f) - (uiClock - campUseCloseAt), 0.0f);
     const cr2::BattleData::Item* it = battleData.item(campItem);
     const std::string name = it ? itemName(campItem) : "";
     if (campUse == 3) return drawAsk(formatAnnounce(announce(0x73), {name}), t, view, w, h, 7201, 7202);
@@ -2137,7 +2140,7 @@ void Viewer::drawItemUse(const Mat4& view, const Mat4& proj, int w, int h) {
     poseUi(help, "camphelp_io", t);
     drawFigure(help.fig, view.data());
     float x, y;
-    if (uiJoint(help, "typeM_L01", x, y))
+    if (campUse != 5 && uiJoint(help, "typeM_L01", x, y)) // (closing: the text gone with the window)
         drawUiText(raised ? campUpText[campUpShown] : formatAnnounce(announce(0x84), {name}), 24, x, y, w, h, true);
     if (raised) return tapRects.push_back({7300, -10, -10, 10, 10}); // (anywhere)
     UiFig& bk = uiFig("btlback");

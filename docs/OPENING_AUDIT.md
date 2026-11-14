@@ -1423,7 +1423,19 @@ way after the choice's window closes. The port went back to the list in the rele
 `campUseBack` plays the use's parts back (0.2 s) and makes the list again in the fourth update, its
 taps from the fourth after. `--play d0104 --item 4:3 --input "tab camp items down down enter back
 back back"`: Plum picked, back to the list, back to the camp, out. Left: the quantity's question
-(`CampChooseQuantityMenu`, state 3 on) and what follows a use (the port's 1.0 s, then the list).
+(`CampChooseQuantityMenu`, state 3 on); what follows a use: round 60.
+
+### Round 60: after an item's use
+
+`CharaSelectButtonMenu` after a use: state 6 (the choice's window gone) puts the camp's help text
+in, 7 waits for it, 8 shows the stat lines (`CheckEndParamUpText`), then `InterfaceCloseAnimeSet`
+and +0xe0 = 1.0; state 9 takes the update's time off it and at 0 or under - the twentieth update
+(twenty 0.05f from 1.0 leave -1.6e-7) - returns 7 with result 1: the item list made again, its
+opening and lock. The port's last second (its `campUse` 5) already lasted 1.0 s but drew the old list
+under it and brought it back as it was; now the whom's parts play back over it with nothing else
+drawn (its prompt gone with its window) and the list is made again at its end. Frames at 7.0 s
+(the MP line), 9.6 s (the faces sliding out, nothing else) and 10.4 / 11.2 s (the list again):
+`--play d0104 --item 4:3 --input "tab camp items down down enter enter enter"`.
 
 ## Original-code evidence
 

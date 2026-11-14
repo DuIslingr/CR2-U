@@ -1944,6 +1944,12 @@ struct Viewer {
         int focus = 0, item = 0, count = 1, who = 0;
         float at = 0, askAt = 0;
     } shop;
+    // (ShopFirstMenu's Back / Talk: its close, the cut-in told 1 / 3 - its cutInSgl_io played back (0.2 s),
+    // state 0x17 - and the shop over once the cut-in is gone, the fourth update; FldShop's 4 / 3 the next)
+    float shopCloseAt = -1, shopCloseFrom = 0;
+    int shopCloseTicks = 0;
+    std::string shopCloseCall;
+    bool shopCloseEvent = false;
     // The pub (ReservePUB - FldMain step 0xd, FldPUB; InterfaceMain::SetPubParameter: PubTitleMenu's
     // `menu` on menuPub_io, PubTopMenu, PubMainMenu's pubGirls_io): the board (posterBtn) - a
     // pubPoster_io at each call_pubPoster_ioNN for the requests posted (flags 1201 .., nine at

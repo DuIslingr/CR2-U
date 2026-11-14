@@ -1571,6 +1571,22 @@ update after the press, takes no answer for its 5 updates, saves when the choice
 (the fourth update), holds "Saved" twenty, closes over ten, and control comes three updates after
 it goes (No: gone in the fourth, the same three). `--play d0104 --input "tab save yes"` (and `no`).
 
+### Round 72: the shop's way out
+
+`FldShop::Execute`: the update after step 0xb `SetFieldShopParameter` (`ShopTitleMenu` 0x47,
+`ShopCutInPiupiuMenu` 0x48, `ShopFirstMenu` 0x46), then each update `InterfaceEndCheck` - 1 while the
+cut-in is there (`CheckFieldShopParameter`), then 3 when the talk was asked (+0xd4: `CallEvent`) or 4
+(`CallAtMenuFinished`). `ShopFirstMenu::TouchSimpleRelease`: Talk (0xd) - SE 0xb4, the lock cleared,
+result 3 -, Back (100) - +0x1c 20, SE 0xb5, result 1 -, Buy / Sell (0xe / 0xf) - +0x1c 120, SE 0xb4,
+4 / 5 -; each closes the first menu (state 2, gone at its end) and tells the cut-in. The cut-in on 1
+or 3 plays its `cutInSgl_io` back (0.2 s) and goes when it ends (state 0x17): the shop over in the
+fourth update after the release; on 4 / 5 it waits for the first menu to go and makes the second
+(+0x1c 10). The port ended the shop in the release's update; now Back and Talk play the shop's parts
+back and end it in the fourth update (`shopCloseAt`), the talk's event called after it as before.
+Not run: the shop is reached through t0101's `c103_00` and its talks, which no headless input taps
+through to the shop's Back. The menus within the shop (buy, sell, the lists, the quantity, the
+cut-in's lines) were not gone through.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

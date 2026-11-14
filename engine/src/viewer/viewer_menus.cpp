@@ -1432,6 +1432,11 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                         break;
                     }
                 }
+                if (shop.stage && shopCloseAt >= 0 && ++shopCloseTicks >= 4) { // (the cut-in gone: the shop over)
+                    shopCloseAt = -1;
+                    shopClose(shopCloseEvent ? shopCloseCall.c_str() : nullptr);
+                    break;
+                }
                 if (mapOpen && mapCloseAt >= 0 && ++mapCloseTicks >= 4) { // (the map gone)
                     mapOpen = false, mapCloseAt = -1, controlHold = 2;
                     SDL_Log("field: the map closed");
@@ -4012,6 +4017,7 @@ void Viewer::drawPub(const Mat4& view, int w, int h) {
 
 void Viewer::openShop() {
     shop = Shop();
+    shopCloseAt = -1;
     shop.stage = 1, shop.at = uiClock;
     SDL_Log("shop: open");
 }
@@ -4068,11 +4074,15 @@ void Viewer::shopClose(const char* call) {
     else pendingBranch = true;   // (back to the field)
 }
 void Viewer::shopTap(int id) {
+    if (shopCloseAt >= 0) return;
     auto stage = [&](int s) { shop.stage = s, shop.at = uiClock, shop.focus = 0; };
     if (shop.stage == 1) {
         if (id == 14 || id == 15) audio.playSe(0xb4, false), shop.buy = id == 14, stage(2); // (ShopFirstMenu: 4 buy, 5 sell)
-        else if (id == 13) audio.playSe(0xb4, false), shopClose("shop_talk"); // (3: FldShop's 3 - CallEvent shop_talk)
-        else if (id == 100) audio.playSe(0xb5, false), shopClose();
+        else if ((id == 13 || id == 100) && shopCloseAt < 0) { // (3: FldShop's 3 - CallEvent shop_talk; 1: back to the field)
+            audio.playSe(id == 13 ? 0xb4 : 0xb5, false);
+            shopCloseAt = uiClock, shopCloseFrom = uiClock - shop.at, shopCloseTicks = 0;
+            shopCloseEvent = id == 13, shopCloseCall = "shop_talk";
+        }
     } else if (shop.stage == 2) {
         static const std::pair<int, int> kKinds[4] = {{16, 0}, {21, 1}, {22, 2}, {23, 3}};
         for (const auto& [b, k] : kKinds)
@@ -4172,6 +4182,7 @@ void Viewer::exploreShop() {
     shopClose();
 }
 void Viewer::shopKey(SDL_Keycode k) {
+    if (shopCloseAt >= 0) return; // (closing)
     if (shop.stage == 1 || shop.stage == 2) {
         static const int kFirst[3] = {14, 15, 13}, kKinds[4] = {16, 21, 22, 23}; // (1 buy, 2 sell, 3 talk)
         if (k >= SDLK_1 && k <= SDLK_4) {
@@ -4216,7 +4227,7 @@ void Viewer::shopToken(const std::string& t) {
     if (auto k = kKeys.find(t); k != kKeys.end()) shopKey(k->second);
 }
 void Viewer::drawShop(const Mat4& view, const Mat4& proj, int w, int h) {
-    const float t = uiClock - shop.at;
+    const float t = shopCloseAt < 0 ? uiClock - shop.at : std::max(std::min(shopCloseFrom, 0.2f) - (uiClock - shopCloseAt), 0.0f); // (played back as it closes)
     auto keepLook = buttonLook;
     auto keepLevel = buttonLevel;
     auto keepFighter = buttonFighter;

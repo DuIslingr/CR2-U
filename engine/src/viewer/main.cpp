@@ -310,8 +310,9 @@ int padControlsSelfTest() {
         v.world.stage = 4;
         v.noteAsk();
         press(down), press(cross);
-        check(v.world.stage != 4, "question: the world select's × No");
+        check(v.worldSwitchAt >= 0 && v.worldSwitchTo == 1, "question: the world select's × No"); // (the dungeons again once the choice is gone)
         v.world = decltype(v.world)();
+        v.worldSwitchAt = v.worldOutAt = -1;
         v.noteAsk();
 
         // the pub's board (PubTopMenu, FUN_810b7b62): the posters three a row and Check

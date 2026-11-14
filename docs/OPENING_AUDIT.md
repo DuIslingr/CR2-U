@@ -1599,6 +1599,44 @@ ended the pub in the release's update; now its Back plays the pub's parts back a
 fourth update (`pubCloseAt`). Not run (the pub is reached through t0101's events); the request's
 accept and give-up (their questions, states 0xb .. 0xd) not gone through.
 
+### Round 74: the world select's and the chapter select's steps
+
+`FldWorldSelect` (step 10) makes `MapSelectTitleMenu` 0x38, `MapSelectPicMenu` 0x39 and
+`MapSelectMenu` 0x37 the update after; `MapSelectMenu::Update` runs `Update_Map` (the dungeons) or
+`Update_Level` (+0xbc). `ChapterSelectMenu` (step 0xe; 0x71 / 0x72 its title and picture) is the
+same with one list. The steps, each from the release (+0x1c 30 at each):
+- a dungeon picked: SE 0xb4, `ScrollItemLeftOut`, level mode; its state 0 makes the levels' rows once
+  the old are out (`IsListItemAnimeEnd`, `scrlBtn_io`'s 0.2 s), state 1 clears the lock once they are
+  in. The levels' Back: `ScrollItemRightOut`, the dungeons' rows the same way, on the one picked.
+- a level picked, a chapter picked, a dungeon that wants another pair (`CheckCoupling`):
+  `InterfaceTemporarilyCloseAnimeSet` - the list closes -, the question (`SetYNChoiceWindowParameter`,
+  its lines) once the list's frame ends (`IsMainFlameAnimeEnd`), +0x1c 5. The title and the picture
+  stay.
+- the question's No: `EndBattleYNChoice`, then once the choice is gone (`SurvivalBattleYNChoice`:
+  `choice_io`'s 0.2 s close) the list again (`ReturnFromTemporaryAnimeSet`, its rows made). The
+  pair's Yes: `ChangeCoupling` at once, the levels once the choice is gone. The level's or chapter's
+  Yes: the title and the picture told to close (`SetParamNumber` 1), then once the choice is gone
+  `SetMapSelect` / `SetLevelSelect` (+0xdc for the chapter) and 1: `FldMain` calls `WarpTask` /
+  `chapter_select` the next update.
+- the top's Back (state 3): the title and the picture told to close, the list's frame back, then
+  `SetMapSelect(-1)` and 1 the fourth update; `FldMain`'s `CallAtMenuFinished`.
+The title's close (`MapSelectTitleMenu::InterfaceCloseAnimeSet`, 0x2c9650 in the library: +0x5c = 2,
+`ChangeAnime(1)`, the old time kept) plays `menuwld_io` / `menucpt_io` (0.45 s) back from where it
+is; the picture's (0x2c8e5c) `ChangeAnime(2)`, `mappic_out` (0.2 s); each menu goes when its own
+animation ends (their `Update` returns `IsEndCurrentAnime` once told), past the select's end.
+The port changed every step in the release's update, replayed the title's and the picture's in at
+each step, hid the picture under the question, and called `WarpTask` at the Yes. Now
+`worldSwitch` plays the list (or the question) back over 0.2 s and takes the next step in the
+fourth update - the next one's rows in from there, taps from the fifth (`worldInTicks`) -; the title
+and the picture keep their open's clock, the picture stays under the question, and the Back and the
+final Yes close them on their own (`drawWorldOut`), the field's tab back meanwhile. Rows in and out
+are the whole list's `scrlBtn_io` played back and forward, as the camp's (rounds 63 - 66).
+A bounded explore of t0101 (`--hours 0.05 --skip-battles`, a fresh data folder): the dungeon, its
+level and the Yes went through, `WarpTask` queued at update 731 (727 before: the choice's close) and
+called after 732; with a Back put in for a run (not kept), the select closed in the fourth update
+and the field went on. The frames were not captured: the picture under the question and the
+title's close are read from the code only.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

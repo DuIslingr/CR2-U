@@ -1889,6 +1889,7 @@ struct Viewer {
         bool chapters = false; // (the chapter select)
         int stage = 0; // 0 shut, 1 the dungeons, 2 the levels, 3 the question, 4 the pair's question
         float at = 0;  // (since: uiClock)
+        float opened = 0; // (the title's and the picture's clock: their in played once, at the open)
         int focus = 0, dungeonFocus = 0;
         int dungeon = 0, level = 0;
     } world;
@@ -1948,6 +1949,21 @@ struct Viewer {
     // state 0x17 - and the shop over once the cut-in is gone, the fourth update; FldShop's 4 / 3 the next)
     // (the pub's Back: PubTopMenu's checkBtn_io played back (0.15 s) and the menu gone at its end; PubMainMenu
     // - state 0xf - sees it the next update and reports 3, FldPUB the one after)
+    // (the world select's steps - MapSelectMenu / ChapterSelectMenu -: a dungeon picked, the levels' Back - the
+    // rows out (0.2 s), the next's made the fourth update; a level picked, the pair's or the chapter's
+    // question - the list closed (InterfaceTemporarilyCloseAnimeSet, 0.2 s), the question the fourth; its
+    // answer - the choice closed (SurvivalBattleYNChoice, 0.2 s), the list again or gone the fourth; the top's
+    // Back - the frame back, SetMapSelect(-1) the fourth. The next one's taps from the fifth update after (+0x1c))
+    float worldSwitchAt = -1, worldSwitchFrom = 0;
+    int worldSwitchTicks = 0, worldSwitchTo = 0, worldInTicks = 5; // (to: a stage; -1 the field; 9 the warp, the chapter)
+    // (the top's Back and the question's Yes close the title (0x38 / 0x71: back from where it was) and the
+    // picture (0x39 / 0x72: mappic_out) - menus of their own, gone when those end, past the select's end)
+    float worldOutAt = -1, worldOutFrom = 0;
+    std::string worldOutTex;
+    bool worldOutChapters = false;
+    void worldSwitch(int to);
+    std::string worldPicTex();
+    void drawWorldOut(const Mat4& view);
     float pubCloseAt = -1, pubCloseFrom = 0;
     int pubCloseTicks = 0;
     float shopCloseAt = -1, shopCloseFrom = 0;

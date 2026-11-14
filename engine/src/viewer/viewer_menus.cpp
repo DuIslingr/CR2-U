@@ -1432,6 +1432,31 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                         break;
                     }
                 }
+                if (world.stage && worldSwitchAt >= 0 && ++worldSwitchTicks >= 4) { // (the step's next one)
+                    const int to = worldSwitchTo;
+                    worldSwitchAt = -1;
+                    if (to == -1) { // (gone: back to the field)
+                        world.stage = 0, pendingBranch = true;
+                        SDL_Log("world select: closed (Back)");
+                        break;
+                    }
+                    if (to == 9) {
+                        world.stage = 0;
+                        if (world.chapters) { // (FldMain step 0xe: CallEvent("chapter_select"))
+                            game.selectChapter = world.dungeon;
+                            SDL_Log("chapter select: chapter %d", world.dungeon);
+                            queueEvent("chapter_select");
+                        } else { // (FldMain step 10: CallEvent("WarpTask") - EventExecute the update after)
+                            game.selectDungeon = world.dungeon, game.difficulty = world.level - 1;
+                            SDL_Log("world select: dungeon %d, level %d", world.dungeon, world.level);
+                            queueEvent("WarpTask");
+                        }
+                        break;
+                    }
+                    if (to == 2 && world.stage != 3) world.focus = 0; // (the levels from the top; back from their question on the one picked)
+                    if (to == 1) world.focus = world.dungeonFocus;
+                    world.stage = to, world.at = uiClock, worldInTicks = 0;
+                } else if (world.stage && worldSwitchAt < 0 && worldInTicks < 5) ++worldInTicks;
                 if (pub.stage && pubCloseAt >= 0 && ++pubCloseTicks >= 4) { // (3 reported)
                     pubCloseAt = -1;
                     pubEnd(3);
@@ -3646,13 +3671,15 @@ auto Viewer::worldRows() -> std::vector<ListRow> {
 }
 void Viewer::openWorldSelect() {
     world = WorldSelect();
-    world.stage = 1, world.at = uiClock;
+    world.stage = 1, world.at = world.opened = uiClock;
+    worldSwitchAt = -1, worldInTicks = 5;
     SDL_Log("world select: %zu dungeons", worldRows().size());
     if (worldRows().empty()) world.stage = 0, pendingBranch = true;
 }
 void Viewer::openChapterSelect() {
     world = WorldSelect();
-    world.chapters = true, world.stage = 1, world.at = uiClock;
+    world.chapters = true, world.stage = 1, world.at = world.opened = uiClock;
+    worldSwitchAt = -1, worldInTicks = 5;
     SDL_Log("chapter select: %zu chapters", worldRows().size());
     if (worldRows().empty()) world.stage = 0, pendingBranch = true;
 }
@@ -3673,48 +3700,54 @@ bool Viewer::worldPair(const cr2::GameState& g, int dungeon, int pair[2]) {
     return false;
 }
 void Viewer::worldPick(const ListRow& r) {
+    if (worldSwitchAt >= 0 || worldInTicks < 5) return;
     audio.playSe(0xb4, false);
     int pair[2];
-    if (world.stage == 1 && world.chapters) world.dungeon = r.id, world.dungeonFocus = world.focus, world.stage = 3;
-    else if (world.stage == 1 && worldPair(game, r.id, pair)) world.dungeon = r.id, world.dungeonFocus = world.focus, world.stage = 4; // (the System window: announce 0x81, yes / no)
-    else if (world.stage == 1) world.dungeon = r.id, world.dungeonFocus = world.focus, world.stage = 2, world.focus = 0;
-    else if (world.stage == 2) world.level = r.id, world.stage = 3;
-    world.at = uiClock;
+    if (world.stage == 1) world.dungeon = r.id, world.dungeonFocus = world.focus;
+    if (world.stage == 1 && world.chapters) worldSwitch(3);
+    else if (world.stage == 1 && worldPair(game, r.id, pair)) worldSwitch(4); // (the System window: announce 0x81, yes / no)
+    else if (world.stage == 1) worldSwitch(2);
+    else if (world.stage == 2) world.level = r.id, worldSwitch(3);
+}
+std::string Viewer::worldPicTex() { // (the picture shown: the focused dungeon's, the chosen one's; the chapter's)
+    int shown = world.dungeon;
+    if (world.chapters) shown = (world.stage == 1 ? world.focus : world.dungeonFocus) + 1;
+    else if (world.stage == 1) {
+        const std::vector<ListRow> rows = worldRows();
+        if (!rows.empty()) shown = rows[size_t(std::clamp(world.focus, 0, int(rows.size()) - 1))].id;
+    }
+    char tex[24];
+    std::snprintf(tex, sizeof tex, world.chapters ? "mapPic_c%02d" : "mapPic_d%02d", shown);
+    return tex;
+}
+void Viewer::worldSwitch(int to) {
+    worldSwitchAt = uiClock, worldSwitchFrom = uiClock - world.at, worldSwitchTicks = 0, worldSwitchTo = to;
+    if (to == -1 || to == 9) // (the title and the picture told to close: SetParamNumber 1)
+        worldOutAt = uiClock, worldOutFrom = uiClock - world.opened, worldOutTex = worldPicTex(), worldOutChapters = world.chapters;
 }
 void Viewer::worldBack() {
+    if (world.stage >= 3) return worldAnswer(false);
+    if (worldSwitchAt >= 0 || worldInTicks < 5) return;
     audio.playSe(0xb5, false);
-    if (world.stage == 2 || (world.stage == 3 && world.chapters)) world.stage = 1, world.focus = world.dungeonFocus, world.at = uiClock;
-    else if (world.stage == 3) world.stage = 2, world.at = uiClock;
-    else world.stage = 0, pendingBranch = true; // (back to the field: what else was reserved)
+    if (world.stage == 2) worldSwitch(1); // (Update_Level's Back: ScrollItemRightOut, the dungeons' rows the fourth update)
+    else worldSwitch(-1), SDL_Log("world select: Back, closing");
 }
 void Viewer::worldAnswer(bool yes) {
+    if (world.stage < 3 || worldSwitchAt >= 0 || worldInTicks < 5) return;
+    audio.playSe(yes ? 0xb4 : 0xb5, false);
     if (world.stage == 4) { // (yes: ChangeCoupling - the pair the party, cr3_common_data +1..+4 - then the levels; no: the dungeons again)
-        audio.playSe(yes ? 0xb4 : 0xb5, false);
         int pair[2];
         if (yes && worldPair(game, world.dungeon, pair)) {
             game.party[0] = pair[0], game.party[1] = pair[1];
             SDL_Log("world select: the party %d and %d", pair[0], pair[1]);
         }
-        if (yes) world.stage = 2, world.focus = 0;
-        else world.stage = 1, world.focus = world.dungeonFocus;
-        world.at = uiClock;
-        return;
+        return worldSwitch(yes ? 2 : 1);
     }
-    if (world.stage != 3) return;
-    if (!yes) return worldBack();
-    audio.playSe(0xb4, false);
-    if (world.chapters) { // (FldMain step 0xe: CallEvent("chapter_select"))
-        game.selectChapter = world.dungeon;
-        SDL_Log("chapter select: chapter %d", world.dungeon);
-        world.stage = 0;
-        return queueEvent("chapter_select");
-    }
-    game.selectDungeon = world.dungeon, game.difficulty = world.level - 1;
-    SDL_Log("world select: dungeon %d, level %d", world.dungeon, world.level);
-    world.stage = 0;
-    queueEvent("WarpTask"); // (FldMain step 10: CallEvent("WarpTask") - EventExecute the update after)
+    if (!yes) return worldSwitch(world.chapters ? 1 : 2);
+    worldSwitch(9); // (the title and the picture closed; once the choice is gone, SetMapSelect / the chapter - FldMain's CallEvent)
 }
 void Viewer::worldTap(int id) {
+    if (worldSwitchAt >= 0 || worldInTicks < 5) return; // (a step running; the next one's lock)
     if (world.stage >= 3) {
         if (id == 7601 || id == 7602) worldAnswer(id == 7601);
         return;
@@ -3726,6 +3759,7 @@ void Viewer::worldTap(int id) {
             if (r.id == id) return worldPick(r);
 }
 void Viewer::worldKey(SDL_Keycode k) {
+    if (worldSwitchAt >= 0 || worldInTicks < 5) return;
     if (world.stage >= 3) {
         if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) worldAnswer(true);
         else if (k == SDLK_BACKSPACE || k == SDLK_N) worldAnswer(false);
@@ -3739,11 +3773,22 @@ void Viewer::worldKey(SDL_Keycode k) {
     else if (k == SDLK_BACKSPACE) worldBack();
 }
 void Viewer::drawWorldSelect(const Mat4& view, int w, int h) {
-    const float t = uiClock - world.at;
+    const float t = worldSwitchAt < 0 ? uiClock - world.at : std::max(std::min(worldSwitchFrom, 0.2f) - (uiClock - worldSwitchAt), 0.0f); // (played back in a step)
+    const bool out = worldOutAt >= 0; // (the title and the picture closing: drawn on their own)
     UiFig& title = uiFig("menu"); // (MapSelectTitleMenu)
     title.fig.place = cr2::Mat34();
-    poseUi(title, world.chapters ? "menucpt_io" : "menuwld_io", uiClock - world.at + (world.stage > 1 ? 10.0f : 0.0f));
-    drawFigure(title.fig, view.data());
+    poseUi(title, world.chapters ? "menucpt_io" : "menuwld_io", uiClock - world.opened);
+    if (!out) drawFigure(title.fig, view.data());
+    auto drawPic = [&] { // (MapSelectPicMenu: the dungeon's picture; ChapterSelectPicMenu the chapter's - its in once, then the texture changed)
+        if (out) return;
+        UiFig& pic = uiFig("mappic");
+        if (cr2::Texture* tx = texture(worldPicTex()))
+            for (ViewMesh& vm : pic.fig.meshes) vm.texture = tx;
+        pic.fig.place = cr2::Mat34();
+        poseUi(pic, "mappic_in", uiClock - world.opened);
+        drawFigure(pic.fig, view.data());
+    };
+    if (world.stage >= 3) drawPic(); // (the question over the picture: only the list closed)
     if (world.stage == 3 && world.chapters) {
         const std::string q = menuName(14 + std::clamp(world.dungeonFocus, 0, 3)) + "\\n" + announce(0x8b);
         return drawAsk(q, t, view, w, h, 7601, 7602);
@@ -3756,16 +3801,29 @@ void Viewer::drawWorldSelect(const Mat4& view, int w, int h) {
     const std::vector<ListRow> rows = worldRows();
     if (rows.empty()) return;
     world.focus = std::clamp(world.focus, 0, int(rows.size()) - 1);
-    const int shown = world.chapters ? world.focus + 1 : world.stage == 1 ? rows[size_t(world.focus)].id : world.dungeon;
-    UiFig& pic = uiFig("mappic"); // (MapSelectPicMenu: the dungeon's picture; ChapterSelectPicMenu the chapter's)
-    char tex[24];
-    std::snprintf(tex, sizeof tex, world.chapters ? "mapPic_c%02d" : "mapPic_d%02d", shown);
-    if (cr2::Texture* tx = texture(tex))
-        for (ViewMesh& vm : pic.fig.meshes) vm.texture = tx;
-    pic.fig.place = cr2::Mat34();
-    poseUi(pic, "mappic_in", t);
-    drawFigure(pic.fig, view.data());
+    drawPic();
     drawSkillList(rows, rows[size_t(world.focus)].id, t, view, w, h, -1, -1);
+}
+void Viewer::drawWorldOut(const Mat4& view) {
+    const float e = uiClock - worldOutAt, tt = std::min(worldOutFrom, 0.45f) - e;
+    if (tt <= 0 && e >= 0.2f) {
+        worldOutAt = -1;
+        return;
+    }
+    if (tt > 0) {
+        UiFig& title = uiFig("menu");
+        title.fig.place = cr2::Mat34();
+        poseUi(title, worldOutChapters ? "menucpt_io" : "menuwld_io", tt);
+        drawFigure(title.fig, view.data());
+    }
+    if (e < 0.2f) { // (mappic_out from its start)
+        UiFig& pic = uiFig("mappic");
+        if (cr2::Texture* tx = texture(worldOutTex))
+            for (ViewMesh& vm : pic.fig.meshes) vm.texture = tx;
+        pic.fig.place = cr2::Mat34();
+        poseUi(pic, "mappic_out", e);
+        drawFigure(pic.fig, view.data());
+    }
 }
 auto Viewer::libraryRows() -> std::vector<ListRow> {
     static const short kOpenFlags[50] = {0, 1613, 1628, 1647, 1777, 0, 1573, 1573, 1573, 1573, 0, 0, 0, 0, 0, 1171, 1172,
@@ -4543,6 +4601,7 @@ void Viewer::drawFieldUi(int w, int h) {
         drawChangeButton(view);
         drawWalkStick(view);
     }
+    if (worldOutAt >= 0) drawWorldOut(view);
     if (!campOpen && campTitleCloseAt >= 0) { // (the camp's title: its own close, past the camp's)
         const float tt = std::min(campTitleCloseFrom, 0.45f) - (uiClock - campTitleCloseAt);
         if (tt <= 0) campTitleCloseAt = -1;

@@ -1558,6 +1558,14 @@ struct Viewer {
     // (CampOptionMenu: as the battle's, its Manual the manual); Back (or Backspace) closes it.
     bool campOpen = false;
     float campStart = 0;
+    // (CampMenu's Back - TouchSimpleRelease, id 100: result 5, InterfaceCloseAnimeSet - its parts
+    // played back from where they are, campBtn_io's 0.15 s ending in the third update; state 3, 4,
+    // then Update's 7 and InterfaceMain's +0xbc = 1 the update after; FldMain's step 5 sees it the
+    // next (CallAtMenuFinished: step 1) and step 1 gives control the one after. campCloseAt: the
+    // release's clock; campCloseTicks: the updates since)
+    float campCloseAt = -1, campCloseFrom = 0;
+    int campCloseTicks = 0;
+    float campPartTime(float length) const;
     int campList = 0; // (0 none, 16 the items, 18 the sopia)
     int campCategory = 0, campCursor = 0;
     void openCamp();

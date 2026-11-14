@@ -1268,7 +1268,7 @@ void Viewer::fieldUpdate(float dt) {
     fieldClock = std::min(fieldClock + dt, 0.25f);
     for (; fieldClock >= cr2::EventRuntime::kTick; fieldClock -= cr2::EventRuntime::kTick) {
         // (step 1: control back once no finger is down nor lifted this update, CheckBalloon after it)
-        if (controlHold > 0 && !(controlHold == 1 && (pointerDown || pointerLifted)) && --controlHold == 0) checkBalloons();
+        if (controlHold > 0 && !(controlHold == 1 && (pointerDown || pointerLifted)) && --controlHold == 0) checkBalloons();                        // (step 5 -> 1 the next, control the one after)
         pointerLifted = false;
         if (pendingBranch) {
             pendingBranch = false;
@@ -1391,9 +1391,17 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
     } else if (fieldMode && (campOpen || mapOpen || saveStage || world.stage || shop.stage || party.stage || library.stage == 1 || pub.stage)) { // (FldMain steps 5 .. 7, 10: the camp, the map, saving, the world select - the field held)
         updateManual(dt);
         if (saveStage == 2 && uiClock - saveStart > (saveFailed ? 3.0f : 1.0f)) saveStage = 0; // (a second, then closed)
-        if (script && !script->running()) { // (the fade, the windows go on under a menu: GameMain's update - the library's fade back in)
+        if (script) { // (the fade, the windows go on under a menu: GameMain's update - the library's fade back in)
             fieldClock = std::min(fieldClock + dt, 0.25f);
-            for (; fieldClock >= cr2::EventRuntime::kTick; fieldClock -= cr2::EventRuntime::kTick) script->tick();
+            for (; fieldClock >= cr2::EventRuntime::kTick; fieldClock -= cr2::EventRuntime::kTick) {
+                if (!script->running()) script->tick();
+                // (the camp closing: InterfaceMain's +0xbc in the fourth update after the release's;
+                // FldMain's step 5 -> 1 the next, step 1's control the one after)
+                if (campOpen && campCloseAt >= 0 && ++campCloseTicks >= 5) {
+                    closeCamp(), controlHold = 2;
+                    break;
+                }
+            }
         }
         fieldInput();
     } else if (fieldMode) {
@@ -1696,12 +1704,17 @@ void Viewer::fieldTabTap(int area) {
     }
 }
 void Viewer::openCamp() {
-    campOpen = true, campStart = uiClock, campList = 0, campCursor = 0;
+    campOpen = true, campStart = uiClock, campList = 0, campCursor = 0, campCloseAt = -1, campCloseTicks = 0;
     fieldTabOpen = false, fieldTabAt = -10;
     optionsOpen = optionsAsk = false, manualStage = 0;
     SDL_Log("camp: open");
 }
+float Viewer::campPartTime(float length) const {
+    if (campCloseAt < 0) return uiClock - campStart;
+    return std::max(std::min(campCloseFrom, length) - (uiClock - campCloseAt), 0.0f); // (played back from where it was)
+}
 void Viewer::closeCamp() {
+    campCloseAt = -1, campCloseTicks = 0;
     campOpen = false, campList = 0, campUse = 0, campItem = 0, campLink = 0;
     optionsOpen = optionsAsk = false, manualStage = 0, manualEvents.reset();
     SDL_Log("camp: closed");
@@ -1807,17 +1820,17 @@ void Viewer::drawCamp(const Mat4& view, const Mat4& proj, int w, int h) {
     }
     UiFig& title = uiFig("menu");
     title.fig.place = cr2::Mat34();
-    poseUi(title, "menucamp_io", t);
+    poseUi(title, "menucamp_io", campPartTime(0.45f));
     drawFigure(title.fig, view.data());
     StatusShown rows[2];
     int count = 0;
     for (int k = 0; k < 2; ++k)
         if (game.party[k] >= 0 && game.party[k] < 9) rows[count++] = statusOf(game.party[k]);
-    drawStatusWindows(rows, count, t, view, proj);
+    drawStatusWindows(rows, count, campPartTime(0.2f), view, proj);
     bool anyItem = false;
     for (int id = 1; id < 300; ++id) anyItem = anyItem || game.itemCount[id] > 0;
     buttonLook = [&](int id) { return id == 16 && !anyItem ? 0 : id == campCursorButton() && keysUsed ? 2 : 1; };
-    drawCommandMenu("campbtn_io", t, view, {}, {}, w, h, 0, "campbtn_io");
+    drawCommandMenu("campbtn_io", campPartTime(0.15f), view, {}, {}, w, h, 0, "campbtn_io");
     buttonLook = nullptr;
     for (TapRect& r : tapRects)
         if (r.id == 16 && !anyItem) r.id = -1;
@@ -1825,7 +1838,7 @@ void Viewer::drawCamp(const Mat4& view, const Mat4& proj, int w, int h) {
     UiFig& lnk = uiFig("camplnk");
     lnk.fig.place = cr2::Mat34();
     const bool pub = game.flag(0x4b0);
-    poseUi(lnk, pub ? "camplnk2_io" : "camplnk1_io", t);
+    poseUi(lnk, pub ? "camplnk2_io" : "camplnk1_io", campPartTime(0.2f));
     for (ViewMesh& vm : lnk.fig.meshes) {
         const uint32_t j = vm.source.palette.empty() ? ~0u : vm.source.palette[0];
         vm.hidden = !pub && j < lnk.joints.size() && lnk.joints[j] == "GEO_pub";
@@ -1854,13 +1867,13 @@ void Viewer::drawCamp(const Mat4& view, const Mat4& proj, int w, int h) {
     float x, y;
     UiFig& oz = uiFig("ozwin_io");
     oz.fig.place = cr2::Mat34();
-    poseUi(oz, "ozwin_io", t);
+    poseUi(oz, "ozwin_io", campPartTime(0.2f));
     drawFigure(oz.fig, view.data());
     if (uiJoint(oz, "call_status_fr13", x, y)) drawStatusSign(13, x, y, proj);
     if (uiJoint(oz, "call_dotNum_id01", x, y)) drawDigits(std::clamp(game.oz, 0, 9999999), 110, 7, x, y, proj); // (id01 the ones, id07 the millions)
     UiFig& tw = uiFig("timewin_io");
     tw.fig.place = cr2::Mat34();
-    poseUi(tw, "timewin_io", t);
+    poseUi(tw, "timewin_io", campPartTime(0.2f));
     drawFigure(tw.fig, view.data());
     if (uiJoint(tw, "call_status_fr14", x, y)) drawStatusSign(14, x, y, proj);
     { // (PlayTimeWindowMenu: the clock's - GetCurrentHourTime - hours at id04, glyph 163's ":" at id03, minutes at id01; set 90)
@@ -1877,7 +1890,7 @@ void Viewer::drawCamp(const Mat4& view, const Mat4& proj, int w, int h) {
     }
     UiFig& bk = uiFig("btlback");
     bk.fig.place = cr2::Mat34();
-    poseUi(bk, "btlback_in", t);
+    poseUi(bk, "btlback_in", campPartTime(0.15f));
     drawFigure(bk.fig, view.data());
     float sx, sy, ex, ey;
     if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});
@@ -2618,6 +2631,7 @@ void Viewer::drawPubRequest(const Mat4& view, int w, int h) {
 
 // a camp button pressed (CampMenu::TouchSimpleRelease: 0xb4; InterfaceMain's camp step by it)
 void Viewer::campPress(int id) {
+    if (campCloseAt >= 0) return; // (state 1 on: the menu closing)
     if (campUse) return campUseTap(id);
     if (campLink) {
         if (id == 100) audio.playSe(0xb5, false), campLink = 0, campStart = uiClock;
@@ -2643,7 +2657,7 @@ void Viewer::campPress(int id) {
         audio.playSe(0xb5, false);
         if (campList == 18 && campSopiaDetail) campSopiaDetail = 0, campCursor = campSopiaPrevCursor, campStart = uiClock; // (the detail: back to the list)
         else if (campList) campList = 0, campCursor = 0, campStart = uiClock;
-        else closeCamp();
+        else if (campCloseAt < 0) campCloseAt = uiClock, campCloseFrom = uiClock - campStart, campCloseTicks = 0;
         return;
     }
     if (campList) return;

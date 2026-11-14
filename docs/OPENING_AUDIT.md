@@ -1328,6 +1328,33 @@ actions, so the next action's `ActionCommonAnnounce` clears it (`ClearAnnounce`)
 `CheckAllActionDone` hides the window at the turn's end, which waits for no entry. The field's and
 the opening's waits are counted in updates already. Settled.
 
+### Round 54: the camp's way out
+
+The field's camp: `FldMain::CheckTouchEventExec_Press` on the tab's Camp (a press) sets step 5 and
+`FldCamp::Init`, and hides the tab (`SetWorkAtTabMenu`); `FldCamp::Execute` makes the camp the
+update after (`SetCampWindowParameter`: interface 0x23 / 0x24, `InterfaceMain` +0x1c 30, +0xbc 0)
+and then waits for +0xbc; at 1 `CallAtMenuFinished` sets step 1 - control once no finger is down
+(round 48) - or, for a script's `ReserveCamp` (`BranchAfterEvent`, +0xa5), calls the event back.
+`CampMenu`'s main part (+8) is `CampTopButton` on `campBtn_io` (0.15 s). Its Back (id 100 in
+`TouchSimpleRelease`) sets result 5, SE 0xb5, `InterfaceCloseAnimeSet` - the buttons, `btlBack`
+and the links played back from where they are (+0x5c 2), the Oz and clock windows ended - and tells
+its child menus (0x23, 0x24, 0x2c) to close, state 1. `CampMenu::Update`: state 1 waits for the main
+part's reverse to end (`PartsBase::Step` clamps it at its start in the third update), 3, 4, then
+returns 7, on which `InterfaceMain::Update` reads result 5 and sets +0xbc = 1 - the fourth update
+after the release's. `GameMain` runs the field before the interface, so step 5 sees it the next
+update and step 1 gives control the one after: six updates from the release.
+
+The port closed the camp in the release's update, its parts gone and the field's control back at
+once. Now Back starts the close (`campCloseAt`): the parts are posed backwards from where they were
+(`campPartTime`, each from its own length - the buttons' and back's 0.15 s, the links', windows' and
+statuses' 0.2 s, the title's 0.45 s), the camp ends in the fifth tick counted from the release's
+(+0xbc) and control comes back two later (`controlHold`, with round 48's finger rule).
+`--play d0104 --input "tab camp back"`: Back in update 79, the camp gone in 83, control in 85;
+frames at 3.85 s (open), 4.03 s (the buttons going out, the links gone) and 4.25 s (the field, its
+tab back). Not followed: the child menus' own closes (the title, the status windows), posed
+backwards with the rest here; the Emergency Exit's result 6, still at once; the opening's update
+(the camp made the update after the press, stepped once before its first drawing).
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

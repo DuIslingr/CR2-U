@@ -1407,6 +1407,12 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
             inputScript.pop_front();
             SDL_Log("input skip%s", skipScene() ? "" : " (not now)");
         }
+        if (battlePickAt >= 0 && battleClock - battlePickAt >= float(battlePickLen < 0.17f ? 5 : 6) * cr2::EventRuntime::kTick - 1e-4f) {
+            battlePickAt = -1; // (the next step: its menu the fifth / sixth update after the pick)
+            auto act = std::move(battlePickDo);
+            battlePickDo = nullptr;
+            if (act && choosing) act();
+        }
         if (optionsCloseAt >= 0 && !campOpen) { // (BattleOptionMenu's Back: gone the fourth update, the commands again)
             optionsCloseClock = std::min(optionsCloseClock + realDt, 0.25f);
             for (; optionsCloseClock >= cr2::EventRuntime::kTick; optionsCloseClock -= cr2::EventRuntime::kTick)

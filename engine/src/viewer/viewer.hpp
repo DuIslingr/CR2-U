@@ -853,6 +853,17 @@ struct Viewer {
     void inputToken(const std::string& t);
     std::vector<int> menuChoices() const;
     void choose(int idOrFighter);
+    void chooseNow(int idOrFighter);
+    // (the battle's menus - BattleFirstMenu, BattleSoloMenu (btlBtn1st / 2nd_io, 0.15 s), BattleSelectMenu
+    // (btlBtn3rd_io), the lists (the frame, 0.2 s) -: a pick or Back closes the menu (+0x1c 120) and returns 3 at
+    // its end; InterfaceMain posts the choice (+0x1b4c, +0x1b50 while the lock counts), BtlCommand's loop takes it
+    // the update after and its next step makes the next menu the one after that - the fifth (sixth) update. The
+    // next one's taps once its in is over)
+    float battlePickAt = -1, battlePickFrom = 0, battlePickLen = 0.15f;
+    std::function<void()> battlePickDo;
+    float battleMenuInLength() const;
+    void battleDefer(std::function<void()> act);
+    bool battleMenuHeld() const;
     void battleSe(int n);
     struct VoiceJob {
         float at = 0;

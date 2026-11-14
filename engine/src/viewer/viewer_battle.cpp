@@ -38,6 +38,7 @@ void Viewer::leaveBattle() {
     pendingBgm = 0, pendingBgmAt = 0;
     battleMode = fightingInFlow = choosing = optionsOpen = optionsAsk = false;
     optionsCloseAt = -1;
+    battlePickAt = -1, battlePickDo = nullptr;
     battleScript.reset(), battleRules.reset();
     battleFight = 0, battleStep = BattleStep::Over;
     showActions.clear(), showIndex = 0, regenPending.clear(), regenStarted = false;
@@ -658,8 +659,23 @@ std::vector<int> Viewer::menuChoices() const {
         if (b.selectable) out.push_back(b.id);
     return out;
 }
+float Viewer::battleMenuInLength() const { // (btlBtn1st_io / 2nd_io 0.15 s; btlBtn3rd_io, the lists' frame 0.2 s)
+    using CI = cr2::CommandInput;
+    return commandInput.menu() == CI::Menu::First || commandInput.menu() == CI::Menu::Command ? 0.15f : 0.2f;
+}
+bool Viewer::battleMenuHeld() const { // (a pick's close running, or the menu not yet in: +0x1c)
+    return battlePickAt >= 0 || battleClock - menuStart < battleMenuInLength();
+}
+void Viewer::battleDefer(std::function<void()> act) {
+    if (battlePickAt >= 0) return;
+    battlePickAt = battleClock, battlePickFrom = battleClock - menuStart, battlePickLen = battleMenuInLength();
+    battlePickDo = std::move(act);
+}
 void Viewer::choose(int idOrFighter) {
     audio.playSe(0xb4, false); // (the buttons' decide: Cr3UtilSoundPlaySE 0xb4)
+    battleDefer([this, idOrFighter] { chooseNow(idOrFighter); });
+}
+void Viewer::chooseNow(int idOrFighter) {
     if (commandInput.menu() == cr2::CommandInput::Menu::Target) commandInput.pick(idOrFighter);
     else if (commandInput.menu() == cr2::CommandInput::Menu::Awake) commandInput.pickAwakening(idOrFighter);
     else if (commandInput.menu() == cr2::CommandInput::Menu::Advent) commandInput.pickAdvent(idOrFighter);
@@ -775,7 +791,8 @@ void Viewer::battleKey(SDL_Keycode k) {
     const bool list = commandInput.menu() == CI::Menu::Items || commandInput.menu() == CI::Menu::Advent ||
                       commandInput.menu() == CI::Menu::Awake || commandInput.menu() == CI::Menu::Sopia;
     const int was = menuCursor;
-    if (k == SDLK_BACKSPACE) commandInput.back(), audio.playSe(0xb5, false), menuChanged(); // (InterfaceMain: 0xb5 back)
+    if (battleMenuHeld()) return;
+    if (k == SDLK_BACKSPACE) audio.playSe(0xb5, false), battleDefer([this] { commandInput.back(), menuChanged(); }); // (InterfaceMain: 0xb5 back - the menu closed first)
     else if (c.empty()) return;
     else if (k == SDLK_DOWN || (target && k == SDLK_RIGHT)) menuCursor = (menuCursor + 1) % int(c.size());
     else if (k == SDLK_UP || (target && k == SDLK_LEFT)) menuCursor = (menuCursor + int(c.size()) - 1) % int(c.size());
@@ -827,6 +844,7 @@ void Viewer::battleClick(float fx, float fy) {
     }
     if (!choosing) return;
     if (battleScriptRunning()) return tap(); // (a tutorial's talk over the commands: its page first)
+    if (!optionsOpen && !optionsAsk && !settingsOpen && manualStage == 0 && battleMenuHeld()) return; // (closing, or not in yet: +0x1c)
     if (noPickTapped(fx, fy)) return;
     if (manualStage == 2) { // (a tap: the tutorial's page)
         if (manualEvents) manualEvents->advance();
@@ -837,7 +855,7 @@ void Viewer::battleClick(float fx, float fy) {
     for (const TapRect& r : tapRects)
         if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
             if (optionsTapped(r, x)) return;
-            if (r.id == 100) commandInput.back(), audio.playSe(0xb5, false), menuChanged();
+            if (r.id == 100) audio.playSe(0xb5, false), battleDefer([this] { commandInput.back(), menuChanged(); });
             else if (r.id >= 1000) { // (another row: the focus to it - ScrollListMenu)
                 const std::vector<int> c = menuChoices();
                 const size_t row = size_t(r.id - 1000);
@@ -3513,7 +3531,8 @@ void Viewer::drawSkillList(const std::vector<ListRow>& rows, int focused, float 
 void Viewer::drawChoosing(const Mat4& view, int w, int h) {
     using CI = cr2::CommandInput;
     tapRects.clear();
-    const float t = battleClock - menuStart;
+    const float t = battlePickAt >= 0 ? std::max(std::min(battlePickFrom, battlePickLen) - (battleClock - battlePickAt), 0.0f) // (closing: played back)
+                                      : battleClock - menuStart;
     const std::vector<int> c = menuChoices();
     const int cursor = c.empty() ? -1 : c[size_t(std::clamp(menuCursor, 0, int(c.size()) - 1))];
     if (commandInput.menu() == CI::Menu::Target) {

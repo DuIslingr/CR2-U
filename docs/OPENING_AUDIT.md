@@ -2073,6 +2073,22 @@ once (+0x8c set, never cleared while the menu lives), then 10 the update after: 
 0xb4 and the panel in the fifth update); it called `Tutorial_ContData` each time Start reached the
 question. Now once a title.
 
+### Round 104: the battle menus' steps
+
+`BattleFirstMenu`, `BattleSoloMenu`, `BattleSelectMenu` (and the lists, `ScrollListMenu`s): a pick -
+SE 0xb4, the menu's close (`btlBtn1st_io` / `2nd_io` 0.15 s, `3rd_io` and the lists' frame 0.2 s,
+played back), +0x1c 120 - or Back (SE 0xb5) makes `Update` return 3 once the close ends (the third /
+fourth update). `InterfaceMain::Update` then posts the choice (`BtlInterface` +0x1b4c) and, while its
+lock counts, +0x1b50 1; `BtlCommand`'s loop step (`StepGetsetLoop` and the others) takes it the update
+after and sets the next step, which makes the next menu (with its camera) the update after that -
+the fifth (sixth) update from the pick -, and that menu clears the lock once its in is over. The
+port took the pick at once: the next menu, its camera, or the action, in the tap's update. Now
+`choose` and the menus' Back play the sound, play the menu back (`battlePickAt`) and take the step
+in the fifth (0.15 s menus) or sixth update; taps wait meanwhile and until the next menu is in
+(`battleMenuHeld`). The `--input` tokens that name a command still press it at once (the test
+driver); `enter` goes through the menu. `--battle 57 --fight manual --flag 84 --input "enter x16"`:
+the choices made, the turn at 4.95 s, the battle won.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

@@ -1529,6 +1529,18 @@ the original (stepped once, its lock), and the request's plays its parts back an
 (`campLinkCloseAt`) first. `--play d0104 --input "tab camp scenarios back back back"`: the
 scenarios, the camp, out. The request's Back was not run (it needs flag 0x4b0 and a request).
 
+### Round 69: the camp's title outlasts it
+
+`CampTitleMenu` (0x2c) is the camp's child: told to close (`SetParamNumber(.., 1)` - by the camp's
+Back, its Options and links, not by Items, Equip and Sopia) it plays `menuCamp_io` back from where
+it is (`InterfaceCloseAnimeSet`, +0x5c 2) and `Update` returns `IsEndCurrentAnime` - the menu gone
+when the play ends: 0.45 s, the ninth update after the release, past the camp's end (the fourth) and
+the field's control (the sixth). Told 3 while closing (a list's Back, the camp made again) it plays
+forward again. The status windows (0x23 / 0x24, 0.2 s) are gone before the camp. The port took the
+title away with the camp; now after Back the title keeps playing out over the field
+(`campTitleCloseAt`) till it ends. Frames at 4.2 and 4.3 s (`--play d0104 --input "tab camp back"`):
+the field, its tab back, the title fading.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

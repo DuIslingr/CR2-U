@@ -1461,7 +1461,9 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                         campEnter(campCloseTarget);
                         continue;
                     }
+                    const float titleAt = campCloseAt, titleFrom = campCloseFrom;
                     closeCamp(), controlHold = 2;
+                    campTitleCloseAt = titleAt, campTitleCloseFrom = titleFrom; // (the title still closing)
                     break;
                 }
             }
@@ -1767,6 +1769,7 @@ void Viewer::fieldTabTap(int area) {
     }
 }
 void Viewer::openCamp() {
+    campTitleCloseAt = -1;
     campOpen = true, campStart = campOpenedAt = uiClock, campList = 0, campCursor = 0, campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1;
     fieldTabOpen = false, fieldTabAt = -10;
     optionsOpen = optionsAsk = false, manualStage = 0;
@@ -4497,6 +4500,16 @@ void Viewer::drawFieldUi(int w, int h) {
         if (game.tabEnable) drawFieldTab(view); // (Cr3TabMenu.SetEnable)
         drawChangeButton(view);
         drawWalkStick(view);
+    }
+    if (!campOpen && campTitleCloseAt >= 0) { // (the camp's title: its own close, past the camp's)
+        const float tt = std::min(campTitleCloseFrom, 0.45f) - (uiClock - campTitleCloseAt);
+        if (tt <= 0) campTitleCloseAt = -1;
+        else {
+            UiFig& title = uiFig("menu");
+            title.fig.place = cr2::Mat34();
+            poseUi(title, "menucamp_io", tt);
+            drawFigure(title.fig, view.data());
+        }
     }
     // the battery (BatteryWindowMenu: with the camp, the shop, the pub - Set*Parameter's
     // SetBatteryWindowParameter -, and in the field once its level is under 20%, looked at

@@ -1569,6 +1569,9 @@ struct Viewer {
     float campOpenedAt = -10;
     bool campOpening() const { return uiClock - campOpenedAt < 4 * cr2::EventRuntime::kTick; }
     float campCloseAt = -1, campCloseFrom = 0;
+    // (the camp's title, CampTitleMenu 0x2c: told to close with the camp it plays menuCamp_io back - 0.45 s,
+    // nine updates - and goes when that ends, after the camp: still going out over the field)
+    float campTitleCloseAt = -1, campTitleCloseFrom = 0;
     int campCloseTicks = 0, campCloseTarget = 100; // (the button that closed it: 100 Back, else the list it opens)
     void campEnter(int id);
     // (a list's Back - CampItemListMenu / the sopia's / the equipment's state 2: its main frame,

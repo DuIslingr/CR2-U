@@ -37,6 +37,7 @@ void Viewer::leaveBattle() {
     cancelSceneAudio();
     pendingBgm = 0, pendingBgmAt = 0;
     battleMode = fightingInFlow = choosing = optionsOpen = optionsAsk = false;
+    optionsCloseAt = -1;
     battleScript.reset(), battleRules.reset();
     battleFight = 0, battleStep = BattleStep::Over;
     showActions.clear(), showIndex = 0, regenPending.clear(), regenStarted = false;
@@ -608,7 +609,7 @@ void Viewer::inputToken(const std::string& t) {
         }
     if (t == "back" && settingsOpen) closeSettings(), ok = true;
     else if (t == "back" && manualStage == 1) closeManual(), ok = true;
-    else if (t == "back" && optionsOpen) optionsOpen = false, ok = true;
+    else if (t == "back" && optionsOpen) optionsBack(), ok = true;
     else if (t == "back") commandInput.back(), audio.playSe(0xb5, false), ok = true;
     else if (t.size() > 1 && t[0] == 'a' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickAwakening(std::atoi(t.c_str() + 1));
     else if (t.size() > 1 && t[0] == 's' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickSopia(std::atoi(t.c_str() + 1));

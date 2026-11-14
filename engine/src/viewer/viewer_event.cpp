@@ -956,14 +956,14 @@ void Viewer::updateTitle(float dt) {
     }
     if (t.stage == 9) updateManual(dt);
     if (t.stage == 9 && optionsCloseAt >= 0) { // (the options closing: gone the fourth update, the buttons the fifth)
-        titleOptionsClock = std::min(titleOptionsClock + dt, 0.25f);
-        for (; titleOptionsClock >= cr2::EventRuntime::kTick; titleOptionsClock -= cr2::EventRuntime::kTick)
+        optionsCloseClock = std::min(optionsCloseClock + dt, 0.25f);
+        for (; optionsCloseClock >= cr2::EventRuntime::kTick; optionsCloseClock -= cr2::EventRuntime::kTick)
             if (++optionsCloseTicks >= 5) {
                 optionsCloseAt = -1, optionsOpen = false;
                 SDL_Log("title: the options closed");
                 break;
             }
-    } else titleOptionsClock = 0;
+    } else optionsCloseClock = 0;
 }
 void Viewer::drawCalendar(const SaveInfo& s, const Mat4& view, const Mat4& proj, float t) {
     UiFig& cal = uiFig("calendar_io");
@@ -1273,9 +1273,8 @@ void Viewer::drawManualList(const Mat4& view, int w, int h) {
     drawSkillList(rows, 5000 + manualCursor, uiClock - manualStart, view, w, h, -1, -1);
 }
 void Viewer::optionsBack() {
-    if (!campOpen && titleMenu.stage != 9) { optionsOpen = false; return; } // (a battle's: as it was)
-    // (the camp's, the title's - TitleOptionMenu state 2: its frame back, 0x13 at its end: the title's 0x1f,
-    // CreateTitleMenu the update after)
+    // (the camp's; the title's - TitleOptionMenu state 2: its frame back, 0x13 at its end: the title's 0x1f,
+    // CreateTitleMenu the update after; a battle's - BattleOptionMenu state 2: 3 at the frame's end, the fourth)
     if (optionsCloseAt < 0) optionsCloseAt = uiClock, optionsCloseFrom = uiClock - optionsStart, optionsCloseTicks = 0;
 }
 void Viewer::drawOptionsAsk(const Mat4& view, int w, int h) { // (Battle / CampOptionMenu: "return to the title?", the title's window)

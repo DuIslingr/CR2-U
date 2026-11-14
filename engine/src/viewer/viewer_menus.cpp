@@ -1368,6 +1368,15 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
             inputScript.pop_front();
             SDL_Log("input skip%s", skipScene() ? "" : " (not now)");
         }
+        if (optionsCloseAt >= 0 && !campOpen) { // (BattleOptionMenu's Back: gone the fourth update, the commands again)
+            optionsCloseClock = std::min(optionsCloseClock + realDt, 0.25f);
+            for (; optionsCloseClock >= cr2::EventRuntime::kTick; optionsCloseClock -= cr2::EventRuntime::kTick)
+                if (++optionsCloseTicks >= 4) {
+                    optionsCloseAt = -1, optionsOpen = false;
+                    SDL_Log("battle: the options closed");
+                    break;
+                }
+        } else optionsCloseClock = 0;
         updateBattleScript(dt);
         updateManual(realDt);
         updateBattleSounds();

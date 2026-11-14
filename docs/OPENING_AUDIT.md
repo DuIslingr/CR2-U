@@ -1769,6 +1769,16 @@ they close (the camp's too). The `--input` `back` at the title goes through the 
 `--title --input "tap options back"`: the options, then `title: the options closed` five updates
 after the Back. A battle's options (`BattleOptionMenu`) were not gone through.
 
+### Round 81: a battle's options, Back
+
+`BattleOptionMenu::Update`'s Back (state 2, as the title's and the camp's) waits for its frame (+8,
+0.2 s: the fourth update) and returns 3, on which the command step takes the battle's commands back.
+The port dropped the window at Back. Now a battle's Back plays it back (`optionsCloseAt`, its updates
+counted in the battle's branch with real time, not the battle speed) and the commands come back in
+the fourth update; input on the options waits meanwhile; the battle's `--input` `back` goes through
+it. `--battle 57 --fight solo --flag 84 --input "options back"`: `battle: the options closed` four
+updates after the Back.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

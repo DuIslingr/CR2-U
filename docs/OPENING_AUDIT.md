@@ -1494,8 +1494,17 @@ them in from the left (`ScrollItemLeftIn`) in that update, state 1 clearing the 
 in. The port changed the mode in the tap's update; now `campEquipSwitch` plays the rows out (0.2 s)
 and changes the mode in the fourth update, taps from the fifth after. The piece is worn at once, as
 the original's data change is. `--play d0104 --input "tab camp equip down enter ... back ..."`:
-the weapons' list (mode 1), the view (0), the camp, out. Not followed: L / R's character change
-(`CharaChange`).
+the weapons' list (mode 1), the view (0), the camp, out. L / R's character change: round 66.
+
+### Round 66: the equipment's character
+
+`Update_EquipView`'s action 8 (the switch's arrows, L / R): SE 0xb7, +0x1c 30, the rows out to one
+side (`ScrollItemLeftOut` / `RightOut(true)`), `CharaChange` - the next valid one round -, the status
+menu (0x3a) told, state 3: the new character's rows in once the old are out. The port changed the
+character in the tap's update; now `campEquipChange` and the faces' taps go through
+`campEquipSwitch` with the character (`campEquipSwitchChar`), applied in the fourth update, taps
+after. `viewer-pad-controls` settles it before its checks. `--play d0104 --input "tab camp equip
+down right ..."`: the view again (mode 0) with the next character.
 
 ## Original-code evidence
 

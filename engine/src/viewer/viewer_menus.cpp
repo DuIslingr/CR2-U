@@ -1422,6 +1422,7 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                 }
                 if (campOpen && campEquipSwitchAt >= 0 && ++campEquipSwitchTicks >= 4) { // (the next mode's rows in)
                     campEquipSwitchAt = -1, campEquipMode = campEquipSwitchMode, campEquipCursor = campEquipSwitchCursor;
+                    if (campEquipSwitchChar >= 0) campEquipChar = campEquipSwitchChar, campEquipSwitchChar = -1;
                     campStart = campListOpenedAt = uiClock;
                     SDL_Log("camp: equipment mode %d", campEquipMode);
                 }
@@ -2505,8 +2506,10 @@ void Viewer::campEquipChange(int dir) { // (another character: the eye buttons, 
     if (chars.empty() || campEquipMode) return;
     const auto it = std::find(chars.begin(), chars.end(), campEquipChar);
     const int k = it == chars.end() ? 0 : int(it - chars.begin());
-    campEquipChar = chars[size_t((k + dir + int(chars.size())) % int(chars.size()))];
+    if (campEquipSwitchAt >= 0) return;
     audio.playSe(0xb7, false);
+    campEquipSwitch(0, campEquipCursor);
+    campEquipSwitchChar = chars[size_t((k + dir + int(chars.size())) % int(chars.size()))];
 }
 void Viewer::drawEquipment(const Mat4& view, const Mat4& proj, int w, int h) {
     const float t = campListTime();
@@ -2711,7 +2714,7 @@ void Viewer::campPress(int id) {
     if (campList == 17) {
         if (id == 100) campEquipBack();
         else if (campTakeSopia && (id == 7201 || id == 7202)) campTakeAnswer(id == 7201);
-        else if (id >= 7300 && id < 7310 && !campEquipMode) { if (id - 7300 != campEquipChar) audio.playSe(0xb7, false); campEquipChar = id - 7300; }
+        else if (id >= 7300 && id < 7310 && !campEquipMode && id - 7300 != campEquipChar) audio.playSe(0xb7, false), campEquipSwitch(0, campEquipCursor), campEquipSwitchChar = id - 7300;
         else if (id == 7350) campEquipView();
         else if (id >= 300 && id < 500) campEquipPick(id);
         return;
@@ -2739,7 +2742,7 @@ void Viewer::campPress(int id) {
 void Viewer::campEquipSwitch(int mode, int cursor) {
     if (campEquipSwitchAt >= 0) return;
     campEquipSwitchAt = uiClock, campEquipSwitchFrom = uiClock - campStart, campEquipSwitchTicks = 0;
-    campEquipSwitchMode = mode, campEquipSwitchCursor = cursor;
+    campEquipSwitchMode = mode, campEquipSwitchCursor = cursor, campEquipSwitchChar = -1;
 }
 void Viewer::campCategorySwitch() {
     if (campCategoryAt >= 0 || campListOpening() || campListCloseAt >= 0) return;

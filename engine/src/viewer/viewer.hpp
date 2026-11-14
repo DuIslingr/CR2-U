@@ -1584,7 +1584,7 @@ struct Viewer {
     // piece worn - SE 199 -, Back: +0x1c 30, the rows out (0.2 s); the next mode's rows made and in from
     // the left when they are out - the fourth update -, the lock cleared once in)
     float campEquipSwitchAt = -1, campEquipSwitchFrom = 0;
-    int campEquipSwitchTicks = 0, campEquipSwitchMode = 0, campEquipSwitchCursor = 0;
+    int campEquipSwitchTicks = 0, campEquipSwitchMode = 0, campEquipSwitchCursor = 0, campEquipSwitchChar = -1; // (-1: the same one; else CharaChange's, SE 0xb7, state 3)
     void campEquipSwitch(int mode, int cursor);
     float campCategoryAt = -1, campCategoryFrom = 0;
     int campCategoryTicks = 0;

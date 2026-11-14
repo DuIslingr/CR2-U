@@ -246,6 +246,10 @@ int padControlsSelfTest() {
         auto settle = [&] {
             if (v.campCategoryAt >= 0) v.campCategoryAt = -1, v.campCategory = 1 - v.campCategory, v.campCursor = 0;
             v.campListOpenedAt = -10;
+            if (v.campEquipSwitchAt >= 0) {
+                v.campEquipSwitchAt = -1, v.campEquipMode = v.campEquipSwitchMode, v.campEquipCursor = v.campEquipSwitchCursor;
+                if (v.campEquipSwitchChar >= 0) v.campEquipChar = v.campEquipSwitchChar, v.campEquipSwitchChar = -1;
+            }
         };
         press(R);
         const bool rSe = se(0xb7);
@@ -258,8 +262,10 @@ int padControlsSelfTest() {
         // the equipment: L / R the character (CampEquipmentListMenu::Update_EquipView's 8), SE 0xb7
         v.campList = 17, v.campEquipMode = 0, v.campEquipChar = 0;
         press(R);
-        check(v.campEquipChar == 1 && se(0xb7), "camp equipment: R the next character, SE 0xb7");
-        press(L), press(L);
+        const bool eSe = se(0xb7);
+        settle();
+        check(v.campEquipChar == 1 && eSe, "camp equipment: R the next character, SE 0xb7");
+        press(L), settle(), press(L), settle();
         check(v.campEquipChar == 2, "camp equipment: L the one before, round");
         // the sopia's list (no switch): L / R its page - four rows (CR2-U's)
         v.campList = 18, v.campCursor = 0;

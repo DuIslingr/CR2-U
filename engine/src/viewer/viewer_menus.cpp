@@ -1398,10 +1398,14 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
     if (optionsWasOpen && !optionsOpen && scriptSaves) writeSystem(); // (OptionMenu's end: Cr3Util_Save_SystemData)
     if (campOpen) campUseUpdate();
     optionsWasOpen = optionsOpen;
+    // (the save's play time: Cr3UtilCalcPlayTime, every GameMain::Update but the title's - the staff
+    // roll's too, and the five a frame of an event's skip; 0x6ddcec updates at most, 99:59:59)
+    if (playMode && (fieldMode || eventMode || battleMode || credits.stage) && !paused && !titleMenu.stage) {
+        const cr2::EventRuntime* ev = activeEvents();
+        playSeconds = std::min(playSeconds + dt * (ev && ev->skipHeld() ? 5 : 1), 359999.0);
+    }
     if (credits.stage) return updateCredits(dt);
     if (titleMenu.stage) return updateTitle(dt);
-    if (playMode && (fieldMode || eventMode || battleMode) && !paused) // (the save's play time: Cr3UtilCalcPlayTime's
-        playSeconds = std::min(playSeconds + dt, 359999.0); // 0x6ddcec updates at most, 99:59:59)
     if (battleMode) {
         const float realDt = dt;
         dt *= float(optionsOpen || settingsOpen ? 1 : settings.battleSpeed); // (Battle Speed)

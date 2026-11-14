@@ -2295,6 +2295,37 @@ made it. Read and matching: the control codes, the colour table, the speaker tag
 the narration's lines, the help, name and announcement lookups, the language button, the calendar,
 the level and HP / MP digits, the list prices.
 
+### Round 112: drawing and the platform
+
+Checked against the renderer's passes, the cameras and the app's lifecycle; fixed:
+- The scene draws in three passes over all its figures - opaque (2), alpha-tested (4), transparent
+  (8) - not a figure at a time (`FldMain::DrawModel`: the map, the leader, the objects / NPCs /
+  boxes, the effects, the residents, the event's scene; `VistaMain::DrawModel`; `BtlMain::DrawScene`).
+  A mesh whose alpha - its own by the figure's - is 0.99999 or less is drawn blended in the last
+  (`Figure::Render`). The port drew each figure whole in turn, so a map's glows and veils went down
+  before the characters behind them. (A field and a battle frame captured headless look as before
+  where nothing overlaps.)
+- The battle's fighters are drawn far to near along the view each frame (`BtlMain::SortDrawList`).
+- A vista starts its lighting with the fog off (`VistaMain::Draw`: RenderContext +0x400 30001, -1,
+  alpha 0, colour 0) before its light figure's own; the port carried the last battle map's fog into
+  the 36 vistas whose light figure has none.
+- `Cam_z01_j002_00` keeps its own near and far, and `Cam_z01_s406_00` till its animation passes
+  2.5 s (`BtlCamera::Start` / `Render`); every other camera gets near x 0.5 (0.1 at least) and far
+  x 5 (5000 at most), as the port had for all.
+- A fresh profile, and Reset Data, start in the device's language (`Cr3OptionData::Init`: Java
+  getLanguage - Japanese 0, French 2, German 3, Spanish 4, Simplified Chinese 5, Traditional 6,
+  Korean 7, any other English); the port always started in English.
+- The play time counts through the staff roll (CreditMain is one of GameMain's updates) and five a
+  frame while an event is skipped (five updates a frame); the port stopped in the credits and counted
+  the skip's real time.
+
+Left as the port has them, deliberately: the Android Back key (the original's goes to the lists and
+the battle's Back alone and otherwise asks to quit), focus loss (the original stops updating and
+interrupts its audio while unfocused - the port pauses only when sent to the background), the screen
+quality option (the original's 100 / 80 / 60 % render target; the port's own resolution and
+upscalers), the orientation's storage and auto-rotate lock. Not ported: the achievements
+(`achievement_check` / `set_achievement`, cr3_achievement_data) and the store's title steps.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

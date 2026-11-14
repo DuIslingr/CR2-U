@@ -68,10 +68,31 @@ void Viewer::setBattleCamera(const std::string& name, const cr2::Mat34& place, b
 void Viewer::setBattleCamera(int number) {
     if (const char* n = cr2::battleCameraName(number)) setBattleCamera(std::string(n));
 }
+// Cr3OptionData::Init's language: the device's (Java getLanguage - Locale.JAPANESE 0, FRENCH 2,
+// GERMAN 3, Spanish 4, SIMPLIFIED_CHINESE 5, TRADITIONAL_CHINESE 6, KOREAN 7; any other 1), one this
+// copy's messages have
+int Viewer::deviceLanguage() {
+    int lang = 1, n = 0;
+    if (SDL_Locale** l = SDL_GetPreferredLocales(&n)) {
+        if (n > 0 && l[0] && l[0]->language) {
+            const std::string g = l[0]->language, c = l[0]->country ? l[0]->country : "";
+            auto home = [&](const char* country) { return c.empty() || c == country; };
+            if (g == "ja" && home("JP")) lang = 0;
+            else if (g == "fr" && home("FR")) lang = 2;
+            else if (g == "de" && home("DE")) lang = 3;
+            else if (g == "es") lang = 4;
+            else if (g == "zh" && c == "CN") lang = 5;
+            else if (g == "zh" && c == "TW") lang = 6;
+            else if (g == "ko" && home("KR")) lang = 7;
+        }
+        SDL_free(l);
+    }
+    return lang < copyLanguages() ? lang : 1;
+}
 void Viewer::readSystem() {
     systemRead = true;
     std::FILE* f = std::fopen(savePath("system.txt").c_str(), "rb");
-    if (!f) return;
+    if (!f) return void(optionLanguage = deviceLanguage()); // (none yet: Cr3OptionData::Init's)
     std::string text;
     char buf[4096];
     for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) text.append(buf, n);
@@ -262,7 +283,11 @@ bool Viewer::battleView(cr2::Mat34& world, float& fovY, float& zn, float& zf) {
                 else world = blendPlace(battleCameraFrom, world, u * (2 - u)); // (u + u (1 - u) k / 10)
             }
             fovY = gc.fovY;
-            zn = std::max(gc.near * 0.5f, 0.1f), zf = std::min(gc.far * 5.0f, 5000.0f);
+            // (BtlCamera::Start: near x 0.5 - 0.1 at least -, far x 5 - 5000 at most -, but for
+            // Cam_z01_j002_00, and for Cam_z01_s406_00 till its animation passes 2.5 s - Render)
+            const bool authored = battleCamera == "Cam_z01_j002_00" || (battleCamera == "Cam_z01_s406_00" && battleClock - battleCameraStart <= 2.5f);
+            if (authored) zn = gc.near, zf = gc.far;
+            else zn = std::max(gc.near * 0.5f, 0.1f), zf = std::min(gc.far * 5.0f, 5000.0f);
             zf = std::max(zf, zn * 2);
             return true;
         }
@@ -3138,32 +3163,47 @@ void Viewer::drawBattle(int w, int h, bool mapOnly) {
         if (!mapEffect.meshes.empty()) drawFigure(mapEffect, vp.data());
         return;
     }
-    if (!battleMapHidden) drawFigure(specialMapShown ? specialMap : battleMap, vp.data()); // (BtlMap::Draw: d1154b in its place)
-    if (!battleMapHidden && !mapEffect.meshes.empty()) drawFigure(mapEffect, vp.data());
-    // BtlShadow (BtlMain::CreatePlayer / CreateMonster: obj001 for each, its target's DummyEP04;
-    // Pose / Draw): at the unit's place and turn, 0.0002 up, scaled as that joint is in the
-    // world (Cr3GetScaleFromFigure), drawn while the unit shows fully opaque
-    const uint32_t ep04 = cr2::nameHash("DummyEP04");
-    for (const BattleUnit& u : battleUnits) {
-        if (u.hidden || u.sceneHidden || u.fig.tint[3] <= 0.9999f || u.fig.posed.empty()) continue;
-        float scale[3] = {1, 1, 1};
-        if (const int j = u.fig.skeleton.joint(ep04); j >= 0) {
-            const std::vector<cr2::Mat34> w = u.fig.skeleton.world(u.fig.posed, u.fig.place);
-            if (size_t(j) < w.size())
-                for (int c = 0; c < 3; ++c)
-                    scale[c] = std::sqrt(w[size_t(j)].m[c] * w[size_t(j)].m[c] + w[size_t(j)].m[4 + c] * w[size_t(j)].m[4 + c] +
-                                         w[size_t(j)].m[8 + c] * w[size_t(j)].m[8 + c]);
+    // (BtlMain::DrawScene: the opaque, alpha-tested and transparent passes, each over the map and
+    // the fighters - their shadows with them)
+    for (int pass : {2, 4, 8}) {
+        drawPass = pass;
+        if (!battleMapHidden) drawFigure(specialMapShown ? specialMap : battleMap, vp.data()); // (BtlMap::Draw: d1154b in its place)
+        if (!battleMapHidden && !mapEffect.meshes.empty()) drawFigure(mapEffect, vp.data());
+        // BtlShadow (BtlMain::CreatePlayer / CreateMonster: obj001 for each, its target's DummyEP04;
+        // Pose / Draw): at the unit's place and turn, 0.0002 up, scaled as that joint is in the
+        // world (Cr3GetScaleFromFigure), drawn while the unit shows fully opaque
+        const uint32_t ep04 = cr2::nameHash("DummyEP04");
+        for (const BattleUnit& u : battleUnits) {
+            if (u.hidden || u.sceneHidden || u.fig.tint[3] <= 0.9999f || u.fig.posed.empty()) continue;
+            float scale[3] = {1, 1, 1};
+            if (const int j = u.fig.skeleton.joint(ep04); j >= 0) {
+                const std::vector<cr2::Mat34> w = u.fig.skeleton.world(u.fig.posed, u.fig.place);
+                if (size_t(j) < w.size())
+                    for (int c = 0; c < 3; ++c)
+                        scale[c] = std::sqrt(w[size_t(j)].m[c] * w[size_t(j)].m[c] + w[size_t(j)].m[4 + c] * w[size_t(j)].m[4 + c] +
+                                             w[size_t(j)].m[8 + c] * w[size_t(j)].m[8 + c]);
+            }
+            cr2::Mat34 at = u.fig.place;
+            for (int c = 0; c < 3; ++c) { // (the place's turn alone, then the joint's scale)
+                const float l = std::sqrt(at.m[c] * at.m[c] + at.m[4 + c] * at.m[4 + c] + at.m[8 + c] * at.m[8 + c]);
+                for (int r = 0; r < 3; ++r) at.m[r * 4 + c] *= l > 0 ? scale[c] / l : 0.0f;
+            }
+            at.m[7] += 0.0002f;
+            drawShadow(at, vp.data());
         }
-        cr2::Mat34 at = u.fig.place;
-        for (int c = 0; c < 3; ++c) { // (the place's turn alone, then the joint's scale)
-            const float l = std::sqrt(at.m[c] * at.m[c] + at.m[4 + c] * at.m[4 + c] + at.m[8 + c] * at.m[8 + c]);
-            for (int r = 0; r < 3; ++r) at.m[r * 4 + c] *= l > 0 ? scale[c] / l : 0.0f;
-        }
-        at.m[7] += 0.0002f;
-        drawShadow(at, vp.data());
+        // (BtlMain::SortDrawList: the fighters far to near along the view, each frame - their blended
+        // parts over those behind)
+        std::vector<const BattleUnit*> order;
+        for (const BattleUnit& u : battleUnits)
+            if (!u.hidden && !u.sceneHidden) order.push_back(&u);
+        auto depth = [&](const BattleUnit* u) {
+            const float* m = u->fig.place.m;
+            return -((m[3] - cw.m[3]) * cw.m[2] + (m[7] - cw.m[7]) * cw.m[6] + (m[11] - cw.m[11]) * cw.m[10]);
+        };
+        std::stable_sort(order.begin(), order.end(), [&](const BattleUnit* a, const BattleUnit* b) { return depth(a) > depth(b); });
+        for (const BattleUnit* u : order) drawFigure(u->fig, vp.data());
     }
-    for (const BattleUnit& u : battleUnits)
-        if (!u.hidden && !u.sceneHidden) drawFigure(u.fig, vp.data());
+    drawPass = 0;
     drawEffects(cw, vp);
     drawSceneEffects(cw, vp);
     drawGlass();

@@ -391,17 +391,27 @@ void Viewer::drawEvent(int w, int h) {
                                           cr2::mat4RigidInverse(world));
         // VistaMain::Draw: the vista light figure's lights for the map and the models
         cr2::SceneLighting l = lighting;
+        // (VistaMain::Draw: the fog off first - RenderContext +0x400 30001, +0x404 -1, +0x408 0, its
+        // colour 0 - then the vista light figure's own; no battle's or field's fog left over)
+        l.fogParams[0] = 30001.0f, l.fogParams[1] = -1.0f, l.fogParams[2] = 0.0f;
+        l.fogColor[0] = l.fogColor[1] = l.fogColor[2] = 0.0f;
         event->scene().lights(l, eventLead());
         l.camera[0] = world[12], l.camera[1] = world[13], l.camera[2] = world[14];
         l.time = time;
         dev->setLighting(l);
-        drawFigure(vistaMap, vp.data());
+        // (VistaMain::DrawModel: the opaque, alpha-tested and transparent passes, each over the map
+        // and the models)
         const std::vector<cr2::EventModel>& models = event->scene().models();
-        for (size_t i = 0; i < models.size() && i < eventFigures.size(); ++i)
-            if (models[i].visible) {
-                if (models[i].hasShadow() && models[i].shadow) drawShadow(eventFigures[i].place, vp.data());
-                drawFigure(eventFigures[i], vp.data());
-            }
+        for (int pass : {2, 4, 8}) {
+            drawPass = pass;
+            drawFigure(vistaMap, vp.data());
+            for (size_t i = 0; i < models.size() && i < eventFigures.size(); ++i)
+                if (models[i].visible) {
+                    if (models[i].hasShadow() && models[i].shadow) drawShadow(eventFigures[i].place, vp.data());
+                    drawFigure(eventFigures[i], vp.data());
+                }
+        }
+        drawPass = 0;
     }
 }
 
@@ -1184,7 +1194,7 @@ void Viewer::resetData() {
     }
     systemRead = true, systemFound = false, systemFlags.clear();
     std::fill(std::begin(systemOptions), std::end(systemOptions), -1);
-    optionLanguage = 1, optionQuality = 0; // (Cr3OptionData::Init: the volumes full, the language the device's)
+    optionLanguage = deviceLanguage(), optionQuality = 0; // (Cr3OptionData::Init: the volumes full, the language the device's)
     std::fill(std::begin(optionVolume), std::end(optionVolume), 100);
     game = cr2::GameState();
     setVersionUpFlags(); // (Cr3UtilInitWork(false) keeps 201 and 202)

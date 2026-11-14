@@ -965,7 +965,8 @@ void Viewer::drawFigure(const ViewFigure& f, const float* mvp) {
         cr2::DrawState st;
         cr2::MeshShading sh;
         uint32_t v = 0, v2 = 0;
-        if (m.material.state(0x79, 0, v) && v) { // alpha test: GREATER (the game's only func) than ref
+        const bool alphaTest = m.material.state(0x79, 0, v) && v;
+        if (alphaTest) { // alpha test: GREATER (the game's only func) than ref
             uint32_t bits = 0;
             m.material.state(0x78, 0, bits, 1);
             std::memcpy(&sh.alphaRef, &bits, 4);
@@ -1013,8 +1014,13 @@ void Viewer::drawFigure(const ViewFigure& f, const float* mvp) {
         sh.lit = m.lit;
         cr2::applyMaterial(m.material, shaders->features(m.material.shaderKey), sh); // (the game's shading: keyed materials)
         for (int c = 0; c < 4; ++c) sh.color[c] *= f.tint[c];
-        if (f.tint[3] < 1 && !st.blend)
+        // (Figure::Render: a mesh whose alpha - its own by the figure's - is 0.99999 or less is
+        // drawn blended, in the transparent pass alone)
+        if ((f.tint[3] < 1 || sh.color[3] <= 0.99999f) && !st.blend)
             st.blend = true, st.blendSrc = cr2::blendCode(kGlSrcAlpha, false), st.blendDst = cr2::blendCode(kGlOneMinusSrcAlpha, true);
+        // (the scene's passes, each over all its figures: 2 opaque, 4 alpha-tested, 8 transparent -
+        // FldMain::DrawModel, VistaMain::DrawModel, BtlMain::DrawScene; 0 all of a figure at once)
+        if (drawPass && (st.blend ? 8 : alphaTest ? 4 : 2) != drawPass) continue;
         sh.normalMap = m.normalMap;
         sh.normalSampling = cr2::sampling(m.material.sampler(0x35));
         sh.extraMap = m.extraMap;
@@ -1159,26 +1165,32 @@ void Viewer::drawScene(int w, int h) {
         auto shown = [this](int layer) { return !script || script->layerVisible(layer); };
         if (shown(0)) drawLayer(field.backgroundImage(), fr.background);
         if (shown(2)) drawLayer(field.midgroundImage(), fr.midground);
-        if (shown(3)) drawFigure(mapFigure, fr.scene.data());
-        // (FldNPC / FldBox: their FldShadow at the figure's place - an NPC's on while it's shown,
-        // FldUtilSetGimmickVisible's SetShadowVisible; a box's always)
-        for (size_t k = 0; k < gimmicks.size(); ++k) {
-            if (k < gimmickShadow.size() && gimmickShadow[k]) drawShadow(gimmicks[k].place, fr.scene.data());
-            drawFigure(gimmicks[k], fr.scene.data());
+        // FldMain::DrawModel: each pass (opaque, alpha-tested, transparent) over the map, the
+        // leader, the objects / NPCs / boxes, the effects, the residents and the event's scene
+        for (int pass : {2, 4, 8}) {
+            drawPass = pass;
+            if (shown(3)) drawFigure(mapFigure, fr.scene.data());
+            if (!script || script->playerVisible()) drawShadow(fig.place, fr.scene.data()), drawFigure(fig, fr.scene.data());
+            // (FldNPC / FldBox: their FldShadow at the figure's place - an NPC's on while it's shown,
+            // FldUtilSetGimmickVisible's SetShadowVisible; a box's always)
+            for (size_t k = 0; k < gimmicks.size(); ++k) {
+                if (k < gimmickShadow.size() && gimmickShadow[k]) drawShadow(gimmicks[k].place, fr.scene.data());
+                drawFigure(gimmicks[k], fr.scene.data());
+            }
+            drawGroundFx(fr.scene.data());
+            drawResidents(fr.scene.data());
+            // an event's scene in the field (EvtScene in FldMain: its models among the field's
+            // figures, through the field's camera), the leader unless the script hid it
+            if (script && script->events().sceneShown()) {
+                const std::vector<cr2::EventModel>& models = script->events().scene().models();
+                for (size_t i = 0; i < models.size() && i < eventFigures.size(); ++i)
+                    if (models[i].visible) {
+                        if (models[i].hasShadow() && models[i].shadow) drawShadow(eventFigures[i].place, fr.scene.data());
+                        drawFigure(eventFigures[i], fr.scene.data());
+                    }
+            }
         }
-        drawResidents(fr.scene.data());
-        drawGroundFx(fr.scene.data());
-        // an event's scene in the field (EvtScene in FldMain: its models among the field's
-        // figures, through the field's camera), the leader unless the script hid it
-        if (script && script->events().sceneShown()) {
-            const std::vector<cr2::EventModel>& models = script->events().scene().models();
-            for (size_t i = 0; i < models.size() && i < eventFigures.size(); ++i)
-                if (models[i].visible) {
-                    if (models[i].hasShadow() && models[i].shadow) drawShadow(eventFigures[i].place, fr.scene.data());
-                    drawFigure(eventFigures[i], fr.scene.data());
-                }
-        }
-        if (!script || script->playerVisible()) drawShadow(fig.place, fr.scene.data()), drawFigure(fig, fr.scene.data());
+        drawPass = 0;
         if (shown(1)) drawLayer(field.foregroundImage(), fr.foreground, field.info().foregroundShift == 1 ? -1152.0f : 0.0f);
         return;
     }

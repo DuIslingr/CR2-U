@@ -519,6 +519,7 @@ struct Viewer {
     void billboard(ViewMesh& vm, const cr2::Mat34& p0);
     void pose();
     void drawFigure(const ViewFigure& f, const float* mvp);
+    int drawPass = 0; // (2, 4, 8: drawFigure draws only that pass's meshes; 0 all)
     void drawLayer(const std::string& image, const Mat4& proj, float shiftX = 0);
 
     // The output: a chosen resolution (0 x 0: the window's), and the temporal upscaler (Vulkan)
@@ -747,6 +748,7 @@ struct Viewer {
     int systemOptions[5] = {-1, -1, -1, -1, -1};
     void readSystem();
     void applySystem();
+    int deviceLanguage();
     void setVersionUpFlags();
     void writeSystem();
     void resetForNewSession();

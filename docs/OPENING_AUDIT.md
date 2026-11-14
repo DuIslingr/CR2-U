@@ -1637,6 +1637,27 @@ called after 732; with a Back put in for a run (not kept), the select closed in 
 and the field went on. The frames were not captured: the picture under the question and the
 title's close are read from the code only.
 
+### Round 75: the library's list
+
+`FldLibrary::Execute` (step 0xf) calls `SetLibraryParameter` (+0x1c 30, `ArchiveWindowMenu` 0x6e) the
+update after, then ends once 0x6e is gone (`CheckArchiveStatus`): `CallAtMenuFinished`.
+`ArchiveWindowMenu::Update` state 0 makes the list (`SetArchiveList`, 0x27: `ArchiveListMenu` 0x6f,
+from state 1 - its frame opening, the lock cleared once it is in). `ArchiveListMenu::Update`: a pick
+(action 5) - SE 0xb4 - or Back (4) close its frame (+0x1c 30, states 3 / 2) and report 0x28 when it
+ends, the fourth update; `InterfaceMain` then asks the list for the row (param 6: the row's order - 1,
+Back's 99; the list gone the update after, state 4) and hands it to 0x6e (param 4): a row - its id
+(+0x2c, `GetLibraryID`) and `InterfaceEvent::CallScript("library_disp")`, state 3, which waits for
+the script's end and makes the list again the update after (state 0, 0x27); 99 - state 2, 0.3 s
+counted from the next update (`0.3 <= +0x34`, the sixth), then 0x6e goes. The port called
+`library_disp` and ended the library in the release's update and made the list again in the
+script's last update, taps at once. Now a pick or Back plays the list back (0.2 s): the reading in
+the fourth update, Back's end in the tenth (the window's wait, nothing drawn from the fifth); the
+list again the update after a reading's end; taps from the fifth update after the list is made
+(`library.inTicks`; at the first open counted from the port's open, not from 0x6f's making).
+t0101 `--call evt023` with a bounded explore (a pick put in for a run, not kept): the pick, the
+reading (`library_disp` four updates on), the list again, Back, `library: closed` ten updates on,
+then the field.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

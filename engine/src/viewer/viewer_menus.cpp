@@ -1269,6 +1269,11 @@ void Viewer::fieldUpdate(float dt) {
     for (; fieldClock >= cr2::EventRuntime::kTick; fieldClock -= cr2::EventRuntime::kTick) {
         // (step 1: control back once no finger is down nor lifted this update, CheckBalloon after it)
         if (controlHold > 0 && !(controlHold == 1 && (pointerDown || pointerLifted)) && --controlHold == 0) checkBalloons();
+        if (library.stage == 2 && library.reopen) { // (the list made again: the menu holds the field from here)
+            library.reopen = false, library.stage = 1, library.at = uiClock, library.inTicks = 0;
+            fieldClock -= cr2::EventRuntime::kTick;
+            return;
+        }
         if (emergencyExit) { // (FldMain step 5, result 2: the way out to the town's start)
             emergencyExit = false;
             SDL_Log("camp: Emergency Exit");
@@ -1318,7 +1323,7 @@ void Viewer::fieldUpdate(float dt) {
             SDL_Log("%s: the script ended", field.info().name.c_str());
             controlHold = 3; // (EventExecute: state 4 seen, 1000, BranchAfterEvent - step 1 in the third update)
             SDL_Log("%s: control back after update %d", field.info().name.c_str(), script->ticks() + 3);
-            if (library.stage == 2) library.stage = 1, library.at = uiClock; // (an entry read: the shelf again)
+            if (library.stage == 2) library.reopen = true; // (an entry read: the shelf again, the update after)
             else if (playMode) branchAfterField();
             if (!fieldMode) return; // (gone to a vista)
         }
@@ -1429,6 +1434,22 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                     } else if ((saveStage == 4 && saveTicks >= 10) || (saveStage == 5 && saveTicks >= 4)) {
                         saveStage = 0, saveCloseAt = -1, controlHold = 3; // (gone; ExecuteSave's two updates, step 1)
                         SDL_Log("field: the save's window closed");
+                        break;
+                    }
+                }
+                if (library.stage == 1 && library.closeAt < 0 && library.inTicks < 5) ++library.inTicks;
+                if (library.stage == 1 && library.closeAt >= 0) {
+                    ++library.closeTicks;
+                    if (library.closeTo == 1 && library.closeTicks >= 4) { // (0x28: the entry's reading)
+                        library.closeAt = -1, library.stage = 2, game.libraryId = library.pickId;
+                        SDL_Log("library: entry %d", library.pickId);
+                        callGimmick("library_disp"); // (InterfaceEvent::CallScript from the menu: at once, not CallEvent)
+                        if (!script->running()) library.stage = 1, library.at = uiClock, library.inTicks = 0; // (no reading: the list again)
+                        break;
+                    }
+                    if (library.closeTo == 2 && library.closeTicks >= 10) { // (the window gone: back to the field)
+                        library.closeAt = -1, library.stage = 0, pendingBranch = true;
+                        SDL_Log("library: closed");
                         break;
                     }
                 }
@@ -3848,18 +3869,19 @@ void Viewer::openLibrary() {
     if (libraryRows().empty()) library.stage = 0, pendingBranch = true;
 }
 void Viewer::libraryPick(const ListRow& r) {
+    if (library.closeAt >= 0) return;
     audio.playSe(0xb4, false);
-    game.libraryId = r.id;
-    library.stage = 2;
-    SDL_Log("library: entry %d", r.id);
-    callGimmick("library_disp"); // (InterfaceEvent::CallScript from the menu: at once, not CallEvent)
-    if (!script->running()) library.stage = 1, library.at = uiClock; // (no reading: the list again)
+    library.pickId = r.id, library.closeTo = 1;
+    library.closeAt = uiClock, library.closeFrom = uiClock - library.at, library.closeTicks = 0;
 }
 void Viewer::libraryBack() {
+    if (library.closeAt >= 0) return;
     audio.playSe(0xb5, false);
-    library.stage = 0, pendingBranch = true; // (back to the field)
+    library.closeTo = 2;
+    library.closeAt = uiClock, library.closeFrom = uiClock - library.at, library.closeTicks = 0;
 }
 void Viewer::libraryTap(int id) {
+    if (library.closeAt >= 0 || library.inTicks < 5) return; // (closing, opening: +0x1c 30)
     const std::vector<ListRow> rows = libraryRows();
     if (id == 100) return libraryBack();
     if (id >= 1000 && id < 1000 + int(rows.size())) library.focus = id - 1000;
@@ -3868,6 +3890,7 @@ void Viewer::libraryTap(int id) {
             if (r.id == id) return libraryPick(r);
 }
 void Viewer::libraryKey(SDL_Keycode k) {
+    if (library.closeAt >= 0 || library.inTicks < 5) return;
     const std::vector<ListRow> rows = libraryRows();
     const int n = std::max(int(rows.size()), 1);
     if (k == SDLK_UP) library.focus = (library.focus + n - 1) % n;
@@ -3879,7 +3902,9 @@ void Viewer::drawLibrary(const Mat4& view, int w, int h) {
     const std::vector<ListRow> rows = libraryRows();
     if (rows.empty()) return;
     library.focus = std::clamp(library.focus, 0, int(rows.size()) - 1);
-    drawSkillList(rows, rows[size_t(library.focus)].id, uiClock - library.at, view, w, h, -1, -1);
+    if (library.closeTo == 2 && library.closeTicks >= 5) return; // (the list gone; the window's wait)
+    const float t = library.closeAt < 0 ? uiClock - library.at : std::max(std::min(library.closeFrom, 0.2f) - (uiClock - library.closeAt), 0.0f);
+    drawSkillList(rows, rows[size_t(library.focus)].id, t, view, w, h, -1, -1);
 }
 std::vector<int> Viewer::pubPosters() const {
     std::vector<int> v;

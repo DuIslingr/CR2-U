@@ -1916,6 +1916,14 @@ struct Viewer {
         int stage = 0; // 0 shut, 1 the list, 2 an entry being read (library_disp)
         int focus = 0;
         float at = 0;
+        // (ArchiveListMenu: a pick or Back closes the list's frame (0.2 s, +0x1c 30) and reports 0x28 at its
+        // end, the fourth update; ArchiveWindowMenu then calls library_disp (param 4), or on Back (99) waits
+        // 0.3 s (state 2: the sixth update) and goes - FldLibrary's CallAtMenuFinished. A reading's end: the
+        // list made again the update after (state 3 -> 0 -> 0x27))
+        float closeAt = -1, closeFrom = 0;
+        int closeTicks = 0, closeTo = 0, pickId = 0; // (to: 1 the pick's reading, 2 Back)
+        bool reopen = false;
+        int inTicks = 0; // (ArchiveListMenu state 1: +0x1c 30 till its frame is in, the fourth update; taps from the fifth)
     } library;
     std::vector<ListRow> libraryRows();
     void openLibrary();

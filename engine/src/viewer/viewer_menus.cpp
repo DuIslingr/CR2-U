@@ -1230,7 +1230,7 @@ void Viewer::fieldInput() {
         inputNext = uiClock + 0.3f;
         return;
     }
-    if (!inputScript.empty() && uiClock >= inputNext && pub.stage && uiClock - pub.at > 0.5f) { // (the pub: next, pick, accept, back, yes, no)
+    if (!inputScript.empty() && uiClock >= inputNext && pub.stage && pubSwitchAt < 0 && uiClock - pub.at > 0.5f) { // (the pub: next, pick, accept, back, yes, no)
         const std::string t = inputScript.front();
         if (t == "next") pubKey(SDLK_RIGHT);
         else if (t == "list") pubTap(35);
@@ -1496,6 +1496,13 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                     if (to == 1) world.focus = world.dungeonFocus;
                     world.stage = to, world.at = uiClock, worldInTicks = 0;
                 } else if (world.stage && worldSwitchAt < 0 && worldInTicks < 5) ++worldInTicks;
+                if (pub.stage && pubSwitchAt >= 0 && ++pubSwitchTicks >= pubSwitchLen) { // (the step's next menu)
+                    pubSwitchAt = -1;
+                    if (pubSwitchTo == 11) game.globalWork[7] = pub.request, pubEnd(1); // (Cr3UtilGlobalWorkSet(7, the request))
+                    else if (pubSwitchTo == 12) game.globalWork[7] = 0, pubEnd(2);
+                    else pub.stage = pubSwitchTo, pub.at = uiClock, pubInTicks = 0;
+                    if (!pub.stage) break;
+                } else if (pub.stage && pubSwitchAt < 0 && pubCloseAt < 0 && pubInTicks < 5) ++pubInTicks;
                 if (pub.stage && pubCloseAt >= 0 && ++pubCloseTicks >= 4) { // (3 reported)
                     pubCloseAt = -1;
                     pubEnd(3);
@@ -3948,8 +3955,8 @@ int Viewer::pubSign(int id) const {
 }
 void Viewer::openPub() {
     pub = Pub();
-    pubCloseAt = -1;
-    pub.stage = 1, pub.at = uiClock;
+    pubCloseAt = pubSwitchAt = -1, pubInTicks = 0;
+    pub.stage = 1, pub.at = pub.opened = uiClock;
     SDL_Log("pub: %zu requests posted", pubPosters().size());
 }
 void Viewer::pubEnd(int result) { // (PubMainMenu: ResultPubParameter - FldMain's CallEvent / CallAtMenuFinished)
@@ -3959,34 +3966,37 @@ void Viewer::pubEnd(int result) { // (PubMainMenu: ResultPubParameter - FldMain'
     else if (result == 2) queueEvent("pub_checkG");
     else pendingBranch = true;
 }
+void Viewer::pubSwitch(int to, int ticks) {
+    pubSwitchAt = uiClock, pubSwitchFrom = uiClock - pub.at, pubSwitchTicks = 0;
+    pubSwitchLen = ticks, pubSwitchTo = to;
+}
 void Viewer::pubTap(int id) {
-    if (pubCloseAt >= 0) return; // (closing)
+    if (pubCloseAt >= 0 || pubSwitchAt >= 0 || pubInTicks < 5) return; // (closing, a step running, the next not in)
     const std::vector<int> posters = pubPosters();
     if (pub.stage == 1) {
-        if (id == 100) { if (pubCloseAt < 0) audio.playSe(0xb5, false), pubCloseAt = uiClock, pubCloseFrom = uiClock - pub.at, pubCloseTicks = 0; return; }
-        if (id == 35) return audio.playSe(0xb4, false), void((pub.stage = 4, pub.at = uiClock, pub.listFocus = 0)); // (Check: PubTopMenu 200)
+        if (id == 100) { audio.playSe(0xb5, false), pubCloseAt = uiClock, pubCloseFrom = uiClock - pub.at, pubCloseTicks = 0; return; }
+        if (id == 35) return audio.playSe(0xb4, false), pub.listFocus = 0, pubSwitch(4, 4); // (Check: PubTopMenu 200 - state 2, the list)
         if (id >= 1000 && id < 1000 + int(posters.size())) {
             const int k = id - 1000;
             if (k != pub.focus) return audio.playSe(0xb3, false), void(pub.focus = k);
             audio.playSe(0xb4, false);
             pub.request = posters[size_t(k)];
             game.setFlag(1250 + pub.request, false);
-            pub.stage = 2, pub.at = uiClock;
+            pubSwitch(2, 4); // (state 5: the detail once the board is gone)
             SDL_Log("pub: request %d", pub.request);
         }
     } else if (pub.stage == 2) {
-        if (id == 100) return audio.playSe(0xb5, false), void((pub.stage = 1, pub.at = uiClock));
-        if (id == 38 || id == 39) {
+        if (id == 100) return audio.playSe(0xb5, false), pubSwitch(1, 5); // (9 -> 7: the board once the detail is gone)
+        if (id == 38 || id == 39) { // (10: once the detail is gone - taken already, give it up?; else ResultPubParameter 1)
             audio.playSe(0xb4, false);
-            if (game.globalWork[7] == pub.request) pub.stage = 3, pub.at = uiClock; // (taken already: give it up?)
-            else game.globalWork[7] = pub.request, pubEnd(1);
+            pubSwitch(game.globalWork[7] == pub.request ? 3 : 11, 5);
         }
     } else if (pub.stage == 4) { // (PubListMenu: a tap shows a request's title; Back the board)
-        if (id == 100) audio.playSe(0xb5, false), pub.stage = 1, pub.at = uiClock;
+        if (id == 100) audio.playSe(0xb5, false), pubSwitch(1, 5);
         else if (id >= 2000 && id <= 2050) audio.playSe(0xb4, false), pub.listFocus = id - 2000;
-    } else if (pub.stage == 3) {
-        if (id == 7601) audio.playSe(0xb4, false), game.globalWork[7] = 0, pubEnd(2);
-        else if (id == 7602) audio.playSe(0xb5, false), pub.stage = 2, pub.at = uiClock;
+    } else if (pub.stage == 3) { // (0xb: the choice closed - 0xc / 0xd wait for it to go)
+        if (id == 7601) audio.playSe(0xb4, false), pubSwitch(12, 4);
+        else if (id == 7602) audio.playSe(0xb5, false), pubSwitch(2, 4);
     }
 }
 // the board's focus moved by a direction (PubTopMenu's update, FUN_810b7b62): the posters three a
@@ -4013,7 +4023,7 @@ void Viewer::pubMove(SDL_Keycode k) {
     SDL_Log("pub: %s in focus", to ? ("poster " + std::to_string(to)).c_str() : "check");
 }
 void Viewer::pubKey(SDL_Keycode k) {
-    if (pubCloseAt >= 0) return; // (closing)
+    if (pubCloseAt >= 0 || pubSwitchAt >= 0 || pubInTicks < 5) return; // (closing, a step, the next not in)
     if (pub.stage == 4 && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
         const int count = pubListCount();
         pubTap(2000 + (pub.listFocus + (k == SDLK_LEFT ? count - 2 : 0)) % count + 1);
@@ -4026,7 +4036,12 @@ void Viewer::pubKey(SDL_Keycode k) {
     else if (k == SDLK_BACKSPACE) pub.stage == 3 ? pubTap(7602) : pubTap(100);
 }
 void Viewer::drawPub(const Mat4& view, int w, int h) {
-    const float t = pubCloseAt < 0 ? uiClock - pub.at : std::max(std::min(pubCloseFrom, 0.15f) - (uiClock - pubCloseAt), 0.0f); // (played back as it closes)
+    const float t = pubCloseAt >= 0 ? std::max(std::min(pubCloseFrom, 0.15f) - (uiClock - pubCloseAt), 0.0f) // (played back as it closes)
+                    : pubSwitchAt >= 0 ? std::max(std::min(pubSwitchFrom, pub.stage == 1 ? 0.15f : 0.2f) - (uiClock - pubSwitchAt), 0.0f)
+                                       : uiClock - pub.at;
+    // (the title and the girls: in once; closed with the pub - its Back, Accept, the give-up's Yes)
+    const bool ending = pubCloseAt >= 0 || (pubSwitchAt >= 0 && pubSwitchTo >= 11);
+    const float tOpen = ending ? t : uiClock - pub.opened;
     auto part = [&](const char* fig, const char* anim, float x = 0, float y = 0, float tt = -1) -> UiFig& {
         UiFig& u = uiFig(fig);
         u.fig.place = cr2::Mat34();
@@ -4035,8 +4050,8 @@ void Viewer::drawPub(const Mat4& view, int w, int h) {
         drawFigure(u.fig, view.data());
         return u;
     };
-    part("pubgirls_io", "pubgirls_io");
-    part("menu", "menupub_io");
+    part("pubgirls_io", "pubgirls_io", 0, 0, tOpen);
+    part("menu", "menupub_io", 0, 0, tOpen);
     float x, y, sx, sy, ex, ey;
     auto back = [&]() {
         UiFig& bk = part("btlback", "btlback_in");

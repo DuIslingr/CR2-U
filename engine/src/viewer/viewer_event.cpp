@@ -720,6 +720,7 @@ void Viewer::resetSessionUi() {
     worldSwitchAt = worldOutAt = -1, worldInTicks = 5;
     partyTitleOutAt = -1;
     shopSwitchAt = -1, shopInTicks = 5;
+    pubSwitchAt = -1, pubInTicks = 5;
     paused = fieldTabOpen = false;
     script.reset();
     event.reset();

@@ -2006,7 +2006,16 @@ struct Viewer {
         int stage = 0; // 0 shut, 1 the board, 2 a request, 3 giving it up?, 4 the list
         int focus = 0, request = 0, listFocus = 0; // (listFocus: the list's request, 0 none)
         float at = 0;
+        float opened = 0; // (PubTitleMenu's and the girls' clock: in once, at the open)
     } pub;
+    // (PubMainMenu's steps - each menu made once the one before is gone (GetWindowMenuParameter): a poster -
+    // PubTopMenu back (0.15 s), the detail (0x26) the fourth update; Check - the list (0x24) the fourth; the
+    // detail's Back - pubWin_io back (0.2 s), the board (0x25) the fifth; Accept - the detail back, then
+    // ResultPubParameter 1 the fifth, or the give-up question there if it is taken; its Yes - the choice
+    // closed (0.2 s), 2 the fourth; its No - the detail again the fourth. Taps once the next is in)
+    float pubSwitchAt = -1, pubSwitchFrom = 0;
+    int pubSwitchTicks = 0, pubSwitchLen = 0, pubSwitchTo = 0, pubInTicks = 5; // (to: a stage; 11 / 12 ResultPubParameter 1 / 2)
+    void pubSwitch(int to, int ticks);
     std::vector<int> pubPosters() const;
     int pubListCount() const;
     int pubSign(int id) const;

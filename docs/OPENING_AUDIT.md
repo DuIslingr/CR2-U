@@ -1734,6 +1734,27 @@ kinds draw the eye buttons (taps 7300 + the character, SE 0xb7), the cursor on t
 open and kept across the kinds, and the list is that character's. `--call ReserveShop --input buy`
 captured: the two buttons above, Darwin's selected, no Oz window.
 
+### Round 79: the pub's request and its question
+
+`PubMainMenu::Update` makes each of the pub's menus once the one before is gone
+(`GetWindowMenuParameter`), +0x1c 30 at each result. The board (`PubTopMenu` 0x6a, read by param 4 in
+state 1): a poster - state 5, the board told to close (`checkBtn_io` and the posters back, 0.15 s) -,
+the detail (`PubDetailMenu` 0x6c, 0x26) made once it is gone, the fourth update; Check (200) - state 2,
+the list (0x6b, 0x24) the same way. The detail (state 9): Back - 7 (0xe from the list), the board
+(0x25) once the detail is gone (`pubWin_io` and its parts back, 0.2 s: the fifth) -; Accept - 10: the
+detail gone, then either the request taken already (`Cr3UtilGlobalWorkGet(7)`) - the System window's
+0x83 and the choice, state 0xb - or `Cr3UtilGlobalWorkSet(7, the request)` and
+`ResultPubParameter(1)` (the title and the girls closed with it). The question: Yes - the choice ended,
+the title and the main menu closed, then once the choice is gone (0xc, 0.2 s: the fourth)
+`GlobalWorkSet(7, 0)` and `ResultPubParameter(2)` -; No - the detail again once the choice is gone
+(0xd -> 8). The port changed every menu in the tap's update and ended the pub at Accept's tap. Now
+`pubSwitch` plays the board (0.15 s) or the detail / the question (0.2 s) back and takes the next
+step in the fourth / fifth update, taps from the fifth after the next is made (`pubInTicks`); the
+title and the girls keep their open's clock and play back only with the pub's end; the `--input`
+tokens wait for a step. The list's own steps (its rows, a request's title) were not gone through.
+t0101 `--call ReservePUB --flag 1201 --flag 1202 --input "pick back pick accept"`: request 1's
+detail, the board again, the detail, Accept - `pub: 1` five updates on, `pub_checkA` called.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

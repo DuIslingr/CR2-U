@@ -342,10 +342,12 @@ int padControlsSelfTest() {
         check(v.pub.focus == 3, "pub: Left along the second row, off its start Check, Right the fourth again");
         v.pub.focus = -1;
         press(circle);
-        check(v.pub.stage == 4 && se(0xb4), "pub: ○ on Check the list");
+        check(v.pubSwitchAt >= 0 && v.pubSwitchTo == 4 && se(0xb4), "pub: ○ on Check the list"); // (once the board is gone)
+        v.pubSwitchAt = -1;
         v.pub.stage = 1, v.pub.focus = 1;
         press(circle);
-        check(v.pub.stage == 2, "pub: ○ on a poster picks it");
+        check(v.pubSwitchAt >= 0 && v.pubSwitchTo == 2, "pub: ○ on a poster picks it");
+        v.pubSwitchAt = -1;
         v.pub = decltype(v.pub)();
 
         // the buttons' keys: Swap ○ and × (the options'), △ Tab (CR2-U's: the field's tab), L / R in a menu alone

@@ -18,7 +18,7 @@ A copy of the game from one of these releases - any one of them is the whole gam
 
 | Release | What to give the port |
 |---|---|
-| **Android** 2.1.2 | the APK and its `main.212.com.square_enix.chaosrings2gp.obb` |
+| **Android** 2.1.2 | the APK and its `main.212.com.square_enix.chaosrings2gp.obb` - or the `.xapk` (it holds both), or an `.apks` with the OBB |
 | **iPad** 2.1.0 | the `.ipa` (or its unpacked `.app`). iPhone copies aren't supported yet. |
 | **PlayStation Vita** (PCSG00498) | the installed game (Vita3K's folder, or the `PCSG00498` folder), or a NoNpDrm dump - a folder or a `.zip` / `.rar` / `.7z` / `.vpk`. The Prequel Trilogy (PCSG00457) works too. |
 
@@ -40,7 +40,7 @@ A Vita dump is decrypted during setup, keeping only Chaos Rings II's files.
 | Windows 10+ | If SmartScreen warns about an unsigned program, choose *More info*, *Run anyway*. |
 | macOS 11+ | Right-click `cr2view.app` and choose *Open* (it isn't signed). |
 | Linux | `chmod +x` the AppImage and run it, or use the `.tar.gz`. |
-| Android 7+ | Install the APK. On first start it offers the same setup: pick the APK and OBB, the `.ipa` or a Vita archive. Folders can't be picked on Android; copy them over USB instead (below). |
+| Android 7+ | Install the APK. On first start it offers the same setup: pick the APK and OBB (or the `.xapk`, or the `.apks` and OBB), the `.ipa` or a Vita archive. Folders can't be picked on Android; copy them over USB instead (below). |
 
 ### Putting the files in by hand
 
@@ -50,8 +50,8 @@ AppImage). On Android it is `Android/data/local.preservation.chaosrings2/files/`
 
 ```
 <game folder>/
-├── android/   the 2.1.2 APK and main.212.com.square_enix.chaosrings2gp.obb
-├── ios/       the iPad 2.1.0 app (ChaosRings2enHD.app, or Payload/ChaosRings2enHD.app as unzipped)
+├── android/   the 2.1.2 APK and main.212.com.square_enix.chaosrings2gp.obb (or the .xapk, or the .apks and OBB)
+├── ios/       the iPad 2.1.0 .ipa, or its app (ChaosRings2enHD.app, or Payload/ChaosRings2enHD.app as unzipped)
 ├── vita/      PCSG00498/ as installed (eboot.bin, sce_sys/, CR2/) - or a NoNpDrm dump as dumped
 ├── fsr4/      optional: AMD's FSR 4 files (see Settings)
 ├── textures/  optional: export/ and hd/ for HD textures
@@ -65,6 +65,11 @@ AppImage). On Android it is `Android/data/local.preservation.chaosrings2/files/`
 - A still-encrypted Vita dump in `vita/` (its `app/`, and `addcont/` for the Prequel Trilogy) is
   decrypted on the next start, on a phone too, once there is room for the decrypted copy. Delete
   the dump afterwards.
+- An `.xapk`, an `.apks` or a `.zip` of the APK and OBB in `android/` is unpacked once on the next
+  start into `android/unpacked/` (about **1 GB** of free space for the OBB; that start takes a while,
+  with a progress window). Later starts reuse it; the bundle itself can be deleted afterwards.
+- An `.ipa` in `ios/` is unpacked once on the next start into its `ChaosRings2enHD.app` there (with a
+  progress window); the `.ipa` can be deleted afterwards.
 - The release downloads already contain these folders, each with a `README.txt` saying what goes
   in it.
 - Older layouts still work: `ipad/`, `PCSG00498/`, `CR2/`, `ChaosRings2enHD.app/`, `Payload/` or
@@ -217,7 +222,8 @@ for personal use.
 - **Tested on:** Linux (played) and Windows (under Wine). The macOS and Android builds come from CI
   and haven't been tried on real hardware yet. Reports are welcome in the
   [issues](https://github.com/DuIslingr/CR2-U/issues): please say which copy of the game you use
-  (Android, iPad or Vita), your system, and what you did.
+  (Android, iPad or Vita), your system, and what you did. On a PC, attach `cr2view.log` from the
+  profile folder (`cr2view.prev.log` is the start before it).
 
 ## Building from source
 

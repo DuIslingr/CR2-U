@@ -599,6 +599,25 @@ std::string findVitaGame(const std::string& picked, const SetupGame& g) {
 
 bool setupScripted() { return script().on; }
 
+std::function<void(const std::string&, double)> progressWindow(const SetupGame& g, const std::string& what) {
+    // (opened at the first call - nothing to do, no window -, closed with the last copy of the function)
+    auto bar = std::make_shared<std::unique_ptr<Progress>>();
+    auto shown = std::make_shared<std::string>();
+    return [g, what, bar, shown](const std::string& item, double f) {
+        if (!*bar) {
+            SDL_InitSubSystem(SDL_INIT_VIDEO); // (before the game's window: SDL may not be up yet)
+            *bar = std::make_unique<Progress>(g.title, what);
+        }
+        if (item != *shown) { // (each item named: logged, and on the bar)
+            *shown = item;
+            SDL_Log("setup: %s %s", what.c_str(), item.c_str());
+            (*bar)->label = what + " " + item;
+            (*bar)->show(f, true);
+        } else
+            (*bar)->show(f);
+    };
+}
+
 namespace {
 
 // ---- the Vita release: as Vita3K installs it (ux0/app/<id>/, the Prequel Trilogy's add-ons in
@@ -1484,6 +1503,64 @@ bool installDroppedVita(const SetupGame& g, const std::string& folder, SetupResu
     }
     if (video) SDL_QuitSubSystem(SDL_INIT_VIDEO);
     return got > 0;
+}
+
+bool installDroppedIpa(const SetupGame& g, const std::string& folder, bool quiet) {
+    const std::string t = withSlash(folder) + "ios/";
+    if (!isDir(t)) return false;
+    // each .ipa there unpacked once - ios/.unpacked lists those done (name and size) -, not where an
+    // unpacked .app the game reads is there already (put in by hand, or the setup's)
+    const std::string listPath = t + ".unpacked";
+    std::string list;
+    if (std::FILE* f = std::fopen(listPath.c_str(), "rb")) {
+        char buf[4096];
+        for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) list.append(buf, n);
+        std::fclose(f);
+    }
+    std::vector<std::string> ipas;
+    bool haveApp = false;
+    int count = 0;
+    char** names = SDL_GlobDirectory(t.c_str(), "*", 0, &count);
+    for (int k = 0; names && k < count; ++k) {
+        const std::string n = names[k], p = t + n;
+        if (n.empty() || n[0] == '.') continue;
+        if (isDir(p)) {
+            if (endsWith(n, ".app") && (!g.iosOk || g.iosOk(p))) haveApp = true;
+            continue;
+        }
+        if (!endsWith(n, ".ipa")) continue;
+        SDL_PathInfo info;
+        const std::string line = n + " " + std::to_string(SDL_GetPathInfo(p.c_str(), &info) ? info.size : 0) + "\n";
+        if (list.find(line) == std::string::npos) ipas.push_back(p);
+    }
+    SDL_free(names);
+    if (ipas.empty() || haveApp) {
+        if (!ipas.empty()) SDL_Log("setup: %s in %s left - an unpacked .app is there already", baseName(ipas.front()).c_str(), t.c_str());
+        return false;
+    }
+    const bool video = SDL_InitSubSystem(SDL_INIT_VIDEO);
+    bool any = false;
+    for (const std::string& ipa : ipas) {
+        SDL_Log("setup: %s in %s, unpacking it", baseName(ipa).c_str(), t.c_str());
+        std::string app, why;
+        bool ok;
+        {
+            Progress bar(g.title, "Unpacking " + baseName(ipa) + " ...");
+            ok = unpackIpa(ipa, t, app, &why, [&](double v) { bar.show(v); });
+        }
+        if (!ok) note(g, baseName(ipa) + " can't be unpacked: " + why, quiet);
+        else note(g, baseName(ipa) + " is unpacked into " + app + " - the .ipa isn't needed any more: delete it to get the space back.", quiet);
+        any = any || ok;
+        SDL_PathInfo info; // (listed either way: said once, not at every start)
+        list += baseName(ipa) + " " + std::to_string(SDL_GetPathInfo(ipa.c_str(), &info) ? info.size : 0) + "\n";
+        if (ok) break; // (one release is the game)
+    }
+    if (std::FILE* f = std::fopen(listPath.c_str(), "wb")) {
+        std::fwrite(list.data(), 1, list.size(), f);
+        std::fclose(f);
+    }
+    if (video) SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    return any;
 }
 
 bool installDroppedPatch(const SetupGame& g, const std::string& folder, bool quiet) {

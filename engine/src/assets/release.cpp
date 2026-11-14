@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <system_error>
 
 #ifdef CR2_HAVE_ZLIB
@@ -69,7 +70,7 @@ std::string resolveArchive(const std::string& path) {
     while (top.size() > 1 && (top.back() == '/' || top.back() == '\\')) top.pop_back();
     // the folder itself, then where each release keeps its archive under its own folder: the
     // Vita's PCSG00498 (CR2/resources/), the iPad's unpacked .ipa (Payload/ChaosRings2enHD.app/)
-    for (const char* sub : {"", "/resources", "/CR2/resources", "/ChaosRings2enHD.app", "/Payload/ChaosRings2enHD.app"}) {
+    for (const char* sub : {"", "/unpacked", "/resources", "/CR2/resources", "/ChaosRings2enHD.app", "/Payload/ChaosRings2enHD.app"}) {
         const std::string dir = top + sub;
         if (*sub && !fs::is_directory(dir, ec)) continue;
         const std::vector<std::string> files = filesIn(dir);
@@ -131,6 +132,206 @@ std::string defaultArchive(const std::vector<std::string>& places) {
 
 std::string defaultArchive(const std::string& baseDir) { return defaultArchive(std::vector<std::string>{baseDir}); }
 
+namespace {
+
+std::string lowerCase(std::string s) {
+    for (char& c : s) c = char(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+std::string baseOf(const std::string& path) {
+    const size_t slash = path.find_last_of("/\\");
+    return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+bool seekTo(std::FILE* f, uint64_t at) {
+#ifdef _WIN32
+    return _fseeki64(f, int64_t(at), SEEK_SET) == 0;
+#else
+    return fseeko(f, off_t(at), SEEK_SET) == 0;
+#endif
+}
+uint64_t sizeOf(std::FILE* f) {
+#ifdef _WIN32
+    _fseeki64(f, 0, SEEK_END);
+    return uint64_t(_ftelli64(f));
+#else
+    fseeko(f, 0, SEEK_END);
+    return uint64_t(ftello(f));
+#endif
+}
+uint64_t le64(const uint8_t* p) { return uint64_t(le32(p)) | uint64_t(le32(p + 4)) << 32; }
+
+struct ZipItem {
+    std::string name;
+    uint16_t method = 0;
+    uint64_t packed = 0, size = 0, local = 0;
+};
+// a zip's central directory, zip64 too (an .xapk with the OBB in it can pass 4 GB)
+bool zipList(std::FILE* f, std::vector<ZipItem>& out) {
+    out.clear();
+    const uint64_t size = sizeOf(f);
+    const uint64_t tail = std::min<uint64_t>(size, 0x10000 + 22);
+    std::vector<uint8_t> t(static_cast<size_t>(tail));
+    if (t.size() < 22 || !seekTo(f, size - tail) || std::fread(t.data(), 1, t.size(), f) != t.size()) return false;
+    size_t end = t.size() - 22 + 1;
+    while (end-- > 0)
+        if (le32(&t[end]) == 0x06054b50) break;
+    if (end == size_t(-1)) return false;
+    uint64_t count = le16(&t[end + 10]), dirSize = le32(&t[end + 12]), dirOffset = le32(&t[end + 16]);
+    if ((count == 0xffff || dirSize == 0xffffffffu || dirOffset == 0xffffffffu) && end >= 20 && le32(&t[end - 20]) == 0x07064b50) {
+        uint8_t z[56];
+        if (!seekTo(f, le64(&t[end - 20 + 8])) || std::fread(z, 1, sizeof z, f) != sizeof z || le32(z) != 0x06064b50) return false;
+        count = le64(z + 32), dirSize = le64(z + 40), dirOffset = le64(z + 48);
+    }
+    if (dirSize > (uint64_t(64) << 20)) return false;
+    std::vector<uint8_t> d(static_cast<size_t>(dirSize));
+    if (!seekTo(f, dirOffset) || std::fread(d.data(), 1, d.size(), f) != d.size()) return false;
+    for (size_t p = 0, k = 0; k < count && p + 46 <= d.size(); ++k) {
+        if (le32(&d[p]) != 0x02014b50) break;
+        const uint16_t nameLen = le16(&d[p + 28]), extraLen = le16(&d[p + 30]), commentLen = le16(&d[p + 32]);
+        if (p + 46 + nameLen + extraLen > d.size()) break;
+        ZipItem e;
+        e.method = le16(&d[p + 10]);
+        e.packed = le32(&d[p + 20]), e.size = le32(&d[p + 24]), e.local = le32(&d[p + 42]);
+        e.name.assign(reinterpret_cast<const char*>(&d[p + 46]), nameLen);
+        for (size_t x = p + 46 + nameLen, xe = x + extraLen; x + 4 <= xe;) { // (zip64's extra: the fields that overflowed, in order)
+            const uint16_t id = le16(&d[x]), len = le16(&d[x + 2]);
+            if (id == 1) {
+                size_t q = x + 4;
+                if (e.size == 0xffffffffu && q + 8 <= x + 4 + len) e.size = le64(&d[q]), q += 8;
+                if (e.packed == 0xffffffffu && q + 8 <= x + 4 + len) e.packed = le64(&d[q]), q += 8;
+                if (e.local == 0xffffffffu && q + 8 <= x + 4 + len) e.local = le64(&d[q]);
+            }
+            x += 4 + size_t(len);
+        }
+        p += 46 + size_t(nameLen) + extraLen + commentLen;
+        if (!e.name.empty() && e.name.back() != '/') out.push_back(std::move(e));
+    }
+    return true;
+}
+// where an entry's data begins (past its local header)
+bool zipData(std::FILE* f, const ZipItem& e, uint64_t& at) {
+    uint8_t h[30];
+    if (!seekTo(f, e.local) || std::fread(h, 1, sizeof h, f) != sizeof h || le32(h) != 0x04034b50) return false;
+    at = e.local + 30 + le16(h + 26) + le16(h + 28);
+    return true;
+}
+bool isBundle(const std::string& name) {
+    const std::string n = lowerCase(name);
+    return endsWith(n, ".apks") || endsWith(n, ".xapk") || endsWith(n, ".zip");
+}
+bool isGameObb(const std::string& name) {
+    const std::string n = baseOf(name);
+    return n.compare(0, 5, "main.") == 0 && endsWith(n, kObbPackage);
+}
+// what of a bundle the port needs: the OBB and the APKs (a .zip only when it holds the OBB - not
+// any zip lying there)
+std::vector<ZipItem> bundleParts(const std::string& bundle) {
+    std::vector<ZipItem> all, out;
+    std::FILE* f = std::fopen(bundle.c_str(), "rb");
+    if (!f) return out;
+    const bool listed = zipList(f, all);
+    std::fclose(f);
+    if (!listed) return out;
+    const bool obb = std::any_of(all.begin(), all.end(), [](const ZipItem& e) { return isGameObb(e.name); });
+    if (endsWith(lowerCase(bundle), ".zip") && !obb) return out;
+    for (const ZipItem& e : all)
+        if ((isGameObb(e.name) || endsWith(lowerCase(e.name), ".apk")) && (e.method == 0 || e.method == 8)) out.push_back(e);
+    return out;
+}
+
+} // namespace
+
+bool androidBundleOk(const std::string& folder) {
+    bool obb = false, apk = false;
+    for (const std::string& n : filesIn(folder)) {
+        if (isGameObb(n)) obb = true;
+        else if (endsWith(lowerCase(n), ".apk")) apk = true;
+        else if (isBundle(n))
+            for (const ZipItem& e : bundleParts(folder + "/" + n)) (isGameObb(e.name) ? obb : apk) = true;
+    }
+    return obb && apk;
+}
+
+bool unpackAndroidBundles(const std::string& folder, const std::function<void(const std::string&, double)>& progress,
+                          std::vector<std::string>* failed) {
+    struct Pending {
+        std::string bundle;
+        ZipItem entry;
+        fs::path to;
+    };
+    std::vector<Pending> pending;
+    uint64_t total = 0;
+    std::error_code ec;
+    for (const std::string& n : filesIn(folder)) {
+        if (!isBundle(n)) continue;
+        for (const ZipItem& e : bundleParts(folder + "/" + n)) {
+            const fs::path to = fs::path(folder) / "unpacked" / baseOf(e.name);
+            if (fs::exists(to, ec) && fs::file_size(to, ec) == e.size) continue; // (unpacked before)
+            if (std::any_of(pending.begin(), pending.end(), [&](const Pending& q) { return q.to == to; })) continue;
+            pending.push_back({folder + "/" + n, e, to}), total += e.size;
+        }
+    }
+    uint64_t done = 0;
+    bool all = true;
+    for (const Pending& p : pending) {
+        const std::string name = baseOf(p.entry.name);
+        auto told = [&](uint64_t n) {
+            if (progress && total) progress(name, double(done + n) / double(total));
+        };
+        told(0);
+        bool ok = false;
+        std::FILE* f = std::fopen(p.bundle.c_str(), "rb");
+        uint64_t at = 0;
+        fs::create_directories(p.to.parent_path(), ec);
+        const fs::path part = p.to.string() + ".part";
+        std::FILE* o = f && zipData(f, p.entry, at) && seekTo(f, at) ? std::fopen(part.string().c_str(), "wb") : nullptr;
+        if (o) {
+            std::vector<uint8_t> in(1 << 20), buf(1 << 20);
+            uint64_t left = p.entry.packed, written = 0;
+            ok = true;
+            if (p.entry.method == 0) {
+                while (ok && left > 0) {
+                    const size_t n = size_t(std::min<uint64_t>(left, in.size()));
+                    ok = std::fread(in.data(), 1, n, f) == n && std::fwrite(in.data(), 1, n, o) == n;
+                    left -= n, written += n, told(written);
+                }
+            } else {
+#ifdef CR2_HAVE_ZLIB
+                z_stream z{};
+                ok = inflateInit2(&z, -MAX_WBITS) == Z_OK;
+                int r = Z_OK;
+                while (ok && r != Z_STREAM_END) {
+                    if (z.avail_in == 0 && left > 0) {
+                        const size_t n = size_t(std::min<uint64_t>(left, in.size()));
+                        ok = std::fread(in.data(), 1, n, f) == n;
+                        z.next_in = in.data(), z.avail_in = uInt(n), left -= n;
+                    }
+                    z.next_out = buf.data(), z.avail_out = uInt(buf.size());
+                    r = inflate(&z, Z_NO_FLUSH);
+                    ok = ok && (r == Z_OK || r == Z_STREAM_END) && !(r == Z_OK && z.avail_in == 0 && left == 0 && z.avail_out != 0);
+                    const size_t got = buf.size() - z.avail_out;
+                    ok = ok && std::fwrite(buf.data(), 1, got, o) == got;
+                    written += got, told(written);
+                }
+                inflateEnd(&z);
+#else
+                ok = false;
+#endif
+            }
+            ok = std::fclose(o) == 0 && ok && written == p.entry.size;
+        }
+        if (f) std::fclose(f);
+        if (ok) fs::rename(part, p.to, ec), ok = !ec;
+        if (!ok) {
+            fs::remove(part, ec);
+            if (failed) failed->push_back(name);
+            all = false;
+        }
+        done += p.entry.size;
+    }
+    return all;
+}
+
 bool readZipEntry(const std::string& zip, const std::string& name, std::vector<uint8_t>& out, std::string* error) {
     std::FILE* f = std::fopen(zip.c_str(), "rb");
     if (!f) return fail(error, zip + ": cannot open");
@@ -184,8 +385,20 @@ bool readZipEntry(const std::string& zip, const std::string& name, std::vector<u
     return fail(error, zip + ": no " + name);
 }
 
+bool androidFileIn(const std::string& dir, const std::string& name, std::vector<uint8_t>& out, std::string* from);
+
 bool androidFile(const std::string& archivePath, const std::string& name, std::vector<uint8_t>& out, std::string* from) {
-    const std::string dir = folderOf(resolveArchive(archivePath));
+    const std::string top = folderOf(resolveArchive(archivePath));
+    // (the folder, and what a bundle there was unpacked into - or, the OBB itself unpacked, the
+    // folder above it, where its APKs may lie loose)
+    std::vector<std::string> dirs{top, top + "/unpacked"};
+    if (baseOf(top) == "unpacked") dirs.push_back(folderOf(top));
+    for (const std::string& dir : dirs)
+        if (androidFileIn(dir, name, out, from)) return true;
+    return false;
+}
+
+bool androidFileIn(const std::string& dir, const std::string& name, std::vector<uint8_t>& out, std::string* from) {
     for (const std::string& p : {dir + "/" + name, dir + "/extracted/" + name})
         if (readWhole(p, out)) {
             if (from) *from = p;

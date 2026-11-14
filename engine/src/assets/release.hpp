@@ -6,6 +6,7 @@
 // (Regular) - read out of the APK (a zip), or from an unpacked copy of it.
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,17 @@ std::string resolveArchive(const std::string& path);
 // platform/paths.hpp)
 std::string defaultArchive(const std::vector<std::string>& places);
 std::string defaultArchive(const std::string& baseDir);
+
+// The Android release as a bundle - an .xapk (its APKs and Android/obb/../main.*.obb), an .apks
+// (its APKs; the OBB beside it), or a .zip holding the OBB and APK - in `folder`: what the port
+// needs of it (the OBB, the APKs) unpacked once into <folder>/unpacked/ and found there as files
+// put there by hand would be, later starts reusing them. `progress` told each part's name and 0 .. 1
+// of the whole (only when there is something to unpack); `failed` the parts that couldn't be
+bool unpackAndroidBundles(const std::string& folder, const std::function<void(const std::string&, double)>& progress = {},
+                          std::vector<std::string>* failed = nullptr);
+// whether `folder` holds the Android release, its OBB and an APK, loose or in such a bundle (read,
+// not unpacked)
+bool androidBundleOk(const std::string& folder);
 
 // a zip's entry (stored, or deflated: with zlib)
 bool readZipEntry(const std::string& zip, const std::string& name, std::vector<uint8_t>& out, std::string* error = nullptr);

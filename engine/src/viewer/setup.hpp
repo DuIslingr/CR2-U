@@ -66,6 +66,11 @@ bool runSetup(const SetupGame& game, const std::string& folder, const std::strin
 // or one decrypted already -: false at once. `out.vita`: this game's folder in it
 bool installDroppedVita(const SetupGame& game, const std::string& folder, SetupResult& out, bool quiet = false);
 
+// An iOS release's .ipa copied by hand into the game folder's ios/: its Payload/<name>.app unpacked
+// there (as the setup's iOS button does), with a progress window, once - ios/.unpacked lists those
+// done. Nothing to do (no .ipa there, one unpacked already, or an unpacked .app there): false at once
+bool installDroppedIpa(const SetupGame& game, const std::string& folder, bool quiet = false);
+
 // (CR3-U) The fan translation's archive - the .rar or .zip it comes in - copied by hand into the
 // game folder's translation/: unpacked into translation/<id>/, with a progress window. Nothing to do
 // (no archive there, or a translation unpacked already; a game without one): false at once
@@ -73,6 +78,12 @@ bool installDroppedPatch(const SetupGame& game, const std::string& folder, bool 
 
 // whether CRU_SETUP_ANSWERS answers it (a test's run: no windows)
 bool setupScripted();
+
+// A progress window for a long step outside the setup (an Android bundle - .xapk, .apks - unpacked on
+// the first start): called with the item in course and 0 .. 1 of the whole, it opens at the first call
+// (SDL's video started if it isn't) and closes when the last copy of the function goes. Under
+// CRU_SETUP_ANSWERS: logged alone
+std::function<void(const std::string&, double)> progressWindow(const SetupGame& game, const std::string& what);
 
 // An .ipa's Payload/<name>.app unpacked into `folder` (<folder>/<name>.app/); its path in `app`.
 // `progress` (0 .. 1) as it goes

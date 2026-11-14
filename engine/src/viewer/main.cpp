@@ -612,7 +612,8 @@ static cr2::SetupGame cr2SetupGame() {
     setup.iosOk = [archiveIs](const std::string& p) { return archiveIs(p, ".ios.mvgl"); };
     setup.androidOk = [archiveIs](const std::string& p) { // (the OBB, and the APK with the game's library - the maps' table)
         std::vector<uint8_t> lib;
-        return archiveIs(p, ".obb") && cr2::androidFile(p, "lib/armeabi-v7a/libChaosRings2.so", lib);
+        return (archiveIs(p, ".obb") && cr2::androidFile(p, "lib/armeabi-v7a/libChaosRings2.so", lib)) ||
+               cr2::androidBundleOk(p); // (or an .xapk / .apks with them: unpacked on the start after)
     };
     setup.vitaOk = [archiveIs](const std::string& p) { return archiveIs(p, ".psp2.mvgl"); };
     return setup;
@@ -796,9 +797,38 @@ int main(int argc, char** argv) {
         if (q == std::end(kQualities)) return std::fprintf(stderr, "--quality: native, quality, balanced, performance or ultra\n"), 2;
         upscale.ratio = q->ratio;
     }
+    // An Android bundle (.xapk, .apks, a .zip of the OBB and APK) in android/ - put there by hand or by the
+    // setup -, or given: its OBB and APKs unpacked once into android/unpacked/ (about 1 GB for the OBB: a while,
+    // before any window - a progress window over it, else the game seems to hang). Not for captures and exports
+    auto unbundle = [&](const std::string& folder) {
+        std::error_code ec;
+        if (folder.empty() || !std::filesystem::is_directory(folder, ec)) return;
+        const bool quiet = !capture.empty() || exportTextures || exportModels;
+        std::vector<std::string> failed;
+        cr2::unpackAndroidBundles(folder, quiet ? std::function<void(const std::string&, double)>() : cr2::progressWindow(cr2SetupGame(), "First start - unpacking"), &failed);
+        if (failed.empty()) return;
+        std::string names;
+        for (const std::string& f : failed) names += "\n  " + f, SDL_Log("unpacking: %s could not be unpacked into %s/unpacked", f.c_str(), folder.c_str());
+        if (!quiet && argc <= 1)
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "Chaos Rings II",
+                                     ("These could not be unpacked into\n" + folder + "/unpacked/ (is there room? about 1 GB for the OBB):" + names).c_str(), nullptr);
+    };
+    if (!data.empty()) { // (--data or CR2_DATA naming a bundle, or the folder it lies in)
+        std::error_code ec;
+        const std::string low = [&] { std::string l = data; for (char& c : l) c = char(std::tolower(static_cast<unsigned char>(c))); return l; }();
+        const bool bundle = std::filesystem::is_regular_file(data, ec) &&
+                            (low.size() > 5 && (low.compare(low.size() - 5, 5, ".xapk") == 0 || low.compare(low.size() - 5, 5, ".apks") == 0 || low.compare(low.size() - 4, 4, ".zip") == 0));
+        if (bundle) data = std::filesystem::path(data).parent_path().string();
+        if (std::filesystem::is_directory(data, ec)) unbundle(data);
+    }
     std::vector<std::string> searched; // (where a copy was looked for: the message if none)
     if (data.empty()) { // (CR2_DATA, else a copy in a game folder: vita/, android/, ios/ ...)
         searched = dataPlaces();
+        for (const std::string& place : searched) unbundle(place + "android");
+#if !defined(SDL_PLATFORM_IOS)
+        for (const std::string& place : searched) // (an .ipa copied into ios/ by hand: its .app unpacked there, as the setup would)
+            if (cr2::installDroppedIpa(cr2SetupGame(), place, !capture.empty())) break;
+#endif
         for (const std::string& place : searched) { // (a Vita dump copied into vita/ - a phone's way -, its files encrypted: decrypted into place)
             cr2::SetupResult got;
             if (cr2::installDroppedVita(cr2SetupGame(), place, got, !capture.empty())) break;
@@ -825,6 +855,7 @@ int main(int argc, char** argv) {
             cr2::SetupResult dropped;
             if (cr2::installDroppedVita(setup, place, dropped, !capture.empty())) break;
         }
+        for (const std::string& place : dataPlaces()) unbundle(place + "android"); // (an .xapk or .apks the setup copied in)
         data = cr2::resolveArchive(cr2::defaultArchive(dataPlaces()));
         SDL_Log("setup: iOS %s, Android %s, Vita %s - the game: %s", got.ios.c_str(), got.android.c_str(), got.vita.c_str(), data.c_str());
         if (cr2::setupScripted()) return data.empty() ? 1 : 0; // (a test's: the setup alone)
@@ -837,8 +868,8 @@ int main(int argc, char** argv) {
 #endif
         std::string msg = "Could not find your copy of the game.\n\nPut any one of these in the folder here:\n";
         msg += searched.empty() ? std::string("(no folder)") : searched.front();
-        msg += "\n\n  ios/      the iPad's ChaosRings2enHD.app (or the unpacked .ipa)"
-               "\n  android/  the Android release's main.212.com.square_enix.chaosrings2gp.obb and its APK"
+        msg += "\n\n  ios/      the iPad's .ipa (unpacked on the next start), or its ChaosRings2enHD.app"
+               "\n  android/  the Android release's main.212.com.square_enix.chaosrings2gp.obb and its APK (or its .xapk / .apks)"
                "\n  vita/     the Vita's PCSG00498 folder, or a NoNpDrm dump's folder (the Prequel Trilogy's with its"
                "\n            addcont/ beside its app/: decrypted here on the next start)\n\nAlso looked in:";
         for (size_t k = 1; k < searched.size(); ++k) msg += "\n" + searched[k];

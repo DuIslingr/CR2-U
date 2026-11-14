@@ -41,6 +41,7 @@ A Vita dump is decrypted during setup, keeping only Chaos Rings II's files.
 | macOS 11+ | Right-click `cr2view.app` and choose *Open* (it isn't signed). |
 | Linux | `chmod +x` the AppImage and run it, or use the `.tar.gz`. |
 | Android 7+ | Install the APK. On first start it offers the same setup: pick the APK and OBB (or the `.xapk`, or the `.apks` and OBB), the `.ipa` or a Vita archive. Folders can't be picked on Android; copy them over USB instead (below). |
+| iPhone / iPad (iOS 15+) | The download's `.ipa` is unsigned: sideload it with AltStore, Sideloadly or the like (they sign it with your Apple ID). Put your copy into the app's folder in the Files app (*On My iPhone / iPad > Chaos Rings II*, or Finder's Files tab with the device connected): `ios/` (the `.app`, or the `.ipa` itself - unpacked when the game starts), `android/` or `vita/`. It runs at the display's rate (120 Hz on ProMotion screens) and keeps the menus clear of the camera's notch. Not yet tried on a device. |
 
 ### Putting the files in by hand
 
@@ -250,6 +251,7 @@ is OpenGL only. `ctest --test-dir build` runs the tests (none need the game's fi
 | Windows 10+ x64 | MSVC and Ninja from a Developer prompt, with the [Vulkan SDK](https://vulkan.lunarg.com/); or from Linux with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw): `-DCMAKE_TOOLCHAIN_FILE=engine/cmake/llvm-mingw-x86_64.cmake` | Vulkan, OpenGL 3.3; FSR 3.1, FSR 4, DLSS (MSVC, with the SDK) |
 | macOS 11+ | Xcode command-line tools, Ninja and the [Vulkan SDK](https://vulkan.lunarg.com/) (MoltenVK is copied into the `.app`); `"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"` for a universal build | Vulkan (MoltenVK), OpenGL 3.3; FSR 3.1, MetalFX (macOS 13+) |
 | Android 7+ (arm64, x86-64) | Android SDK and NDK: `git clone -b release-3.4.20 https://github.com/libsdl-org/SDL android/SDL`, then `gradle assembleRelease` in `android/` | OpenGL ES 3.0 |
+| iOS 15+ (iPhone, iPad; arm64) | macOS with Xcode and the [Vulkan SDK](https://vulkan.lunarg.com/) (for glslc), plus a [MoltenVK release](https://github.com/KhronosGroup/MoltenVK/releases)'s `MoltenVK-ios.tar`: `cmake -S engine -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCR_MOLTENVK=<its MoltenVK folder>`, then build `cr2view` (unsigned: `CODE_SIGNING_ALLOWED=NO`) | Vulkan (MoltenVK, linked in), OpenGL ES 3.0; FSR 3.1, MetalFX (iOS 16+) |
 
 - `-DCR2_GLES=ON` builds the desktop version on OpenGL ES 3.0, as Android runs it.
 - **DLSS:** add `-DCR_DLSS_SDK=<NVIDIA's DLSS SDK checkout>` (or put it in

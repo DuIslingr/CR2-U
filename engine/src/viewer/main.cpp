@@ -137,6 +137,11 @@ std::vector<std::string> dataPlaces() {
 #ifdef SDL_PLATFORM_MACOS
     if (const size_t app = base.rfind(".app/"); app != std::string::npos) add(base.substr(0, base.rfind('/', app) + 1));
 #endif
+#ifdef SDL_PLATFORM_IOS
+    // (an iPhone's or iPad's: the app's Documents - Info.plist's UIFileSharingEnabled shows it in the Files app,
+    // "On My iPhone > Chaos Rings II", and in Finder -, not the .app, which can't be written)
+    if (const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS)) add(docs);
+#endif
     add(base);
     if (char* cwd = SDL_GetCurrentDirectory()) add(cwd), SDL_free(cwd);
     if (char* pref = SDL_GetPrefPath("DuIslingr", "CR2-U")) add(pref), SDL_free(pref); // (the profile folder: an .ipa the first start unpacked there)
@@ -861,10 +866,8 @@ int main(int argc, char** argv) {
     if (data.empty()) { // (CR2_DATA, else a copy in a game folder: vita/, android/, ios/ ...)
         searched = dataPlaces();
         for (const std::string& place : searched) unbundle(place + "android");
-#if !defined(SDL_PLATFORM_IOS)
-        for (const std::string& place : searched) // (an .ipa copied into ios/ by hand: its .app unpacked there, as the setup would)
+        for (const std::string& place : searched) // (an .ipa copied into ios/ by hand - an iPhone's too, through the Files app: its .app unpacked there, as the setup would)
             if (cr2::installDroppedIpa(cr2SetupGame(), place, !capture.empty())) break;
-#endif
         for (const std::string& place : searched) { // (a Vita dump copied into vita/ - a phone's way -, its files encrypted: decrypted into place)
             cr2::SetupResult got;
             if (cr2::installDroppedVita(cr2SetupGame(), place, got, !capture.empty())) break;
@@ -903,7 +906,11 @@ int main(int argc, char** argv) {
             for (const char* f : {"ios", "android", "vita"}) SDL_CreateDirectory((searched.front() + f).c_str());
 #endif
         std::string msg = "Could not find your copy of the game.\n\nPut any one of these in the folder here:\n";
+#ifdef SDL_PLATFORM_IOS
+        msg += "the app's folder in the Files app (On My iPhone / iPad > Chaos Rings II), or in Finder with the device connected (Files)"; // (its Documents)
+#else
         msg += searched.empty() ? std::string("(no folder)") : searched.front();
+#endif
         msg += "\n\n  ios/      the iPad's .ipa (unpacked on the next start), or its ChaosRings2enHD.app"
                "\n  android/  the Android release's main.212.com.square_enix.chaosrings2gp.obb and its APK (or its .xapk / .apks)"
                "\n  vita/     the Vita's PCSG00498 folder, or a NoNpDrm dump's folder (the Prequel Trilogy's with its"

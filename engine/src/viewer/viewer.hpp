@@ -151,7 +151,11 @@ struct Viewer {
         int fullscreenKind = 2;   // F11 / Alt+Enter's fullscreen: the last one chosen (1 or 2)
         int resolution = 0;       // kResolutions: 0 the window's own size
         bool vsync = true;
+#ifdef SDL_PLATFORM_IOS
+        int fps = 0;              // (an iPhone's ProMotion: 120 - Info.plist's CADisableMinimumFrameDurationOnPhone)
+#else
         int fps = 60;             // frames drawn a second at most (0: as many as the display takes)
+#endif
         int renderer = 0;         // 0 Vulkan, 1 OpenGL - from the next start
         int upscaler = 0;         // cr2::Upscaler: 0 off, 1 FSR 3.1, 2 DLSS, 3 MetalFX
         int quality = 1;          // kQualities

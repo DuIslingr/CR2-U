@@ -1553,7 +1553,7 @@ fourth update -; step 6 sees it the next and step 1 gives control the one after.
 the map in the press's update, took taps at once and closed it in the tap's; now the map is drawn
 from the update after the press, holds taps for thirty, plays back on the closing tap (`mapClose`,
 `mapTime`) and is gone in the fourth update, control two later. `--play d0104 --input "tab map close
-x6"`: the first three `close`s fall in the lock, the fourth closes it. (+0x68's start was not found.)
+x6"`: the first three `close`s fall in the lock, the fourth closes it. (+0x68's start: round 91.)
 
 ### Round 71: saving from the tab
 
@@ -1906,6 +1906,13 @@ Not compared with footage: no clip of the third awakening was at hand.
 direction (`SetLights`, under a debug switch, `IsEnabled(0xec)`) and the camera, but its `Draw`
 renders only while its +0x100 is set, and nothing sets it - the constructor clears it, nothing
 writes it after. So a battle shows none of them; the port, which has none, is as the original.
+
+### Round 91: the map's own wait
+
+`DungeonMapMenu`'s constructor sets +0x68 to 20 (0x14), and its `Update` takes one off each update;
+`TouchGestureTap` answers only once it is 0, the twentieth update after the map is made. The lock
+round 70 follows (+0x1c 30, counted down by `InterfaceMain`) frees taps later, from the thirty-first
+update after the press, so +0x68 never decides. Nothing changes.
 
 ## Original-code evidence
 

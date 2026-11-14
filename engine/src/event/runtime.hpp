@@ -223,7 +223,9 @@ private:
     size_t stop_ = 0;     // the page's next stop (TextStop)
     float stopTime_ = 0;  // (at a \w stop: its time so far)
     const TextStop* held() const; // the stop the typing waits at, else null
-    void showWhole();             // the page typed whole, its stops passed
+    void showWhole();
+    static int linesOf(int window);
+    bool pageNoSkip() const;             // the page typed whole, its stops passed
     bool ending() const;          // a \* message's last page typed: it ends
     float pageTime_ = 0;
     ParsedMessage parsed_;

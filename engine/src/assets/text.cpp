@@ -46,7 +46,7 @@ std::string TextData::message(int n, int language) const {
 
 int TextData::voice(int n) const { return n >= 1 && size_t(n) <= voices_.size() ? voices_[size_t(n - 1)] : -1; }
 
-ParsedMessage parseMessage(const std::string& t) {
+ParsedMessage parseMessage(const std::string& t, int maxLines) {
     ParsedMessage out;
     TextPage page;
     TextLine line;
@@ -69,7 +69,8 @@ ParsedMessage parseMessage(const std::string& t) {
             const char c = t[i + 1];
             i += 2;
             if (c == 'n') {
-                page.lines.push_back(line), line = TextLine();
+                if (maxLines > 0 && int(page.lines.size()) + 1 >= maxLines) endPage(); // (the window full: the page's end)
+                else page.lines.push_back(line), line = TextLine();
             } else if (c == 'f') {
                 endPage();
             } else if (c == 'c') {
@@ -91,7 +92,7 @@ ParsedMessage parseMessage(const std::string& t) {
             } else if (c == '@') {
                 page.stops.push_back({typed(), 0});
             } else if (c == 'm') {
-                out.noSkip = true;
+                out.noSkip = page.noSkip = true;
             } else if (c == '*') {
                 out.ends = true;
                 break;

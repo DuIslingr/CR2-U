@@ -2268,6 +2268,33 @@ alpha, the vista camera and lights. Open: a `ChangeAnimator` inside a running bl
 leaves the blend's state and drops to the base pose when it ends); a model's turn while it follows a
 `SetMove` timeline (linear in the original, compounding in the port).
 
+### Round 111: text and numbers
+
+Checked against the message window (`EvtWindowMessage::ReadPage`, `EvtWindow::UpdatePage`),
+`BtlAnnounce::SetAnnounce` and the dot-number menus; fixed:
+- The Oz window draws its digits with set 90 (`OzViewWindowMenu`: `DotNumId2::Initialize(7, 0x5a)`,
+  asm 0x2cf0e8 - the camp's 0x52 and the shop's 0x53 both); the port used set 110.
+- The camp clock pads with zeros (`PlayTimeWindowMenu`: `SetZeroNumber`, set 90 - asm 0x2d4178,
+  0x2d41bc): "09:05", not " 9: 5".
+- The quantity window (`CampChooseQuantityMenu`, the camp's and the shop's) pads with zeros in set 70
+  (asm 0x309824): the camp had set 90, neither padded.
+- A battle announcement's "%%" is a '%', and any other '%' with the character after it is left out
+  (`SetAnnounce`) - announcebattle 0x30, "... 100%%!", showed both.
+- A message page ends where the window is full (`ReadPage`: a \n reaching the window's lines,
+  `GetLinePerPage` - 3 for the cut-in, announcements, tutorial and system windows, 2 the vista's, 1
+  the item's, 10 the narration's), as \f does. The port drew the first lines and typed the rest out
+  of sight (T01_02_0301a #1 in the cut-in window: five lines).
+- \m holds only its own page from the fast-forward (`ReadPage`: +0x2161, cleared for each page);
+  the port held the whole message (d11_08_0101 #1's second page).
+- The fast-forward passes the typing and the tap marks but not a \w wait, which counts its frames
+  once its part is shown (`UpdatePage`); the port's skip passed it too (t01_pub_0002 #17, t01_08_0101
+  #43, t01_01_0204 #1).
+
+Checked and not changed: the play time's cap is 0x6ddcec updates, 7199980 (99:59:59), as round 107
+made it. Read and matching: the control codes, the colour table, the speaker tags, the vista's and
+the narration's lines, the help, name and announcement lookups, the language button, the calendar,
+the level and HP / MP digits, the list prices.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

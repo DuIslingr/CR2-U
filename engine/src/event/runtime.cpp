@@ -244,7 +244,7 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
         message_ = c.integer(1);
         const auto own = windowText_.find(messageWindow_);
         const TextData& td = own != windowText_.end() ? own->second : text_;
-        parsed_ = parseMessage(td.message(message_, language));
+        parsed_ = parseMessage(td.message(message_, language), linesOf(messageWindow_));
         page_ = 0, pageTime_ = 0, revealed_ = 0, stop_ = 0, stopTime_ = 0, ended_ = false;
         // (its voice - the text's trailer: EvtWindow::ShowMessage's PlayVoice, the last one stopped -
         // unless IsSkip, the window's fast-forward or the skip button held: then none)
@@ -260,7 +260,7 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
     // SetMessageText(window, text): the text itself as the message (EvtWindow::SetMessage(char*))
     vm.setNative("EvtWindow", "SetMessageText", [this](NativeCall& c) {
         messageWindow_ = c.integer(0, Vista), message_ = 0x7fff;
-        parsed_ = parseMessage(c.string(1));
+        parsed_ = parseMessage(c.string(1), linesOf(messageWindow_));
         page_ = 0, pageTime_ = 0, revealed_ = 0, stop_ = 0, stopTime_ = 0, ended_ = false;
         pageStarted();
         if (parsed_.pages.empty()) message_ = 0;
@@ -283,7 +283,7 @@ void EventRuntime::bindNatives(ScriptVM& vm) {
         std::string t = (own != windowText_.end() ? own->second : announce).message(0x75, language);
         if (const size_t p = t.find("%s"); p != std::string::npos) t.replace(p, 2, itemNames_.message(id, language));
         messageWindow_ = w, message_ = 0x75, itemShown_ = id;
-        parsed_ = parseMessage(t);
+        parsed_ = parseMessage(t, linesOf(w));
         page_ = 0, pageTime_ = 0, revealed_ = 0, stop_ = 0, stopTime_ = 0, ended_ = false;
         pageStarted();
         if (parsed_.pages.empty()) message_ = 0;
@@ -434,9 +434,17 @@ bool EventRuntime::update(ScriptVM* vm) {
     const bool up = messageWindowUp();
     if (message_ > 0 && !up) {
         if (revealed_ == 0 && !typed()) ++revealed_;
-    } else if (!parsed_.noSkip && ((fastForward && fastForwardShown()) || (skipHeld() && message_ > 0))) { // (a button held: the page whole, then the next at once - EvtWindow::IsSkip)
-        if (!typed()) showWhole();
-        else advance(false);
+    } else if (!pageNoSkip() && ((fastForward && fastForwardShown()) || (skipHeld() && message_ > 0))) { // (a button held: the page whole, then the next at once - EvtWindow::IsSkip)
+        // (EvtWindow::UpdatePage: the skip passes the typing and the tap marks, not a \w's wait -
+        // that counts its frames once its block is shown, whatever IsSkip says)
+        static const TextPage kNone;
+        const TextPage& pg = message_ > 0 && page_ < int(parsed_.pages.size()) ? parsed_.pages[size_t(page_)] : kNone;
+        while (stop_ < pg.stops.size() && pg.stops[stop_].wait == 0) ++stop_;
+        if (typed()) advance(false);
+        else if (stop_ < pg.stops.size()) {
+            revealed_ = std::max(revealed_, pg.stops[stop_].at);
+            if ((stopTime_ += kTick) * 20 >= float(pg.stops[stop_].wait)) ++stop_, stopTime_ = 0, blockTime_ = 0;
+        } else showWhole();
     } else if (message_ > 0 && !typed()) { // (a character an update; the page's time counts once it's typed)
         if (const TextStop* s = held(); !s) {
             ++revealed_;
@@ -543,6 +551,20 @@ bool EventRuntime::typed() const {
     for (const TextLine& l : p.lines)
         for (unsigned char c : l.text) n += (c & 0xc0) != 0x80; // (code points)
     return revealed_ >= n && stop_ >= p.stops.size();
+}
+
+// (EvtWindow::GetLinePerPage: the cut-in, announcements, tutorial and system windows 3, the vista's 2,
+// the item's 1, the narration's 10)
+int EventRuntime::linesOf(int window) {
+    switch (window) {
+    case Vista: return 2;
+    case Narration: return 10;
+    case 7: return 1;
+    default: return window >= CutIn && window <= System ? 3 : 0;
+    }
+}
+bool EventRuntime::pageNoSkip() const {
+    return message_ > 0 && page_ < int(parsed_.pages.size()) && parsed_.pages[size_t(page_)].noSkip;
 }
 
 void EventRuntime::showWhole() {

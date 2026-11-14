@@ -2126,7 +2126,7 @@ void Viewer::drawCamp(const Mat4& view, const Mat4& proj, int w, int h) {
     poseUi(oz, "ozwin_io", campPartTime(0.2f));
     drawFigure(oz.fig, view.data());
     if (uiJoint(oz, "call_status_fr13", x, y)) drawStatusSign(13, x, y, proj);
-    if (uiJoint(oz, "call_dotNum_id01", x, y)) drawDigits(std::clamp(game.oz, 0, 9999999), 110, 7, x, y, proj); // (id01 the ones, id07 the millions)
+    if (uiJoint(oz, "call_dotNum_id01", x, y)) drawDigits(std::clamp(game.oz, 0, 9999999), 90, 7, x, y, proj); // (id01 the ones, id07 the millions; OzViewWindowMenu: set 90, asm 0x2cf0e8)
     UiFig& tw = uiFig("timewin_io");
     tw.fig.place = cr2::Mat34();
     poseUi(tw, "timewin_io", campPartTime(0.2f));
@@ -2140,9 +2140,9 @@ void Viewer::drawCamp(const Mat4& view, const Mat4& proj, int w, int h) {
 #else
         localtime_r(&now, &lt);
 #endif
-        if (uiJoint(tw, "call_dotNum_id04", x, y)) drawDigits(lt.tm_hour, 90, 2, x, y, proj);
+        if (uiJoint(tw, "call_dotNum_id04", x, y)) drawDigits(lt.tm_hour, 90, 2, x, y, proj, 1, 1, true); // (PlayTimeWindowMenu: SetZeroNumber, asm 0x2d4178)
         if (uiJoint(tw, "call_dotNum_id03", x, y)) drawDigits(0, 163, 1, x, y, proj);
-        if (uiJoint(tw, "call_dotNum_id01", x, y)) drawDigits(lt.tm_min, 90, 2, x, y, proj);
+        if (uiJoint(tw, "call_dotNum_id01", x, y)) drawDigits(lt.tm_min, 90, 2, x, y, proj, 1, 1, true);
     }
     UiFig& bk = uiFig("btlback");
     bk.fig.place = cr2::Mat34();
@@ -2331,7 +2331,7 @@ void Viewer::drawItemUse(const Mat4& view, const Mat4& proj, int w, int h) {
         poseUi(num, "shopnum_io", t);
         drawFigure(num.fig, view.data());
         float x, y, sx, sy, ex, ey;
-        if (uiJoint(num, "call_dotNum_id01", x, y)) drawDigits(campCount, 90, 2, x, y, proj);
+        if (uiJoint(num, "call_dotNum_id01", x, y)) drawDigits(campCount, 70, 2, x, y, proj, 1, 1, true); // (CampChooseQuantityMenu: SetZeroNumber, set 70 - asm 0x309824)
         for (int k = 1; k <= 2; ++k) {
             char sa[16], ea[16];
             std::snprintf(sa, sizeof sa, "tapAreaS%02d", k), std::snprintf(ea, sizeof ea, "tapAreaE%02d", k);
@@ -4543,7 +4543,7 @@ void Viewer::drawShop(const Mat4& view, const Mat4& proj, int w, int h) {
         poseUi(oz, "ozwinblk_io", ozT);
         drawFigure(oz.fig, view.data());
         if (uiJoint(oz, "call_status_fr04", x, y)) drawStatusSign(4, x, y, proj);
-        if (uiJoint(oz, "call_dotNum_id01", x, y)) drawDigits(std::clamp(game.oz, 0, 9999999), 110, 7, x, y, proj); // (id01 the ones, id07 the millions)
+        if (uiJoint(oz, "call_dotNum_id01", x, y)) drawDigits(std::clamp(game.oz, 0, 9999999), 90, 7, x, y, proj); // (id01 the ones, id07 the millions; OzViewWindowMenu: set 90)
     }
     auto back = [&] {
         UiFig& bk = uiFig("btlback");
@@ -4617,7 +4617,7 @@ void Viewer::drawShop(const Mat4& view, const Mat4& proj, int w, int h) {
         poseUi(num, "shopnum_io", t);
         drawFigure(num.fig, view.data());
         float x, y, sx, sy, ex, ey;
-        if (uiJoint(num, "call_dotNum_id01", x, y)) drawDigits(shop.count, 70, 2, x, y, proj); // (DotNumId2 set 0x46, the zeros shown)
+        if (uiJoint(num, "call_dotNum_id01", x, y)) drawDigits(shop.count, 70, 2, x, y, proj, 1, 1, true); // (DotNumId2 set 0x46, the zeros shown: SetZeroNumber)
         for (int k = 1; k <= 2; ++k) {
             char sa[16], ea[16];
             std::snprintf(sa, sizeof sa, "tapAreaS%02d", k), std::snprintf(ea, sizeof ea, "tapAreaE%02d", k);

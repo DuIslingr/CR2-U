@@ -1451,16 +1451,21 @@ std::string Viewer::messageText(const std::string& file, int id) {
     return s;
 }
 // BtlAnnounce::SetAnnounce's %s / %d, in turn
+// (BtlAnnounce::SetAnnounce: %s and %d the next argument, %% a '%', any other % and the character
+// after it left out)
 std::string Viewer::formatAnnounce(std::string t, const std::vector<std::string>& args) {
     size_t a = 0;
-    for (size_t p = 0; (p = t.find('%', p)) != std::string::npos;) {
-        if (p + 1 < t.size() && (t[p + 1] == 's' || t[p + 1] == 'd')) {
-            const std::string v = a < args.size() ? args[a++] : "";
-            t.replace(p, 2, v);
-            p += v.size();
-        } else ++p;
+    std::string out;
+    for (size_t p = 0; p < t.size(); ++p) {
+        if (t[p] != '%') {
+            out += t[p];
+            continue;
+        }
+        if (++p >= t.size()) break;
+        if (t[p] == 's' || t[p] == 'd') out += a < args.size() ? args[a++] : "";
+        else if (t[p] == '%') out += '%';
     }
-    return t;
+    return out;
 }
 // ProcessLvup1 / 2, ProcessResult: the result's messages - and the party's state after it: the
 // levels and EXP, the sopia's SP and levels, the Oz, the items and sopia left

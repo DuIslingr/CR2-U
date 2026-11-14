@@ -49,6 +49,7 @@ struct TextStop {
 struct TextPage {
     std::vector<TextLine> lines;
     std::vector<TextStop> stops;
+    bool noSkip = false; // \m on this page (EvtWindowPage +0x2161, cleared for each page by Clear)
 };
 struct ParsedMessage {
     std::vector<TextPage> pages;
@@ -59,7 +60,9 @@ struct ParsedMessage {
 };
 
 // a message's pages (\f ends one, \n a line, \* the message), their stops, its speaker
-ParsedMessage parseMessage(const std::string& text);
+// `maxLines`: the window's lines (EvtWindow::GetLinePerPage - 0 none): a \n that would start a line
+// past them ends the page there (EvtWindowMessage::ReadPage, +0x2128), as \f does
+ParsedMessage parseMessage(const std::string& text, int maxLines = 0);
 
 // a colour number's RGB
 void textColour(int colour, float rgb[3]);

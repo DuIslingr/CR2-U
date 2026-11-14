@@ -1437,6 +1437,20 @@ drawn (its prompt gone with its window) and the list is made again at its end. F
 (the MP line), 9.6 s (the faces sliding out, nothing else) and 10.4 / 11.2 s (the list again):
 `--play d0104 --item 4:3 --input "tab camp items down down enter enter enter"`.
 
+### Round 61: the quantity's question
+
+`CharaSelectButtonMenu::TouchGestureTap` on the chosen face again: SE 0xb4; an item with its +0x2d
+clear is used at once (state 10), else `SetItemUseParameter`, `OutFaceButton` (the faces played
+back), `InterfaceMain` +0x1c 300 and state 3, which makes the question - `SetChooseQuantityParameter`
+(0x31), the yes / no and the system window - once the faces are out (0.2 s: the fourth update). Its
+No (state 4, 2): the windows ended, state 5 waits for the choice's window to be gone, then
+`InFaceButton` and state 0 - the faces in again, the lock cleared at their opening's end. The port
+showed the question, and on No the faces, in the tap's update; now the faces play out and the
+question comes in the fourth update (`campUseCloseTarget` 2), and No closes it and brings the faces
+back in the fourth (1). Left: the Yes - the item used at once, the choice's window closed, then
+`InCampHelpText` (`camphelp_io` 0.2 s, state 7) before the stat lines (state 8) - which the port
+still shows at once.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

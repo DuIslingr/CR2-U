@@ -1406,9 +1406,11 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                 if (!script->running()) script->tick();
                 // (the camp closing: InterfaceMain's +0xbc in the fourth update after the release's;
                 // FldMain's step 5 -> 1 the next, step 1's control the one after)
-                if (campOpen && campUseCloseAt >= 0 && ++campUseCloseTicks >= 4) { // (the item list again)
-                    campUseCloseAt = -1, campUse = 0, campItem = 0;
-                    campStart = campListOpenedAt = uiClock - cr2::EventRuntime::kTick;
+                if (campOpen && campUseCloseAt >= 0 && ++campUseCloseTicks >= 4) {
+                    campUseCloseAt = -1;
+                    if (campUseCloseTarget == 2) campUse = 2, campCount = 1, campUseStart = uiClock - cr2::EventRuntime::kTick; // (the quantity's question)
+                    else if (campUseCloseTarget == 1) campUse = 1, campUseStart = uiClock - cr2::EventRuntime::kTick;         // (the faces in again)
+                    else campUse = 0, campItem = 0, campStart = campListOpenedAt = uiClock - cr2::EventRuntime::kTick;       // (the item list again)
                 }
                 if (campOpen && campExitTicks >= 0 && ++campExitTicks >= 5) { // (+0xbc = 2)
                     closeCamp(), emergencyExit = true;
@@ -2050,8 +2052,8 @@ void Viewer::useItemOn(int ch, int item, int n) { // (Cr3UtilParameterUpByItem, 
     SDL_Log("camp: %s x%d on %d: MP %d -> %d", it->name[1].c_str(), n, ch + 1, mp0, mp);
     showRaised(ch, *it, n);
 }
-void Viewer::campUseBack() {
-    if (campUseCloseAt < 0) campUseCloseAt = uiClock, campUseCloseFrom = uiClock - campUseStart, campUseCloseTicks = 0;
+void Viewer::campUseBack(int target) {
+    if (campUseCloseAt < 0) campUseCloseAt = uiClock, campUseCloseFrom = uiClock - campUseStart, campUseCloseTicks = 0, campUseCloseTarget = target;
 }
 void Viewer::campUseTap(int id) {
     if (campUseCloseAt >= 0) return;
@@ -2063,7 +2065,7 @@ void Viewer::campUseTap(int id) {
         if (k < 0 || k >= int(chars.size())) return;
         if (k != campFace) { campFace = k, audio.playSe(0xb3, false); return; }
         audio.playSe(0xb4, false);
-        if (it && it->usedUp) campUse = 2, campCount = 1, campUseStart = uiClock;
+        if (it && it->usedUp) campUseBack(2); // (OutFaceButton, +0x1c 300, state 3: the question once the faces are out)
         else useItemOn(chars[size_t(k)], campItem, 1);
     } else if (campUse == 2) {
         const int most = std::max(int(game.itemCount[campItem]), 1);
@@ -2072,7 +2074,7 @@ void Viewer::campUseTap(int id) {
         else if (id == 7201) { // (yes: used, its effect)
             if (campFace < int(chars.size())) useItemOn(chars[size_t(campFace)], campItem, campCount);
             else campUse = 0, campItem = 0;
-        } else if (id == 7202) campUse = 1, audio.playSe(0xb5, false);
+        } else if (id == 7202) audio.playSe(0xb5, false), campUseBack(1); // (state 5: the question gone, InFaceButton, state 0)
     } else if (campUse == 4) {
         if (id == 7300) campUpShown++, campUpAt = uiClock, campUseUpdate(); // (a tap: the next at once - +0xe4)
     } else if (campUse == 3) {

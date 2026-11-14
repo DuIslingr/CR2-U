@@ -1963,6 +1963,9 @@ struct Viewer {
     // after each is made (its in, +0x1c))
     float shopSwitchAt = -1, shopSwitchFrom = 0;
     int shopSwitchTicks = 0, shopSwitchLen = 0, shopSwitchTo = 0, shopInTicks = 5;
+    float shopOzAt = 0; // (OzViewWindowMenu: made with the first menu and at a kind's (or the kinds' Back's) tap -
+                        // SetOzWindowParameter at 0x3a's close -, ended at Buy / Sell and the list's Back)
+    bool shopBatteryShown() const;
     void shopSwitch(int to, int ticks);
     // (ShopFirstMenu's Back / Talk: its close, the cut-in told 1 / 3 - its cutInSgl_io played back (0.2 s),
     // state 0x17 - and the shop over once the cut-in is gone, the fourth update; FldShop's 4 / 3 the next)

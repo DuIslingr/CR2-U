@@ -4134,7 +4134,12 @@ void Viewer::drawPub(const Mat4& view, int w, int h) {
 void Viewer::openShop() {
     shop = Shop();
     shopCloseAt = shopSwitchAt = -1, shopInTicks = 0;
-    shop.stage = 1, shop.at = shop.opened = uiClock;
+    shop.stage = 1, shop.at = shop.opened = shopOzAt = uiClock;
+    { // (ShopCutInPiupiuMenu: +0x2c the leader, cr3_common_data[3])
+        const std::vector<int> chars = shopChars();
+        const auto at = std::find(chars.begin(), chars.end(), game.party[0]);
+        shop.who = at == chars.end() ? 0 : int(at - chars.begin());
+    }
     SDL_Log("shop: open");
 }
 int Viewer::shopRank() const {
@@ -4189,6 +4194,11 @@ void Viewer::shopClose(const char* call) {
     if (call) queueEvent(call); // (FldMain: CallEvent - EventExecute the update after)
     else pendingBranch = true;   // (back to the field)
 }
+bool Viewer::shopBatteryShown() const { // (BatteryWindowMenu: ended with the Oz window at Buy / Sell and the list's Back, made again with it)
+    if (!shop.stage) return false;
+    if (shop.stage == 2) return shopSwitchAt >= 0;
+    return !(shopSwitchAt >= 0 && shopSwitchTo == 2);
+}
 void Viewer::shopSwitch(int to, int ticks) {
     shopSwitchAt = uiClock, shopSwitchFrom = uiClock - shop.at, shopSwitchTicks = 0;
     shopSwitchLen = ticks, shopSwitchTo = to;
@@ -4205,8 +4215,13 @@ void Viewer::shopTap(int id) {
     } else if (shop.stage == 2) {
         static const std::pair<int, int> kKinds[4] = {{16, 0}, {21, 1}, {22, 2}, {23, 3}};
         for (const auto& [b, k] : kKinds)
-            if (id == b) audio.playSe(0xb4, false), shop.kind = k, shop.who = 0, shopSwitch(3, 6);
-        if (id == 100) audio.playSe(0xb5, false), shopSwitch(1, 6); // (param 8, state 3: the first menu again)
+            if (id == b) audio.playSe(0xb4, false), shop.kind = k, shopSwitch(3, 6), shopOzAt = uiClock; // (the list for the eye buttons' character)
+        if (id >= 7300 && id < 7310) { // (CampEyeButtonMenu::TouchGestureTap: the cursor to it, SE 0xb7 if it moved)
+            const std::vector<int> chars = shopChars();
+            const auto at = std::find(chars.begin(), chars.end(), id - 7300);
+            if (at != chars.end() && int(at - chars.begin()) != shop.who) audio.playSe(0xb7, false), shop.who = int(at - chars.begin());
+        }
+        if (id == 100) audio.playSe(0xb5, false), shopSwitch(1, 6), shopOzAt = uiClock; // (param 8, state 3: the first menu again)
     } else if (shop.stage == 3 && (id == 6511 || id == 6512) && shop.kind > 0) { // (the arrows: CharaChange -1 / +1, SE 0xb7)
         const int c = int(shopChars().size());
         shop.who = (shop.who + (id == 6512 ? 1 : c - 1)) % std::max(c, 1), shop.focus = 0;
@@ -4371,11 +4386,45 @@ void Viewer::drawShop(const Mat4& view, const Mat4& proj, int w, int h) {
         if (face) vm.texture = face;
     }
     if (shop.stage <= 2) drawFigure(cut.fig, view.data());
-    { // (OzViewWindowMenu 0x53 - SetOzWindowParameter(true), the shop's: ozWinBlk_io, hud_shpOzWin, its sign 4)
+    float ozT = -1; // (the Oz window: with the first menu and the lists, not with the kinds)
+    if (shop.stage == 2) ozT = shopSwitchAt >= 0 ? uiClock - shopOzAt : -1;
+    else if (shopCloseAt >= 0) ozT = t;
+    else if (shopSwitchAt >= 0 && shopSwitchTo == 2) ozT = std::max(std::min(shopSwitchAt - shopOzAt, 0.2f) - (uiClock - shopSwitchAt), 0.0f);
+    else ozT = uiClock - shopOzAt;
+    if (shop.stage == 2) { // (0x15 makes 0x3a with the kinds - CampEyeButtonMenu: the characters' buttons, the
+        // cursor on the one the equipment lists are for (the cut-in's +0x2c, the leader to begin with) - closed at a kind's tap)
+        const std::vector<int> chars = shopChars();
+        UiFig& pos = uiFig("eyebtnpos");
+        pos.fig.place = cr2::Mat34();
+        poseUi(pos, "eyebtnpos", t);
+        for (size_t k = 0; k < chars.size(); ++k) {
+            const int c = chars[k];
+            float x, y;
+            if (!uiJoint(pos, "call_eyeBtn_id" + std::string(c + 1 < 10 ? "0" : "") + std::to_string(c + 1), x, y)) continue;
+            UiFig& b = uiFig("eyebtn_id");
+            b.fig.place = cr2::Mat34();
+            b.fig.place.m[3] = x, b.fig.place.m[7] = y;
+            poseUi(b, "eyebtn_id", float(c + 1) / 20.0f);
+            drawFigure(b.fig, view.data());
+            float sx, sy, ex, ey;
+            if (uiJoint(b, "tapAreaS01", sx, sy) && uiJoint(b, "tapAreaE01", ex, ey)) tapRects.push_back({7300 + c, sx, sy, ex, ey});
+            if (int(k) == shop.who)
+                for (const char* f : {"eyeslct", "eyecsr_loop"}) {
+                    float px, py;
+                    if (!uiJoint(b, std::string("call_") + (f[3] == 's' ? "eyeSlct" : "eyeCsr_loop"), px, py)) continue;
+                    UiFig& sl = uiFig(f);
+                    sl.fig.place = cr2::Mat34();
+                    sl.fig.place.m[3] = px, sl.fig.place.m[7] = py;
+                    poseUi(sl, f, t, true);
+                    drawFigure(sl.fig, view.data());
+                }
+        }
+    }
+    if (ozT >= 0) { // (OzViewWindowMenu 0x53 - SetOzWindowParameter(true), the shop's: ozWinBlk_io, hud_shpOzWin, its sign 4)
         float x, y;
         UiFig& oz = uiFig("ozwinblk_io");
         oz.fig.place = cr2::Mat34();
-        poseUi(oz, "ozwinblk_io", t);
+        poseUi(oz, "ozwinblk_io", ozT);
         drawFigure(oz.fig, view.data());
         if (uiJoint(oz, "call_status_fr04", x, y)) drawStatusSign(4, x, y, proj);
         if (uiJoint(oz, "call_dotNum_id01", x, y)) drawDigits(std::clamp(game.oz, 0, 9999999), 110, 7, x, y, proj); // (id01 the ones, id07 the millions)
@@ -4693,7 +4742,7 @@ void Viewer::drawFieldUi(int w, int h) {
     // the battery (BatteryWindowMenu: with the camp, the shop, the pub - Set*Parameter's
     // SetBatteryWindowParameter -, and in the field once its level is under 20%, looked at
     // every 10 s - InterfaceMain::Update)
-    if (campOpen || shop.stage || pub.stage) drawBattery(view);
+    if (campOpen || shopBatteryShown() || pub.stage) drawBattery(view);
     else if (tabShown && batteryLow) drawBattery(view);
 }
 void Viewer::updateBattery() {

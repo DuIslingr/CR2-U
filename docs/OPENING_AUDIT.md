@@ -1716,6 +1716,24 @@ makes the next in the fifth / sixth / fourth update, taps from the fifth after i
 pick yes back back back"`: the kinds, the items, the question, one Chocolate bought (4900 Oz), the
 list again, the kinds, the first menu, out.
 
+### Round 78: the shop's windows by its menus
+
+`InterfaceMain`'s 0x15 (the kinds) makes `ShopSecondMenu` 0x49 and 0x3a - `CampEyeButtonMenu`, the
+characters' eye buttons (`eyeBtnPos`, `eyeBtn_id`), its cursor put on the cut-in's +0x2c (param 3):
+the leader (`cr3_common_data[3]`, the cut-in's constructor) to begin with. A button's tap
+(`TouchGestureTap`) moves the cursor to it, SE 0xb7 if it moved. At a kind's or the kinds' Back's tap
+(the cut-in's params 10 / 0xf / 0x15 / 0x17 / 8, `LAB_002f1bf8`) the cut-in reads the cursor's
+character into +0x2c (param 2: the equipment lists' character, `Cr3UtilChangeEquipItem`'s), closes
+0x3a and makes the battery and Oz windows again (`SetBatteryWindowParameter`,
+`SetOzWindowParameter(true)`); Buy / Sell (params 4 / 5) and the list's Back (0xb) end them
+(`EndBatteryWindow`, `EndOzWindow`). So the kinds show the characters' buttons, not the Oz. The
+port showed the Oz window and the battery throughout, had no character buttons, and began each
+equipment list on the first character. Now the Oz window closes (`ozWinBlk_io` back, 0.2 s) at Buy /
+Sell and the list's Back and comes in at the kinds' taps (`shopOzAt`), the battery with it; the
+kinds draw the eye buttons (taps 7300 + the character, SE 0xb7), the cursor on the leader at the
+open and kept across the kinds, and the list is that character's. `--call ReserveShop --input buy`
+captured: the two buttons above, Darwin's selected, no Oz window.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

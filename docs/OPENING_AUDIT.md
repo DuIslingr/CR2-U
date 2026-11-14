@@ -1294,6 +1294,23 @@ and `StopBgm(20)` at E+1, step 2 E+2 .. E+21, step 3 `Term` at E+22, step 4 empt
 The port's `kBattleOutSeconds` is now 25 updates (24 before). Settled from the code; the escape run
 (`--battle 57 --fight pair --seed 1 --input "escape yes"`) takes its way out as before, a tick later.
 
+### Round 52: the original's seconds are sums of a fixed 0.05f
+
+`TestApp::onUpdate` passes `GameMain::Update` the constant 0.05f (0x3d4ccccd, round 50), and the
+waits add it up as floats: twenty make 1.0000001, but forty make 1.9999998 and sixty 2.9999995. So
+of the waits compared against a sum, 0.1 .. 1.1 s and 5.0 s pass on their exact update, while
+1.5, 1.6, 2.0, 2.1, 2.5, 3.0 and 4.0 s pass one update later (31, 33, 41, 43, 51, 61, 81). The
+reference video agrees for the 2.0 s of `ActionSopiaWaitLaunch` / `ActionItemWaitLaunch` (+0x24
+summed from 0 in the step's first update): the caster's (or the item user's) camera to the
+target's measures 2.02 s (Banish), 2.08 s (Healing), 2.10 s (Attach (Blaze)) and 2.03 s (Chocolate)
+- about 41 updates. The port now waits 41 updates there (`kWait2s`: the sopia's launch, the item's
+target camera, its hit two updates after) and 61 for the item's end against the time since
+`ActionCommonCommandStart` (`kWait3s`). Cocytus (battle 57): the target's camera 2.05 s after the
+caster's (was 2.00); Chocolate: 2.05 s after its banner. Not yet gone through: the other waits the
+port keeps in round seconds - `BtlTurnEnd`'s 1.5 s, the escape's 2.0 s (`StepEscapeSuccessLoop`,
++0x20), the revival's 3.0 s banner, the opening's and the field's - each needs its own sum's start
+and comparison read.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

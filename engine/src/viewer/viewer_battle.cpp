@@ -1997,7 +1997,7 @@ void Viewer::beginShowAction(const ShowAction& a) {
     // camera, 33 ItemWaitHit's 0.1 s and the hit, 34 ItemWaitMotion till its hit effect has
     // played out and the user stands, then on: the hit 2.1 s in, the end with its effects)
     showItem = itemCommand(a.command);
-    if (showItem) showHitAt = 2.1f, showEnd = 1e9f;
+    if (showItem) showHitAt = kWait2s + 2 * cr2::EventRuntime::kTick, showEnd = 1e9f; // (WaitHit's 0.1 s: two updates)
     // (action_table_sopia - 35 ActionSopiaStandby the motion, its launch effect, the voice; 36
     // WaitMagicMotion till bm01 / bg01 plays; 37 WaitLaunch 2.0 s - none for bx01 -; 38 Launch
     // the hit's effect; 39 WaitHit the effect's +0x40 frames, then the numbers; 40 WaitEffect
@@ -2017,7 +2017,7 @@ void Viewer::beginShowAction(const ShowAction& a) {
     // Banish 0.30 s, the boss's Healing 0.28 s. A bm01 with no one to strike: the motion asked
     // for, +0x18 left 0 - no wait for it)
     sopiaCast = sopiaWaitsMotion && !(kindLetter == 'm' && sopiaStruck.empty()) ? 6 * cr2::EventRuntime::kTick : 0.0f;
-    sopiaLaunch = sopiaCast + (kindLetter == 'x' ? 0.0f : 2.0f);
+    sopiaLaunch = sopiaCast + (kindLetter == 'x' ? 0.0f : kWait2s);
     // (no one struck: Launch on to 42 at once - ActionSopiaWaitVoice, while the command's voice
     // plays, 5 s at most)
     // A monster's bg01 (motion type 2) goes the same way with someone to strike: PreCommandAction,
@@ -2127,12 +2127,13 @@ void Viewer::beginShowAction(const ShowAction& a) {
         // (ActionItemStandby: the user's - GetUseItem(GetPlayerCamNo): 2 alone, 3 a pair, else
         // which; then ActionItemWaitLaunch's SetTargetCamera(false) on the one it is used on: a
         // party member's GetItemSopiaTarget by the same numbering, Cam_Unit_PCrevival_00 at
-        // its place for a revival. The reference video, 2dy_mefNhEI 616.9 s: Marie's
-        // Chocolate - on her at the banner, on the one healed 2.00 s later.)
+        // its place for a revival. The reference video, 2dy_mefNhEI 616.87 s: Marie's
+        // Chocolate - on her at the banner, on the one healed 2.03 s later. The 2.0 s is a sum of
+        // the fixed 0.05f, which reaches 2.0 in the 41st update - round 52)
         const bool alone = fighterUnit[1] < 0;
         setBattleCamera(cr2::cameraUseItem(alone ? 2 : a.partner >= 0 ? 3 : a.actor));
         TimedCamera tc;
-        tc.at = 2.0f;
+        tc.at = kWait2s;
         if (useTargetCamera(a, c, tc.name, tc.place)) timedCameras.push_back(tc);
         SDL_Log("    camera %s", battleCamera.c_str());
     } else if (sopiaTable) {
@@ -2234,7 +2235,7 @@ void Viewer::updateBattleShow() {
     // back, then WaitStep(3, 3.0) - ActionCommonWaitTime against the time since
     // ActionCommonCommandStart)
     // (both wait on the hit's effect alone - +0x48, ShowCommandHitEffect's -, not the launch's)
-    if (showItem && showHitDone && !hitEffectPlaying() && (showIndex >= showActions.size() || fighterReady(showActions[showIndex].actor)) && battleClock - showStart >= 3.0f)
+    if (showItem && showHitDone && !hitEffectPlaying() && (showIndex >= showActions.size() || fighterReady(showActions[showIndex].actor)) && battleClock - showStart >= kWait3s)
         showItem = false, showEnd = battleClock + cr2::EventRuntime::kTick;
     if (sopiaVoiceWait && battleClock - showStart >= sopiaLaunch &&
         !(commandVoiceSlot >= 0 && audio.playing(commandVoiceSlot) && battleClock - showStart - sopiaLaunch < 5.0f))

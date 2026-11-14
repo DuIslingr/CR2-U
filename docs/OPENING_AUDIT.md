@@ -1914,6 +1914,15 @@ writes it after. So a battle shows none of them; the port, which has none, is as
 round 70 follows (+0x1c 30, counted down by `InterfaceMain`) frees taps later, from the thirty-first
 update after the press, so +0x68 never decides. Nothing changes.
 
+### Round 92: two sounds
+
+`ScrollListMenu::TouchSimpleRelease`: a list's Back (its button, or the device's back key) plays SE
+0xb5 itself, before the menu sees the action (4). The port's lists played it in their own Backs,
+except the manual's (round 86), which was silent; it plays 0xb5 now. `OptionMenu::TouchSimpleRelease`,
+a volume bar let go: the effects' sets the SE volume and plays SE 0xc6 - the port did -, the voices'
+sets the voice volume and plays voice 0x8d4 - the port played nothing; now it does (the keyboard's
+Left / Right on that bar too).
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

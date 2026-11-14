@@ -167,10 +167,11 @@ bool Viewer::optionsKey(SDL_Keycode k) {
     return false;
 }
 // a volume set (OptionMenu::TouchSimpleRelease: the effects' bar let go - Cr3OptionData::SetSE -
-// plays SE 0xc6 at it)
+// plays SE 0xc6 at it; the voices' - SetVoice - voice 0x8d4)
 void Viewer::volumeSet(int bar) {
     audio.setVolumes(float(optionVolume[0]) / 100.0f, float(optionVolume[1]) / 100.0f, float(optionVolume[2]) / 100.0f);
     if (bar == 1) audio.playSe(0xc6, false);
+    else if (bar == 2) audio.playVoice(0x8d4);
 }
 // a tap on the options' window, its question or the manual (`x`: across, UI units): false -
 // none of them open
@@ -1252,7 +1253,8 @@ void Viewer::openManual() {
 }
 void Viewer::closeManual() {
     if (manualStage == 1 && (manualCloseAt >= 0 || manualInTicks < 5)) return; // (closing, opening: +0x1c 30)
-    if (manualStage == 1) { // (the list's frame back first)
+    if (manualStage == 1) { // (the list's frame back first; ScrollListMenu's Back: SE 0xb5)
+        audio.playSe(0xb5, false);
         manualCloseAt = uiClock, manualCloseFrom = uiClock - manualStart, manualCloseTicks = 0, manualCloseTo = 2;
         return;
     }

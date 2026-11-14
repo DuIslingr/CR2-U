@@ -2106,6 +2106,22 @@ over the motion's turn time (else the last 0.2 s); a special scene's Dash faces 
 ReturnDirection turns it back. Captured: battle 57, Orlando's Slash at 2.0 / 3.3 s - facing the
 Mantis through the dash. Not compared with footage.
 
+### Round 106: later-game pieces checked
+
+Read against the port, no change:
+- The battle's music (`BtlMainCtrl::StepBattleIn` 5): the encounter's track with no fade at the setup,
+  none with flag 0x7f7 (`SetPlayBgmFlag`, the script's own); the result's 0xf and the game over's 0x12
+  (`BtlResult` / `BtlGameover`) - as the port.
+- The staff roll (`CreditMain::Update`): 0 the interface, 500 the ending's track (`0x51e0e8`) faded
+  in over 20, 1000 waits for the roll, 2000 counts 120 updates, then `FadeOut(0, 60)` and
+  `StopBGM(60)`, 10000 counts to 62 with the fade over, then the field (mode 4: `credit`) - the port's
+  stages 1 .. 3 (its music one update early).
+- The vista's slash (`EvtUtilVistaExecutionStart` / `EndStart`, `VistaMain::Update`'s
+  `EndCheckEnforecementEffectWindow`: 1 done, 2 again) - as the port's `VistaSlash`.
+- The key box's lock (`FldUnlock::Execute`): with one finger down, the second must come within 9
+  updates (`m_nCnt`), else it fails; the port's mouse stands for both fingers (the other mirrored), so
+  the rule has nothing to apply to.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

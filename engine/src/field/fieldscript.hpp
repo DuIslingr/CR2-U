@@ -161,6 +161,20 @@ public:
     const std::map<int, Resident>& residents() const { return residents_; }
     int introDungeon() const { return introDungeon_; }
     int introTick() const { return introTick_; }
+    // (MapTitleMenu: created by the script after InterfaceMain::Update, stepped from the next update by
+    // the fixed 0.05f - Animator::Step sums it, clamping only past the length + 1e-5 - and deleted in
+    // the update IsEndCurrentAnime finds the sum at its length: for 1.95 s, the 40th, the float sum
+    // of 39 steps being 1.9499992)
+    bool introShown() const {
+        if (introDungeon_ <= 0) return false;
+        float t = 0;
+        for (int j = 1; j <= ticks_ - introTick_; ++j) {
+            t += EventRuntime::kTick;
+            if (t > introSeconds + 1e-5f) t = introSeconds;
+            if (t >= introSeconds) return false;
+        }
+        return true;
+    }
     float introSeconds = 0; // (the animator's length: the viewer's, as it loads it)
     // the spot a mystic's tap chose (FldMystic::SetTapSpotName: its game's last)
     std::string mysticTapSpot;

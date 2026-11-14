@@ -1654,6 +1654,7 @@ void Viewer::drawAsk(const std::string& message, float t, const Mat4& view, int 
 // figure on its mapNameDNN animator, played once)
 void Viewer::drawIntro(int w, int h) {
     if (!fieldMode || !script || script->introDungeon() <= 0) return;
+    if (!script->introShown()) return; // (deleted at its end, whether or not the script asks GetVisible)
     static const char* const kFigures[8] = {"mapname", "mapname", "mapnamefre", "mapnameger", "mapnamespa", "mapnamechs", "mapnamecht", "mapnamekor"};
     const std::string figure = kFigures[std::clamp(optionLanguage, 0, 7)];
     char anim[32];

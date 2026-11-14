@@ -56,7 +56,7 @@ void FieldScript::bind() {
         if (n >= 0 && n < 14) introDungeon_ = std::max(n, 1), introTick_ = ticks_, introSeconds = 2;
     });
     vm.setNative("EvtIntroduction", "GetVisible", [this](NativeCall& c) {
-        const bool shown = introDungeon_ > 0 && float(ticks_ - introTick_) * EventRuntime::kTick < introSeconds;
+        const bool shown = introShown();
         if (!shown) introDungeon_ = -1;
         c.result(shown);
     });

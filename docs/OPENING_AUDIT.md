@@ -1264,6 +1264,22 @@ with a shared background, whose painting the port moves 0.4 - as the original. N
 ease's one-pixel hold stays the drawn picture's pixel (the device's in the original, the window's
 in the port): by design. Settled.
 
+### Round 50: the map name's last update
+
+`TestApp::onUpdate` runs `GameMain::Update` at most every 0.05 s of the clock, always with the fixed
+0.05f (`vldr s16` of 0x3d4ccccd at 0x2ac060). `GameMain::Update` runs the mode, then
+`InterfaceMain::Update`, then `Cr3Event::Update` - the script, whose `MapNameDisp` (each map's
+shared library: flag 1007 off, `WaitFrame(15)`, `EvtIntroduction.SetDungeonNum`, then
+`GetVisible` each frame till false) makes the `MapTitleMenu` after the interface's update. Drawn
+at 0 in that update, it is stepped from the next: `PartsBase::Step` -> `Animator::Step` adds dt x
+the rate (1) to its time, clamping to the length only past it + 1e-5, and `IsEndCurrentAnime` is
+the time at the length, on which `InterfaceMain::Update` deletes the menu before the update's
+drawing. For `mapNameD01`'s 1.95 s the float sum of 39 steps is 1.9499992 - short of it -, so the
+40th ends it: shown 40 updates, 0 .. 39. The port showed it while `ticks x 0.05 < 1.95` - 39 - and
+drew it until the script asked `GetVisible`. It now replays the same float sum (`introShown`), for
+`GetVisible` and the drawing both. Not run to a map name headless (`D01_01_05_set` in d0105 with
+flag 1504 waits on its event first); the count rests on the code. Settled.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
@@ -1411,9 +1427,6 @@ animations being linear (assumed, as before).
   video's 4.33); a boss battle's turn and defeat calls (round 43: three updates each). (Round 44: a
   sopia's motion change - six updates, the video's banner times read again. Round 35 read +0x523:
   the Pair turn's flag; round 40 which of a pair runs which table.)
-- **The map name's last update.** The original deletes the menu in the `InterfaceMain::Update`
-  whose step reaches the animation's end; the port shows it while `ticks x 0.05 s` is under its
-  length. Within an update of each other; not counted exactly.
 - **The battle's last update before the next main.** `Exit` waits for `Cr3ResourceManager` to be
   empty; the port counts 24 updates from the end, as if the resources went at once. A slow unload
   would hold the original's white a little longer.

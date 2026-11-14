@@ -93,13 +93,18 @@ void Viewer::readSystem() {
 }
 void Viewer::applySystem() {
     if (!systemRead) readSystem();
-    if (!systemFound) return; // (none yet: the save's own as they were)
-    for (int n = 0; n < kSystemFlags; ++n) game.setFlag(n, false);
-    for (int n : systemFlags) game.setFlag(n, true);
-    if (systemOptions[0] >= 0)
-        optionLanguage = systemOptions[0], optionQuality = systemOptions[1], optionVolume[0] = systemOptions[2],
-        optionVolume[1] = systemOptions[3], optionVolume[2] = systemOptions[4];
+    if (systemFound) { // (none yet: the save's own as they were)
+        for (int n = 0; n < kSystemFlags; ++n) game.setFlag(n, false);
+        for (int n : systemFlags) game.setFlag(n, true);
+        if (systemOptions[0] >= 0)
+            optionLanguage = systemOptions[0], optionQuality = systemOptions[1], optionVolume[0] = systemOptions[2],
+            optionVolume[1] = systemOptions[3], optionVolume[2] = systemOptions[4];
+    }
+    setVersionUpFlags();
 }
+// Cr3UtilSetupVersionUp, run at every boot after the system data loads: system flags 201 and 202
+// (word 6 |= 0x600), the pub's 42 and 50 entries; Cr3UtilInitWork(false) (Reset Data) keeps both
+void Viewer::setVersionUpFlags() { game.setFlag(201, true), game.setFlag(202, true); }
 void Viewer::writeSystem() {
     systemRead = systemFound = true;
     systemFlags.clear();
@@ -984,7 +989,10 @@ void Viewer::startFight(int mode, uint32_t seed) {
     std::string err;
     int party[2] = {0, 0};
     for (size_t k = 0; k < battle.party.size() && k < 2; ++k) party[k] = battle.party[k].id;
-    if (!battleRules->start(battle.coupling, party, game.difficulty, &err, game.sopiaLevel, game.equip, game.level, game.mp, game.seed, game.itemCount)) {
+    int bonus[9][7];
+    for (int c = 0; c < 9; ++c) std::memcpy(bonus[c], game.bonus[c].at(game.level[c]).sums().v, sizeof bonus[c]);
+    if (!battleRules->start(battle.coupling, party, game.difficulty, &err, game.sopiaLevel, game.equip, game.level, game.mp, game.seed, game.itemCount,
+                            bonus)) {
         SDL_Log("fight: %s", err.c_str());
         battleRules.reset();
         return;
@@ -1465,6 +1473,7 @@ void Viewer::finishResult() {
         if (up == 1) result.levelLine[k] = formatAnnounce(announce(0x11), {name}); // (ProcessLvup1 / 2, SE 0xc3)
         else if (up > 1) result.levelLine[k] = formatAnnounce(announce(0x12), {name, std::to_string(up)});
         game.level[r.ch] = n.level, game.exp[r.ch] = n.exp;
+        game.bonus[r.ch] = game.bonus[r.ch].at(n.level); // (Cr3UpdatePlayerData: the levels past the mark counted)
     }
     // CheckSpUp: each sopia the party carries (once), its SP, a level each time it passes its
     // table's next (5 at most) - each level's command (or auto skill) learned

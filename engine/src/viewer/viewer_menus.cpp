@@ -1,6 +1,7 @@
 #include "viewer/viewer.hpp"
 
 #include "assets/release.hpp"
+#include "platform/atomic_file.hpp"
 
 namespace cr2_viewer {
 
@@ -840,7 +841,7 @@ void Viewer::encountSet(const float* p) {
 }
 void Viewer::encountUpdate(const cr2::Vec3& p, bool paused) {
     if (!encount.on || encount.coupling || !game.encountEnable) return;
-    if (game.flag(0x40e) && game.flag(0x40f) && encountersOff) return; // (the field menu's switch off)
+    if (game.flag(0x40e) && game.flag(0x40f) && !game.encountSwitch) return; // (the field menu's switch off)
     const float dx = p[0] - encount.x, dz = p[2] - encount.z;
     encount.x = p[0], encount.z = p[2];
     if (paused) return;
@@ -1397,7 +1398,8 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
     optionsWasOpen = optionsOpen;
     if (credits.stage) return updateCredits(dt);
     if (titleMenu.stage) return updateTitle(dt);
-    if (playMode && (fieldMode || eventMode || battleMode) && !paused) playSeconds += dt; // (the save's play time)
+    if (playMode && (fieldMode || eventMode || battleMode) && !paused) // (the save's play time: Cr3UtilCalcPlayTime's
+        playSeconds = std::min(playSeconds + dt, 359999.0); // 0x6ddcec updates at most, 99:59:59)
     if (battleMode) {
         const float realDt = dt;
         dt *= float(optionsOpen || settingsOpen ? 1 : settings.battleSpeed); // (Battle Speed)
@@ -1484,6 +1486,8 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                     ++saveTicks;
                     if (saveStage == 2 && saveTicks >= 4) { // (the choice gone: "Saved", the save)
                         saveFailed = !writeSave();
+                        if (!saveFailed && saveExists("cont.txt") && !crstorage::replaceFile(savePath("cont.txt"), "")) // (Cr3Util_Delete_ContData)
+                            SDL_Log("could not clear continue data");
                         saveStage = 3, saveTicks = 0, saveCloseAt = -1;
                     } else if (saveStage == 3 && saveTicks >= (saveFailed ? 60 : 20)) {
                         saveStage = 4, saveTicks = 0, saveCloseAt = uiClock, saveCloseFrom = uiClock - saveStart; // (its close)
@@ -1888,7 +1892,7 @@ void Viewer::drawFieldTab(const Mat4& view) {
     for (ViewMesh& vm : tab.fig.meshes) {
         const uint32_t j = vm.source.palette.empty() ? ~0u : vm.source.palette[0];
         const std::string jn = j < tab.joints.size() ? tab.joints[j] : "";
-        vm.hidden = ((jn == "GEO_encOn" || jn == "GEO_encOff") && !game.flag(0x40e)) || (jn == "GEO_encOn" && encountersOff) || (jn == "GEO_encOff" && !encountersOff);
+        vm.hidden = ((jn == "GEO_encOn" || jn == "GEO_encOff") && !game.flag(0x40e)) || (jn == "GEO_encOn" && !game.encountSwitch) || (jn == "GEO_encOff" && game.encountSwitch);
     }
     // (the buttons off at half: the map in dungeon 12, saving with flag 0x3ea, the encounters' without 0x40f)
     for (ViewMesh& vm : tab.fig.meshes) {
@@ -1936,8 +1940,8 @@ void Viewer::fieldTabTap(int area) {
         saveStage = 1, saveStart = uiClock;
     } else if (area == 5 && game.flag(0x40e) && game.flag(0x40f)) {
         audio.playSe(0xb4, false);
-        encountersOff = !encountersOff;
-        SDL_Log("field: encounters %s", encountersOff ? "off" : "on");
+        game.encountSwitch = !game.encountSwitch;
+        SDL_Log("field: encounters %s", !game.encountSwitch ? "off" : "on");
     }
 }
 void Viewer::mapClose() {
@@ -2026,7 +2030,7 @@ auto Viewer::statusOf(int ch) const -> StatusShown {
     r.id = ch + 1, r.level = std::max(game.level[ch], 1);
     int eq[8];
     for (int e = 0; e < 8; ++e) eq[e] = game.equip[ch][e];
-    const cr2::BattleRules::PlayerStats st = cr2::BattleRules::playerStats(battleData, r.id, r.level, eq, game.sopiaLevel, game.seed[ch], game.itemCount);
+    const cr2::BattleRules::PlayerStats st = cr2::BattleRules::playerStats(battleData, r.id, r.level, eq, game.sopiaLevel, game.seed[ch], game.itemCount, game.bonus[ch].at(r.level).sums().v);
     r.hpMax = st.maxHp, r.mpMax = st.maxMp;
     r.hp = r.hpMax; // (Cr3RestorePlayerHP after each battle)
     r.mp = game.mp[ch] < 0 ? r.mpMax : std::min(game.mp[ch], r.mpMax);
@@ -2160,7 +2164,7 @@ std::vector<int> Viewer::validChars() const {
 cr2::BattleRules::PlayerStats Viewer::statsOf(int ch) const {
     int eq[8];
     for (int e = 0; e < 8; ++e) eq[e] = game.equip[ch][e];
-    return cr2::BattleRules::playerStats(battleData, ch + 1, std::max(game.level[ch], 1), eq, game.sopiaLevel, game.seed[ch], game.itemCount);
+    return cr2::BattleRules::playerStats(battleData, ch + 1, std::max(game.level[ch], 1), eq, game.sopiaLevel, game.seed[ch], game.itemCount, game.bonus[ch].at(std::max(game.level[ch], 1)).sums().v);
 }
 int Viewer::mpOf(int ch) const {
     const int most = statsOf(ch).maxMp;
@@ -2732,8 +2736,8 @@ void Viewer::drawEquipment(const Mat4& view, const Mat4& proj, int w, int h) {
             for (int e = 0; e < 8; ++e) eq[e] = eq2[e] = game.equip[campEquipChar][e];
             eq2[campEquipMode - 1] = focused->id == 399 ? 0 : focused->id;
             const int lv = std::max(game.level[campEquipChar], 1);
-            const auto a = cr2::BattleRules::playerStats(battleData, campEquipChar + 1, lv, eq, game.sopiaLevel, game.seed[campEquipChar], game.itemCount);
-            const auto b = cr2::BattleRules::playerStats(battleData, campEquipChar + 1, lv, eq2, game.sopiaLevel, game.seed[campEquipChar], game.itemCount);
+            const auto a = cr2::BattleRules::playerStats(battleData, campEquipChar + 1, lv, eq, game.sopiaLevel, game.seed[campEquipChar], game.itemCount, game.bonus[campEquipChar].at(lv).sums().v);
+            const auto b = cr2::BattleRules::playerStats(battleData, campEquipChar + 1, lv, eq2, game.sopiaLevel, game.seed[campEquipChar], game.itemCount, game.bonus[campEquipChar].at(lv).sums().v);
             for (int k = 0; k < 5; ++k) change[k] = b.param[k] - a.param[k];
             hpChange = b.maxHp - a.maxHp, mpChange = b.maxMp - a.maxMp;
         }
@@ -3235,8 +3239,8 @@ bool Viewer::explorePick() {
     if (!script || !controller) return false;
     exploreGrid();
     if (ex.grind > 0 && SDL_getenv("CR2_EXPLORE_DEBUG"))
-        SDL_Log("EXDEBUG grind %d: encounters %d, on %d, switch %d", ex.grind, int(encount.on), int(game.encountEnable), int(!encountersOff));
-    if (ex.grind > 0 && encount.on && game.encountEnable && !(game.flag(0x40e) && game.flag(0x40f) && encountersOff)) { // (walking about where encounters are, till they're fought)
+        SDL_Log("EXDEBUG grind %d: encounters %d, on %d, switch %d", ex.grind, int(encount.on), int(game.encountEnable), int(game.encountSwitch));
+    if (ex.grind > 0 && encount.on && game.encountEnable && !(game.flag(0x40e) && game.flag(0x40f) && !game.encountSwitch)) { // (walking about where encounters are, till they're fought)
         cr2::Vec3 at;
         for (int k = 0; k < 24; ++k) {
             std::vector<cr2::Vec3> path;
@@ -4586,8 +4590,8 @@ void Viewer::drawShop(const Mat4& view, const Mat4& proj, int w, int h) {
                 for (int e = 0; e < 8; ++e) eq[e] = eq2[e] = game.equip[ch][e];
                 eq2[shop.kind - 1] = rows[size_t(shop.focus)].id;
                 const int lv = std::max(game.level[ch], 1);
-                const auto a = cr2::BattleRules::playerStats(battleData, ch + 1, lv, eq, game.sopiaLevel, game.seed[ch], game.itemCount);
-                const auto b = cr2::BattleRules::playerStats(battleData, ch + 1, lv, eq2, game.sopiaLevel, game.seed[ch], game.itemCount);
+                const auto a = cr2::BattleRules::playerStats(battleData, ch + 1, lv, eq, game.sopiaLevel, game.seed[ch], game.itemCount, game.bonus[ch].at(lv).sums().v);
+                const auto b = cr2::BattleRules::playerStats(battleData, ch + 1, lv, eq2, game.sopiaLevel, game.seed[ch], game.itemCount, game.bonus[ch].at(lv).sums().v);
                 for (int k = 0; k < 5; ++k) change[k] = b.param[k] - a.param[k];
                 drawStatusB(ch, b.maxHp - a.maxHp, b.maxMp - a.maxMp, t, view, proj);
                 drawCapacity(ch, change, t, view, proj, w, h);

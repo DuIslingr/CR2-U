@@ -70,7 +70,7 @@ int BattleRules::sopiaCombo(const BattleData& data, const int* equip, const shor
 }
 
 BattleRules::PlayerStats BattleRules::playerStats(const BattleData& data, int id, int level, const int* equip, const signed char* sopiaLevel,
-                                                  const short* seed, const short* items) {
+                                                  const short* seed, const short* items, const int* bonus) {
     PlayerStats st;
     const BattleData::Character* c = data.character(id);
     if (!c) return st;
@@ -79,9 +79,9 @@ BattleRules::PlayerStats BattleRules::playerStats(const BattleData& data, int id
     st.maxHp = std::clamp(c->hp + c->hpGrowth * level * 50 / 100, 1, 99999);
     st.maxMp = std::clamp(c->mp + c->mpGrowth * level * 5 / 100, 0, 9999);
     for (int n = 0; n < 5; ++n) st.param[n] = std::clamp(c->param[n] + c->paramGrowth[n] * level * 5 / 100, 0, 9999) + (seed ? seed[n] : 0);
-    const int past = std::max(level - 20, 0); // (Cr3UpdatePlayerBonusData)
-    st.maxHp += std::min(past * 10, 99999), st.maxMp += std::min(past, 9999);
-    for (int n = 0; n < 5; ++n) st.param[n] += std::min(past, 9999);
+    const int past = std::max(level - 20, 0); // (Cr3UpdatePlayerBonusData: with none given, this level's alone)
+    st.maxHp += bonus ? bonus[0] : std::min(past * 10, 99999), st.maxMp += bonus ? bonus[1] : std::min(past, 9999);
+    for (int n = 0; n < 5; ++n) st.param[n] += bonus ? bonus[2 + n] : std::min(past, 9999);
     for (int e = 0; e < 3; ++e)
         if (const BattleData::Item* it = eq[e] > 0 ? data.item(eq[e]) : nullptr) {
             st.maxHp += it->hp, st.maxMp += it->mp;
@@ -109,7 +109,7 @@ BattleRules::PlayerStats BattleRules::playerStats(const BattleData& data, int id
 }
 
 bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std::string* error, const signed char* sopiaLevel, const short (*equip)[8], const int* level, const int* mp,
-                        const short (*seed)[5], const short* items) {
+                        const short (*seed)[5], const short* items, const int (*bonus)[7]) {
     BattleSetup setup;
     if (!setupBattle(data_, coupling, party, setup, error)) return false;
     for (Fighter& f : fighters_) f = Fighter();
@@ -126,7 +126,8 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
         Fighter& f = fighters_[size_t(k)];
         f.present = f.alive = true;
         f.side = 0, f.id = c->id, f.name = c->name[1], f.level = level && c->id >= 1 && c->id <= 9 && level[c->id - 1] > 0 ? level[c->id - 1] : c->level;
-        const PlayerStats st = playerStats(data_, c->id, f.level, eq, sopiaLevel, seed && c->id >= 1 && c->id <= 9 ? seed[c->id - 1] : nullptr, items);
+        const PlayerStats st = playerStats(data_, c->id, f.level, eq, sopiaLevel, seed && c->id >= 1 && c->id <= 9 ? seed[c->id - 1] : nullptr, items,
+                                           bonus && c->id >= 1 && c->id <= 9 ? bonus[c->id - 1] : nullptr);
         f.maxHp = st.maxHp, f.maxMp = st.maxMp;
         for (int n = 0; n < 5; ++n) f.param[n] = st.param[n];
         for (int e = 0; e < 3; ++e) {

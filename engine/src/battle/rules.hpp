@@ -111,7 +111,8 @@ public:
     // `items`: the counts had (the sopia's combinations need their item)
     bool start(int coupling, const int party[2], int dungeonLevel = 0, std::string* error = nullptr,
                const signed char* sopiaLevel = nullptr, const short (*equip)[8] = nullptr, const int* level = nullptr,
-               const int* mp = nullptr, const short (*seed)[5] = nullptr, const short* items = nullptr);
+               const int* mp = nullptr, const short (*seed)[5] = nullptr, const short* items = nullptr,
+               const int (*bonus)[7] = nullptr);
 
     const Fighter& fighter(int i) const { return fighters_[size_t(i)]; }
     const BattleData& data() const { return data_; }
@@ -195,12 +196,13 @@ public:
     // its sopia's auto skills up to their levels add (Cr3UpdatePlayerDataBySopia, each of the five),
     // and their combination's (Cr3UpdatePlayerDataBySopiaComb: the last three's kinds, with its
     // item had); `equip` its eight (null its record's), `sopiaLevel` by sopia (null their first),
-    // `items` the counts (null none)
+    // `items` the counts (null none); `bonus` the levels past 20's sums at this level - HP, MP, the
+    // five (cr3_player_data +0x2c..: GameState's LevelBonus; null those this level alone gives)
     struct PlayerStats {
         int maxHp = 1, maxMp = 0, param[5] = {0, 0, 0, 0, 0};
     };
     static PlayerStats playerStats(const BattleData& data, int id, int level, const int* equip, const signed char* sopiaLevel = nullptr,
-                                   const short* seed = nullptr, const short* items = nullptr);
+                                   const short* seed = nullptr, const short* items = nullptr, const int* bonus = nullptr);
     // the auto skill the sopia in places 3..5 of `equip` make together (Cr3UtilGetSopiaComboSkillID; -1 none)
     static int sopiaCombo(const BattleData& data, const int* equip, const short* items);
     // what the monsters downed give (BtlActionCtrl::CheckDead: BtlWork +0xabc EXP, +0xac0 SP,

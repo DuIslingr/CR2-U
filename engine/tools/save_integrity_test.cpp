@@ -69,6 +69,22 @@ int main() {
         check(top.load(charaLine("200 39703470 9999")) && top.level[2] == 200 && top.exp[2] == 39703470 && top.mp[2] == 9999,
               "a level 200 character keeps its numbers");
     }
+    { // the levels past 20's sums (Cr3UpdatePlayerBonusData) and the tab's encounters switch kept
+        game::GameState b;
+        b.level[3] = 35, b.bonus[3] = game::GameState::LevelBonus().at(35);
+        check(b.bonus[3].mark == 35 && b.bonus[3].hp == 150 && b.bonus[3].mp == 15 && b.bonus[3].param[4] == 15, "level 35's sums");
+        game::GameState::LevelBonus again = b.bonus[3];
+        again.mark = 0; // (a new game with the clear data: the sums kept, counted again from 20)
+        check(again.at(18).hp == 150 && again.at(25).hp == 200 && again.at(25).mark == 25, "a clear-data game's sums go on");
+        b.encountSwitch = false;
+        const std::string bt = b.save(extra);
+        game::GameState r;
+        check(r.load(bt) && r.bonus[3].hp == 150 && r.bonus[3].mark == 35 && !r.encountSwitch, "the sums and the switch round-trip");
+        std::string old = bt; // (an older save's: no bonus lines - the sums its levels give)
+        for (size_t at; (at = old.find("\nbonus ")) != std::string::npos;) old.erase(at + 1, old.find('\n', at + 1) - at);
+        game::GameState o;
+        check(o.load(old) && o.bonus[3].hp == 150 && o.bonus[0].hp == 0, "an older save's sums from its levels");
+    }
     std::printf("save integrity: %zu bytes, %d cuts refused; %d problems\n", text.size(), refused, problems);
     return problems ? 1 : 0;
 }

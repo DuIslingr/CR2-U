@@ -100,6 +100,9 @@ bool readGameSave(const std::vector<uint8_t>& d, GameState& g, GameSavePlace& pl
         const int mp = rd16(d, p + 0x10), most = rd16(d, p + 0x12);
         g.mp[ch] = mp >= most ? -1 : mp; // (CR2-U's -1: the most)
         for (int k = 0; k < 5; ++k) g.seed[ch][k] = rd16(d, p + 0x1e + size_t(k) * 2);
+        GameState::LevelBonus& b = g.bonus[ch]; // (Cr3UpdatePlayerBonusData's)
+        b.mark = d[p + 0x28], b.hp = std::clamp(int32_t(rd32(d, p + 0x2c)), 0, 99999), b.mp = std::clamp(int(int16_t(rd16(d, p + 0x30))), 0, 9999);
+        for (int k = 0; k < 5; ++k) b.param[k] = std::clamp(int(int16_t(rd16(d, p + 0x32 + size_t(k) * 2))), 0, 9999);
         for (int e = 0; e < 8; ++e) g.equip[ch][e] = rd16(d, p + 0x3c + size_t(e) * 2);
     }
     // cr3_field_data
@@ -110,7 +113,7 @@ bool readGameSave(const std::vector<uint8_t>& d, GameState& g, GameSavePlace& pl
     for (int k = 0; k < 3; ++k) place.position[k] = rdf(d, f + 0x10 + size_t(k) * 4);
     const float qy = rdf(d, f + 0x24), qw = rdf(d, f + 0x2c); // (the turn: a quaternion about y)
     place.heading = 2.0f * std::atan2(qy, qw);
-    g.encountEnable = d[f + 0x30] != 0;
+    g.encountEnable = d[f + 0x30] != 0, g.encountSwitch = d[f + 0x31] != 0;
     g.changeEnable = d[f + 0x32] != 0, g.tabEnable = d[f + 0x33] != 0;
     // the flags past 1000 (those below are system.dat's: kept as they are)
     for (int n = 1001; n < int(kFlagBytes) * 8; ++n) g.setFlag(n, (d[kFlags + size_t(n >> 3)] >> (n & 7)) & 1);
@@ -147,6 +150,9 @@ std::vector<uint8_t> writeGameSave(const GameState& g, const GameSavePlace& plac
         wr16(d, p + 0x10, g.mp[ch] < 0 ? mp : std::min(g.mp[ch], mp)), wr16(d, p + 0x12, mp);
         for (int k = 0; k < 5; ++k) wr16(d, p + 0x14 + size_t(k) * 2, param[k]), wr16(d, p + 0x1e + size_t(k) * 2, g.seed[ch][k]);
         for (int e = 0; e < 8; ++e) wr16(d, p + 0x3c + size_t(e) * 2, g.equip[ch][e]);
+        const GameState::LevelBonus& b = g.bonus[ch];
+        d[p + 0x28] = uint8_t(b.mark), wr32(d, p + 0x2c, uint32_t(b.hp)), wr16(d, p + 0x30, b.mp);
+        for (int k = 0; k < 5; ++k) wr16(d, p + 0x32 + size_t(k) * 2, b.param[k]);
     }
     const size_t f = kField;
     int dungeon = 10, area = 19;
@@ -156,7 +162,7 @@ std::vector<uint8_t> writeGameSave(const GameState& g, const GameSavePlace& plac
     wr32(d, f + 0xc, 0xfffffffeu); // (Commit_GameData's: entered from a save)
     for (int k = 0; k < 3; ++k) wrf(d, f + 0x10 + size_t(k) * 4, place.position[k]);
     wrf(d, f + 0x24, std::sin(place.heading * 0.5f)), wrf(d, f + 0x2c, std::cos(place.heading * 0.5f));
-    d[f + 0x30] = g.encountEnable, d[f + 0x31] = 1, d[f + 0x32] = g.changeEnable, d[f + 0x33] = g.tabEnable;
+    d[f + 0x30] = g.encountEnable, d[f + 0x31] = g.encountSwitch, d[f + 0x32] = g.changeEnable, d[f + 0x33] = g.tabEnable;
     for (int n = 1001; n < int(kFlagBytes) * 8; ++n)
         if (g.flag(n)) d[kFlags + size_t(n >> 3)] |= uint8_t(1u << (n & 7));
     for (int k = 0; k < 32; ++k) wr32(d, kGlobal + size_t(k) * 4, uint32_t(g.globalWork[k]));

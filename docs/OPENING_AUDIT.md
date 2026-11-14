@@ -2122,6 +2122,38 @@ Read against the port, no change:
   updates (`m_nCnt`), else it fails; the port's mouse stands for both fingers (the other mirrored), so
   the rule has nothing to apply to.
 
+### Round 107: the save data
+
+Checked against the save and system data functions; fixed:
+- System flags 201 and 202 (`Cr3UtilSetupVersionUp`: system word 6 `|= 0x600`) are set at every
+  boot after the system data loads, and `Cr3UtilInitWork(false)` (Reset Data) keeps them. The port
+  never set them, so the pub list stopped at 28 entries (`PubListMenu::Initialize`: 42 with 201,
+  50 with 202) and the staff lines that read them were wrong. They are now set in `applySystem` and
+  kept by Reset Data.
+- A new game with the clear data (`Cr3UtilResetWork(true)` / `Cr3InitWorkFromBattleData(.., true)`)
+  keeps the sopia had (`cr3_common_data +0x268`, zeroed only by a plain new game) and the play time
+  (`cr3_game_data` word 0: only a plain new game zeroes it). The port dropped both; now carried.
+- The levels past 20 (`Cr3UpdatePlayerBonusData`): `cr3_player_data +0x28` is the last level counted
+  (20 at least), +0x2c the HP's sum, +0x30 the MP's, +0x32.. the five parameters' (10, 1 and 1 a level,
+  99999 / 9999 at most), and `Cr3UpdatePlayerData` adds them at any level. A clear-data game keeps the
+  sums with the mark back to 0, so they grow again each time round. The port worked them out from the
+  level, which loses every earlier run's. They are now stored (`GameState::LevelBonus`, the text
+  save's `bonus` line, the binary save's +0x28..+0x3b), committed when a result raises a level, and
+  carried by a clear-data game; an older save without them gets its levels' sums.
+- The play time stops at 0x6ddcec updates, 99:59:59 (`Cr3UtilCalcPlayTime`); the port's had no cap.
+- A save from the camp (`SaveConfirmationMenu::Update`) deletes the continue data after the game and
+  system data (`Cr3Util_Delete_ContData`); the port kept it. Now cleared.
+- The tab's encounters switch (`cr3_field_data +0x31`) is saved and loaded with the game and continue
+  data (+0x621); a new game turns it on. The port held it in the viewer and lost it; it now lives in
+  `GameState` and both save formats.
+- New Game's question reads flag 5 from the system data in memory (`Cr3UtilFlagCheck(5)`), not from
+  the save; the port now reads the system data's, falling back to the save only when there is none.
+- The Vita import: the system data's options are BGM, SE and Voice volumes as floats (50.0 fresh),
+  then the language, then the screen byte (Vita `Cr3OptionData::Init` / `DebugPrint`); the import
+  copied five raw words in the wrong order into both the system and the save. It also copied the
+  manual save to the continue data when the Vita had none; it now writes it empty (none to continue).
+  The import test checks real values.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

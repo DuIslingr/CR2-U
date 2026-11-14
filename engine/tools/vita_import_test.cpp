@@ -82,7 +82,12 @@ int main() {
         write(root / "PCSG00499/SAVEDATA0012.bin", "broken suspend");
         put(second, 0x5f0, 1);
         put(second, 0x5f4, 2);
-        put(sys, 0x80, 2);
+        for (const auto &[at, volume] : {std::pair<size_t, float>{0x80, 80.f}, {0x84, 60.f}, {0x88, 40.f}}) { // (Cr3OptionData's floats)
+            uint32_t bits;
+            std::memcpy(&bits, &volume, 4);
+            put(sys, at, bits);
+        }
+        put(sys, 0x8c, 2), sys[0x90] = 1; // (the language, the screen)
         saveBinary(root / "PCSG00498/SAVEDATA0020.bin", sys);
         saveBinary(root / "PCSG00498/SAVEDATA0021.bin", second);
         const std::string json =
@@ -104,8 +109,9 @@ int main() {
         check(op.files.at("save1.dat").find("noencounters 1 0 0 0") != std::string::npos, "Omega encounter switch");
         check(op.files.at("save1.dat").find("scenario_genes 1") != std::string::npos, "Omega local genes");
         auto sp = prepare((root / "PCSG00498").u8string(), "cr2");
-        check(sp.files.at("system.txt").find("options 2 0 0 0 0") != std::string::npos, "CR2 Vita system options");
-        check(sp.files.at("cont.txt") == sp.files.at("save1.txt"), "Manual fallback without suspend");
+        check(sp.files.at("system.txt").find("options 2 1 80 60 40") != std::string::npos, "CR2 Vita system options");
+        check(sp.files.at("save1.txt").find("options 2 1 80 60 40") != std::string::npos, "CR2 Vita save options");
+        check(sp.files.at("cont.txt").empty(), "No continue data without a suspend");
         check(prepare(root.u8string(), "cr3").files.at("save1.txt").find("area d0502") != std::string::npos,
               "CR3 dungeon mapping");
         for (const std::string game : {"cr1", "omega", "cr2", "cr3"}) {

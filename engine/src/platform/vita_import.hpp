@@ -264,6 +264,20 @@ inline std::map<std::string, std::string> firstGames(const Bytes &b, bool omega)
     saves["resume.dat"] = at->second;
     return saves;
 }
+// The system save's options (+0x80, Cr3OptionData: the BGM, SE and voice volumes as floats - 50.0
+// a fresh one's - then the language, then the screen's byte) as CR2-U's "options" line wants
+// them: the language, the quality, the three volumes (0 .. 100)
+inline std::string secondOptions(const Bytes &sys) {
+    auto volume = [&](size_t o) {
+        const float v = real(sys, o);
+        return v >= 0 && v <= 100 ? int(std::lround(v)) : 50;
+    };
+    const int language = i32(sys, 0x8c);
+    std::ostringstream o;
+    o << ' ' << (language >= 0 && language <= 7 ? language : 1) << ' ' << int(sys[0x90] != 0) << ' ' << volume(0x80) << ' '
+      << volume(0x84) << ' ' << volume(0x88);
+    return o.str();
+}
 inline std::string secondGame(const Bytes &b, const Bytes &sys) {
     auto o = text();
     o << "CR2-U save 1\nflags";
@@ -313,10 +327,7 @@ inline std::string secondGame(const Bytes &b, const Bytes &sys) {
         o << 'd' << std::setfill('0') << std::setw(2) << dungeon;
     o << std::setfill('0') << std::setw(2) << area + 1 << std::setfill(' ') << "\nplace " << real(b, 0x600) << ' '
       << real(b, 0x604) << ' ' << real(b, 0x608) << ' ' << 2 * std::atan2(real(b, 0x614), real(b, 0x61c)) << "\nsaved "
-      << now() << "\nplaytime " << u32(b, 0x10) << "\noptions";
-    for (int k = 0; k < 5; ++k)
-        o << ' ' << i32(sys, 0x80 + size_t(k) * 4);
-    o << '\n';
+      << now() << "\nplaytime " << u32(b, 0x10) << "\noptions" << secondOptions(sys) << '\n';
     return o.str();
 }
 
@@ -832,16 +843,13 @@ inline Plan prepare(const std::string &folder, const std::string &game) {
             auto o = text();
             o << "CR2-U system 1\n";
             flags(o, sys, 4, 31, false);
-            o << "options";
-            for (int k = 0; k < 5; ++k)
-                o << ' ' << i32(sys, 0x80 + size_t(k) * 4);
-            o << '\n';
+            o << "options" << secondOptions(sys) << '\n';
             plan.files["system.txt"] = o.str();
         }
         Bytes manual = binary(file(1), size);
         if (second) {
             plan.files["save1.txt"] = secondGame(manual, sys);
-            plan.files["cont.txt"] = plan.files["save1.txt"];
+            plan.files["cont.txt"] = ""; // (none unless the Vita had one: empty is DeleteCont's - an old one cleared)
             plan.slots = 1;
         } else {
             plan.files = firstGames(manual, omega);

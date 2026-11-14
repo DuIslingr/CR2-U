@@ -741,6 +741,7 @@ struct Viewer {
     int systemOptions[5] = {-1, -1, -1, -1, -1};
     void readSystem();
     void applySystem();
+    void setVersionUpFlags();
     void writeSystem();
     void resetForNewSession();
     void newGame();
@@ -1587,7 +1588,6 @@ struct Viewer {
     bool loadGameSave(const std::string& path, const std::string& binary, const std::string& dataPath);
     void saveAnswer(bool yes);
     void drawSave(const Mat4& view, const Mat4& proj, int w, int h);
-    bool encountersOff = false; // (cr3_field_data +0x31: the tab's 5th, FldMain step 8 / 9)
 
     // The field's tab (FldTabMenu -> FieldMenuTabMenu: fldMenu_tab, over the field while nothing
     // runs): its own animation played forward to open it, back to close it (Cr3UtilSoundPlaySE

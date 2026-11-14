@@ -769,8 +769,9 @@ float Viewer::titleAnimLength(const std::string& fig, const std::string& anim) {
     return u.fig.animLoaded ? u.fig.anim.duration() : 0.0f;
 }
 // Cr3UtilResetWork(true) / Cr3InitWorkFromBattleData(.., true) - a new game with the clear data:
-// the common data kept (the items, the Oz, the sopia's levels and EXP), each character's weapon
-// and armour (cr3_player_data +0x3c, +0x3e) and seeds, the flags past 3000 (and the system's,
+// the common data kept (the items, the Oz, the sopia had, their levels and EXP), the play time
+// (cr3_game_data), each character's weapon and armour (cr3_player_data +0x3c, +0x3e), seeds and
+// levels-past-20 sums (+0x2c.., the mark +0x28 back to 0), the flags past 3000 (and the system's,
 // 0 .. 1000 - cr3_flag_system_work, untouched); the levels, the rest of the equipment, the story's
 // flags (1001 .. 3000) and the global work a new game's - ResetWork zeroes cr3_treasureBox + 0x24
 // .. cr3_global_work + 0x7c either way, the global work whole (Cr3Work: the scripts' GetVar - 0 the
@@ -783,16 +784,20 @@ bool Viewer::carryOver() {
     for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) text.append(buf, n);
     std::fclose(f);
     cr2::GameState old;
-    if (!old.load(text)) return false;
+    std::map<std::string, std::string> extra;
+    if (!old.load(text, &extra)) return false;
     std::memcpy(game.itemCount, old.itemCount, sizeof game.itemCount);
     game.oz = old.oz;
     std::memcpy(game.sopiaLevel, old.sopiaLevel, sizeof game.sopiaLevel);
     std::memcpy(game.sopiaExp, old.sopiaExp, sizeof game.sopiaExp);
+    game.sopiaOwned = old.sopiaOwned; // (cr3_common_data +0x268: only a new game's zeroed)
     for (int c = 0; c < 9; ++c) {
         game.equip[c][0] = old.equip[c][0], game.equip[c][1] = old.equip[c][1];
         std::memcpy(game.seed[c], old.seed[c], sizeof game.seed[c]);
+        game.bonus[c] = old.bonus[c], game.bonus[c].mark = 0; // (+0x2c.. kept, +0x28 0)
     }
     for (size_t k = 3001; k < old.flags.size(); ++k) game.setFlag(int(k), old.flags[k]);
+    playSeconds = double(std::atol(extra["playtime"].c_str())) / 20.0; // (cr3_game_data: ResetWork(true) keeps it)
     SDL_Log("title: the clear data carried over");
     return true;
 }
@@ -833,7 +838,9 @@ void Viewer::titleButton(int id) {
         auto step = [&](int ask) { t.stepAsk = ask, t.stepTo = 7, t.stepAt = uiClock, t.stepFrom = uiClock - t.start, t.stepTicks = 0; };
         if (id == 9) { // (New Game: NewGame's question - with clear data 102)
             audio.playSe(0xb4, false);
-            step(saveInfo("save1.txt").flags.count(5) ? 102 : 101);
+            if (!systemRead) readSystem(); // (Cr3UtilFlagCheck(5): the system data's, as booted)
+            const bool cleared = systemFound ? std::count(systemFlags.begin(), systemFlags.end(), 5) > 0 : saveInfo("save1.txt").flags.count(5) > 0;
+            step(cleared ? 102 : 101);
         } else if (id == 10 && saveExists("save1.txt")) {
             audio.playSe(0xb4, false);
             step(107);
@@ -1180,6 +1187,7 @@ void Viewer::resetData() {
     optionLanguage = 1, optionQuality = 0; // (Cr3OptionData::Init: the volumes full, the language the device's)
     std::fill(std::begin(optionVolume), std::end(optionVolume), 100);
     game = cr2::GameState();
+    setVersionUpFlags(); // (Cr3UtilInitWork(false) keeps 201 and 202)
     SDL_Log("options: the game data reset");
 }
 // OptionMenu::TouchSimpleRelease: the seat's tap areas 1 Title Screen, 2 Manual, 3 / 4 the

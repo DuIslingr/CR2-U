@@ -134,7 +134,7 @@ std::string GameState::save(const std::map<std::string, std::string>& extra) con
         if (flags[k]) o << ' ' << k;
     o << '\n';
     o << "party " << party[0] << ' ' << party[1] << '\n';
-    o << "active " << active << ' ' << int(changeEnable) << ' ' << int(tabEnable) << ' ' << int(encountEnable) << '\n'; // (cr3_savedata +0x620: the encounters')
+    o << "active " << active << ' ' << int(changeEnable) << ' ' << int(tabEnable) << ' ' << int(encountEnable) << ' ' << int(encountSwitch) << '\n'; // (cr3_savedata +0x620, +0x621: the encounters')
     for (int s = 0; s < 3; ++s) o << "pairs " << s << ' ' << partySets[s][0] << ' ' << partySets[s][1] << '\n';
     for (int id = 1; id < 300; ++id)
         if (itemCount[id]) o << "item " << id << ' ' << itemCount[id] << '\n';
@@ -143,6 +143,10 @@ std::string GameState::save(const std::map<std::string, std::string>& extra) con
         o << "chara " << c << ' ' << level[c] << ' ' << exp[c] << ' ' << mp[c];
         for (int e = 0; e < 8; ++e) o << ' ' << equip[c][e];
         for (int k = 0; k < 5; ++k) o << ' ' << seed[c][k];
+        o << '\n';
+        const LevelBonus& b = bonus[c];
+        o << "bonus " << c << ' ' << b.mark << ' ' << b.hp << ' ' << b.mp;
+        for (int v : b.param) o << ' ' << v;
         o << '\n';
     }
     for (int s = 0; s < 32; ++s) o << "sopia " << s << ' ' << int(sopiaLevel[s]) << ' ' << sopiaExp[s] << '\n';
@@ -182,6 +186,7 @@ bool GameState::parse(const std::string& text, std::map<std::string, std::string
     }
     flags.clear();
     std::vector<std::pair<int, int>> oldWork;
+    bool hadBonus[9] = {};
     for (short& n : itemCount) n = 0;
     while (std::getline(in, line)) {
         std::istringstream l(line);
@@ -198,8 +203,10 @@ bool GameState::parse(const std::string& text, std::map<std::string, std::string
         } else if (key == "active") {
             int e = 1, t = 1, n = 1;
             l >> active >> e >> t;
+            int sw = 1;
             if (!(l >> n)) n = 1; // (an older save's: on)
-            active = active == 1 ? 1 : 0, changeEnable = e != 0, tabEnable = t != 0, encountEnable = n != 0;
+            else if (!(l >> sw)) sw = 1;
+            active = active == 1 ? 1 : 0, changeEnable = e != 0, tabEnable = t != 0, encountEnable = n != 0, encountSwitch = sw != 0;
         } else if (key == "pairs") {
             int s = -1;
             if (l >> s && s >= 0 && s < 3) l >> partySets[s][0] >> partySets[s][1];
@@ -217,6 +224,15 @@ bool GameState::parse(const std::string& text, std::map<std::string, std::string
             mp[c] = std::clamp(mp[c], -1, 9999999);
             for (short& e : equip[c]) l >> e;
             for (short& k : seed[c]) l >> k;
+        } else if (key == "bonus") {
+            int c = -1;
+            if (!(l >> c) || c < 0 || c >= 9) continue;
+            LevelBonus& b = bonus[c];
+            l >> b.mark >> b.hp >> b.mp;
+            for (int& v : b.param) l >> v;
+            b.mark = std::clamp(b.mark, 0, 255), b.hp = std::clamp(b.hp, 0, 99999), b.mp = std::clamp(b.mp, 0, 9999);
+            for (int& v : b.param) v = std::clamp(v, 0, 9999);
+            hadBonus[c] = true;
         } else if (key == "sopia") {
             int s = -1, lv = 0, e = 0;
             if (l >> s >> lv >> e && s >= 0 && s < 32) sopiaLevel[s] = static_cast<signed char>(lv), sopiaExp[s] = std::clamp(e, 0, 99999999);
@@ -245,6 +261,8 @@ bool GameState::parse(const std::string& text, std::map<std::string, std::string
         }
     }
     for (const auto& [k, v] : oldWork) globalWork[k] = v;
+    for (int c = 0; c < 9; ++c) // (an older save's: the sums its levels give)
+        if (!hadBonus[c]) bonus[c] = LevelBonus().at(level[c]);
     // (every line ends in a newline, and every save of every version closes with its extras, map
     // first: with that line here, nothing before it was lost)
     if (text.empty() || text.back() != '\n' || !extra->count("map")) {

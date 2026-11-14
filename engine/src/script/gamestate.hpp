@@ -54,6 +54,29 @@ struct GameState {
     // what items have added to their parameters for good (cr3_player_data +0x1e..: the seeds,
     // Cr3UtilParameterUpByItem)
     short seed[9][5] = {};
+    // the levels past 20's (Cr3UpdatePlayerBonusData: cr3_player_data +0x28 the last level counted,
+    // +0x2c the HP's, +0x30 the MP's, +0x32.. the five parameters' - 10, 1 and 1 a level past the
+    // mark, 20 at least; 99999 / 9999 at most). Cr3UpdatePlayerData adds them at any level, and a
+    // new game with the clear data keeps the sums, the mark back to 0 (Cr3InitWorkFromBattleData)
+    struct LevelBonus {
+        int mark = 0, hp = 0, mp = 0, param[5] = {};
+        LevelBonus at(int lv) const { // (the sums at level lv: this one's, counted on)
+            LevelBonus b = *this;
+            if (lv <= 20) return b;
+            if (b.mark < 20) b.mark = 20;
+            if (b.mark >= lv) return b;
+            const int n = lv - b.mark;
+            b.hp = b.hp + n * 10 > 99999 ? 99999 : b.hp + n * 10, b.mp = b.mp + n > 9999 ? 9999 : b.mp + n;
+            for (int& v : b.param) v = v + n > 9999 ? 9999 : v + n;
+            b.mark = lv;
+            return b;
+        }
+        struct Sums {
+            int v[7];
+        };
+        Sums sums() const { return {{hp, mp, param[0], param[1], param[2], param[3], param[4]}}; } // (BattleRules::playerStats's)
+    };
+    LevelBonus bonus[9];
     // cr3_global_work (Cr3UtilGlobalWorkGet / Set: 32 values - 7 the pub's request taken)
     int globalWork[32] = {};
     // the difficulty (cr3_common_data[0]: Cr3UtilSetDifficulty, the world select's level - 1) and the
@@ -71,6 +94,8 @@ struct GameState {
     int dungeon = 0, area = 0;
     // the scripts' encounters switch (Cr3System.SetEncountEnable: cr3_field_data +0x30 - the tab's own is +0x31)
     bool encountEnable = true;
+    // the tab's encounters switch (cr3_field_data +0x31: FldMain's toggle, saved at +0x621; a new game's on)
+    bool encountSwitch = true;
     TreasureBoxes boxes;
     bool equipReady = false;
     template <class Data> void initEquip(const Data& data, const int* levelExp) {

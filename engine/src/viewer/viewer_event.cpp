@@ -154,7 +154,7 @@ bool Viewer::optionsKey(SDL_Keycode k) {
                        // CR2-U's Display & Graphics)
         if (k == SDLK_I) optionTap(3111);
         else if (k == SDLK_G || k == SDLK_TAB) openSettings();
-        else if (k == SDLK_BACKSPACE || k == SDLK_RETURN || k == SDLK_KP_ENTER) optionsOpen = false;
+        else if (k == SDLK_BACKSPACE || k == SDLK_RETURN || k == SDLK_KP_ENTER) optionsBack();
         else if (k == SDLK_UP) optionFocus = (optionFocus + 2) % 3;
         else if (k == SDLK_DOWN) optionFocus = (optionFocus + 1) % 3;
         else if (k == SDLK_LEFT && optionFocus < 3) optionVolume[optionFocus] = std::max(optionVolume[optionFocus] - 5, 0), volumeSet(optionFocus);
@@ -189,7 +189,7 @@ bool Viewer::optionsTapped(const TapRect& r, float x) {
         return true;
     }
     if (optionsOpen) { // (Back; a bar's slide area: its volume by the point across it)
-        if (r.id == 100) optionsOpen = false;
+        if (r.id == 100) optionsBack();
         else if (r.id == 3110) openSettings();
         else if ((r.id >= 3100 && r.id < 3300) || r.id == 4036 || r.id == 4037 || r.id == 4098 || r.id == 4099) optionTap(r.id);
         else if (r.id >= 2000 && r.id < 2003) {
@@ -1255,6 +1255,10 @@ void Viewer::drawManualList(const Mat4& view, int w, int h) {
     listRows = rows;
     drawSkillList(rows, 5000 + manualCursor, uiClock - manualStart, view, w, h, -1, -1);
 }
+void Viewer::optionsBack() {
+    if (!campOpen) { optionsOpen = false; return; } // (the title's, a battle's: as they were)
+    if (optionsCloseAt < 0) optionsCloseAt = uiClock, optionsCloseFrom = uiClock - optionsStart, optionsCloseTicks = 0;
+}
 void Viewer::drawOptionsAsk(const Mat4& view, int w, int h) { // (Battle / CampOptionMenu: "return to the title?", the title's window)
     tapRects.clear();
     const float t = uiClock - optionsAskStart;
@@ -1276,11 +1280,11 @@ void Viewer::drawOptions(const Mat4& view, const Mat4& proj, int w, int h) {
     const float t = uiClock - optionsStart;
     UiFig& title = uiFig("menu");
     title.fig.place = cr2::Mat34();
-    poseUi(title, "menuopt_io", t);
+    poseUi(title, "menuopt_io", optionsPartTime(0.45f));
     drawFigure(title.fig, view.data());
     UiFig& seat = uiFig("seatopt_io");
     seat.fig.place = cr2::Mat34();
-    poseUi(seat, "seatopt_io", t);
+    poseUi(seat, "seatopt_io", optionsPartTime(0.2f));
     drawFigure(seat.fig, view.data());
     static const int kLabels[7] = {103, 104, 105, 102, 106, 108, 101};
     float x, y;
@@ -1354,7 +1358,7 @@ void Viewer::drawOptions(const Mat4& view, const Mat4& proj, int w, int h) {
         }
     UiFig& bk = uiFig("btlback");
     bk.fig.place = cr2::Mat34();
-    poseUi(bk, "btlback_in", t);
+    poseUi(bk, "btlback_in", optionsPartTime(0.15f));
     drawFigure(bk.fig, view.data());
     float sx, sy, ex, ey;
     if (uiJoint(bk, "tapAreaS01", sx, sy) && uiJoint(bk, "tapAreaE01", ex, ey)) tapRects.push_back({100, sx, sy, ex, ey});

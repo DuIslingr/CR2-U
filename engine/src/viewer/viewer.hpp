@@ -1586,6 +1586,14 @@ struct Viewer {
     float campEquipSwitchAt = -1, campEquipSwitchFrom = 0;
     int campEquipSwitchTicks = 0, campEquipSwitchMode = 0, campEquipSwitchCursor = 0, campEquipSwitchChar = -1; // (-1: the same one; else CharaChange's, SE 0xb7, state 3)
     void campEquipSwitch(int mode, int cursor);
+    // (the camp's options' Back - CampOptionMenu state 2: OptionMenu::InterfaceCloseAnimeSet, its parts
+    // played back; once seatOpt_io's 0.2 s is - +8 - it returns 6 and the camp is made again)
+    float optionsCloseAt = -1, optionsCloseFrom = 0;
+    int optionsCloseTicks = 0;
+    void optionsBack();
+    float optionsPartTime(float length) const {
+        return optionsCloseAt < 0 ? uiClock - optionsStart : std::max(std::min(optionsCloseFrom, length) - (uiClock - optionsCloseAt), 0.0f);
+    }
     float campCategoryAt = -1, campCategoryFrom = 0;
     int campCategoryTicks = 0;
     void campCategorySwitch();

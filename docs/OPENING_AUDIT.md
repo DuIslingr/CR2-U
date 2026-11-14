@@ -1506,6 +1506,17 @@ character in the tap's update; now `campEquipChange` and the faces' taps go thro
 after. `viewer-pad-controls` settles it before its checks. `--play d0104 --input "tab camp equip
 down right ..."`: the view again (mode 0) with the next character.
 
+### Round 67: the camp's options, Back
+
+`CampOptionMenu` is an `OptionMenu`: its +4 `menu` on `menuOpt_io` (0.45 s), +8 `seatOpt_io` (0.2 s),
+`btlBack` (the strings by `OptionMenu::Initialize`'s literal pool; the stores at 0x2cd0dc and
+0x2cd170). Its Back: state 2, `InterfaceCloseAnimeSet` - +4 and +8 played back -, and once +8 is at
+its start, the fourth update, it returns 6: `InterfaceMain` makes the camp again
+(`SetCampWindowParameter`), its opening and lock. The port shut the options and showed the camp in
+the Back's update; now in the camp `optionsBack` plays the parts back (each from its own length) and
+makes the camp again in the fourth update. The title's and the battles' options are as they were.
+`--play d0104 --flag 84 --input "tab camp options back back back"`: the options, the camp, out.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

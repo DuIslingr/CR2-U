@@ -1420,6 +1420,10 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                     closeCamp(), emergencyExit = true;
                     break;
                 }
+                if (campOpen && optionsCloseAt >= 0 && ++optionsCloseTicks >= 4) { // (6: the camp made again)
+                    optionsCloseAt = -1, optionsOpen = false;
+                    campStart = campOpenedAt = uiClock - cr2::EventRuntime::kTick;
+                }
                 if (campOpen && campEquipSwitchAt >= 0 && ++campEquipSwitchTicks >= 4) { // (the next mode's rows in)
                     campEquipSwitchAt = -1, campEquipMode = campEquipSwitchMode, campEquipCursor = campEquipSwitchCursor;
                     if (campEquipSwitchChar >= 0) campEquipChar = campEquipSwitchChar, campEquipSwitchChar = -1;
@@ -1769,7 +1773,7 @@ float Viewer::campPartTime(float length) const {
     return std::max(std::min(campCloseFrom, length) - (uiClock - campCloseAt), 0.0f); // (played back from where it was)
 }
 void Viewer::closeCamp() {
-    campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1, campExitTicks = -1, campUseCloseAt = -1, campSopiaSwitchAt = -1, campCategoryAt = -1, campEquipSwitchAt = -1;
+    campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1, campExitTicks = -1, campUseCloseAt = -1, campSopiaSwitchAt = -1, campCategoryAt = -1, campEquipSwitchAt = -1, optionsCloseAt = -1;
     campOpen = false, campList = 0, campUse = 0, campItem = 0, campLink = 0;
     optionsOpen = optionsAsk = false, manualStage = 0, manualEvents.reset();
     SDL_Log("camp: closed");
@@ -2927,7 +2931,7 @@ bool Viewer::fieldToken(const std::string& t) {
     else if (settingsOpen && (t == "up" || t == "down" || t == "left" || t == "right" || t == "enter"))
         settingsKey(t == "up" ? SDLK_UP : t == "down" ? SDLK_DOWN : t == "left" ? SDLK_LEFT : t == "right" ? SDLK_RIGHT : SDLK_RETURN);
     else if (t == "back" && settingsOpen) closeSettings();
-    else if (t == "back") manualStage == 1 ? closeManual() : optionsAsk ? optionTap(3202) : optionsOpen ? void(optionsOpen = false) : campPress(100);
+    else if (t == "back") manualStage == 1 ? closeManual() : optionsAsk ? optionTap(3202) : optionsOpen ? optionsBack() : campPress(100);
     else if (t == "items") campPress(16);
     else if (t == "scenarios") campPress(201);
     else if (campLink == 201 && (t == "down" || t == "up")) scrollScenarios(t == "down" ? 0.3f : -0.3f);

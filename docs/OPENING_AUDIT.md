@@ -1843,6 +1843,24 @@ fifth update); taps and `--input` tokens wait meanwhile. `--title --input "tap s
 yes"`: the question, the panel, the question, a new game. The load's own path after its Yes
 ("Load complete.") was not gone through.
 
+### Round 86: the manual's list
+
+The options' Instructions (`InstructionsWindowMenu` 0x61, its list `InstructionsListMenu` 0x62 made by
+0x20) follow the library's shape (round 75). The list (state 1 till its frame is in, the lock
+cleared then): a row - SE 0xb4 - or Back closes the frame (0.2 s) and reports 0x21 at its end, the
+fourth update; `InterfaceMain` hands the row (param 6, Back's 99) to the window (param 4): a row -
+`CallScript("manual_disp")`, state 3 till the script ends, then 0 and the list again (0x20) the update
+after -; 99 - state 2, done once `tutorialPic` (no length) is at its end, the next update: 0x23 makes
+the options again (param 8: the camp's, a battle's or the title's), the fifth update. The port
+played the reading and went back to the options at the tap, and made the list in the reading's last
+update. Now a pick or Back plays the list back; the reading starts in the fourth update, the options
+come back in the fifth; the list returns the update after a reading's end (nothing drawn between);
+taps on the list wait till it is in (`manualInTicks`). The counts run in `updateManual`, which the
+camp's, a battle's and the title's options all call. The list's row now plays SE 0xb4; a battle's
+`--input` takes `pick` for the row in focus. `--battle 57 --fight solo --flag 84 --page 0.5 --input
+"options manual pick back back"`: the list, tutorial 2 four updates on, its end, the list; `--input
+"options manual back back"`: the options again, then closed.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

@@ -609,6 +609,7 @@ void Viewer::inputToken(const std::string& t) {
         }
     if (t == "back" && settingsOpen) closeSettings(), ok = true;
     else if (t == "back" && manualStage == 1) closeManual(), ok = true;
+    else if (t == "pick" && manualStage == 1) playManual(manualCursor), ok = true; // (the manual's row in focus)
     else if (t == "back" && optionsOpen) optionsBack(), ok = true;
     else if (t == "back") commandInput.back(), audio.playSe(0xb5, false), ok = true;
     else if (t.size() > 1 && t[0] == 'a' && std::isdigit(static_cast<unsigned char>(t[1]))) ok = commandInput.pickAwakening(std::atoi(t.c_str() + 1));

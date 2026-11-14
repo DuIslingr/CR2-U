@@ -138,6 +138,7 @@ bool Viewer::optionsKey(SDL_Keycode k) {
         return true;
     }
     if (manualStage == 1) { // (the list: Up / Down, Return plays, Backspace back)
+        if (manualCloseAt >= 0 || manualInTicks < 5) return true; // (+0x1c 30)
         const int n = std::max(int(manualEntries.size()), 1);
         if (k == SDLK_UP) manualCursor = (manualCursor + n - 1) % n;
         else if (k == SDLK_DOWN) manualCursor = (manualCursor + 1) % n;
@@ -180,6 +181,7 @@ bool Viewer::optionsTapped(const TapRect& r, float x) {
     }
     if (settingsTapped(r.id)) return true;
     if (manualStage == 1) {
+        if (manualCloseAt >= 0 || manualInTicks < 5) return true;
         if (r.id == 100) closeManual();
         else if (r.id >= 5000) playManual(r.id - 5000);
         else if (r.id >= 1000) manualCursor = r.id - 1000; // (another row: the focus)
@@ -1239,14 +1241,28 @@ void Viewer::openManual() {
         }
     }
     manualStage = 1, manualStart = uiClock, manualCursor = 0;
+    manualCloseAt = -1, manualInTicks = 0, manualReopen = 0;
     SDL_Log("manual: %zu entries", manualEntries.size());
 }
 void Viewer::closeManual() {
+    if (manualStage == 1 && (manualCloseAt >= 0 || manualInTicks < 5)) return; // (closing, opening: +0x1c 30)
+    if (manualStage == 1) { // (the list's frame back first)
+        manualCloseAt = uiClock, manualCloseFrom = uiClock - manualStart, manualCloseTicks = 0, manualCloseTo = 2;
+        return;
+    }
     manualStage = 0, manualEvents.reset();
     optionsOpen = true, optionsStart = uiClock;
 }
 void Viewer::playManual(int k) {
     if (k < 0 || k >= int(manualEntries.size())) return;
+    if (manualStage == 1 && manualCloseAt < 0) { // (SE 0xb4, the frame back, then manual_disp)
+        if (manualInTicks < 5) return;
+        audio.playSe(0xb4, false);
+        manualCursor = k, manualPick = k;
+        manualCloseAt = uiClock, manualCloseFrom = uiClock - manualStart, manualCloseTicks = 0, manualCloseTo = 1;
+        return;
+    }
+    if (manualCloseAt >= 0) return;
     manualCursor = k;
     if (playTutorial("manual_disp", manualEntries[size_t(k)].id, true))
         SDL_Log("manual: tutorial %d (%s)", manualEntries[size_t(k)].id, manualEntries[size_t(k)].title.c_str());
@@ -1266,13 +1282,43 @@ bool Viewer::playTutorial(const char* function, int id, bool toList) {
     return true;
 }
 void Viewer::updateManual(float dt) {
+    if (manualStage == 1 || manualReopen > 0) { // (the list's updates: its close, its open, the reading's end)
+        manualTickClock = std::min(manualTickClock + dt, 0.25f);
+        for (; manualTickClock >= cr2::EventRuntime::kTick; manualTickClock -= cr2::EventRuntime::kTick) {
+            if (manualReopen > 0 && --manualReopen == 0) {
+                manualStage = 1, manualStart = uiClock, manualInTicks = 0;
+                continue;
+            }
+            if (manualStage != 1) continue;
+            if (manualCloseAt < 0) {
+                if (manualInTicks < 5) ++manualInTicks;
+                continue;
+            }
+            ++manualCloseTicks;
+            if (manualCloseTo == 1 && manualCloseTicks >= 4) { // (0x21: the window's manual_disp)
+                manualCloseAt = -1;
+                manualCursor = manualPick;
+                if (playTutorial("manual_disp", manualEntries[size_t(manualPick)].id, true))
+                    SDL_Log("manual: tutorial %d (%s)", manualEntries[size_t(manualPick)].id, manualEntries[size_t(manualPick)].title.c_str());
+                else manualStart = uiClock, manualInTicks = 0; // (no reading: the list again)
+                break;
+            }
+            if (manualCloseTo == 2 && manualCloseTicks >= 5) { // (0x23: the options made again)
+                manualCloseAt = -1;
+                manualStage = 0, manualEvents.reset();
+                optionsOpen = true, optionsStart = uiClock;
+                break;
+            }
+        }
+        if (manualStage != 2) return;
+    } else manualTickClock = 0;
     if (manualStage != 2 || !manualEvents) return;
     manualClock = std::min(manualClock + dt, 0.25f);
     for (; manualClock >= cr2::EventRuntime::kTick; manualClock -= cr2::EventRuntime::kTick)
         if (!manualEvents->tick()) SDL_Log("manual: %s", manualEvents->error().c_str());
     if (!manualEvents->running()) { // (InstructionsWindowMenu 3 -> 0: the list again)
         manualEvents.reset();
-        if (manualToList) manualStage = 1, manualStart = uiClock;
+        if (manualToList) manualReopen = 1; // (the list the update after: 3 -> 0 -> 0x20; nothing drawn meanwhile)
         else manualStage = 0, optionsOpen = true, optionsStart = uiClock;
         SDL_Log("tutorial over");
     }
@@ -1286,7 +1332,8 @@ void Viewer::drawManualList(const Mat4& view, int w, int h) {
         rows.push_back(r);
     }
     listRows = rows;
-    drawSkillList(rows, 5000 + manualCursor, uiClock - manualStart, view, w, h, -1, -1);
+    const float t = manualCloseAt < 0 ? uiClock - manualStart : std::max(std::min(manualCloseFrom, 0.2f) - (uiClock - manualCloseAt), 0.0f);
+    drawSkillList(rows, 5000 + manualCursor, t, view, w, h, -1, -1);
 }
 void Viewer::optionsBack() {
     // (the camp's; the title's - TitleOptionMenu state 2: its frame back, 0x13 at its end: the title's 0x1f,

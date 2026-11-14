@@ -1468,6 +1468,12 @@ struct Viewer {
     int manualCursor = 0;
     bool manualToList = true; // (the tutorial over: the list again, else the options - Tutorial_Option's)
     float manualStart = 0, manualClock = 0;
+    // (InstructionsListMenu: a pick or Back closes its frame (0.2 s) and reports 0x21 at its end, the fourth
+    // update - the window's manual_disp then, or on Back (99) its state 2: tutorialPic has no length, 0x23 the
+    // update after: the options made again, the fifth. A reading's end: the list the update after (3 -> 0 ->
+    // 0x20). Taps once the list's frame is in (state 1, the fifth))
+    float manualCloseAt = -1, manualCloseFrom = 0, manualTickClock = 0;
+    int manualCloseTicks = 0, manualCloseTo = 0, manualPick = 0, manualInTicks = 5, manualReopen = 0;
     std::unique_ptr<cr2::EventRuntime> manualEvents;
     void openManual();
     void closeManual();

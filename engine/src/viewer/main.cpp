@@ -1566,6 +1566,7 @@ int main(int argc, char** argv) {
                     dragging = true;
                     float fx, fy;
                     screenFraction(e.button.x, e.button.y, fx, fy);
+                    v.offButtonPress(fx, fy);
                     if (!v.menuPointerDown(fx, fy)) v.pointerActivate(fx, fy);
                 }
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {

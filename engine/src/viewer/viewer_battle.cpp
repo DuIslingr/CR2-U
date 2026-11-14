@@ -803,9 +803,17 @@ bool Viewer::noPickTapped(float fx, float fy) { // (a list's focused row that ca
     const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
     const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
     for (const TapRect& r : tapRects)
-        if (r.id == kRowNoPick && x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1))
+        if ((r.id == kRowNoPick || r.id == kButtonOff) && x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1))
             return audio.playSe(0xb6, false), true;
     return false;
+}
+void Viewer::offButtonPress(float fx, float fy) { // (the camp's buttons, the shop's first: 0xb6 on the press as well)
+    if (!((campOpen && campList == 0 && !optionsOpen && !campLink) || shop.stage == 1)) return;
+    const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+    const float x = (fx - 0.5f) * float(screenW) / k, y = (0.5f - fy) * float(screenH) / k;
+    for (const TapRect& r : tapRects)
+        if (r.id == kButtonOff && x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1))
+            return (void)audio.playSe(0xb6, false);
 }
 void Viewer::battleClick(float fx, float fy) {
     if (gameOver.stage == 8) { // (the question's Yes / No)
@@ -3282,7 +3290,7 @@ void Viewer::drawCommandMenu(const std::string& anim, float t, const Mat4& view,
         drawFigure(c.fig, view.data());
         float sx, sy, ex, ey;
         if (uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey))
-            tapRects.push_back({look == 0 ? kRowNoPick : n, sx, sy, ex, ey}); // (CircleBtn::CheckTap: off, released on - SE 0xb6)
+            tapRects.push_back({look == 0 ? kButtonOff : n, sx, sy, ex, ey}); // (CircleBtn::CheckTap: off, released on - SE 0xb6)
         const auto lt = labels.find(n);
         float tx, ty;
         if (lt != labels.end() && w > 0 && uiJoint(c, "typeM_C01", tx, ty)) drawBorderedText(lt->second, 24, tx, ty, w, h);

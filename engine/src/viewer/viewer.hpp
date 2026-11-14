@@ -824,6 +824,9 @@ struct Viewer {
     };
     std::vector<TapRect> tapRects;
     static constexpr int kRowNoPick = -2; // (a list's focused row that can't be picked: its tap SE 0xb6)
+    static constexpr int kButtonOff = -3; // (a circle button that is off: its tap SE 0xb6 - CampMenu's and ShopFirstMenu's
+                                          // on the press too, CircleBtn::CheckTap's r3 1 there)
+    void offButtonPress(float fx, float fy);
     bool noPickTapped(float fx, float fy);
     // ---- The keys' (and a controller's) focus where the iPad's and Android's game is touch alone and
     // the Vita moves a cursor (GameTitleMenu's buttons and questions, the shop's first two menus, the

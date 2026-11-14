@@ -1987,8 +1987,9 @@ asked (r3 1), plays SE 0xb6. The callers' r3, read from the library's ARM code: 
 title's and the choice's (1: also on the press). The port gave an off button's id to its menu (the
 shop's kinds then opened an empty list to sell; a battle's command played 0xb4) or, for the camp's
 Items, no tap. Now `drawCommandMenu` marks an off button (`kRowNoPick`, as round 96's rows) and its
-tap plays 0xb6. (The press's extra 0xb6 on those four menus is not followed: the port acts on the
-release.) The title's Load button with no save is left out (`CreateCircleButton`'s skip), not off.
+tap plays 0xb6. On the press too where the original asks for it: the camp's buttons and the first
+shop menu (`offButtonPress`, `kButtonOff`); the title's off buttons are left out instead, and the
+choice's never are off. The title's Load button with no save is left out (`CreateCircleButton`'s skip), not off.
 
 ### Round 98: the button under the finger
 

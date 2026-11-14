@@ -234,7 +234,7 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
     return true;
 }
 
-// BtlCalc::StartState: the party first by the levels apart (its mean less the monsters' added up:
+// BtlCalc::StartState: the party first by the levels apart (its mean less the monsters' mean:
 // under -4 10 in 100, under 5 20, else 30; +10 with skill 4, 1 on either), else the monsters by 10
 // in 100 unless either has skill 4, 2
 int BattleRules::startState() {
@@ -265,9 +265,10 @@ int BattleRules::param(int f, int n) const {
     return v;
 }
 
+// (BtlUtilStatus::IsPairAction: a pair, both alive, and neither with state 3)
 bool BattleRules::isPairAction(int f) const {
     const Fighter& a = fighters_[size_t(f)];
-    return a.alive && a.partner >= 0 && fighters_[size_t(a.partner)].alive;
+    return a.alive && a.partner >= 0 && fighters_[size_t(a.partner)].alive && !a.hasState(3) && !fighters_[size_t(a.partner)].hasState(3);
 }
 
 bool BattleRules::hit(int actor, int target, const BattleData::Command& c) {
@@ -289,6 +290,9 @@ bool BattleRules::hit(int actor, int target, const BattleData::Command& c) {
     return rand_.below(100) < chance;
 }
 
+// BtlCalc::Critical: none for a sopia without skill 2, 4 (a pair's), none without the command's
+// special 8, sure with 9; the first-strike skill, state 32; else the luck apart's table (>>8), 100 for
+// kinds 4 and 15, kinds 13 and 14's bonuses, skill 2, 2's +10, state 11's +50
 bool BattleRules::critical(int actor, int target, const BattleData::Command& c) {
     const Fighter& a = fighters_[size_t(actor)];
     auto hasPair = [&](int group, int bit) {
@@ -311,20 +315,43 @@ bool BattleRules::critical(int actor, int target, const BattleData::Command& c) 
     // state 32 (the actor's, or its partner's in a pair): sure, a use
     if (a.hasState(32)) return a.useState(32), true;
     if (isPairAction(actor) && fighters_[size_t(a.partner)].hasState(32)) return fighters_[size_t(a.partner)].useState(32), true;
-    auto luck = [&](int f) {
+    // the luck (GetCharaParam: raised / lowered, a use) - a pair's the two's mean, on either side
+    auto paired = [&](int f, int n) {
         const Fighter& x = fighters_[size_t(f)];
-        return isPairAction(f) ? (x.param[4] + fighters_[size_t(x.partner)].param[4]) / 2 : x.param[4];
+        const int v = param(f, n);
+        return isPairAction(f) ? (v + param(x.partner, n)) / 2 : v;
     };
     static const int kChance[6] = {5, 10, 15, 20, 25, 50};
-    int chance = kChance[step(luck(actor) - luck(target))] * 100 >> 8;
+    const int luckActor = paired(actor, 4);
+    int chance = kChance[step(luckActor - paired(target, 4))] * 100 >> 8;
     if (c.kind == 4 || c.kind == 15) chance = 100;
+    else if (c.kind == 13 || c.kind == 14) {
+        int bonus = 0;
+        if (c.kind == 13) { // (Last-Ditch Effort: the actor's HP rate, a pair's mean - over 74 +40, 50 +60, 25 +80, else +100)
+            auto rate = [&](int f) { return fighters_[size_t(f)].hp * 100 / std::max(fighters_[size_t(f)].maxHp, 1); };
+            int r = rate(actor);
+            if (isPairAction(actor)) r = (rate(a.partner) + r) / 2;
+            bonus = r > 74 ? 40 : r > 50 ? 60 : r > 25 ? 80 : 100;
+        } else { // (Quick Draw: the speed apart - the actor's, a pair's mean, less the target's own: under -50 +40, 51 +60, 101 +80, else +90)
+            const int d = paired(actor, 3) - param(target, 3);
+            bonus = d < -50 ? 40 : d < 51 ? 60 : d < 101 ? 80 : 90;
+        }
+        chance = std::min(chance + bonus, 100);
+    }
     if (hasPair(2, 2)) chance = chance < 91 ? chance + 10 : 100;
+    // state 11 (CheckCharaStatePair: the actor's or its pair partner's) +50, a use off each
+    if (a.hasState(11) || (isPairAction(actor) && fighters_[size_t(a.partner)].hasState(11))) {
+        const bool pair = isPairAction(actor);
+        a.useState(11);
+        if (pair) fighters_[size_t(a.partner)].useState(11);
+        chance = chance < 51 ? chance + 50 : 100;
+    }
     return rand_.below(100) < chance;
 }
 
 int BattleRules::damage(int actor, int target, const BattleData::Command& c, bool crit, bool* weak) {
     if (weak) *weak = false;
-    lastBurst_ = 0;
+    lastBurst_ = 0, lastMpLoss_ = 0, lastDrain_ = 0, lastSacrifice_ = false;
     const Fighter& a = fighters_[size_t(actor)];
     const Fighter& t = fighters_[size_t(target)];
     const bool pair = isPairAction(actor);
@@ -346,6 +373,11 @@ int BattleRules::damage(int actor, int target, const BattleData::Command& c, boo
     float m = 1;
     int elem = c.element;
     if (elem == 0 && (c.specials >> 5 & 1)) elem = a.element;
+    if (pair && c.element == 0 && (c.specials >> 5 & 1)) { // (a pair's: the partner's when the actor has none, none when the two differ)
+        const int other = fighters_[size_t(a.partner)].element;
+        if (elem == 0) elem = other;
+        else if (other != 0 && other != elem) elem = 0;
+    }
     if (elem >= 1 && elem <= 3 && hasPair(0, elem - 1)) m = 1.25f;
     if (c.magic == 0 && hasPair(0, 5)) m *= 1.25f;
     if (c.magic == 1 && hasPair(0, 6)) m *= 1.25f;
@@ -367,8 +399,28 @@ int BattleRules::damage(int actor, int target, const BattleData::Command& c, boo
     // Damage3
     if (c.kind == 5) return int(std::ceil(float(c.power * t.hp) / 100.0f));
     if (c.kind == 12) return t.hp - 1;
+    if (c.kind == 32) { // (Starving for Succor: the target's MP by the power's percent, no HP)
+        lastMpLoss_ = int(std::ceil(float(c.power * t.mp) / 100.0f));
+        return 0;
+    }
+    const Fighter* partner = pair ? &fighters_[size_t(a.partner)] : nullptr;
+    auto magic = [&] { // (the actor's magic, a pair's both)
+        int v = param(actor, 1);
+        if (pair) v += param(a.partner, 1);
+        return float(v);
+    };
+    if (c.kind == 8) { // (Sacrifice: the power's percent of the actor's HP - a pair's both -, each down to 1)
+        d = float(c.power * (a.hp + (partner ? partner->hp : 0))) / 100.0f;
+        lastSacrifice_ = true;
+    }
+    if (c.kind == 16) d = magic() * float(c.power + y) / 100.0f - float(param(target, 1) * 2 / 3); // (the drains)
     if (d < 0) d = 0;
+    if (c.kind == 17) d = magic() * float(c.power + y) / 100.0f; // (MP drain: no defence)
     if (c.spread) d = d * float((100 - c.spread) + rand_.below(c.spread * 2 + 1)) / 100.0f;
+    if (c.kind == 6) { // (Empathy Attack: the actor's HP lost, a pair's both, after the spread)
+        d += float(a.maxHp - a.hp);
+        if (partner) d += float(partner->maxHp - partner->hp);
+    }
     if (t.guarding || t.hasState(4)) d *= 0.5f;
     if (breakBonus(target)) d *= 0.5f;
     if (!pair && t.has(5, 9) && !a.has(5, 0) && !(c.specials >> 2 & 1)) d *= 0.1f; // (armour)
@@ -380,6 +432,8 @@ int BattleRules::damage(int actor, int target, const BattleData::Command& c, boo
         if (pair) fighters_[size_t(a.partner)].useState(35);
         d += d;
     }
+    if (c.kind == 16) lastDrain_ = int(std::ceil(d)); // (+0xf64, the actor's - and its partner's)
+    if (c.kind == 17) return lastMpLoss_ = int(std::ceil(d)), 0; // (+0xf60, no HP)
     return int(std::ceil(d));
 }
 
@@ -404,7 +458,8 @@ void BattleRules::restore(int actor, int target, const BattleData::Command& c, E
     if (pair) magic += param(a.partner, 1);
     auto formula = [&] {
         float v = float(magic) * float(c.power + commandY(actor, false)) / 100.0f;
-        if (c.spread) v = v * float((100 - c.spread) + rand_.below(c.spread * 2 + 1)) / 100.0f; // (CommandSwing)
+        if (c.spread) // (CommandSwing: BtlRand(2s), 0 .. 2s - 1, and the factor's float first - asm 0x327d80)
+            v = v * ((float(100 - c.spread) + float(rand_.below(c.spread * 2))) / 100.0f);
         return int(std::ceil(v));
     };
     int hp = -1, mp = -1;
@@ -470,16 +525,19 @@ bool BattleRules::debuffed(int f) const {
     return false;
 }
 
+// (BtlWork::SetupEnemy: +0x22 the monsters' levels added up, +0x26 that over their count - asm
+// 0x341870 `__divsi3` by +0x1d; StartState, Escape, CheckDropItem / Sopia and Cond8 take the
+// party's mean, +0x24, less +0x26)
 void BattleRules::levels(int& mean, int& monsters) const {
-    int sum = 0, count = 0;
-    monsters = 0;
+    int sum = 0, count = 0, monsterSum = 0, monsterCount = 0;
     for (int k = 0; k < 5; ++k) {
         const Fighter& f = fighters_[size_t(k)];
         if (!f.present) continue;
         if (k < 2) sum += f.level, ++count;
-        else monsters += f.level;
+        else monsterSum += f.level, ++monsterCount;
     }
     mean = count ? sum / count : 0;
+    monsters = monsterCount ? monsterSum / monsterCount : 0;
 }
 
 // BtlEnemy::Cond0..16 - the slot's condition, its value the slot's (monster +0x94); the party
@@ -520,7 +578,7 @@ bool BattleRules::enemyCondition(int mi, int k) const {
         for (int i = 0; i < monsters; ++i) n += alive(2 + i);
         return n == 1;
     }
-    case 8: { // the levels apart by this or more: the party's mean, the monsters' added up
+    case 8: { // the levels apart by this or more: the party's mean, the monsters'
         int mean = 0, sum = 0;
         levels(mean, sum);
         return v <= std::abs(mean - sum);
@@ -852,6 +910,9 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
             Event e;
             e.actor = o.actor, e.partner = isPairAction(o.actor) ? a.partner : -1, e.command = o.command, e.target = t;
             restore(o.actor, t, *c, e);
+            // (CalcRestore: Restore, then CalcStatus - the cures, the states and the element lent;
+            // a dead one only for the revives, 24 / 25)
+            if (fighters_[size_t(t)].alive) calcStatus(o.actor, t, *c, e);
             out.push_back(e);
         }
         return;
@@ -893,9 +954,25 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
                 e.blocked = tf.has(5, 11) || (!(c->specials >> 6 & 1u) && tf.has(1, 4) && int(rand_.below(100)) < chance);
             if (e.blocked) e.notes.push_back({c->magic ? 0x46 : 0x45, t}); // ("Neutralized physical / magical damage!")
             if (!e.blocked) e.critical = critical(o.actor, t, *c);
-            if (!e.blocked) e.damage = damage(o.actor, t, *c, e.critical, &e.weak), e.burst = lastBurst_;
+            if (!e.blocked) {
+                e.damage = damage(o.actor, t, *c, e.critical, &e.weak), e.burst = lastBurst_;
+                // (Damage3's other ends - BtlActionCtrl::Damage, each one marked: +0xf60 MP, +0xf64 HP back, +0xf5c)
+                if (lastMpLoss_ > 0) e.mpLoss = std::min(lastMpLoss_, tf.mp), tf.mp -= e.mpLoss;
+                const bool both = isPairAction(o.actor);
+                for (int f : {o.actor, both ? a.partner : -1}) {
+                    if (f < 0) continue;
+                    Fighter& x = fighters_[size_t(f)];
+                    if (lastSacrifice_ && x.hp > 1) x.hp = 1;
+                    if (lastDrain_ > 0 && x.alive) {
+                        const int back = std::min(lastDrain_, x.maxHp - x.hp);
+                        x.hp += back;
+                        if (f == o.actor) e.drained = back;
+                    }
+                }
+            }
             tf.hp = std::max(tf.hp - e.damage, 0);
             if (tf.hp > 0) calcStatus(o.actor, t, *c, e);
+            if (tf.hp > 0 && tf.canceled) tf.hp = 0, e.instantDeath = true, tf.canceled = false; // (CheckDead: +0xf7a, its HP whatever it was; the command's alone - ClearCommandResult)
             if (tf.hp > 0) checkCounter(o, *c, t);
             if (tf.hp == 0) {
                 tf.alive = false, e.defeated = true;
@@ -1223,14 +1300,8 @@ bool BattleRules::tryEscape() {
         if (fighters_[size_t(k)].alive && fighters_[size_t(k)].has(4, 3)) sure = true;
     if (advantage_ == 1 && turn_ == 0) sure = true; // (BtlCalc::Escape: the party's first strike, its first turn - +0x14 1, +0x10 0)
     if (!sure) {
-        int levels = 0, count = 0, monsters = 0;
-        for (int k = 0; k < 5; ++k) {
-            const Fighter& f = fighters_[size_t(k)];
-            if (!f.present) continue;
-            if (k < 2) levels += f.level, ++count;
-            else monsters += f.level;
-        }
-        const int mean = count ? levels / count : 0;
+        int mean = 0, monsters = 0;
+        levels(mean, monsters);
         static const int kThresholds[3] = {-50, -1, 49}, kChance[4] = {40, 50, 60, 70};
         int i = 0;
         while (i < 3 && kThresholds[i] < mean - monsters) ++i; // (CheckResult)
@@ -1240,16 +1311,11 @@ bool BattleRules::tryEscape() {
 }
 
 void BattleRules::checkDrops(const Fighter& monster, const BattleData::Monster& m) {
-    int levels = 0, count = 0, monsters = 0;
-    for (int k = 0; k < 5; ++k) {
-        const Fighter& f = fighters_[size_t(k)];
-        if (!f.present) continue;
-        if (k < 2) levels += f.level, ++count;
-        else monsters += f.level;
-    }
+    int mean = 0, monsters = 0;
+    levels(mean, monsters);
     static const int kThresholds[3] = {-5, 0, 4}, kChance[4] = {20, 30, 40, 50};
     int i = 0;
-    while (i < 3 && kThresholds[i] < (count ? levels / count : 0) - monsters) ++i; // (CheckResult)
+    while (i < 3 && kThresholds[i] < mean - monsters) ++i; // (CheckResult)
     const int band = monster.level < 20 ? 0 : monster.level < 40 ? 1 : 2; // (BtlUtilData::GetDropIndex)
     // the item: ItemUp (skill 3, 3) of either +20 in 100; RareGetter (3, 4) the first's - either's,
     // a pair - 45 in 90 the rare one
@@ -1356,12 +1422,13 @@ void BattleRules::calcStatus(int actor, int target, const BattleData::Command& c
         else if (c.durationMode == 2) turns = 1;
         else if (c.durationMode == 3) turns = c.turns + bonus;
     };
-    // CheckBadStatus: the action cancelled (70 / 50), then poison, blind, seal (100 / 80; the
-    // command's turns, else 3), the next turn's action cancelled (state 3, a turn), then time
-    // stopped and the seals (100 / 100: the command's turns)
+    // CheckBadStatus: death (slot 3, 70 / 50 - on a blow not blocked, +0xf7b: +0xf7a set, the
+    // battle post's +0x118 bit 2, and the rest not rolled; CheckDead then takes its HP to 0), else
+    // poison, blind, seal (100 / 80; the command's turns, else 3), the next turn's action cancelled
+    // (state 3, a turn), then time stopped and the seals (100 / 100: the command's turns)
     bool took[5] = {}, resisted[3] = {};
-    if (badStatus(actor, target, c, 3, 70, 50)) t.canceled = took[3] = true;
-    for (int k = 0; k < 3; ++k)
+    if (badStatus(actor, target, c, 3, 70, 50) && !e.blocked) t.canceled = took[3] = true;
+    for (int k = 0; k < 3 && !took[3]; ++k)
         if (!t.hasState(k)) {
             if (t.stateResist[k] == 2 && c.bad[k] == 1) {
                 resisted[k] = true;
@@ -1369,7 +1436,7 @@ void BattleRules::calcStatus(int actor, int target, const BattleData::Command& c
             }
             if (badStatus(actor, target, c, k, 100, 80)) t.addState(k, (c.bad[k] == 1 ? c.turns : 3) + bonus, 0), took[k] = true;
         }
-    if (!t.hasState(3) && badStatus(actor, target, c, 4, 100, 80)) t.addState(3, 1, 0), took[4] = true;
+    if (!took[3] && !t.hasState(3) && badStatus(actor, target, c, 4, 100, 80)) t.addState(3, 1, 0), took[4] = true;
     // (ShowAnnounceStatus1: more than one of poison, blind, seal "hit with status effects", else
     // the first of poison, blind, (the cancel: none, nor the rest), seal, state 3 - the party's
     // announcement or a monster's -, then the first resisted)
@@ -1388,7 +1455,7 @@ void BattleRules::calcStatus(int actor, int target, const BattleData::Command& c
     // (0x525d38: the command's byte, the state, ShowAnnounceStatus3's announcement)
     static const int kMore[5][3] = {{5, 21, 0x59}, {6, 22, 0x52}, {7, 23, 0x20}, {8, 25, 0x54}, {9, 24, 0x56}};
     for (const auto& m : kMore)
-        if (!t.hasState(m[1]) && badStatus(actor, target, c, m[0], 100, 100))
+        if (!took[3] && !t.hasState(m[1]) && badStatus(actor, target, c, m[0], 100, 100))
             t.addState(m[1], c.turns + bonus, 0), note(m[1] == 23 && !party ? 0x1b : m[2]);
     // CheckCureStatus: +0x50 + k of 2 cures it
     for (int k = 0; k < 3; ++k)

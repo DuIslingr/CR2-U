@@ -2481,16 +2481,21 @@ void Viewer::landHits(const ShowAction& a, bool first) {
                 if (restore) ds.value = e.heal > 0 || e.healMp == 0 ? e.heal : e.healMp, ds.set = e.heal > 0 || e.healMp == 0 ? 50 : 60;
                 else if (!e.hit) ds.value = -1, ds.mark = 0;
                 else if (e.critical) ds.mark = 2;
+                if (e.mpLoss > 0 && e.damage <= 0) ds.value = e.mpLoss, ds.set = 20; // (ShowDamage: +0xf60 the plain number, type 0)
                 nudgeNumber(e.target, false, p);
                 for (int c = 0; c < 3; ++c) ds.at[c] = p[c];
                 damageShown.push_back(ds);
+                if (e.drained > 0) showNumber(e.actor, e.drained, 50, false); // (+0xf64 on the actor: type 3, the heal's)
             }
         }
         {
             const cr2::BattleData::Command* ec = battleData.command(e.command);
             const std::string what = ec && ec->kind == 2 ? std::string("defends")
                                      : restore ? (e.revived ? "revived, " : "") + std::string("+") + std::to_string(e.heal) + " HP" + (e.healMp ? " +" + std::to_string(e.healMp) + " MP" : "")
-                                     : e.hit ? std::to_string(e.damage) + (e.critical ? " critical" : "") + (e.defeated ? ", down" : "") : "missed";
+                                     : e.hit ? std::to_string(e.damage) + (e.critical ? " critical" : "") + (e.mpLoss ? ", " + std::to_string(e.mpLoss) + " MP" : "") +
+                                                   (e.drained ? ", " + std::to_string(e.drained) + " HP drained" : "") + (e.instantDeath ? ", struck dead" : "") +
+                                                   (e.defeated ? ", down" : "")
+                                             : "missed";
             SDL_Log("    %s -> %s: %s (%.1f s)", battleRules->fighter(e.actor).name.c_str(), battleRules->fighter(e.target).name.c_str(), what.c_str(), battleClock);
         }
     }

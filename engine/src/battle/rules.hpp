@@ -61,7 +61,7 @@ struct Fighter {
         int id = 0, turns = 0, count = 0;
     };
     mutable std::vector<State> states;
-    bool canceled = false; // (+0xf7a: its action this turn cancelled)
+    bool canceled = false; // (+0xf7a: struck dead by a command's slot 3 - CheckDead takes its HP to 0)
     bool stolen = false; // (+0xf8c: a monster stolen from, or with nothing to steal)
     mutable int firstCrit = 0; // (+0xf8d: the party's 1 from the start, 2 its sure first critical struck this action, 0 after)
     unsigned usedSlots = 0; // (+0xfc0: a monster's choices taken this turn - BtlUtilSituation::ClearEnemyAction)
@@ -142,11 +142,13 @@ public:
         int burst = 0; // (+0xf74: the element that beat the target's, 1..3 - HitEffect's eff218 .. eff220)
         std::vector<int> mirrors; // (the action's: those whose magic barrier turned it back - ActionSopiaMirror)
         int heal = 0, healMp = 0; // (a restore's: BtlCalc::Restore)
+        int mpLoss = 0, drained = 0; // (Damage3's: the target's MP lost - kinds 17, 32 -; the actor's HP back - 16)
         bool revived = false;
         // downed but back (state 33, revived once - BtlActionCtrl::ActionDeadWaitDeadMotion, then
         // ActionRevive*: a quarter of its most HP)
         bool counter = false; // (its action a counter)
         bool blocked = false; // (CheckAttackBlock / CheckMagicBlock: no damage, +0xf7b)
+        bool instantDeath = false; // (CheckBadStatus's slot 3: +0xf7a, CheckDead)
         bool autoGuard = false; // (CheckSkillAutoGuard: state 4 for this blow, +0xf7f)
         bool failed = false;  // (its action not done: sealed, or short of MP - ActionDontAction)
         bool regenerated = false;
@@ -278,6 +280,10 @@ public:
 
 private:
     int lastBurst_ = 0;
+    // Damage3's other ends, the last blow's (+0xf60 the target's MP lost - kinds 17, 32; +0xf64 the
+    // actor's HP drained back - 16; +0xf5c the actor's own down to 1 - 8, Sacrifice)
+    int lastMpLoss_ = 0, lastDrain_ = 0;
+    bool lastSacrifice_ = false;
     std::vector<int> mirrors_; // (the action's barrier holders) // (damage()'s: the element that beat the target's)
     bool isPairAction(int f) const;
     // A monster's choice (BtlEnemy): SetPreActionCommand's - the commands first or last in the

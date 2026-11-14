@@ -2154,6 +2154,44 @@ Checked against the save and system data functions; fixed:
   manual save to the continue data when the Vita had none; it now writes it empty (none to continue).
   The import test checks real values.
 
+### Round 108: the battle formulas
+
+Checked against `BtlCalc` and `BtlActionCtrl`, with the port's `BattleRules` run on the game's data
+against hand transcriptions; fixed:
+- The monsters' level in the level checks is their mean (`BtlWork::SetupEnemy`: +0x22 the sum,
+  +0x26 that over the count - asm 0x341870 `__divsi3`). `StartState`, `Escape`, `CheckDropItem` /
+  `CheckDropSopia` and `BtlEnemy::Cond8` take the party's mean less it; the port used the sum, so any
+  battle with two or three monsters had fewer first strikes, lower escape and drop chances and a
+  different condition 8.
+- Bad-status slot 3 is death, not a cancelled action: `CheckBadStatus` sets +0xf7a on a blow that
+  isn't blocked (+0xf7b) and returns before the other rolls, and `CheckDead` then takes the HP to 0
+  whatever it was (`CalcCommand` counts it a defeat). Guillotine, Mandragora Bulb, Ascension, Blow of
+  Regret and the rest now kill; `stateResist[3]` (2 on bosses) is the death resistance.
+- `Damage3`'s other kinds: 6 (Empathy Attack) adds the actor's lost HP - a pair's both - after the
+  spread; 8 (Sacrifice) is the power's percent of the actor's HP (a pair's both) and drops each to
+  1 HP; 16 (the drains) is magic x (power + CommandY) / 100 less the target's magic x 2/3, and the
+  actor (and partner) get `ceil` of the final back (+0xf64); 17 (MP drain) is magic x (power +
+  CommandY) / 100 taken from the target's MP (+0xf60), no HP; 32 (Starving for Succor) takes the
+  power's percent of the target's MP, no HP. The port ran all five as plain HP damage. The MP lost
+  shows as the plain number (`ShowDamage` type 0), the HP drained as the heal's on the actor (type 3).
+- A restore runs its statuses after (`CalcRestore`: `Restore`, then `CalcStatus`), so Triumphal
+  Song and Holy Solace cure and Forced Regeneration lends its element; the port skipped them.
+- `Critical`: kind 13 (Last-Ditch Effort) adds by the actor's HP rate (a pair's mean: over 74 +40,
+  over 50 +60, over 25 +80, else +100), kind 14 (Quick Draw) by the speed apart (under -50 +40, under
+  51 +60, under 101 +80, else +90), each capped at 100; state 11 (the actor's or its partner's) +50,
+  a use off each; the luck read through `GetCharaParam` (raised / lowered, a use). The port had none
+  of these.
+- The heal spread (`CommandSwing`, asm 0x327d80) draws `BtlRand(2s)`, 0 .. 2s - 1, and multiplies by
+  the float factor ((100 - s) + r) / 100; the port drew 0 .. 2s and divided after. (The damage spread,
+  `BtlRand(2s + 1)`, was right.)
+- `IsPairAction` is false when either member has state 3; the port's ignored it, so the pair's
+  bonuses applied.
+- A pair's element (`DamageAttribute` with a command of no element and special 5): the partner's when
+  the actor has none, none when the two differ.
+
+Left as they are (the random rolls' count, no visible rule): a roll at chance 0, a counter's roll
+when a state already makes it sure, and a pair of targets' rolls in the original's order.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

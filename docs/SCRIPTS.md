@@ -171,7 +171,7 @@ character - the high jump's `gmk1rng`, the others' `gmkNrng` with the button `gm
 else's `gmk0rng_io`), gone as the leader leaves; a tap within 128 of it starts the action
 (FldMain::CheckTouchActionStartOne) - for anyone else SE 0xb6. A high jump hops as a sprint does
 (the voice 0x8fa with each launch). An iai (FldIai) takes the button out (then its guide
-`gmk4csr_loop`) and waits for a slash: a press, then within 10 frames the line from where it
+`gmk4csr_loop`) and waits for a slash: a press, then within 11 updates (0.55 s) the line from where it
 began must pass the mark - the mark's foot on it, within 128 (Cr3UtilCheckCuttingCircle) - SE
 0x164, the ring out, and the gimmick's own function called (FldMain::CallEvent: `iai01` - its
 flag, its obstacle cut, the action off); else SE 0x165 and the mark anew. An aim (FldAim) takes
@@ -183,7 +183,7 @@ A hakkei (FldHakkei) takes the button out, then shows a ball for each tap it wan
 (`SetHakkeiTouchCnt`; 5 unless the script says - FieldGimickEffect06Menu::SetCube: `gmk5ball` at
 the ring's `call_gmk5ball` joints, the triangle's for up to three, the pentagon's from four):
 each tap within 128 of the mark is a punch (`fp02` .. `fp06`, SE 0x160 or 0x161) and takes a ball;
-all of them within 60 frames of the first succeed (SE 0x164, the function called), a tap away
+all of them within 60 updates (3.0 s) of the first succeed (SE 0x164, the function called), a tap away
 from the mark or the time running out fails. A mystic's mark stands on its active spot
 (`SetMysticActiveSpotName`: FldMystic::SetActiveSpotNumber, the spot so named); started, the
 button goes out and a ring (FieldGimickEffect03bMenu's `gmk3rng`) stands on each of its other

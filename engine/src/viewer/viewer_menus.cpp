@@ -547,8 +547,11 @@ void Viewer::mysticPointer(float fx, float fy) {
     mysticTap(-1);
 }
 void Viewer::updateIai() {
-    if (hakkei.stage && !hakkei.tappedAt.empty() && uiClock - hakkei.tappedAt[0] > 60.0f / 60.0f) iaiEnd(false); // (60 frames)
-    if (iai.stage == 2 && uiClock - iai.pressedAt > 10.0f / 60.0f) iaiEnd(false); // (10 frames)
+    // (FldHakkei::Execute: m_nTouchFrame 60, one less each update from the first hit - 3.0 s; FldIai::Execute:
+    // m_nTouchFrame one more each update after the press, the cut checked through the eleventh - 0.55 s. The
+    // game's updates, 20 a second, not frames)
+    if (hakkei.stage && !hakkei.tappedAt.empty() && uiClock - hakkei.tappedAt[0] >= 60 * cr2::EventRuntime::kTick) iaiEnd(false);
+    if (iai.stage == 2 && uiClock - iai.pressedAt >= 11 * cr2::EventRuntime::kTick) iaiEnd(false);
 }
 void Viewer::drawActionMark(const Mat4& view) {
     float x, y;

@@ -1874,6 +1874,18 @@ update (the title's too), the No playing the question back and the options in th
 the question wait while it closes. `--battle 57 --fight solo --flag 84 --input "options manual zz
 back zz title zz no zz back"` (zz: a pause): the list, the options, the question, the options, closed.
 
+### Round 88: the iai's and the hakkei's time
+
+`FldIai::Execute`: state 100 waits for a press (`Cr3UtilGetTouchState` & 1), then 0x96 adds one to
+`m_nTouchFrame` each update and checks the cut (`Cr3UtilCheckCuttingCircle`: the line from the press
+to the finger past the mark, within 128 - 0x43000000); not cut by the eleventh, it fails (SE 0x165).
+`FldHakkei::Execute`: `m_nTouchFrame` 60, one less each update from the first hit (`m_bFrameFlag`);
+at 0 - or at a tap that misses - it fails. Both count the game's updates (20 a second; `FldMain::Update`
+runs each once an update). The port took them as 60ths: the iai's slash had 10 / 60 s, the
+hakkei's taps 1 s after the first. Now 11 updates (0.55 s) and 60 (3.0 s). `docs/SCRIPTS.md` said
+"10 frames" / "60 frames"; it says updates now. (The aim has no time limit: a press on the mark, the
+release on the leader.)
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

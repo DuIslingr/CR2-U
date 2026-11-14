@@ -1964,7 +1964,7 @@ After rounds 88 and 89, the other counts read again for their unit:
   against 16 and 32 - 60ths; the port's `dt x 60` is the same.
 - The footsteps (`FldPlayer::Update`, `SetSEAndEffect`): every 12th update walking, 7th running - the
   port's `stepUpdate` counts updates.
-- The battle's `0.15 x 60` turn (round 94) and the iai's, the hakkei's and the glass's counts (rounds
+- The leader's `0.15 x 60` walking turn (round 94) and the iai's, the hakkei's and the glass's counts (rounds
   88, 89) were the only others found by their constants (`60.0` in the library: also the cut-in
   window's placing, the field camera's units and the game over's choice - places, not times).
 

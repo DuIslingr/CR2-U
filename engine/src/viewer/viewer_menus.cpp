@@ -1224,7 +1224,7 @@ void Viewer::fieldInput() {
         inputNext = uiClock + 0.4f;
         return;
     }
-    if (!inputScript.empty() && uiClock >= inputNext && shop.stage && uiClock - shop.at > 0.5f) { // (the shop: its buttons by name, the list's, how many, yes / no)
+    if (!inputScript.empty() && uiClock >= inputNext && shop.stage && shopSwitchAt < 0 && uiClock - shop.at > 0.5f) { // (the shop: its buttons by name, the list's, how many, yes / no)
         shopToken(inputScript.front());
         inputScript.pop_front();
         inputNext = uiClock + 0.3f;
@@ -1501,6 +1501,11 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                     pubEnd(3);
                     break;
                 }
+                if (shop.stage && shopSwitchAt >= 0 && ++shopSwitchTicks >= shopSwitchLen) { // (the step's next menu made)
+                    shopSwitchAt = -1;
+                    if (!(shopSwitchTo == 3 && shop.stage >= 4)) shop.focus = 0; // (back from the question: on the row)
+                    shop.stage = shopSwitchTo, shop.at = uiClock, shopInTicks = 0;
+                } else if (shop.stage && shopSwitchAt < 0 && shopCloseAt < 0 && shopInTicks < 5) ++shopInTicks;
                 if (shop.stage && shopCloseAt >= 0 && ++shopCloseTicks >= 4) { // (the cut-in gone: the shop over)
                     shopCloseAt = -1;
                     shopClose(shopCloseEvent ? shopCloseCall.c_str() : nullptr);
@@ -4128,8 +4133,8 @@ void Viewer::drawPub(const Mat4& view, int w, int h) {
 
 void Viewer::openShop() {
     shop = Shop();
-    shopCloseAt = -1;
-    shop.stage = 1, shop.at = uiClock;
+    shopCloseAt = shopSwitchAt = -1, shopInTicks = 0;
+    shop.stage = 1, shop.at = shop.opened = uiClock;
     SDL_Log("shop: open");
 }
 int Viewer::shopRank() const {
@@ -4184,12 +4189,15 @@ void Viewer::shopClose(const char* call) {
     if (call) queueEvent(call); // (FldMain: CallEvent - EventExecute the update after)
     else pendingBranch = true;   // (back to the field)
 }
+void Viewer::shopSwitch(int to, int ticks) {
+    shopSwitchAt = uiClock, shopSwitchFrom = uiClock - shop.at, shopSwitchTicks = 0;
+    shopSwitchLen = ticks, shopSwitchTo = to;
+}
 void Viewer::shopTap(int id) {
-    if (shopCloseAt >= 0) return;
-    auto stage = [&](int s) { shop.stage = s, shop.at = uiClock, shop.focus = 0; };
+    if (shopCloseAt >= 0 || shopSwitchAt >= 0 || shopInTicks < 5) return; // (closing, a step running, the next not in: +0x1c)
     if (shop.stage == 1) {
-        if (id == 14 || id == 15) audio.playSe(0xb4, false), shop.buy = id == 14, stage(2); // (ShopFirstMenu: 4 buy, 5 sell)
-        else if ((id == 13 || id == 100) && shopCloseAt < 0) { // (3: FldShop's 3 - CallEvent shop_talk; 1: back to the field)
+        if (id == 14 || id == 15) audio.playSe(0xb4, false), shop.buy = id == 14, shopSwitch(2, 5); // (ShopFirstMenu: 4 buy, 5 sell)
+        else if (id == 13 || id == 100) { // (3: FldShop's 3 - CallEvent shop_talk; 1: back to the field)
             audio.playSe(id == 13 ? 0xb4 : 0xb5, false);
             shopCloseAt = uiClock, shopCloseFrom = uiClock - shop.at, shopCloseTicks = 0;
             shopCloseEvent = id == 13, shopCloseCall = "shop_talk";
@@ -4197,8 +4205,8 @@ void Viewer::shopTap(int id) {
     } else if (shop.stage == 2) {
         static const std::pair<int, int> kKinds[4] = {{16, 0}, {21, 1}, {22, 2}, {23, 3}};
         for (const auto& [b, k] : kKinds)
-            if (id == b) audio.playSe(0xb4, false), shop.kind = k, shop.who = 0, stage(3);
-        if (id == 100) audio.playSe(0xb5, false), stage(1);
+            if (id == b) audio.playSe(0xb4, false), shop.kind = k, shop.who = 0, shopSwitch(3, 6);
+        if (id == 100) audio.playSe(0xb5, false), shopSwitch(1, 6); // (param 8, state 3: the first menu again)
     } else if (shop.stage == 3 && (id == 6511 || id == 6512) && shop.kind > 0) { // (the arrows: CharaChange -1 / +1, SE 0xb7)
         const int c = int(shopChars().size());
         shop.who = (shop.who + (id == 6512 ? 1 : c - 1)) % std::max(c, 1), shop.focus = 0;
@@ -4209,14 +4217,14 @@ void Viewer::shopTap(int id) {
     } else if (shop.stage == 3) {
         const std::vector<ListRow> rows = shopRows();
         if (id >= 1000 && id < 1000 + int(rows.size())) shop.focus = id - 1000;
-        else if (id == 100) audio.playSe(0xb5, false), stage(2);
+        else if (id == 100) audio.playSe(0xb5, false), shopSwitch(2, 5); // (the frame back, 0xb: state 9 - the kinds again)
         else
             for (const ListRow& r : rows)
                 if (r.id == id && r.selectable && shopLimit() >= 0) {
                     shop.item = id;
                     if (shopLimit() < 1) return (void)audio.playSe(0xb6, false);
                     audio.playSe(0xb4, false);
-                    shop.count = 1, shop.stage = 4, shop.at = uiClock;
+                    shop.count = 1, shopSwitch(4, 4); // (the frame back, then 0xc: the quantity and the question)
                 }
     } else if (shop.stage == 4) {
         if (id == 7101 || id == 7102) { // (CampChooseQuantityMenu::SetViewNumber: one less / more, within 1 .. its limit)
@@ -4231,9 +4239,9 @@ void Viewer::shopTap(int id) {
                 game.oz = std::clamp(game.oz, 0, 9999999);
                 audio.playSe(200, false);
                 SDL_Log("shop: %s %d of %s - %d Oz now", shop.buy ? "bought" : "sold", shop.count, it->name[1].c_str(), game.oz);
-                if (shop.buy && shop.kind > 0) return (void)(shop.stage = 5, shop.askAt = uiClock); // (0x12: the question)
+                if (shop.buy && shop.kind > 0) return (void)(shop.stage = 5, shop.askAt = shop.at = uiClock); // (0x12: the question - the choice kept)
             } else audio.playSe(0xb4, false);
-            shop.stage = 3, shop.at = uiClock;
+            shopSwitch(3, 5); // (the choice closed - 0xb / 0xd -, the list made once it is gone)
         }
     } else if (shop.stage == 5 && (id == 7801 || id == 7802)) { // (0x14: Cr3UtilChangeEquipItem on the list's character, Cr3UtilAdjustment - 199; no, 0xb4)
         if (id == 7801) {
@@ -4244,7 +4252,7 @@ void Viewer::shopTap(int id) {
             audio.playSe(199, false);
             SDL_Log("shop: %d wears %d", ch + 1, shop.item);
         } else audio.playSe(0xb4, false);
-        shop.stage = 3;
+        shopSwitch(3, 5); // (0x13: the list once the choice is gone)
     }
 }
 // The explorer's shopping (--explore), as a player stocks up: for each of the pair the best
@@ -4293,7 +4301,7 @@ void Viewer::exploreShop() {
     shopClose();
 }
 void Viewer::shopKey(SDL_Keycode k) {
-    if (shopCloseAt >= 0) return; // (closing)
+    if (shopCloseAt >= 0 || shopSwitchAt >= 0 || shopInTicks < 5) return; // (closing, a step, the next not in)
     if (shop.stage == 1 || shop.stage == 2) {
         static const int kFirst[3] = {14, 15, 13}, kKinds[4] = {16, 21, 22, 23}; // (1 buy, 2 sell, 3 talk)
         if (k >= SDLK_1 && k <= SDLK_4) {
@@ -4338,14 +4346,19 @@ void Viewer::shopToken(const std::string& t) {
     if (auto k = kKeys.find(t); k != kKeys.end()) shopKey(k->second);
 }
 void Viewer::drawShop(const Mat4& view, const Mat4& proj, int w, int h) {
-    const float t = shopCloseAt < 0 ? uiClock - shop.at : std::max(std::min(shopCloseFrom, 0.2f) - (uiClock - shopCloseAt), 0.0f); // (played back as it closes)
+    auto partT = [&](float length) { // (in from the part's making; played back as the shop or a step closes it)
+        if (shopCloseAt >= 0) return std::max(std::min(shopCloseFrom, length) - (uiClock - shopCloseAt), 0.0f);
+        if (shopSwitchAt >= 0) return std::max(std::min(shopSwitchFrom, length) - (uiClock - shopSwitchAt), 0.0f);
+        return uiClock - shop.at;
+    };
+    const float t = partT(0.2f);
     auto keepLook = buttonLook;
     auto keepLevel = buttonLevel;
     auto keepFighter = buttonFighter;
     buttonLook = nullptr, buttonLevel = nullptr, buttonFighter = nullptr;
     UiFig& title = uiFig("menu"); // (ShopTitleMenu)
     title.fig.place = cr2::Mat34();
-    poseUi(title, "menushop_io", uiClock - shop.at + (shop.stage > 1 ? 10.0f : 0.0f));
+    poseUi(title, "menushop_io", uiClock - shop.opened);
     drawFigure(title.fig, view.data());
     UiFig& cut = uiFig("cutin"); // (ShopCutInPiupiuMenu: Piupiu)
     cut.fig.place = cr2::Mat34();
@@ -4387,7 +4400,7 @@ void Viewer::drawShop(const Mat4& view, const Mat4& proj, int w, int h) {
             return false;
         };
         buttonLook = [&, this](int n) { return !shop.buy && ((n == 16 && !sellable(0)) || (n == 23 && !sellable(3))) ? 0 : 1; };
-        drawCommandMenu("shopcmd_io", std::min(t, half), view, {}, {}, w, h, 0, "shopcmd_io");
+        drawCommandMenu("shopcmd_io", std::min(partT(half), half), view, {}, {}, w, h, 0, "shopcmd_io");
         buttonLook = nullptr;
         // the buy / sell sign (shopMode_io; SetSellBuySelected: the one chosen's material at
         // 1, the other's at 0.3)
@@ -4404,7 +4417,9 @@ void Viewer::drawShop(const Mat4& view, const Mat4& proj, int w, int h) {
         drawFigure(mode.fig, view.data());
         back();
     }
-    else if (shop.stage == 3 || shop.stage == 5) {
+    else if (shop.stage == 5) { // (0x14: the list gone since the row's pick - the question alone)
+        if (battleData.item(shop.item)) drawAsk(formatAnnounce(announce(0x72), {itemName(shop.item)}), t, view, w, h, 7801, 7802);
+    } else if (shop.stage == 3) {
         const std::vector<ListRow> rows = shopRows();
         if (rows.empty()) back();
         else { // (its own back: scrlBack, 100)
@@ -4429,8 +4444,6 @@ void Viewer::drawShop(const Mat4& view, const Mat4& proj, int w, int h) {
             drawSkillList(rows, rows[size_t(shop.focus)].id, t, view, w, h, tabs[0], 5); // (Shop*ListMenu::SetListItemParam: cost_id 5 by the price)
             listTagExtra[0] = listTagExtra[1] = -1, listSwitch = false;
         }
-        if (const cr2::BattleData::Item* it = shop.stage == 5 ? battleData.item(shop.item) : nullptr)
-            drawAsk(formatAnnounce(announce(0x72), {itemName(shop.item)}), uiClock - shop.askAt, view, w, h, 7801, 7802);
     } else if (shop.stage == 4) {
         const cr2::BattleData::Item* it = battleData.item(shop.item);
         UiFig& num = uiFig("shopnum_io");

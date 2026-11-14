@@ -1691,6 +1691,31 @@ explore taps the face twice. t0101 `--call ReserveParty` with a bounded explore 
 for a run, not kept: Organize, slot 2, the second face twice, Back): the slots five updates on, the
 faces four, the party 0,2 -> 0,3 four after the second tap, `party_end` queued four after Back.
 
+### Round 77: the shop's menus
+
+`ShopCutInPiupiuMenu::Update` runs the shop: each menu or list is made by a result to `InterfaceMain`
+once the one before is gone (`CheckInterfaceReaction(.., 3)`), with +0x1c 10; each clears the lock
+once its part is in. Buy / Sell (`ShopFirstMenu`, param 4 / 5: state 1): the first menu's
+`shopBtn_io` back (0.2 s), gone the fourth update, the kinds (`ShopSecondMenu` 0x49, 0x15) the fifth.
+A kind (`ShopSecondMenu::TouchSimpleRelease`, +0x1c 120, param 10 / 0xf / 0x15 / 0x17: states 5 / 7 /
+0xe / 0x10) or Back (param 8: state 3): `shopCmd_io` back from half its length (0.25 s), gone the
+fifth, the list (0x17 .. 0x1a) or the first menu (0x16) the sixth. The list (`ShopItemBuyListMenu`
+and the others): Back - its frame back (0.2 s), 0xb at the end (state 9: the kinds the update
+after) -; a row - SE 0xb4, the frame back, 0xc at the end: the quantity, the choice and the message
+made in that update, the list gone (returns 1). The answer (states 10 / 12 / 0x15: the Oz and the
+items at once, SE 200, or 0xb4): `EndBattleYNChoice`, `EndChooseQuantity`, then (0xb / 0xd / 0x16) the
+list made once the choice is gone (0.2 s, the fifth update). A bought piece of equipment (0x12): the
+message changed to "Equip %s?" over the same choice (`ClearBattleYNChoicePushBottom`), then (0x14,
+0x13) the list once it is gone. The port changed every menu in the tap's update and kept the list
+under the equipment's question. Now `shopSwitch` plays the menu, the list or the question back and
+makes the next in the fifth / sixth / fourth update, taps from the fifth after it is made
+(`shopInTicks`); the equipment's question is drawn alone; the title keeps its open's clock; the
+`--input` tokens wait for a step. Not followed: the Oz and battery windows' close at Buy / Sell
+(`EndOzWindow`, param 4 / 5) and their return, the cut-in hidden for the equipment lists (states 0xe
+/ 0x10), the list's character change and tabs. t0101 `--call ReserveShop --oz 5000 --input "buy items
+pick yes back back back"`: the kinds, the items, the question, one Chocolate bought (4900 Oz), the
+list again, the kinds, the first menu, out.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

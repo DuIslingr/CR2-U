@@ -1952,7 +1952,18 @@ struct Viewer {
         int kind = 0;     // (0 items, 1 weapons, 2 armour, 3 accessories)
         int focus = 0, item = 0, count = 1, who = 0;
         float at = 0, askAt = 0;
+        float opened = 0; // (the title's clock: in once, at the open)
     } shop;
+    // (the shop's steps - ShopCutInPiupiuMenu's states, each menu made once the one before is gone
+    // (CheckInterfaceReaction): Buy / Sell - ShopFirstMenu back (shopBtn_io, 0.2 s), the kinds the update
+    // after its end (the fifth); a kind or Back - ShopSecondMenu back from half its shopCmd_io (0.25 s), the
+    // list or the first menu the sixth; the list's Back - its frame back, 0xb, the kinds the fifth; a row -
+    // the frame back, 0xc: the quantity and the question in the fourth, the list gone; the answer - the
+    // choice closed (SurvivalBattleYNChoice, 0.2 s), the list made the fifth. Taps from the fifth update
+    // after each is made (its in, +0x1c))
+    float shopSwitchAt = -1, shopSwitchFrom = 0;
+    int shopSwitchTicks = 0, shopSwitchLen = 0, shopSwitchTo = 0, shopInTicks = 5;
+    void shopSwitch(int to, int ticks);
     // (ShopFirstMenu's Back / Talk: its close, the cut-in told 1 / 3 - its cutInSgl_io played back (0.2 s),
     // state 0x17 - and the shop over once the cut-in is gone, the fourth update; FldShop's 4 / 3 the next)
     // (the pub's Back: PubTopMenu's checkBtn_io played back (0.15 s) and the menu gone at its end; PubMainMenu

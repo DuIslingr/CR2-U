@@ -296,7 +296,8 @@ int padControlsSelfTest() {
         press(down);
         check(v.askFocus == 1 && se(0xb3), "question: Down No, SE 0xb3");
         press(circle);
-        check(v.shop.stage == 3, "question: ○ answers No (the shop's list again)");
+        check(v.shopSwitchAt >= 0 && v.shopSwitchTo == 3, "question: ○ answers No (the shop's list again)"); // (once the choice is gone)
+        v.shopSwitchAt = -1;
         v.shop.stage = 5;
         v.noteAsk(), v.noteAsk();
         v.shop.stage = 4, v.shop.count = 1; // (another question: Yes again)
@@ -305,7 +306,8 @@ int padControlsSelfTest() {
         press(up), press(up);
         check(v.askFocus == 0 && v.shop.count == 1, "question: Up / Down its focus, not the count");
         press(cross);
-        check(v.shop.stage == 3, "question: × No");
+        check(v.shopSwitchAt >= 0 && v.shopSwitchTo == 3, "question: × No");
+        v.shopSwitchAt = -1;
         v.shop = Viewer::Shop();
         v.world.stage = 4;
         v.noteAsk();

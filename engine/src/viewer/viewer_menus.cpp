@@ -1372,8 +1372,10 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
             optionsCloseClock = std::min(optionsCloseClock + realDt, 0.25f);
             for (; optionsCloseClock >= cr2::EventRuntime::kTick; optionsCloseClock -= cr2::EventRuntime::kTick)
                 if (++optionsCloseTicks >= 4) {
-                    optionsCloseAt = -1, optionsOpen = false;
-                    SDL_Log("battle: the options closed");
+                    if (!optionsStepDone()) {
+                        optionsCloseAt = -1, optionsOpen = false;
+                        SDL_Log("battle: the options closed");
+                    }
                     break;
                 }
         } else optionsCloseClock = 0;
@@ -1538,7 +1540,7 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                     campLinkCloseAt = -1, campLink = 0;
                     campStart = campOpenedAt = uiClock - cr2::EventRuntime::kTick;
                 }
-                if (campOpen && optionsCloseAt >= 0 && ++optionsCloseTicks >= 4) { // (6: the camp made again)
+                if (campOpen && optionsCloseAt >= 0 && ++optionsCloseTicks >= 4 && !optionsStepDone()) { // (6: the camp made again)
                     optionsCloseAt = -1, optionsOpen = false;
                     campStart = campOpenedAt = uiClock - cr2::EventRuntime::kTick;
                 }

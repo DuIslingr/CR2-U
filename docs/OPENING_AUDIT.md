@@ -1861,6 +1861,19 @@ camp's, a battle's and the title's options all call. The list's row now plays SE
 "options manual pick back back"`: the list, tutorial 2 four updates on, its end, the list; `--input
 "options manual back back"`: the options again, then closed.
 
+### Round 87: the options' question and Instructions
+
+`TitleOptionMenu` / `BattleOptionMenu` / the camp's: Title Screen or Reset Data (state 3) and
+Instructions (state 4) - SE 0xb4, +0x1c 30, the frame closed - wait in 5 / 9 for its end (0.2 s: the
+fourth update), then make the question (`SetYNChoiceWindowParameter`, the message - 0x6d, or 0x6e for
+Reset Data) or return 0x22 (the Instructions window, round 86). The question's No (`EndBattleYNChoice`,
+state 7) waits for the choice to go (0.2 s) and opens the options again (state 0). The port asked,
+opened the list and came back from the No in the tap's update. Now `optionsCloseTarget` routes the
+options' close: Back as before (rounds 67, 80, 81), the question or the Instructions in the fourth
+update (the title's too), the No playing the question back and the options in the fourth; taps on
+the question wait while it closes. `--battle 57 --fight solo --flag 84 --input "options manual zz
+back zz title zz no zz back"` (zz: a pause): the list, the options, the question, the options, closed.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

@@ -1627,6 +1627,11 @@ struct Viewer {
     float optionsCloseClock = 0;
     float titleStepClock = 0; // (the title's steps: its updates counted) // (the title's options closing: its updates counted)
     float optionsCloseAt = -1, optionsCloseFrom = 0;
+    // (what the options' close leads to: 0 Back; 1 the question - Title Screen / Reset Data, OptionMenu state 3:
+    // the frame back, the question once it ends (5), the fourth update -; 2 the Instructions - 4 -> 9, 0x22 -;
+    // 3 the question's No - EndBattleYNChoice, 7: the options again once the choice is gone, the fourth)
+    int optionsCloseTarget = 0;
+    bool optionsStepDone();
     int optionsCloseTicks = 0;
     void optionsBack();
     float optionsPartTime(float length) const {

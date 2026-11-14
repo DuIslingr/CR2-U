@@ -147,6 +147,7 @@ bool Viewer::optionsKey(SDL_Keycode k) {
         return true;
     }
     if (optionsAsk) { // (the question: Return yes, Backspace no)
+        if (optionsCloseAt >= 0) return true; // (its No closing)
         if (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_Y) optionTap(3201);
         else if (k == SDLK_BACKSPACE || k == SDLK_N) optionTap(3202);
         return true;
@@ -188,6 +189,7 @@ bool Viewer::optionsTapped(const TapRect& r, float x) {
         return true;
     }
     if (optionsAsk) {
+        if (optionsCloseAt >= 0) return true;
         if (r.id == 3201 || r.id == 3202) optionTap(r.id);
         return true;
     }
@@ -975,9 +977,11 @@ void Viewer::updateTitle(float dt) {
     if (t.stage == 9 && optionsCloseAt >= 0) { // (the options closing: gone the fourth update, the buttons the fifth)
         optionsCloseClock = std::min(optionsCloseClock + dt, 0.25f);
         for (; optionsCloseClock >= cr2::EventRuntime::kTick; optionsCloseClock -= cr2::EventRuntime::kTick)
-            if (++optionsCloseTicks >= 5) {
-                optionsCloseAt = -1, optionsOpen = false;
-                SDL_Log("title: the options closed");
+            if (++optionsCloseTicks >= (optionsCloseTarget ? 4 : 5)) {
+                if (!optionsStepDone()) {
+                    optionsCloseAt = -1, optionsOpen = false;
+                    SDL_Log("title: the options closed");
+                }
                 break;
             }
     } else optionsCloseClock = 0;
@@ -1176,12 +1180,13 @@ void Viewer::resetData() {
 void Viewer::optionTap(int id) {
     switch (id) {
     case 3101:
-        optionsOpen = false, optionsAsk = true, optionsAskStart = uiClock;
+        if (optionsCloseAt >= 0) break;
         if (titleOptions()) optionsReset = 1;
+        optionsCloseAt = uiClock, optionsCloseFrom = uiClock - optionsStart, optionsCloseTicks = 0, optionsCloseTarget = 1;
         break;
     case 3102: // (BattleOptionMenu 4 -> 9 -> 0x22: InstructionsWindowMenu, the tutorials' list)
-        optionsOpen = false;
-        openManual();
+        if (optionsCloseAt >= 0) break;
+        optionsCloseAt = uiClock, optionsCloseFrom = uiClock - optionsStart, optionsCloseTicks = 0, optionsCloseTarget = 2;
         break;
     case 3111: if (titleOptions()) saveImport.begin("cr2", SDL_GetKeyboardFocus()); break;
     case 3112: saveImportAnswer(true); break;
@@ -1214,8 +1219,9 @@ void Viewer::optionTap(int id) {
         optionsAsk = false, toTitle = true;
         SDL_Log("options: to the title screen");
         break;
-    case 3202: // (7: the options again)
-        optionsReset = 0, optionsAsk = false, optionsOpen = true, optionsStart = uiClock;
+    case 3202: // (7: the options again, once the choice is gone)
+        if (optionsCloseAt >= 0) break;
+        optionsCloseAt = uiClock, optionsCloseFrom = uiClock - optionsAskStart, optionsCloseTicks = 0, optionsCloseTarget = 3;
         break;
     default: break;
     }
@@ -1335,14 +1341,24 @@ void Viewer::drawManualList(const Mat4& view, int w, int h) {
     const float t = manualCloseAt < 0 ? uiClock - manualStart : std::max(std::min(manualCloseFrom, 0.2f) - (uiClock - manualCloseAt), 0.0f);
     drawSkillList(rows, 5000 + manualCursor, t, view, w, h, -1, -1);
 }
+bool Viewer::optionsStepDone() { // (a close that leads elsewhere than Back: done here)
+    const int target = optionsCloseTarget;
+    if (!target) return false;
+    optionsCloseAt = -1, optionsCloseTarget = 0;
+    if (target == 1) optionsOpen = false, optionsAsk = true, optionsAskStart = uiClock;
+    else if (target == 2) optionsOpen = false, openManual();
+    else optionsAsk = false, optionsReset = 0, optionsOpen = true, optionsStart = uiClock;
+    return true;
+}
 void Viewer::optionsBack() {
     // (the camp's; the title's - TitleOptionMenu state 2: its frame back, 0x13 at its end: the title's 0x1f,
     // CreateTitleMenu the update after; a battle's - BattleOptionMenu state 2: 3 at the frame's end, the fourth)
-    if (optionsCloseAt < 0) optionsCloseAt = uiClock, optionsCloseFrom = uiClock - optionsStart, optionsCloseTicks = 0;
+    if (optionsCloseAt < 0) optionsCloseAt = uiClock, optionsCloseFrom = uiClock - optionsStart, optionsCloseTicks = 0, optionsCloseTarget = 0;
 }
 void Viewer::drawOptionsAsk(const Mat4& view, int w, int h) { // (Battle / CampOptionMenu: "return to the title?", the title's window)
     tapRects.clear();
-    const float t = uiClock - optionsAskStart;
+    const float t = optionsCloseAt >= 0 && optionsCloseTarget == 3 ? std::max(std::min(optionsCloseFrom, 0.2f) - (uiClock - optionsCloseAt), 0.0f)
+                                                                  : uiClock - optionsAskStart; // (the No: the choice played back)
     drawAsk(announce(optionsReset == 1 ? 0x6e : optionsReset == 2 ? 0x6f : 0x6d), t, view, w, h, 3201, 3202, true);
 }
 void Viewer::saveImportAnswer(bool yes) {

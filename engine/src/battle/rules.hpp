@@ -287,6 +287,8 @@ private:
     // Damage3's other ends, the last blow's (+0xf60 the target's MP lost - kinds 17, 32; +0xf64 the
     // actor's HP drained back - 16; +0xf5c the actor's own down to 1 - 8, Sacrifice)
     int lastMpLoss_ = 0, lastDrain_ = 0;
+    bool resisted_ = false;     // (BadStatus: the last roll on one immune - the announcement's bit)
+    int pendingDamage_[5] = {}; // (a command's damage worked out, not yet taken - +0xf5c, ExecCommandAction's)
     bool lastSacrifice_ = false;
     std::vector<int> mirrors_; // (the action's barrier holders) // (damage()'s: the element that beat the target's)
     bool isPairAction(int f) const;

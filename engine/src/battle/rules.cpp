@@ -930,11 +930,24 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
         return;
     }
     if (!(c->kind == 0 || (c->kind >= 4 && c->kind <= 17) || c->kind == 27 || c->kind == 29 || c->kind == 32)) return;
+    // BtlActionCtrl::Hit, one group of targets: CalcCommandAction - each target's CalcDamage (the
+    // hit, the auto guard, the blocks, the critical, the damage, then CalcStatus on a hit, before
+    // any HP is taken: a killing blow's statuses rolled too) - and then ExecCommandAction: the
+    // actor's and its partner's own Damage, each target's Damage (its HP and MP, CheckDead - the
+    // drops -, CheckThrowBack, CheckCounter and the gauges, all on a hit alone), in that order
+    struct Pending {
+        Event e;
+        int mpLoss = 0, drain = 0;
+        bool sacrifice = false;
+    };
+    std::vector<Pending> pend;
+    const bool both = isPairAction(o.actor);
     for (int t : targets) {
         Fighter& tf = fighters_[size_t(t)];
         if (!tf.alive) continue;
-        Event e;
-        e.actor = o.actor, e.partner = isPairAction(o.actor) ? a.partner : -1, e.command = o.command, e.target = t;
+        Pending p;
+        Event& e = p.e;
+        e.actor = o.actor, e.partner = both ? a.partner : -1, e.command = o.command, e.target = t;
         e.counter = o.counter;
         e.hit = hit(o.actor, t, *c);
         if (e.hit) {
@@ -951,27 +964,36 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
             else if (c->magic == 1)
                 e.blocked = tf.has(5, 11) || (!(c->specials >> 6 & 1u) && tf.has(1, 4) && int(rand_.below(100)) < chance);
             if (e.blocked) e.notes.push_back({c->magic ? 0x46 : 0x45, t}); // ("Neutralized physical / magical damage!")
-            if (!e.blocked) e.critical = critical(o.actor, t, *c);
             if (!e.blocked) {
+                e.critical = critical(o.actor, t, *c);
                 e.damage = damage(o.actor, t, *c, e.critical, &e.weak), e.burst = lastBurst_;
-                // (Damage3's other ends - BtlActionCtrl::Damage, each one marked: +0xf60 MP, +0xf64 HP back, +0xf5c)
-                if (lastMpLoss_ > 0) e.mpLoss = std::min(lastMpLoss_, tf.mp), tf.mp -= e.mpLoss;
-                const bool both = isPairAction(o.actor);
-                for (int f : {o.actor, both ? a.partner : -1}) {
-                    if (f < 0) continue;
-                    Fighter& x = fighters_[size_t(f)];
-                    if (lastSacrifice_ && x.hp > 1) x.hp = 1;
-                    if (lastDrain_ > 0 && x.alive) {
-                        const int back = std::min(lastDrain_, x.maxHp - x.hp);
-                        x.hp += back;
-                        if (f == o.actor) e.drained = back;
-                    }
-                }
+                p.mpLoss = lastMpLoss_, p.drain = lastDrain_, p.sacrifice = lastSacrifice_; // (+0xf60, +0xf64, the actor's +0xf5c)
             }
+            calcStatus(o.actor, t, *c, e);
+        }
+        pend.push_back(p);
+    }
+    for (const Pending& p : pend) pendingDamage_[size_t(p.e.target)] = p.e.hit ? p.e.damage : 0;
+    for (Pending& p : pend) // (Damage on the actor and its partner: Sacrifice's own, the drains' HP back)
+        for (int f : {o.actor, both ? a.partner : -1}) {
+            if (f < 0) continue;
+            Fighter& x = fighters_[size_t(f)];
+            if (p.sacrifice && x.hp > 1) x.hp = 1;
+            if (p.drain > 0 && x.alive) {
+                const int back = std::min(p.drain, x.maxHp - x.hp);
+                x.hp += back;
+                if (f == o.actor) p.e.drained = back;
+            }
+        }
+    for (Pending& p : pend) {
+        Event& e = p.e;
+        const int t = e.target;
+        Fighter& tf = fighters_[size_t(t)];
+        pendingDamage_[size_t(t)] = 0;
+        if (e.hit) {
+            if (p.mpLoss > 0) e.mpLoss = std::min(p.mpLoss, tf.mp), tf.mp -= e.mpLoss;
             tf.hp = std::max(tf.hp - e.damage, 0);
-            if (tf.hp > 0) calcStatus(o.actor, t, *c, e);
             if (tf.hp > 0 && tf.canceled) tf.hp = 0, e.instantDeath = true, tf.canceled = false; // (CheckDead: +0xf7a, its HP whatever it was; the command's alone - ClearCommandResult)
-            if (tf.hp > 0) checkCounter(o, *c, t);
             if (tf.hp == 0) {
                 tf.alive = false, e.defeated = true;
                 // (CheckDead: its states gone - but for 21, time stopped, 33, revived once, 34
@@ -986,22 +1008,25 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
                     oz_ = std::min(oz_ + tf.level * 10 + m->oz, 9999999);
                     checkDrops(tf, *m);
                 }
+            } else {
+                // (CheckThrowBack: standing and not blocked, an auto guard's state 4 cleared -
+                // it guards that blow alone, +0xf7f - before the counter and the gauges)
+                if (e.autoGuard && !e.blocked) tf.clearState(4);
+                checkCounter(o, *c, t);
             }
+            moveGauge(e, *c);
+            chargeFor(e, *c, t == targets.front());
         }
-        moveGauge(e, *c);
-        chargeFor(e, *c, t == targets.front());
-        // (CheckThrowBack, as the blow lands: an auto guard's state 4 cleared - it guards that
-        // blow alone; +0xf7f is the action's, ClearCommandResult)
-        if (e.autoGuard) tf.clearState(4);
         out.push_back(e);
     }
 }
 
-// BtlActionCtrl::UpdateChargeGauge, for each one struck (Damage: a hit on the first target; the
-// others' each time): the party striking a monster 15 a hit, 30 a critical (none on one blocking or
-// guarding); the party struck by the damage it took - half its HP or more 30, over a fifth 20, else
-// 15 (half for one guarding); the party's awakenings and advents none. State 12 on the party's one
-// - or its pair partner (CheckCharaStatePair) - x 1.5, a use of it off each (a miss's too).
+// BtlActionCtrl::UpdateChargeGauge, for each one struck (Damage: on a hit alone, after
+// CheckThrowBack has taken an auto guard's state 4 off): the party striking a monster 15 a hit, 30
+// a critical (none on a blow blocked or on one with state 4 - defending); the party struck by the
+// damage it took - half its HP or more 30, over a fifth 20, else 15 (half with state 4); the party's
+// awakenings and advents none. State 12 on the party's one - or its pair partner
+// (CheckCharaStatePair) - x 1.5, a use of it off each.
 void BattleRules::chargeFor(const Event& e, const BattleData::Command& c, bool first) {
     if (c.awaken && e.actor < 2) return;
     const Fighter& t = fighters_[size_t(e.target)];
@@ -1019,7 +1044,7 @@ void BattleRules::chargeFor(const Event& e, const BattleData::Command& c, bool f
         n = e.blocked || t.guarding || t.hasState(4) ? 0 : e.critical ? 30 : e.hit ? 15 : 0; // (state 4: an auto guard's too)
         if (charged(e.actor)) n = calcValue(n, 50);
     } else {
-        if (!e.hit && first) return;
+        if (!e.hit) return; // (Damage calls it on a hit alone)
         n = e.damage >= t.maxHp / 2 ? 30 : e.damage > t.maxHp / 5 ? 20 : 15;
         if (t.guarding || t.hasState(4)) n = n / 2;
         if (charged(e.target)) n = calcValue(n, 50);
@@ -1118,32 +1143,72 @@ void BattleRules::startAction() {
     callScript("Command_Start");
 }
 
-// BtlActionCtrl::CheckCounter, on one struck and standing (Damage): a physical blow on one with
-// state 26 or 27, or its counter skill (Has 1, 1: 10%, 20% in its side's turn break); a sopia on
-// one with 28 (a use of it), or its skill (Has 1, 2: the same chances) - none on a command with
-// +0x4e bit 4, on one stunned (3), its action cancelled or its time stopped, nor on a counter. It
-// strikes back with its attack (a character's +0x44, a monster's +0x4c) first in the turn, once
-// an action.
+// BtlActionCtrl::CheckCounter, on one struck and standing (Damage, after CheckDead and
+// CheckThrowBack): none on a command with +0x4e bit 4, nor twice an action (+0xf8f), nor on a
+// counter. A pair's partner counts with it: gone - downed by this command (its HP less the damage
+// still to come, or its death mark) and not to come back (state 33) - or not. Neither counters when
+// both are stunned (state 3). A physical blow: sure on one with state 26 or 27; its counter skill
+// (Has 1, 1) rolls (10%, 20% in its side's turn break - the struck one's) even when a state makes it
+// sure; without either, the partner's skill (when there is a partner still there) rolls. A sopia:
+// sure with 28 (a use of it), the skill Has 1, 2 the same way. Then the counters: the struck one
+// alone (no partner there); with a partner and neither stunned, both - the lower place first -, each
+// with its own attack; the struck one stunned, the partner alone. Each strikes back with its attack
+// (a character's +0x44, a monster's +0x4c) first in the turn
 void BattleRules::checkCounter(const Order& o, const BattleData::Command& c, int target) {
     const Fighter& t = fighters_[size_t(target)];
     if (o.counter || !t.alive || t.side == fighters_[size_t(o.actor)].side || (c.specials >> 4 & 1u)) return;
-    if (t.hasState(3) || t.canceled || t.hasState(21)) return;
     for (const Order& k : counters_)
         if (k.target == o.actor) return; // (+0xf8f: once)
+    const bool stunned = t.hasState(3);
+    const bool pair = t.partner >= 0;
+    bool partnerStunned = false, partnerGone = false;
+    if (pair) {
+        const Fighter& p = fighters_[size_t(t.partner)];
+        partnerStunned = p.hasState(3);
+        const bool standing = p.alive && !p.canceled && p.hp - pendingDamage_[size_t(t.partner)] > 0;
+        if (!standing) { // (one coming back - state 33 - is taken as not stunned)
+            const bool comesBack = p.hasState(33);
+            partnerGone = !comesBack;
+            if (comesBack) partnerStunned = false;
+        }
+    }
+    if (stunned && partnerStunned) return;
     const int chance = breakBonus(target) ? 20 : 10;
-    bool counter = false;
+    auto partnerHas = [&](int bit) { return pair && !partnerGone && fighters_[size_t(t.partner)].has(1, bit); };
+    bool counter = false, skill = false;
     if (c.magic == 0) {
         counter = t.hasState(26) || t.hasState(27);
-        if (!counter && t.has(1, 1)) counter = int(rand_.below(100)) < chance;
+        skill = t.has(1, 1);
+        if (!counter && !skill) {
+            if (!partnerHas(1)) return;
+            skill = true;
+        }
     } else if (c.magic == 1) {
         if (t.hasState(28)) t.useState(28), counter = true;
-        else if (t.has(1, 2)) counter = int(rand_.below(100)) < chance;
+        skill = t.has(1, 2);
+        if (!counter && !skill) {
+            if (!partnerHas(2)) return;
+            skill = true;
+        }
+    } else {
+        return;
     }
+    if (skill && int(rand_.below(100)) < chance) counter = true;
     if (!counter) return;
-    Order k;
-    k.actor = target, k.target = o.actor, k.counter = true;
-    k.command = t.monster ? t.monster->counter : t.attack;
-    if (k.command > 0) counters_.push_back(k);
+    auto queue = [&](int f) {
+        const Fighter& x = fighters_[size_t(f)];
+        Order k;
+        k.actor = f, k.target = o.actor, k.counter = true;
+        k.command = x.monster ? x.monster->counter : x.attack;
+        if (k.command > 0) counters_.push_back(k);
+    };
+    const bool withPartner = pair && !partnerGone;
+    if (!stunned) {
+        if (!withPartner || partnerStunned) queue(target);
+        else queue(std::min(target, t.partner)), queue(std::max(target, t.partner));
+    } else if (withPartner) {
+        queue(t.partner);
+    }
 }
 
 void BattleRules::doAction(std::vector<Event>& out) {
@@ -1406,9 +1471,9 @@ bool BattleRules::badStatus(int actor, int target, const BattleData::Command& c,
     }
     if (breakBonus(actor)) chance = breakChance;
     const int r = k < 5 ? fighters_[size_t(target)].stateResist[k] : 0; // (+0x43: the first five)
-    if (r == 2) return false;
-    if (r == 1) chance /= 2;
-    return int(rand_.below(100)) < chance;
+    if (r == 2) chance = 0, resisted_ = true; // (immune: the announcement's bit, and the roll all the same)
+    else if (r == 1) chance /= 2;
+    return int(rand_.below(100)) < chance; // (BtlRand(100) once past the command's own test, at 0 too)
 }
 
 // BtlActionCtrl::CalcStatus on one hit (or a states' command's target): CheckBadStatus,
@@ -1436,11 +1501,9 @@ void BattleRules::calcStatus(int actor, int target, const BattleData::Command& c
     if (badStatus(actor, target, c, 3, 70, 50) && !e.blocked) t.canceled = took[3] = true;
     for (int k = 0; k < 3 && !took[3]; ++k)
         if (!t.hasState(k)) {
-            if (t.stateResist[k] == 2 && c.bad[k] == 1) {
-                resisted[k] = true;
-                continue;
-            }
+            resisted_ = false;
             if (badStatus(actor, target, c, k, 100, 80)) t.addState(k, (c.bad[k] == 1 ? c.turns : 3) + bonus, 0), took[k] = true;
+            if (resisted_) resisted[k] = true;
         }
     if (!took[3] && !t.hasState(3) && badStatus(actor, target, c, 4, 100, 80)) t.addState(3, 1, 0), took[4] = true;
     // (ShowAnnounceStatus1: more than one of poison, blind, seal "hit with status effects", else

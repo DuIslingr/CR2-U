@@ -2361,6 +2361,35 @@ Checked against `EvtMotionManager::SetMotion` / `Update` and `EvtModel::Update`;
   .. of 10). The port computed the compounding share from where the turn began whatever the model
   did; the turn is now stepped an update at a time from the right start.
 
+### Round 115: the battle's rolls in the original's order
+
+Checked against `BtlActionCtrl::Hit`, `CalcCommandAction` / `CalcDamage`, `ExecCommandAction` /
+`Damage`, `CheckCounter`, `CheckThrowBack` and `BtlCalc::BadStatus`; fixed:
+- A command's targets (the one aimed at, then its partner) are worked out first, each in turn -
+  the hit, the auto guard, the blocks, the critical, the damage, then `CalcStatus` on a hit, before
+  any HP is taken - and only then applied (`ExecCommandAction`: the actor's and its partner's own
+  `Damage` - Sacrifice's, the drains' -, then each target's `Damage`: its HP and MP, `CheckDead` with
+  the drops, `CheckThrowBack`, `CheckCounter`, the gauges). The port worked out and applied each
+  target in turn and skipped the statuses on a killing blow; their rolls now come in the original's
+  order, and a killing blow's statuses are rolled too.
+- `Damage` does all of that on a hit alone: a missed second target no longer charges 15.
+- `CheckThrowBack` takes an auto guard's state 4 off a target still standing (not on a blow it
+  blocked) before the counter and the gauges, so the gauges never see it - round 109 had the gauges
+  zero for an auto guard; they now zero for a blow blocked and for state 4 that is still there (a
+  defence).
+- `BadStatus` rolls `BtlRand(100)` once a command can give the state at all, even on one immune
+  (resist 2: chance 0, the immunity's announcement bit set); the port skipped the roll.
+- `CheckCounter`: a pair's partner counts - downed by this command (its HP less the damage still to
+  come, or its death mark) and not coming back with state 33, or not. Neither counters when both are
+  stunned (state 3); a stunned one alone still rolls but strikes nothing. The counter skill rolls even
+  when state 26, 27 or 28 makes it sure; without a skill or a state of its own, the partner's skill
+  rolls. With the partner there and neither stunned both strike back, the lower place first, each
+  with its own attack; the struck one stunned, the partner alone. The port had the struck one alone
+  and returned before rolling for a stunned one or a sure one.
+
+Left: a partner stunned yet standing with state 33 makes the original queue the struck one's
+counter twice (`CheckCounter`'s second branch) - not copied.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

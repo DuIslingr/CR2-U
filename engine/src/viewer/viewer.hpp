@@ -212,6 +212,11 @@ struct Viewer {
     cr2::GameState game;                        // the story's flags and work values (a new game's)
     std::unique_ptr<cr2::FieldScript> script;   // the dungeon's script
     float player[3] = {0, 0, 0}, heading = 0;
+    // (FldPlayer::SetDirectionAtMove: while moving, each update the leader's rotation slerped toward the
+    // move's by dt x 0.15 x 60 - 0.45 of the way -; none while it stands. walkTurnAt: the heading at the last
+    // update; walkShown: the heading last shown, to notice another's change)
+    float walkTurnAt = 0, walkShown = 0;
+    bool walkTurnOn = false;
     std::unique_ptr<cr2::CharacterController> controller; // (on the map's walls and floors)
     float stepClock = 0;
 

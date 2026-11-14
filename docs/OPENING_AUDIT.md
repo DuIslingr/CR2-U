@@ -1939,6 +1939,18 @@ The camp's: `CampItemDirectUseMenu` (Emergency Exit, 0x73) and the monster sopia
 `CharaSelectButtonMenu`'s how-many question (0x74) leaves it on: 0xb4 for Yes (with the MP's sound,
 `PlaySoundMPRecovery`) and for No, where the port played nothing and 0xb5. Now 0xb4 both.
 
+### Round 94: the leader's turn as it walks
+
+`FldPlayer::SetDirectionAtMove` (each update, while the move's speed is above 0): the rotation that
+faces the move's direction, and the leader's quaternion (+0x40 .. +0x4c) slerped toward it by
+`dt x 0.15 x 60` - 0.45 of the way, the shorter way round (the dot's sign) -; standing, it returns
+before turning, so a turn cut short stays where the last update left it. The port faced the move's
+direction at once. Now `walk` turns `walkTurnAt` 0.45 of the way at each update while moving, shows
+the turn between updates toward the next one's (as the idle turn does), and keeps the last update's
+heading when the leader stops; another's change of the heading (a script, an action) is taken as
+the new start. A reversal is about 90% done in four updates (0.2 s). (`FldMain::ChangeCharacterExecute`
+counts its 16 / 32 in 60ths - `dt x 60` an update - as the port does; nothing changed there.)
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

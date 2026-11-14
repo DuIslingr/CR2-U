@@ -944,7 +944,12 @@ void Viewer::walk(float dt, float sx, float sy, bool run) {
     cr2::Vec3 dir{right[0] * sx + forward[0] * sy, 0, right[2] * sx + forward[2] * sy};
     const float l = std::sqrt(dir[0] * dir[0] + dir[2] * dir[2]);
     const float speed = l > 0 ? (run ? 0.48f : 0.09f) : 0.0f;
-    if (l > 0) dir = {dir[0] / l * speed, 0, dir[2] / l * speed}, heading = std::atan2(dir[0], dir[2]), idleTurn.on = false;
+    float target = heading;
+    if (walkTurnOn && heading != walkShown) walkTurnAt = heading; // (turned by something else meanwhile)
+    if (l > 0) {
+        dir = {dir[0] / l * speed, 0, dir[2] / l * speed}, target = std::atan2(dir[0], dir[2]), idleTurn.on = false;
+        if (!walkTurnOn) walkTurnAt = heading, walkTurnOn = true;
+    }
     constexpr float kSub = cr2::CharacterController::kUpdate / cr2::CharacterController::kSubsteps; // (1/60 s)
     stepClock = std::min(stepClock + dt, 15 * kSub);
     std::string exitTo;
@@ -957,6 +962,7 @@ void Viewer::walk(float dt, float sx, float sy, bool run) {
         if (++substep < cr2::CharacterController::kSubsteps) continue;
         substep = 0;
         stepUpdate(speed == 0 ? 0 : run ? 2 : 1);
+        if (walkTurnOn && speed != 0) walkTurnAt = turnBetween(walkTurnAt, target, 0.45f); // (SetDirectionAtMove)
         // an exit: the area changes to the map its pop point names (FldMain::ChangeAreaExecute)
         const std::string exit = field.exitTouched(p, controller->radius);
         if (exit.empty()) exitsArmed = true;
@@ -965,6 +971,11 @@ void Viewer::walk(float dt, float sx, float sy, bool run) {
         checkBalloons();
         startIdleTurn();
         encountUpdate(p, fieldScriptRunning() || actionRunning() || changeStage != 0 || keyLock.stage != 0);
+    }
+    if (walkTurnOn) { // (between updates: toward the next update's turn, at the update's fraction)
+        if (speed != 0) heading = turnBetween(walkTurnAt, turnBetween(walkTurnAt, target, 0.45f), (float(substep) * kSub + stepClock) / cr2::CharacterController::kUpdate);
+        else heading = walkTurnAt, walkTurnOn = false; // (stopped: where the last update left it)
+        walkShown = heading;
     }
     if (idleTurn.on) // (between updates: the share at the update's fraction)
         heading = turnBetween(idleTurn.from, idleTurn.to,

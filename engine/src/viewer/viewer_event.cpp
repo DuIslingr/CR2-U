@@ -1487,18 +1487,18 @@ bool Viewer::loadGameSave(const std::string& path, const std::string& binary, co
     return true;
 }
 void Viewer::saveAnswer(bool yes) {
-    if (saveStage != 1) return;
-    if (yes) {
-        audio.playSe(0xbd, false);
-        saveFailed = !writeSave();
-        saveStage = 2, saveStart = uiClock;
-    } else {
-        audio.playSe(0xb4, false);
-        saveStage = 0;
-    }
+    if (saveStage != 1 || saveOpening()) return;
+    audio.playSe(yes ? 0xbd : 0xb4, false);
+    saveStage = yes ? 2 : 5, saveTicks = 0;
+    saveCloseAt = uiClock, saveCloseFrom = uiClock - saveStart; // (the choice's window - and on No the menu - played back)
 }
 void Viewer::drawSave(const Mat4& view, const Mat4& proj, int w, int h) {
-    const float t = uiClock - saveStart;
+    if (uiClock - saveStart < cr2::EventRuntime::kTick) return; // (made the update after the press)
+    const float open = uiClock - saveStart;
+    auto partT = [&](float length) { // (played back from where it was as it closes)
+        return saveCloseAt < 0 ? open : std::max(std::min(saveCloseFrom, length) - (uiClock - saveCloseAt), 0.0f);
+    };
+    const float t = saveStage >= 4 ? partT(0.45f) : open; // (the title: back on No or at its close)
     UiFig& title = uiFig("menu");
     title.fig.place = cr2::Mat34();
     poseUi(title, "menusave_io", t);
@@ -1507,8 +1507,9 @@ void Viewer::drawSave(const Mat4& view, const Mat4& proj, int w, int h) {
     int count = 0;
     for (int k = 0; k < 2; ++k)
         if (game.party[k] >= 0 && game.party[k] < 9) rows[count++] = statusOf(game.party[k]);
-    drawStatusWindows(rows, count, t, view, proj);
-    if (saveStage == 1) drawAsk(announce(0x69), t, view, w, h, 7401, 7402, true);
+    drawStatusWindows(rows, count, saveStage >= 4 ? partT(0.2f) : open, view, proj);
+    if (saveStage == 1 || saveStage == 2 || saveStage == 5) drawAsk(announce(0x69), saveStage == 1 ? open : partT(0.2f), view, w, h, 7401, 7402, true);
+    else if (saveStage == 4) {} // (the message ended with the close)
     else {
         UiFig& win = uiFig("syswin_io");
         win.fig.place = cr2::Mat34();

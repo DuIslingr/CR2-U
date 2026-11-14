@@ -1521,6 +1521,14 @@ struct Viewer {
     // after a second
     int saveStage = 0; // (1 asked, 2 saved)
     float saveStart = 0;
+    // (SaveConfirmationMenu, 0x4b: made the update after the tab's press, +0x1c 5; Yes - +0x1c 300, SE 0xbd -
+    // waits for the choice's window to go, then "Saved" and the save, 1.0 s - twenty updates -, then its
+    // close and its 1.5 s - ten more - before it goes; No - SE 0xb4, its close - goes with the choice's
+    // window. FldSaveLoad::ExecuteSave sees it gone the next update, returns 1 the one after, step 1's
+    // control the one after that. saveStage: 1 asking, 2 Yes waiting, 3 saved, 4 closing, 5 No closing)
+    int saveTicks = 0;
+    float saveCloseAt = -1, saveCloseFrom = 0;
+    bool saveOpening() const { return uiClock - saveStart < 6 * cr2::EventRuntime::kTick; }
     bool saveFailed = false;
     static std::string savePath(const char* file = "save1.txt");
     // the scripts' saves (Cr3Save, FieldScript::onSave): the game's as the field's Save does, the

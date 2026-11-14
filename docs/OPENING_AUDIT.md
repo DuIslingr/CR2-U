@@ -1555,6 +1555,22 @@ from the update after the press, holds taps for thirty, plays back on the closin
 `mapTime`) and is gone in the fourth update, control two later. `--play d0104 --input "tab map close
 x6"`: the first three `close`s fall in the lock, the fourth closes it. (+0x68's start was not found.)
 
+### Round 71: saving from the tab
+
+`FldSaveLoad::ExecuteSave`: the update after the tab's press `SetSaveConfirmationParameter` (+0x1c 5,
+the status windows, `SaveConfirmationMenu` 0x4b), then each update `CheckSaveConfirmationWindow` till
+the menu is gone, 1000, and the update after returns 1 - `CallAtMenuFinished`, step 1. The menu: state
+0 makes `menuSave_io`, the yes / no and the system window; 1 waits for the answer. Yes: +0x1c 300,
+the choice ended, SE 0xbd, state 2 - once the choice's window is gone, "Saved" (0x6a), the game and
+system data committed and saved, the continue data deleted -, 3: the update's time summed past 1.0
+(twenty updates), then the message ended, the statuses closed, `menuSave` played back, 4: the same sum
+past 1.5 (ten more), and the menu is gone. No: +0x1c 30, the message, the choice and the statuses
+ended, SE 0xb4, the title played back, 5: gone with the choice's window. The port saved at the Yes,
+showed "Saved" a second and gave control at once (on No, at once); now the window is drawn from the
+update after the press, takes no answer for its 5 updates, saves when the choice's window is gone
+(the fourth update), holds "Saved" twenty, closes over ten, and control comes three updates after
+it goes (No: gone in the fourth, the same three). `--play d0104 --input "tab save yes"` (and `no`).
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

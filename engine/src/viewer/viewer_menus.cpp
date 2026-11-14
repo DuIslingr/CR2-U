@@ -1399,7 +1399,6 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
         updateEvent(event && event->skipHeld() ? dt * 5 : dt); // (the skip button held: five updates a frame)
     } else if (fieldMode && (campOpen || mapOpen || saveStage || world.stage || shop.stage || party.stage || library.stage == 1 || pub.stage)) { // (FldMain steps 5 .. 7, 10: the camp, the map, saving, the world select - the field held)
         updateManual(dt);
-        if (saveStage == 2 && uiClock - saveStart > (saveFailed ? 3.0f : 1.0f)) saveStage = 0; // (a second, then closed)
         if (script) { // (the fade, the windows go on under a menu: GameMain's update - the library's fade back in)
             fieldClock = std::min(fieldClock + dt, 0.25f);
             for (; fieldClock >= cr2::EventRuntime::kTick; fieldClock -= cr2::EventRuntime::kTick) {
@@ -1419,6 +1418,19 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                 if (campOpen && campExitTicks >= 0 && ++campExitTicks >= 5) { // (+0xbc = 2)
                     closeCamp(), emergencyExit = true;
                     break;
+                }
+                if (saveStage >= 2) { // (the save's menu, update by update)
+                    ++saveTicks;
+                    if (saveStage == 2 && saveTicks >= 4) { // (the choice gone: "Saved", the save)
+                        saveFailed = !writeSave();
+                        saveStage = 3, saveTicks = 0, saveCloseAt = -1;
+                    } else if (saveStage == 3 && saveTicks >= (saveFailed ? 60 : 20)) {
+                        saveStage = 4, saveTicks = 0, saveCloseAt = uiClock, saveCloseFrom = uiClock - saveStart; // (its close)
+                    } else if ((saveStage == 4 && saveTicks >= 10) || (saveStage == 5 && saveTicks >= 4)) {
+                        saveStage = 0, saveCloseAt = -1, controlHold = 3; // (gone; ExecuteSave's two updates, step 1)
+                        SDL_Log("field: the save's window closed");
+                        break;
+                    }
                 }
                 if (mapOpen && mapCloseAt >= 0 && ++mapCloseTicks >= 4) { // (the map gone)
                     mapOpen = false, mapCloseAt = -1, controlHold = 2;

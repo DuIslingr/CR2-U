@@ -1420,6 +1420,11 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                     closeCamp(), emergencyExit = true;
                     break;
                 }
+                if (campOpen && campCategoryAt >= 0 && ++campCategoryTicks >= 4) { // (the other category in)
+                    campCategoryAt = -1, campCategory = 1 - campCategory, campCursor = 0;
+                    campStart = campListOpenedAt = uiClock;
+                    SDL_Log("camp: the items' category %d", campCategory);
+                }
                 if (campOpen && campSopiaSwitchAt >= 0 && ++campSopiaSwitchTicks >= (campSopiaSwitchTo ? 5 : 4)) {
                     campSopiaSwitchAt = -1;
                     if (campSopiaSwitchTo) campSopiaDetail = campSopiaSwitchTo, campCursor = 0;
@@ -1758,7 +1763,7 @@ float Viewer::campPartTime(float length) const {
     return std::max(std::min(campCloseFrom, length) - (uiClock - campCloseAt), 0.0f); // (played back from where it was)
 }
 void Viewer::closeCamp() {
-    campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1, campExitTicks = -1, campUseCloseAt = -1, campSopiaSwitchAt = -1;
+    campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1, campExitTicks = -1, campUseCloseAt = -1, campSopiaSwitchAt = -1, campCategoryAt = -1;
     campOpen = false, campList = 0, campUse = 0, campItem = 0, campLink = 0;
     optionsOpen = optionsAsk = false, manualStage = 0, manualEvents.reset();
     SDL_Log("camp: closed");
@@ -2685,7 +2690,7 @@ void Viewer::drawPubRequest(const Mat4& view, int w, int h) {
 
 // a camp button pressed (CampMenu::TouchSimpleRelease: 0xb4; InterfaceMain's camp step by it)
 void Viewer::campPress(int id) {
-    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return; // (state 1 on: the menu closing; or still opening, +0x1c)
+    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campCategoryAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return; // (state 1 on: the menu closing; or still opening, +0x1c)
     if (campUse) return campUseTap(id);
     if (campLink) {
         if (id == 100) audio.playSe(0xb5, false), campLink = 0, campStart = uiClock;
@@ -2726,6 +2731,11 @@ void Viewer::campPress(int id) {
 // the top's button acted on once its close is over (InterfaceMain::Update's camp results: 0x2d the
 // items, 0x2f / 0x30 / 0x3a / 0x33 the equipment, 0x36 the sopia, 0x2a the options, 0x73 / 0x6d
 // the links), made and stepped once in that update
+void Viewer::campCategorySwitch() {
+    if (campCategoryAt >= 0 || campListOpening() || campListCloseAt >= 0) return;
+    audio.playSe(0xb7, false);
+    campCategoryAt = uiClock, campCategoryFrom = uiClock - campStart, campCategoryTicks = 0;
+}
 void Viewer::campListBack() {
     if (campListCloseAt < 0) campListCloseAt = uiClock, campListCloseFrom = uiClock - campStart, campListCloseTicks = 0, campListCloseTarget = 0;
 }
@@ -2753,7 +2763,7 @@ void Viewer::campEnter(int id) {
     }
 }
 void Viewer::campKey(SDL_Keycode k) {
-    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return;
+    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campCategoryAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return;
     keysUsed = true;
     if (optionsKey(k)) return;
     if (campUse) { // (whom: Left / Right, Return; how many: Left / Right, Return yes, Backspace no)
@@ -2798,7 +2808,7 @@ void Viewer::campKey(SDL_Keycode k) {
         else if (k == SDLK_DOWN) campCursor = (campCursor + 1) % n;
         else if (k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_PAGEUP || k == SDLK_PAGEDOWN) { // (the items' two
             // categories: the switch's arrows - L / R on the Vita, CampItemListMenu::Update's 8, SE 0xb7)
-            if (campList == 16) campCategory = 1 - campCategory, campCursor = 0, audio.playSe(0xb7, false);
+            if (campList == 16) campCategorySwitch();
         } else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && (campList == 16 || campList == 18)) {
             const std::vector<ListRow> rows = campRows();
             if (!rows.empty()) {
@@ -2865,8 +2875,8 @@ bool Viewer::fieldClick(float fx, float fy) {
     for (const TapRect& r : tapRects)
         if (x >= std::min(r.x0, r.x1) && x <= std::max(r.x0, r.x1) && y >= std::min(r.y0, r.y1) && y <= std::max(r.y0, r.y1)) {
             if (r.id > 6000 && r.id <= 6005) fieldTabTap(r.id - 6000);
-            else if (campOpen && campList == 16 && r.id == 6501) campCategory = 1 - campCategory, campCursor = 0, audio.playSe(0xb4, false); // (the items' other category's tab)
-            else if (campOpen && campList == 16 && (r.id == 6511 || r.id == 6512)) campCategory = 1 - campCategory, campCursor = 0, audio.playSe(0xb7, false); // (its arrows)
+            else if (campOpen && campList == 16 && r.id == 6501) campCategorySwitch(); // (the items' other category's tab: 0xb7 too)
+            else if (campOpen && campList == 16 && (r.id == 6511 || r.id == 6512)) campCategorySwitch(); // (its arrows)
             else if (r.id == 6100) startChange();
             else if (saveStage == 1 && (r.id == 7401 || r.id == 7402)) saveAnswer(r.id == 7401);
             else if (campOpen && optionsTapped(r, x)) {
@@ -2913,7 +2923,7 @@ bool Viewer::fieldToken(const std::string& t) {
     else if (t == "sopia") campPress(18);
     else if (t == "view" && campList == 17) campKey(SDLK_TAB); // (the change button)
     else if (t == "options") campPress(20);
-    else if (t == "category") campCategory = 1 - campCategory, campCursor = 0;
+    else if (t == "category") campCategorySwitch();
     else if (t.size() > 1 && t[0] == 'u' && std::isdigit(static_cast<unsigned char>(t[1]))) campPickItem(std::atoi(t.c_str() + 1)); // (an item used: uNNN)
     else if ((campUse || campList == 17) && (t == "left" || t == "right")) campKey(t == "left" ? SDLK_LEFT : SDLK_RIGHT);
     else if (campTakeSopia && (t == "yes" || t == "no")) campTakeAnswer(t == "yes");

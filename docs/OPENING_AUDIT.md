@@ -1473,6 +1473,17 @@ the pick, the list's in the fourth after the Back, taps from the fifth after eac
 `--play d0104 --input "tab camp sopia up enter enter back back back back"`: the list, sopia 1's
 detail, the list, the camp, out.
 
+### Round 64: the items' category
+
+`CampItemListMenu`'s other category - its tab (`TouchGestureTap`) or the switch's arrows (`Update`'s
+action 8) -: SE 0xb7, the rows out to one side (`ScrollItemRightOut` / `LeftOut`), `CategoryChange`,
+state 4: once the rows are out the other category's are made and in from the left, state 5 clearing
+the lock once they are in. The port flipped the category in the tap's update (and played 0xb4 for the
+tab); now `campCategorySwitch` plays 0xb7, the rows out (0.2 s), and brings the other category's in
+the fourth update, taps from the fifth after that. `viewer-pad-controls` settles the switch before
+its checks. `--play d0104 --item 4:3 --item 110:1 --input "tab camp items down category ..."`: the
+second category shown (a second `category` 0.4 s on falls in the lock).
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

@@ -1578,6 +1578,11 @@ struct Viewer {
     // Update_SopiaDetail's Back: SE, +0x1c 30, the rows out to the right (0.2 s); the detail's rows made
     // the update after their end (state 4), the list's in that one (state 5); in from the left, the
     // lock cleared when they are)
+    // (the items' category - CampItemListMenu: SE 0xb7 from the tab or the arrows, the rows out to a
+    // side, state 4: at their end the other category's made and in, state 5: the lock cleared once in)
+    float campCategoryAt = -1, campCategoryFrom = 0;
+    int campCategoryTicks = 0;
+    void campCategorySwitch();
     float campSopiaSwitchAt = -1, campSopiaSwitchFrom = 0;
     int campSopiaSwitchTicks = 0, campSopiaSwitchTo = 0;
     float campListCloseAt = -1, campListCloseFrom = 0;
@@ -1604,6 +1609,7 @@ struct Viewer {
     bool campListOpening() const { return campList && uiClock - campListOpenedAt < 5 * cr2::EventRuntime::kTick; }
     float campListTime() const {
         if (campSopiaSwitchAt >= 0) return std::max(std::min(campSopiaSwitchFrom, 0.2f) - (uiClock - campSopiaSwitchAt), 0.0f);
+        if (campCategoryAt >= 0) return std::max(std::min(campCategoryFrom, 0.2f) - (uiClock - campCategoryAt), 0.0f);
         return campListCloseAt < 0 ? uiClock - campStart : std::max(std::min(campListCloseFrom, 0.2f) - (uiClock - campListCloseAt), 0.0f);
     }
     float campPartTime(float length) const;

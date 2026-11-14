@@ -241,10 +241,20 @@ int padControlsSelfTest() {
         check(v.campCursor == 3 && se(0xb3), "camp: Up past Items (none held) round to Options");
         // the items' list: L / R its switch - the other category (CampItemListMenu::Update's 8), SE 0xb7
         v.campList = 16, v.campCategory = 0, v.campCursor = 2;
+        // (the switch plays the rows out and brings the other category in four updates on, its taps after:
+        // settled here at once)
+        auto settle = [&] {
+            if (v.campCategoryAt >= 0) v.campCategoryAt = -1, v.campCategory = 1 - v.campCategory, v.campCursor = 0;
+            v.campListOpenedAt = -10;
+        };
         press(R);
-        check(v.campCategory == 1 && v.campCursor == 0 && se(0xb7), "camp items: R the other category, SE 0xb7");
+        const bool rSe = se(0xb7);
+        settle();
+        check(v.campCategory == 1 && v.campCursor == 0 && rSe, "camp items: R the other category, SE 0xb7");
         press(L);
-        check(v.campCategory == 0 && se(0xb7), "camp items: L back");
+        const bool lSe = se(0xb7);
+        settle();
+        check(v.campCategory == 0 && lSe, "camp items: L back");
         // the equipment: L / R the character (CampEquipmentListMenu::Update_EquipView's 8), SE 0xb7
         v.campList = 17, v.campEquipMode = 0, v.campEquipChar = 0;
         press(R);

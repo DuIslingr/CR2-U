@@ -758,6 +758,28 @@ int main(int argc, char** argv) {
         else if (a == "--run" && next) runSeconds = float(std::atof(next)), ++i;
         else if (a == "--sharpness" && next) sharpness = std::clamp(float(std::atof(next)), 0.0f, 1.0f), ++i;
     }
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+    // the log, also into cr2view.log in the profile folder (the last start's kept as cr2view.prev.log): the Windows
+    // build has no console, so a report can come with it. Not for captures, exports or a test's virtual controller
+    if (capture.empty() && !exportTextures && !exportModels && !std::getenv("CR2_PAD_SCRIPT")) {
+        static std::FILE* logFile = nullptr;
+        const std::string path = Viewer::savePath("cr2view.log"), prev = Viewer::savePath("cr2view.prev.log");
+        std::remove(prev.c_str());
+        std::rename(path.c_str(), prev.c_str());
+        if ((logFile = std::fopen(path.c_str(), "w"))) {
+            static SDL_LogOutputFunction toConsole = nullptr;
+            static void* toConsoleData = nullptr;
+            SDL_GetLogOutputFunction(&toConsole, &toConsoleData);
+            SDL_SetLogOutputFunction(
+                [](void*, int category, SDL_LogPriority priority, const char* message) {
+                    if (logFile && message) std::fprintf(logFile, "%s\n", message), std::fflush(logFile);
+                    if (toConsole) toConsole(toConsoleData, category, priority, message);
+                },
+                nullptr);
+            SDL_Log("CR2-U, logged to %s", path.c_str());
+        }
+    }
+#endif
     if (resW || resH) {
         if (resW < 320 || resH < 180 || resW > kMaxResW || resH > kMaxResH)
             return std::fprintf(stderr, "--resolution: 320x180 up to %dx%d\n", kMaxResW, kMaxResH), 2;

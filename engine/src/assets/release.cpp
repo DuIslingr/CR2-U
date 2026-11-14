@@ -191,15 +191,19 @@ bool androidFile(const std::string& archivePath, const std::string& name, std::v
             if (from) *from = p;
             return true;
         }
-    for (const std::string& n : filesIn(dir)) {
-        if (!endsWith(n, ".apk")) continue;
-        std::vector<uint8_t> lib; // (the game's own APK: the one with its library)
-        if (name != kAndroidLibrary && !readZipEntry(dir + "/" + n, kAndroidLibrary, lib)) continue;
-        if (readZipEntry(dir + "/" + n, name, out)) {
-            if (from) *from = dir + "/" + n + ":" + name;
-            return true;
+    // (the game's own APK first - the one with its library -, then any other beside it that has the
+    // entry: a split install's base.apk holds the assets while a config split holds the library, and a
+    // later build's library may not be the 32-bit one)
+    for (int pass = 0; pass < (name == kAndroidLibrary ? 1 : 2); ++pass)
+        for (const std::string& n : filesIn(dir)) {
+            if (!endsWith(n, ".apk")) continue;
+            std::vector<uint8_t> lib;
+            if (pass == 0 && name != kAndroidLibrary && !readZipEntry(dir + "/" + n, kAndroidLibrary, lib)) continue;
+            if (readZipEntry(dir + "/" + n, name, out)) {
+                if (from) *from = dir + "/" + n + ":" + name;
+                return true;
+            }
         }
-    }
     return false;
 }
 

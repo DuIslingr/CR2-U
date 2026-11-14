@@ -1082,7 +1082,10 @@ int main(int argc, char** argv) {
             fp = cr2::TextRasterizer::firstFont({"/usr/share/fonts/noto/NotoSans-Regular.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
                                                  "/usr/share/fonts/liberation/LiberationSans-Regular.ttf", winFonts + "segoeui.ttf",
                                                  winFonts + "arial.ttf", "/System/Library/Fonts/Supplemental/Arial.ttf",
-                                                 "/System/Library/Fonts/Helvetica.ttc"});
+                                                 "/System/Library/Fonts/Helvetica.ttc",
+                                                 // (Android's own: the iPad's or a Vita copy without its font, played on a phone)
+                                                 "/system/fonts/Roboto-Regular.ttf", "/system/fonts/NotoSans-Regular.ttf",
+                                                 "/system/fonts/DroidSans.ttf", "/system/fonts/RobotoStatic-Regular.ttf"});
         }
         v.loadMessageWindow(fp, std::move(apkFont), apkFontFrom);
         v.initEventDrawing();

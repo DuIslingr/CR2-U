@@ -1639,7 +1639,9 @@ struct Viewer {
     float campLinkCloseAt = -1, campLinkCloseFrom = 0;
     int campLinkCloseTicks = 0;
     float optionsCloseClock = 0;
-    float titleStepClock = 0; // (the title's steps: its updates counted) // (the title's options closing: its updates counted)
+    float titleStepClock = 0; // (the title's steps: its updates counted)
+    float titleScenariosClock = 0;
+    int titleScenariosGone = -1; // (the title's scenarios closed: 0x13 in Back's update, CreateTitleMenu the next - updates left) // (the title's options closing: its updates counted)
     float optionsCloseAt = -1, optionsCloseFrom = 0;
     // (what the options' close leads to: 0 Back; 1 the question - Title Screen / Reset Data, OptionMenu state 3:
     // the frame back, the question once it ends (5), the fourth update -; 2 the Instructions - 4 -> 9, 0x22 -;

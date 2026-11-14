@@ -894,7 +894,7 @@ void Viewer::titleToken(const std::string& tok) {
         for (const auto& [name, id] : kOptionTaps)
             if (tok == name && (optionsOpen || optionsAsk)) return optionTap(id); // (the options' Reset Data and its questions)
         if (tok == "back" && optionsOpen) optionsBack(); // (TitleOptionMenu's Back: its close)
-        else if (tok == "back") campLink = 0;
+        else if (tok == "back" && campLink == 201) campLink = 0, titleScenariosGone = 1;
     } else
         for (const auto& [name, id] : kButtons)
             if (tok == name) titleButton(id);
@@ -962,6 +962,9 @@ void Viewer::updateTitle(float dt) {
     } else if (t.stage == 8 && uiClock >= t.doneAt) {
         t.stage = 0; // (the main loop takes it from here: action)
         audio.stopBgm(10);
+    } else if (t.stage == 9 && titleScenariosGone > 0) { // (the buttons the update after the scenarios' 0x13)
+        titleScenariosClock = std::min(titleScenariosClock + dt, 0.25f);
+        if (titleScenariosClock >= cr2::EventRuntime::kTick) titleScenariosClock = 0, --titleScenariosGone;
     } else if (t.stage == 9 && !optionsOpen && !optionsAsk && campLink != 201 && manualStage == 0) {
         campOpen = false; // (the window closed: the title's buttons again)
         t.stage = 5, t.start = uiClock;
@@ -1100,6 +1103,7 @@ void Viewer::drawTitle() {
     if (tm.stage == 9) { // (the options: GameTitleMenu::Draw's last part, TitleOptionMenu, over the title and its buttons)
         drawTitleButtons(ti, view, 0);
         tapRects.clear(); // (the options' taps alone)
+        if (titleScenariosGone > 0) return; // (the scenarios gone, the buttons the next update)
         return drawCamp(view, proj, screenW, screenH);
     }
     // (GameTitleMenu: divaBtn_io added unlooped - its 0.25 s from nothing to the picture -, played once

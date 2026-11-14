@@ -2877,7 +2877,10 @@ void Viewer::campPress(int id) {
     if (campLink) {
         if (id != 100) return;
         audio.playSe(0xb5, false);
-        if (campLink == 201) campLink = 0, campStart = campOpenedAt = uiClock - cr2::EventRuntime::kTick; // (6 at once: the camp again)
+        if (campLink == 201) {
+            campLink = 0, campStart = campOpenedAt = uiClock - cr2::EventRuntime::kTick; // (6 at once: the camp again)
+            if (titleMenu.stage == 9) titleScenariosGone = 1; // (the title's: its buttons the update after)
+        }
         else if (campLinkCloseAt < 0) campLinkCloseAt = uiClock, campLinkCloseFrom = uiClock - campStart, campLinkCloseTicks = 0;
         return;
     }

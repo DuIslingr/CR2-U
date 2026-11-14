@@ -2037,6 +2037,18 @@ reference video, round 19) - all as the port already counts them.
   question back and brings the view (Yes) or the list (No) in the fourth; Back during the question
   is its No. Not run: it needs a monster sopia another member wears.
 
+### Round 101: the title's scenarios, Back; the lists' rows on a press
+
+`ScenarioFlowMenu`'s Back (round 68: `scenariosBG` has no length) returns 0x13 in the release's
+update; `InterfaceMain` hands the title param 3 (state 0x21 -> 0x22) and the title's next update
+makes its buttons (`CreateTitleMenu`). The port brought them back in the Back's update. Now one
+update later (`titleScenariosGone`), nothing drawn between. `--title --input "tap scenarios back
+options back"`: the scenarios, the buttons, the options, closed.
+`ScrollListMenu::TouchSimplePress` lights the list's back and switch buttons (round 98) but no row;
+a press on the scroll bar's track (the frame's slide area) jumps the list there with SE 0xb3 - the
+port's lists have no such track tap (not added: the area is the frame's slide collision, which the
+port does not read).
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

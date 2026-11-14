@@ -1574,6 +1574,12 @@ struct Viewer {
     // (a list's Back - CampItemListMenu / the sopia's / the equipment's state 2: its main frame,
     // 0.2 s, played back; at its start, in the fourth update, it returns 6 and InterfaceMain makes the
     // camp again - SetCampWindowParameter - stepped once in that update, its opening and lock again)
+    // (the sopia list to a sopia's detail and back - CampSopiaListMenu::Update_Sopia action 5 /
+    // Update_SopiaDetail's Back: SE, +0x1c 30, the rows out to the right (0.2 s); the detail's rows made
+    // the update after their end (state 4), the list's in that one (state 5); in from the left, the
+    // lock cleared when they are)
+    float campSopiaSwitchAt = -1, campSopiaSwitchFrom = 0;
+    int campSopiaSwitchTicks = 0, campSopiaSwitchTo = 0;
     float campListCloseAt = -1, campListCloseFrom = 0;
     int campListCloseTicks = 0, campListCloseTarget = 0; // (0 the camp again, else the item being used: 9 / 10 - the use menus)
     void campListBack();
@@ -1597,6 +1603,7 @@ struct Viewer {
     float campListOpenedAt = -10;
     bool campListOpening() const { return campList && uiClock - campListOpenedAt < 5 * cr2::EventRuntime::kTick; }
     float campListTime() const {
+        if (campSopiaSwitchAt >= 0) return std::max(std::min(campSopiaSwitchFrom, 0.2f) - (uiClock - campSopiaSwitchAt), 0.0f);
         return campListCloseAt < 0 ? uiClock - campStart : std::max(std::min(campListCloseFrom, 0.2f) - (uiClock - campListCloseAt), 0.0f);
     }
     float campPartTime(float length) const;

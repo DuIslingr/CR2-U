@@ -1420,6 +1420,13 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                     closeCamp(), emergencyExit = true;
                     break;
                 }
+                if (campOpen && campSopiaSwitchAt >= 0 && ++campSopiaSwitchTicks >= (campSopiaSwitchTo ? 5 : 4)) {
+                    campSopiaSwitchAt = -1;
+                    if (campSopiaSwitchTo) campSopiaDetail = campSopiaSwitchTo, campCursor = 0;
+                    else campSopiaDetail = 0, campCursor = campSopiaPrevCursor;
+                    campStart = campListOpenedAt = uiClock; // (in from the left, the taps once they are)
+                    SDL_Log("camp: %s", campSopiaDetail ? ("sopia " + std::to_string(campSopiaDetail) + "'s detail").c_str() : "the sopia list");
+                }
                 if (campOpen && campListCloseAt >= 0 && ++campListCloseTicks >= 4) {
                     campListCloseAt = -1;
                     if (campListCloseTarget > 0) { // (the use menus)
@@ -1751,7 +1758,7 @@ float Viewer::campPartTime(float length) const {
     return std::max(std::min(campCloseFrom, length) - (uiClock - campCloseAt), 0.0f); // (played back from where it was)
 }
 void Viewer::closeCamp() {
-    campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1, campExitTicks = -1, campUseCloseAt = -1;
+    campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1, campExitTicks = -1, campUseCloseAt = -1, campSopiaSwitchAt = -1;
     campOpen = false, campList = 0, campUse = 0, campItem = 0, campLink = 0;
     optionsOpen = optionsAsk = false, manualStage = 0, manualEvents.reset();
     SDL_Log("camp: closed");
@@ -1782,7 +1789,8 @@ auto Viewer::sopiaSkillRows(int s) -> std::vector<ListRow> {
 void Viewer::campSopiaPick(int s) {
     if (campList != 18 || campSopiaDetail || s <= 0 || s >= 32) return;
     audio.playSe(0xb4, false); // (Update_Sopia step 5)
-    campSopiaDetail = s, campSopiaPrevCursor = campCursor, campCursor = 0, campStart = uiClock;
+    campSopiaPrevCursor = campCursor;
+    campSopiaSwitchAt = uiClock, campSopiaSwitchFrom = uiClock - campStart, campSopiaSwitchTicks = 0, campSopiaSwitchTo = s;
 }
 auto Viewer::campRows() -> std::vector<ListRow> {
     if (campList == 18 && campSopiaDetail) return sopiaSkillRows(campSopiaDetail);
@@ -2677,7 +2685,7 @@ void Viewer::drawPubRequest(const Mat4& view, int w, int h) {
 
 // a camp button pressed (CampMenu::TouchSimpleRelease: 0xb4; InterfaceMain's camp step by it)
 void Viewer::campPress(int id) {
-    if (campCloseAt >= 0 || campListCloseAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return; // (state 1 on: the menu closing; or still opening, +0x1c)
+    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return; // (state 1 on: the menu closing; or still opening, +0x1c)
     if (campUse) return campUseTap(id);
     if (campLink) {
         if (id == 100) audio.playSe(0xb5, false), campLink = 0, campStart = uiClock;
@@ -2700,7 +2708,7 @@ void Viewer::campPress(int id) {
     }
     if (id == 100) {
         audio.playSe(0xb5, false);
-        if (campList == 18 && campSopiaDetail) campSopiaDetail = 0, campCursor = campSopiaPrevCursor, campStart = uiClock; // (the detail: back to the list)
+        if (campList == 18 && campSopiaDetail) campSopiaSwitchAt = uiClock, campSopiaSwitchFrom = uiClock - campStart, campSopiaSwitchTicks = 0, campSopiaSwitchTo = 0; // (the detail: back to the list)
         else if (campList) campListBack();
         else if (campCloseAt < 0) campCloseAt = uiClock, campCloseFrom = uiClock - campStart, campCloseTicks = 0, campCloseTarget = 100;
         return;
@@ -2745,7 +2753,7 @@ void Viewer::campEnter(int id) {
     }
 }
 void Viewer::campKey(SDL_Keycode k) {
-    if (campCloseAt >= 0 || campListCloseAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return;
+    if (campCloseAt >= 0 || campListCloseAt >= 0 || campSopiaSwitchAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return;
     keysUsed = true;
     if (optionsKey(k)) return;
     if (campUse) { // (whom: Left / Right, Return; how many: Left / Right, Return yes, Backspace no)

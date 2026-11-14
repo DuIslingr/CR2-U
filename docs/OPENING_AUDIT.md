@@ -1460,6 +1460,19 @@ the lines come in the eighth update (`campRaiseChar`, `campRaiseCount`). Frames 
 question) and 6.4 s (the MP line, the statuses coming in): `--play d0104 --item 4:3 --input "tab camp
 items down down enter enter enter"`.
 
+### Round 63: a sopia's detail, and back
+
+`CampSopiaListMenu::Update_Sopia`, a sopia picked (action 5): SE 0xb4, +0x1c 30, its side window
+(0x35) closed, `ScrollItemRightOut` - the rows out to the right -, state 0: once they are out the
+rows cleared and 0xf returned (`InterfaceMain` makes the sopia's windows again), state 4 the update
+after: the detail's rows made and `ScrollItemLeftIn`, state 1 clearing the lock once they are in.
+`Update_SopiaDetail`'s Back: the same out, then in its state 3 the list's rows made, in from the
+left, and 0x10 returned in that update. The port swapped the rows in the tap's update; now the rows
+play out (taken as `scrlbtn_io`'s 0.2 s, backwards) and the detail's come in the fifth update after
+the pick, the list's in the fourth after the Back, taps from the fifth after each (`campSopiaSwitch*`).
+`--play d0104 --input "tab camp sopia up enter enter back back back back"`: the list, sopia 1's
+detail, the list, the camp, out.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

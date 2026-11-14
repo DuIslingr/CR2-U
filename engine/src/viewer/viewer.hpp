@@ -1613,6 +1613,7 @@ struct Viewer {
     // - counts 1.0 s, the twentieth update, before its 6)
     float campLinkCloseAt = -1, campLinkCloseFrom = 0;
     int campLinkCloseTicks = 0;
+    float titleOptionsClock = 0; // (the title's options closing: its updates counted)
     float optionsCloseAt = -1, optionsCloseFrom = 0;
     int optionsCloseTicks = 0;
     void optionsBack();

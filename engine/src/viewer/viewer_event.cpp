@@ -152,6 +152,7 @@ bool Viewer::optionsKey(SDL_Keycode k) {
     }
     if (optionsOpen) { // (the options: Backspace / Return back, Left / Right the focused bar; G / Tab
                        // CR2-U's Display & Graphics)
+        if (optionsCloseAt >= 0) return true; // (closing: +0x1c 30)
         if (k == SDLK_I) optionTap(3111);
         else if (k == SDLK_G || k == SDLK_TAB) openSettings();
         else if (k == SDLK_BACKSPACE || k == SDLK_RETURN || k == SDLK_KP_ENTER) optionsBack();
@@ -189,6 +190,7 @@ bool Viewer::optionsTapped(const TapRect& r, float x) {
         return true;
     }
     if (optionsOpen) { // (Back; a bar's slide area: its volume by the point across it)
+        if (optionsCloseAt >= 0) return true; // (closing)
         if (r.id == 100) optionsBack();
         else if (r.id == 3110) openSettings();
         else if ((r.id >= 3100 && r.id < 3300) || r.id == 4036 || r.id == 4037 || r.id == 4098 || r.id == 4099) optionTap(r.id);
@@ -714,6 +716,7 @@ auto Viewer::saveInfo(const char* file) -> SaveInfo {
 // Keep game progress and preferences until the player chooses a save or new game.
 void Viewer::resetSessionUi() {
     campOpen = mapOpen = settingsOpen = optionsOpen = optionsAsk = false;
+    optionsCloseAt = -1;
     saveStage = manualStage = 0;
     saveFailed = false;
     world.stage = shop.stage = party.stage = library.stage = pub.stage = credits.stage = 0;
@@ -878,7 +881,8 @@ void Viewer::titleToken(const std::string& tok) {
                                                                   {"graphics", 3110}};
         for (const auto& [name, id] : kOptionTaps)
             if (tok == name && (optionsOpen || optionsAsk)) return optionTap(id); // (the options' Reset Data and its questions)
-        if (tok == "back") optionsOpen = false, campLink = 0;
+        if (tok == "back" && optionsOpen) optionsBack(); // (TitleOptionMenu's Back: its close)
+        else if (tok == "back") campLink = 0;
     } else
         for (const auto& [name, id] : kButtons)
             if (tok == name) titleButton(id);
@@ -951,6 +955,15 @@ void Viewer::updateTitle(float dt) {
         t.stage = 5, t.start = uiClock;
     }
     if (t.stage == 9) updateManual(dt);
+    if (t.stage == 9 && optionsCloseAt >= 0) { // (the options closing: gone the fourth update, the buttons the fifth)
+        titleOptionsClock = std::min(titleOptionsClock + dt, 0.25f);
+        for (; titleOptionsClock >= cr2::EventRuntime::kTick; titleOptionsClock -= cr2::EventRuntime::kTick)
+            if (++optionsCloseTicks >= 5) {
+                optionsCloseAt = -1, optionsOpen = false;
+                SDL_Log("title: the options closed");
+                break;
+            }
+    } else titleOptionsClock = 0;
 }
 void Viewer::drawCalendar(const SaveInfo& s, const Mat4& view, const Mat4& proj, float t) {
     UiFig& cal = uiFig("calendar_io");
@@ -1260,7 +1273,9 @@ void Viewer::drawManualList(const Mat4& view, int w, int h) {
     drawSkillList(rows, 5000 + manualCursor, uiClock - manualStart, view, w, h, -1, -1);
 }
 void Viewer::optionsBack() {
-    if (!campOpen) { optionsOpen = false; return; } // (the title's, a battle's: as they were)
+    if (!campOpen && titleMenu.stage != 9) { optionsOpen = false; return; } // (a battle's: as it was)
+    // (the camp's, the title's - TitleOptionMenu state 2: its frame back, 0x13 at its end: the title's 0x1f,
+    // CreateTitleMenu the update after)
     if (optionsCloseAt < 0) optionsCloseAt = uiClock, optionsCloseFrom = uiClock - optionsStart, optionsCloseTicks = 0;
 }
 void Viewer::drawOptionsAsk(const Mat4& view, int w, int h) { // (Battle / CampOptionMenu: "return to the title?", the title's window)

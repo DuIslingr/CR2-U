@@ -1755,6 +1755,20 @@ tokens wait for a step. The list's own steps (its rows, a request's title) were 
 t0101 `--call ReservePUB --flag 1201 --flag 1202 --input "pick back pick accept"`: request 1's
 detail, the board again, the detail, Accept - `pub: 1` five updates on, `pub_checkA` called.
 
+### Round 80: the title's options, Back
+
+`GameTitleMenu::Update` state 0x1d (Options: the buttons out) returns 0x14 - the options
+(`TitleOptionMenu`) made - and waits in 0x1e. `TitleOptionMenu::Update`'s Back (state 2) waits for
+its frame (+8, `seatOpt_io` back, 0.2 s: the fourth update) and returns 0x13: `InterfaceMain` drops
+the menu and tells the title (0x3b, param 3: state 0x1f), whose next update calls
+`CreateTitleMenu(true)` - its buttons again, the fifth update. The port dropped the options at Back
+and brought the buttons in that update (the camp's options had their close since round 67). Now
+the title's Back plays the options back as the camp's do (`optionsCloseAt`; the title's own count,
+`titleOptionsClock`) and the buttons come in the fifth update; taps and keys on the options wait while
+they close (the camp's too). The `--input` `back` at the title goes through the same close.
+`--title --input "tap options back"`: the options, then `title: the options closed` five updates
+after the Back. A battle's options (`BattleOptionMenu`) were not gone through.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

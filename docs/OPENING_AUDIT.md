@@ -1811,6 +1811,20 @@ once it is open and its animation ended (`CheckOpenMenu`), SE 0xb4; Map hidden i
 by flag 0x3ea, the encounter button by 0x40e / 0x40f. The port's tab (`fieldTabTap`,
 `fieldTabAt`) already does each.
 
+### Round 84: the shop's equipment lists - the character and the kind
+
+`ShopWeponBuyListMenu` / `ShopWeponSellListMenu::Update`, action 8 (the switch's arrows, L / R): SE
+0xb7, +0x1c 30, the rows out to one side (`ScrollItemLeftOut` / `RightOut(true)`), `CharaChange`;
+state 4 makes the new character's rows - from the top -, its windows (`SetCharaStatusParamerter`)
+and the focused piece's once the old rows are out (the fourth update), state 5 clearing the lock
+once they are in. A tab (`TouchGestureTap` on the `ListTag`): the kind round (+0xd0), the rows out to
+the right, the cut-in told (0x18), SE 0xb7 - the same state 4. The port changed the character and
+the kind in the tap's update, and played 0xb4 for a tab. Now both go through `shopSwitch` (the
+list played back, the new character or kind - `shopSwitchWho` / `shopSwitchKind` - in the fourth
+update, taps from the fifth), SE 0xb7 for both; the d-pad's Left / Right the same as a tab.
+`viewer-pad-controls` settles the switch before its checks. `--call ReserveShop --oz 5000 --input
+"buy weapons char kind back back back"`: through to the field.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

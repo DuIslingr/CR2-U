@@ -1520,6 +1520,8 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                 if (shop.stage && shopSwitchAt >= 0 && ++shopSwitchTicks >= shopSwitchLen) { // (the step's next menu made)
                     shopSwitchAt = -1;
                     if (!(shopSwitchTo == 3 && shop.stage >= 4)) shop.focus = 0; // (back from the question: on the row)
+                    if (shopSwitchWho >= 0) shop.who = shopSwitchWho, shopSwitchWho = -1;
+                    if (shopSwitchKind >= 0) shop.kind = shopSwitchKind, shopSwitchKind = -1;
                     shop.stage = shopSwitchTo, shop.at = uiClock, shopInTicks = 0;
                 } else if (shop.stage && shopSwitchAt < 0 && shopCloseAt < 0 && shopInTicks < 5) ++shopInTicks;
                 if (shop.stage && shopCloseAt >= 0 && ++shopCloseTicks >= 4) { // (the cut-in gone: the shop over)
@@ -4249,11 +4251,12 @@ void Viewer::shopTap(int id) {
         if (id == 100) audio.playSe(0xb5, false), shopSwitch(1, 6), shopOzAt = uiClock; // (param 8, state 3: the first menu again)
     } else if (shop.stage == 3 && (id == 6511 || id == 6512) && shop.kind > 0) { // (the arrows: CharaChange -1 / +1, SE 0xb7)
         const int c = int(shopChars().size());
-        shop.who = (shop.who + (id == 6512 ? 1 : c - 1)) % std::max(c, 1), shop.focus = 0;
+        shopSwitchWho = (shop.who + (id == 6512 ? 1 : c - 1)) % std::max(c, 1);
         audio.playSe(0xb7, false);
+        shopSwitch(3, 4);
     } else if (shop.stage == 3 && (id == 6501 || id == 6502) && shop.kind > 0) { // (a small tab: that kind's list - its frame / 2)
         static const int kTabs[4][3] = {{7, -1, -1}, {1, 4, 6}, {3, 6, 2}, {5, 2, 4}};
-        audio.playSe(0xb4, false), shop.kind = kTabs[shop.kind][id - 6500] / 2, shop.focus = 0;
+        audio.playSe(0xb7, false), shopSwitchKind = kTabs[shop.kind][id - 6500] / 2, shopSwitch(3, 4);
     } else if (shop.stage == 3) {
         const std::vector<ListRow> rows = shopRows();
         if (id >= 1000 && id < 1000 + int(rows.size())) shop.focus = id - 1000;
@@ -4371,8 +4374,9 @@ void Viewer::shopKey(SDL_Keycode k) {
         // list's switch, ScrollListMenu's 8 - ShopWepon Buy / SellListMenu (FUN_810c4650 / FUN_810c54ca) the character, SE 0xb7)
     else if ((k == SDLK_LEFT || k == SDLK_RIGHT) && shop.kind > 0) { // (the d-pad's Left / Right, the same lists: the
         // kind - weapons, armour, accessories round -, SE 0xb7)
-        shop.kind = k == SDLK_RIGHT ? shop.kind % 3 + 1 : (shop.kind + 1) % 3 + 1, shop.focus = 0;
+        shopSwitchKind = k == SDLK_RIGHT ? shop.kind % 3 + 1 : (shop.kind + 1) % 3 + 1;
         audio.playSe(0xb7, false);
+        shopSwitch(3, 4);
     } else if ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && shop.focus < int(rows.size())) shopTap(rows[size_t(shop.focus)].id);
     else if (k == SDLK_BACKSPACE) shopTap(100);
 }

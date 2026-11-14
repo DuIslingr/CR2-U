@@ -1964,6 +1964,10 @@ struct Viewer {
     // after each is made (its in, +0x1c))
     float shopSwitchAt = -1, shopSwitchFrom = 0;
     int shopSwitchTicks = 0, shopSwitchLen = 0, shopSwitchTo = 0, shopInTicks = 5;
+    int shopSwitchKind = -1; // (a tab - TouchGestureTap: SE 0xb7, the rows out to the right, the cut-in's 0x18 -: the
+                             // other kind's rows the same way)
+    int shopSwitchWho = -1; // (an equipment list's character change - Update's action 8: SE 0xb7, the rows out,
+                            // CharaChange; state 4 the new one's rows and windows once they are out, the fourth)
     float shopOzAt = 0; // (OzViewWindowMenu: made with the first menu and at a kind's (or the kinds' Back's) tap -
                         // SetOzWindowParameter at 0x3a's close -, ended at Buy / Sell and the list's Back)
     bool shopBatteryShown() const;

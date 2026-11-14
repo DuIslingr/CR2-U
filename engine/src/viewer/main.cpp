@@ -275,17 +275,21 @@ int padControlsSelfTest() {
 
         // the shop's equipment lists (ShopWepon Buy / SellListMenu, FUN_810c4650 / FUN_810c54ca): L / R the
         // character, the d-pad's Left / Right the kind round, each SE 0xb7
+        auto shopSettle = [&] { // (the character change's rows: in at once for the checks)
+            if (v.shopSwitchAt >= 0) v.shopSwitchAt = -1, v.shop.who = v.shopSwitchWho >= 0 ? v.shopSwitchWho : v.shop.who, v.shopSwitchWho = -1;
+            if (v.shopSwitchKind >= 0) v.shop.kind = v.shopSwitchKind, v.shopSwitchKind = -1;
+        };
         v.shop.stage = 3, v.shop.kind = 1, v.shop.who = 0;
-        press(R);
+        press(R), shopSettle();
         check(v.shop.who == 1 && v.shop.kind == 1 && se(0xb7), "shop: R the next character, SE 0xb7");
-        press(right);
+        press(right), shopSettle();
         check(v.shop.kind == 2 && v.shop.who == 1 && se(0xb7), "shop: Right armour, SE 0xb7");
-        press(right), press(right);
+        press(right), shopSettle(), press(right), shopSettle();
         check(v.shop.kind == 1, "shop: Right round to weapons");
-        press(left);
+        press(left), shopSettle();
         check(v.shop.kind == 3 && se(0xb7), "shop: Left accessories");
         v.shop.kind = 0, v.shop.who = 0;
-        press(right), press(R);
+        press(right), shopSettle(), press(R), shopSettle();
         check(v.shop.kind == 0 && v.shop.who == 0, "shop: the items' list has neither");
         v.shop = Viewer::Shop();
 

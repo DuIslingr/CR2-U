@@ -98,12 +98,14 @@ void Viewer::loadSettings() {
     if (!f) return;
     char line[256];
     Settings& s = settings;
+    bool kindSeen = false;
     while (std::fgets(line, sizeof line, f)) {
         char key[64];
         int v = 0;
         if (std::sscanf(line, " %63[a-z_] = %d", key, &v) != 2) continue;
         const std::string k = key;
         if (k == "display") s.display = std::clamp(v, 0, 2);
+        else if (k == "fullscreen_kind") s.fullscreenKind = std::clamp(v, 1, 2), kindSeen = true;
         else if (k == "resolution") s.resolution = std::clamp(v, 0, int(std::size(kResolutions)) - 1);
         else if (k == "vsync") s.vsync = v != 0;
         else if (k == "fps") s.fps = std::clamp(v, 0, 1000);
@@ -124,6 +126,7 @@ void Viewer::loadSettings() {
         else if (k == "battle_speed") s.battleSpeed = std::clamp(v, 1, 5);
     }
     std::fclose(f);
+    if (!kindSeen && s.display) s.fullscreenKind = s.display; // (an older settings.ini's: its fullscreen, F11's)
 }
 void Viewer::saveSettings() const {
     if (!settingsPersist) return;
@@ -131,9 +134,9 @@ void Viewer::saveSettings() const {
     char* serialized = nullptr;
     const Settings& s = settings;
     if (SDL_asprintf(&serialized, "# CR2-U: the options' Display & Graphics (the command line's flags go over these)\n"
-                    "display=%d\nresolution=%d\nvsync=%d\nfps=%d\nrenderer=%d\nupscaler=%d\nquality=%d\nsharpness=%d\n"
+                    "display=%d\nfullscreen_kind=%d\nresolution=%d\nvsync=%d\nfps=%d\nrenderer=%d\nupscaler=%d\nquality=%d\nsharpness=%d\n"
                     "msaa=%d\nanisotropy=%d\nsharp_textures=%d\nhd_textures=%d\nhd_models=%d\nsmooth_models=%d\npad_swap=%d\nfield_speed=%d\nbattle_speed=%d\n",
-                 s.display, s.resolution, s.vsync ? 1 : 0, s.fps, s.renderer, s.upscaler, s.quality, s.sharpness, s.msaa,
+                 s.display, s.fullscreenKind, s.resolution, s.vsync ? 1 : 0, s.fps, s.renderer, s.upscaler, s.quality, s.sharpness, s.msaa,
                  s.anisotropy, s.sharpTextures ? 1 : 0, s.hdTextures ? 1 : 0, s.hdModels ? 1 : 0, s.smoothModels, s.padSwap ? 1 : 0, s.fieldSpeed,
                  s.battleSpeed) < 0 || !serialized) return;
     std::string text = serialized;
@@ -142,6 +145,16 @@ void Viewer::saveSettings() const {
     if (!keepData.empty()) text += "data=" + keepData + "\n";
     std::string error;
     if (!crstorage::replaceFile(savePath(settingsFile()), text, &error)) SDL_Log("settings: %s", error.c_str());
+}
+void Viewer::toggleFullscreen() {
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+    Settings& s = settings;
+    if (s.display) s.fullscreenKind = s.display;
+    s.display = s.display ? 0 : std::clamp(s.fullscreenKind, 1, 2);
+    SDL_Log("display: %s (F11 / Alt+Enter)", s.display == 0 ? "windowed" : s.display == 1 ? "fullscreen" : "borderless");
+    applySettings();
+    saveSettings();
+#endif
 }
 // The settings onto the device, the window and the textures (each only as it changes)
 void Viewer::applySettings() {
@@ -231,7 +244,10 @@ auto Viewer::settingRows() -> std::vector<SettingRow> {
     auto onOff = [](bool b) { return std::string(b ? "On" : "Off"); };
     static const char* const kDisplay[] = {"Window", "Fullscreen", "Borderless"};
     rows.push_back({"Display", kDisplay[std::clamp(s.display, 0, 2)], "A window, fullscreen at the display's own mode, or borderless over the desktop",
-                    true, [&s](int d) { s.display = (s.display + d + 3) % 3; }});
+                    true, [&s](int d) {
+                        s.display = (s.display + d + 3) % 3;
+                        if (s.display) s.fullscreenKind = s.display; // (F11's from now on)
+                    }});
     {
         const int r = std::clamp(s.resolution, 0, int(std::size(kResolutions)) - 1);
         const std::string v = s.resolution < 0 ? std::to_string(resW) + " x " + std::to_string(resH) // (--resolution's own)

@@ -1564,6 +1564,11 @@ int main(int argc, char** argv) {
                 else if (e.type == SDL_EVENT_KEY_DOWN) {
                     // (Android's Back: the menus' back, as Backspace)
                     const SDL_Keycode k = e.key.key == SDLK_AC_BACK ? SDLK_BACKSPACE : e.key.key;
+                    // F11 / Alt+Enter: windowed <-> fullscreen (Options' Display, saved; a held key's repeats ignored)
+                    if ((k == SDLK_F11 || ((k == SDLK_RETURN || k == SDLK_KP_ENTER) && (e.key.mod & SDL_KMOD_ALT))) && !e.key.repeat) {
+                        v.toggleFullscreen();
+                        continue;
+                    }
                     if (k == SDLK_ESCAPE) running = false;
                     if (k == SDLK_SPACE) v.paused = !v.paused;
                     // F1: the next resolution; F2: the upscaler's next mode (off, FSR 3.1 native
@@ -1611,9 +1616,24 @@ int main(int argc, char** argv) {
                     if ((k == SDLK_UP || k == SDLK_DOWN) && !f.anims.empty())
                         v.loadAnim(f, (f.animIndex + (k == SDLK_DOWN ? 1 : f.anims.size() - 1)) % f.anims.size());
                 } else if (e.type == SDL_EVENT_GAMEPAD_ADDED) {
-                    if (!pad && (pad = SDL_OpenGamepad(e.gdevice.which))) SDL_Log("controller: %s", SDL_GetGamepadName(pad));
+                    // (taken while none is in use - or the one held went quiet: a wireless pad's receiver keeps a dead handle)
+                    if (!pad || !SDL_GamepadConnected(pad))
+                        if (SDL_Gamepad* added = SDL_OpenGamepad(e.gdevice.which)) {
+                            if (pad) SDL_CloseGamepad(pad), padDir = 0, padDirNext = 0;
+                            pad = added;
+                            SDL_Log("controller: %s", SDL_GetGamepadName(pad));
+                        }
                 } else if (e.type == SDL_EVENT_GAMEPAD_REMOVED) {
-                    if (pad && SDL_GetGamepadID(pad) == e.gdevice.which) SDL_CloseGamepad(pad), pad = nullptr, padDir = 0;
+                    if (pad && SDL_GetGamepadID(pad) == e.gdevice.which) {
+                        SDL_CloseGamepad(pad), pad = nullptr, padDir = 0, padDirNext = 0;
+                        int count = 0; // (another still connected: that one, not none until a new one comes)
+                        if (SDL_JoystickID* ids = SDL_GetGamepads(&count)) {
+                            for (int k = 0; k < count && !pad; ++k)
+                                if (ids[k] != e.gdevice.which) pad = SDL_OpenGamepad(ids[k]);
+                            SDL_free(ids);
+                        }
+                        if (pad) SDL_Log("controller: %s", SDL_GetGamepadName(pad));
+                    }
                 } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad) {
                     if (const SDL_Keycode key = v.padButtonKey(SDL_GamepadButton(e.gbutton.button))) pushKey(key);
                 } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {

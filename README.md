@@ -135,6 +135,7 @@ Full details, with the original's code references: [docs/CONTROLS.md](docs/CONTR
 | Arrow keys / W A S D | run on the field (hold Shift to walk); move the cursor in menus |
 | Return | talk, turn a page, confirm |
 | Backspace (Android: Back) | back, cancel |
+| F11 or Alt+Enter | windowed / fullscreen (Options' Display setting; the fullscreen kind last chosen there, borderless at first; saved; desktop only) |
 | Page Up / Page Down | as L / R |
 | Y / N | answer a question |
 | Tab | the field tab (Camp, Map, Save); Graphics in the options |
@@ -243,7 +244,7 @@ is OpenGL only. `ctest --test-dir build` runs the tests (none need the game's fi
 | Linux | as above | Vulkan, OpenGL 3.3; FSR 3.1, FSR 4, DLSS (with the SDK) |
 | Windows 10+ x64 | MSVC and Ninja from a Developer prompt, with the [Vulkan SDK](https://vulkan.lunarg.com/); or from Linux with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw): `-DCMAKE_TOOLCHAIN_FILE=engine/cmake/llvm-mingw-x86_64.cmake` | Vulkan, OpenGL 3.3; FSR 3.1, FSR 4, DLSS (MSVC, with the SDK) |
 | macOS 11+ | Xcode command-line tools, Ninja and the [Vulkan SDK](https://vulkan.lunarg.com/) (MoltenVK is copied into the `.app`); `"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"` for a universal build | Vulkan (MoltenVK), OpenGL 3.3; FSR 3.1, MetalFX (macOS 13+) |
-| Android 7+ (arm64, x86-64) | Android SDK and NDK: `git clone -b release-3.2.0 https://github.com/libsdl-org/SDL android/SDL`, then `gradle assembleRelease` in `android/` | OpenGL ES 3.0 |
+| Android 7+ (arm64, x86-64) | Android SDK and NDK: `git clone -b release-3.4.20 https://github.com/libsdl-org/SDL android/SDL`, then `gradle assembleRelease` in `android/` | OpenGL ES 3.0 |
 
 - `-DCR2_GLES=ON` builds the desktop version on OpenGL ES 3.0, as Android runs it.
 - **DLSS:** add `-DCR_DLSS_SDK=<NVIDIA's DLSS SDK checkout>` (or put it in

@@ -1250,6 +1250,20 @@ the three while the pointer is down or was lifted since the last update (`pointe
 `CR2_MOUSE_SCRIPT="1:down=0.5,0.5 6:up"`: the entry script's end at 3.16 s, control held, the
 finger lifted in the update at 6.06 s, control back at 6.11 s; with no finger, at 3.20 s as before.
 
+### Round 49: the camera's position for a script
+
+`FldUtilGetFieldMapCameraPos_X / _Y` return FldMap's -(+0x30 / +0x34), through
+`FldUtilConvertFieldMapCameraPosForScriptInput_Revert` (doubled on platform 0, by the map's kind on
+2, untouched on 1 - `Cr3UtilGetPlatform` returns 1 on Android) and divided by the screen's width over
+960. +0x30 / +0x34 are set by `SetDirectScroll`, which passes them by reference to
+`CalcScrollStop`: without +0x79 it clamps them in place to the painting's limits (+0x48 .. +0x54)
+and copies them to +0x40 / +0x44, the scroll drawn; with +0x79 (the shared background) it leaves
+them and draws 0.4 of them. Round 33's note had +0x30 always unclamped. The port's `GetPos_X / _Y`
+read the scene's scroll (`shownX_`, from `FieldMap`'s `out.scroll`): clamped the same way, or not
+with a shared background, whose painting the port moves 0.4 - as the original. Not changed. The
+ease's one-pixel hold stays the drawn picture's pixel (the device's in the original, the window's
+in the port): by design. Settled.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,
@@ -1397,9 +1411,6 @@ animations being linear (assumed, as before).
   video's 4.33); a boss battle's turn and defeat calls (round 43: three updates each). (Round 44: a
   sopia's motion change - six updates, the video's banner times read again. Round 35 read +0x523:
   the Pair turn's flag; round 40 which of a pair runs which table.)
-- **The camera's units.** The ease's one-pixel hold is the original's device pixel; the port
-  holds within one pixel of the window it draws to. `GetPos_X / _Y` in the port still read the
-  clamped scroll (`shownX_`), the original's the unclamped +0x30.
 - **The map name's last update.** The original deletes the menu in the `InterfaceMain::Update`
   whose step reaches the animation's end; the port shows it while `ticks x 0.05 s` is under its
   length. Within an update of each other; not counted exactly.

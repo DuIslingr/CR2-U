@@ -1458,6 +1458,9 @@ animations being linear (assumed, as before).
   video's 4.33); a boss battle's turn and defeat calls (round 43: three updates each). (Round 44: a
   sopia's motion change - six updates, the video's banner times read again. Round 35 read +0x523:
   the Pair turn's flag; round 40 which of a pair runs which table.)
+- **Round-second waits.** The original's 1.5 / 2.0 / 2.5 / 3.0 s float sums pass an update late
+  (round 52); the launch waits and the item's end follow it, the turn end's 1.5 s, the escape's
+  2.0 s, the revival's 3.0 s and the field's and the opening's round waits not yet.
 
 ## Checks
 

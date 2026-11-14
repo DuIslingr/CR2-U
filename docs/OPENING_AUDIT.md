@@ -1953,6 +1953,21 @@ the new start. From standing, `FldPlayer::Update`'s state 0 sets the walk or run
 about 90% done in four updates (0.2 s). (`FldMain::ChangeCharacterExecute`
 counts its 16 / 32 in 60ths - `dt x 60` an update - as the port does; nothing changed there.)
 
+### Round 95: what counts updates and what counts 60ths, checked
+
+After rounds 88 and 89, the other counts read again for their unit:
+- The sounds' fades (`Cr3SoundStop` / the BGM's start, `CSound::SetFade`): `CSndNode::_FadeVolumeProc`
+  adds 1 to the fade's count a call, from `CSndNode::Proc` <- `CSndAudio::Proc` <- `CSound::LibProc`
+  <- `Cr3SoundProc`, which `TestApp::onUpdate` calls once an update. A fade of n is n updates; the
+  port's `AudioPlayer` (`kUpdates` 20) already counts them so.
+- The leader change (`FldMain::ChangeCharacterExecute`): its count gains `(int)(dt x 60)`, 3 an update,
+  against 16 and 32 - 60ths; the port's `dt x 60` is the same.
+- The footsteps (`FldPlayer::Update`, `SetSEAndEffect`): every 12th update walking, 7th running - the
+  port's `stepUpdate` counts updates.
+- The battle's `0.15 x 60` turn (round 94) and the iai's, the hakkei's and the glass's counts (rounds
+  88, 89) were the only others found by their constants (`60.0` in the library: also the cut-in
+  window's placing, the field camera's units and the game over's choice - places, not times).
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

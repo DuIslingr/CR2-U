@@ -1268,7 +1268,16 @@ void Viewer::fieldUpdate(float dt) {
     fieldClock = std::min(fieldClock + dt, 0.25f);
     for (; fieldClock >= cr2::EventRuntime::kTick; fieldClock -= cr2::EventRuntime::kTick) {
         // (step 1: control back once no finger is down nor lifted this update, CheckBalloon after it)
-        if (controlHold > 0 && !(controlHold == 1 && (pointerDown || pointerLifted)) && --controlHold == 0) checkBalloons();                        // (step 5 -> 1 the next, control the one after)
+        if (controlHold > 0 && !(controlHold == 1 && (pointerDown || pointerLifted)) && --controlHold == 0) checkBalloons();
+        if (emergencyExit) { // (FldMain step 5, result 2: the way out to the town's start)
+            emergencyExit = false;
+            SDL_Log("camp: Emergency Exit");
+            game.next.popPoint = "t0101_p1";
+            if (script) script->events().fadeOut(1, 20);
+            audio.stopBgm(20), audio.playSe(0x14f, false);
+            game.setFlag(0x3ed, true);
+            fieldExitHold = 6, pendingBranch = true;
+        }                        // (step 5 -> 1 the next, control the one after)
         pointerLifted = false;
         if (pendingBranch) {
             pendingBranch = false;
@@ -1397,6 +1406,10 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                 if (!script->running()) script->tick();
                 // (the camp closing: InterfaceMain's +0xbc in the fourth update after the release's;
                 // FldMain's step 5 -> 1 the next, step 1's control the one after)
+                if (campOpen && campExitTicks >= 0 && ++campExitTicks >= 5) { // (+0xbc = 2)
+                    closeCamp(), emergencyExit = true;
+                    break;
+                }
                 if (campOpen && campListCloseAt >= 0 && ++campListCloseTicks >= 4) {
                     campListCloseAt = -1;
                     if (campListCloseTarget > 0) { // (the use menus)
@@ -1728,7 +1741,7 @@ float Viewer::campPartTime(float length) const {
     return std::max(std::min(campCloseFrom, length) - (uiClock - campCloseAt), 0.0f); // (played back from where it was)
 }
 void Viewer::closeCamp() {
-    campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1;
+    campCloseAt = -1, campCloseTicks = 0, campListCloseAt = -1, campExitTicks = -1;
     campOpen = false, campList = 0, campUse = 0, campItem = 0, campLink = 0;
     optionsOpen = optionsAsk = false, manualStage = 0, manualEvents.reset();
     SDL_Log("camp: closed");
@@ -2053,14 +2066,11 @@ void Viewer::campUseTap(int id) {
     } else if (campUse == 4) {
         if (id == 7300) campUpShown++, campUpAt = uiClock, campUseUpdate(); // (a tap: the next at once - +0xe4)
     } else if (campUse == 3) {
-        if (id == 7201) { // (FldMain: the camp's result 2 - its use)
+        if (id == 7201) { // (Yes: Cr3UtilGetItem(-1), EndCampTitle, SE 0xb4 - the rest after the window's close)
+            if (campExitTicks >= 0) return;
             game.itemCount[36] = static_cast<short>(std::max(game.itemCount[36] - 1, 0));
             audio.playSe(0xb4, false);
-            closeCamp();
-            audio.stopBgm(20), audio.playSe(0x14f, false);
-            game.setFlag(0x3ed, true);
-            SDL_Log("camp: Emergency Exit");
-            enterMap("t0101", "t0101_p1");
+            campExitTicks = 0;
         } else if (id == 7202) campUse = 0, campItem = 0, audio.playSe(0xb5, false);
     }
 }
@@ -2647,7 +2657,7 @@ void Viewer::drawPubRequest(const Mat4& view, int w, int h) {
 
 // a camp button pressed (CampMenu::TouchSimpleRelease: 0xb4; InterfaceMain's camp step by it)
 void Viewer::campPress(int id) {
-    if (campCloseAt >= 0 || campListCloseAt >= 0 || campOpening() || campListOpening()) return; // (state 1 on: the menu closing; or still opening, +0x1c)
+    if (campCloseAt >= 0 || campListCloseAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return; // (state 1 on: the menu closing; or still opening, +0x1c)
     if (campUse) return campUseTap(id);
     if (campLink) {
         if (id == 100) audio.playSe(0xb5, false), campLink = 0, campStart = uiClock;
@@ -2715,7 +2725,7 @@ void Viewer::campEnter(int id) {
     }
 }
 void Viewer::campKey(SDL_Keycode k) {
-    if (campCloseAt >= 0 || campListCloseAt >= 0 || campOpening() || campListOpening()) return;
+    if (campCloseAt >= 0 || campListCloseAt >= 0 || campExitTicks >= 0 || campOpening() || campListOpening()) return;
     keysUsed = true;
     if (optionsKey(k)) return;
     if (campUse) { // (whom: Left / Right, Return; how many: Left / Right, Return yes, Backspace no)

@@ -1398,6 +1398,21 @@ off, and the pick plays the list's close (`campListCloseTarget` the item) before
 `--play d0104 --item 4:3 --input "tab camp items down down enter enter enter"`: the first `down`
 falls in the list's lock, the second takes it to Plum, used on the first character.
 
+### Round 58: the Emergency Exit
+
+Item 0x24 picked: the list closes and returns 10, `InterfaceMain` makes 0x32 - the question - with
+`CampItemDirectUseMenu`. Its Yes (`GetBattleYNChoicePushBottom` 1): `Cr3UtilGetItem(-1)`,
+`EndBattleYNChoice`, `EndCampTitle`, SE 0xb4, state 3, which waits for the choice's window to be gone
+(`SurvivalBattleYNChoice`: `choice_io`'s 0.2 s close) and returns 7 with result 6: `InterfaceMain`
+sets +0xbc = 2, the fourth update after the Yes. `FldMain`'s step 5 sees 2 the next update: step
+0x10, `t0101_p1`, `Cr3FadeOut(1, 20)` - white -, `StopBGM(20)`, SE 0x14f, flag 0x3ed - and 0x10 waits
+for the fade, 0x11 counts three updates, 0x12 changes the area. The port cut to t0101 in the Yes's
+update, no fade. Now the Yes spends the item and plays its SE, the camp closes in the fourth update
+(`campExitTicks`) and the field's next update starts the exit as step 5 does (`emergencyExit`: the
+pop point, the white fade, the music, the SE, the flag, then the exits' hold). `--play d0201 --item
+36:1 --input "tab camp items enter enter enter enter"` (and d0301): the camp closed, then the fade and
+t0101 at t0101_p1. (d0104 has flag 0x3e9 set: the item is greyed there.)
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

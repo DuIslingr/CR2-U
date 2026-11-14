@@ -1577,6 +1577,12 @@ struct Viewer {
     float campListCloseAt = -1, campListCloseFrom = 0;
     int campListCloseTicks = 0, campListCloseTarget = 0; // (0 the camp again, else the item being used: 9 / 10 - the use menus)
     void campListBack();
+    // (the Emergency Exit's Yes - CampItemDirectUseMenu state 3: the choice's window closes, 0.2 s,
+    // then 7 with result 6 - InterfaceMain's +0xbc = 2 - in the fourth update after; FldMain's step 5
+    // sees it the next: step 0x10 to t0101_p1, Cr3FadeOut(1, 20), the music out over 20, SE 0x14f,
+    // flag 0x3ed)
+    int campExitTicks = -1;
+    bool emergencyExit = false;
     // (a list made: InterfaceMain +0x1c 30 till its main frame's 0.2 s opening has played - state 1 -
     // its taps from the fourth update after the one it was made in)
     float campListOpenedAt = -10;

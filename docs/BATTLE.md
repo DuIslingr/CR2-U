@@ -315,14 +315,17 @@ translate(middle + shift) · scale(growth) · rotationZYX(turn) · translate(−
 shift, turn and growth then add their gains. The figure's alpha (+0x11c) is 1 − clock / 1.5, then
 the clock gains the frame's time. Past 1.5, Cleanup.
 
-Shards that keep growing and speeding up are mostly off the screen within 0.3 s. Over 200 seeds
-there are 444 shards on average, covering 94% of the screen, and none is left on it at the end
-(`cr2tool glass 200`).
+The effect is one of `BtlMain`'s modules: `BtlMain::Update` -> `UpdateScene` runs each module's
+`Update` once a game update with its 0.05 s, so a frame here is an update - 30 of them in the 1.5 s.
+Shards that keep growing and speeding up are mostly off the screen within 18 frames (0.9 s). Over
+200 seeds there are 444 shards on average, covering 94% of the screen, and 0.69 are left on it at the
+end, faded out (`cr2tool glass 200`).
 
 The port (battle/glass.cpp, the viewer's grabGlass / drawGlass) reads the map-only frame back as
 the texture. It takes the screen's height as the iPhone's 640 (h = 320, w by the aspect), since
 the shards' speeds are in its pixels. It seeds lrand48 with the fight's seed (the game seeds it
-with the clock) and steps 60 times a second.
+with the clock) and steps once an update (20 a second; it stepped 60 a second before round 89 of
+docs/OPENING_AUDIT.md).
 
 ## The downed (BtlActionCtrl's dead actions)
 

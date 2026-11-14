@@ -1886,6 +1886,18 @@ hakkei's taps 1 s after the first. Now 11 updates (0.55 s) and 60 (3.0 s). `docs
 "10 frames" / "60 frames"; it says updates now. (The aim has no time limit: a press on the mark, the
 release on the leader.)
 
+### Round 89: the glass's frames
+
+`BtlPostEffectGlassFragment::Update` (Darwin's third awakening's screen breaking away) moves each
+shard by its shift, turn and growth and adds the frame's time to its clock, once a call, while the
+clock is at most 1.5. Its caller is `BtlPostEffectRenderer`, registered with `BtlMain` as a module
+(`RegisterModule`); `BtlMain::Update` -> `UpdateScene` calls each module's `Update` (+0x1c) once a
+game update with the update's 0.05 s. So the effect takes 30 frames, 20 a second. The port, written
+before the game's fixed 0.05 s was found (round 49), stepped it 60 times a second: 90 frames, the
+shards flying three times as far and as fast. Now `GlassFragments::kFrame` is 0.05.
+`cr2tool glass 200`: 443.8 shards a seed, 93.86% of the screen, 0.69 still on it at the end (faded).
+Not compared with footage: no clip of the third awakening was at hand.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

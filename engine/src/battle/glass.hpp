@@ -36,7 +36,7 @@ class GlassFragments {
 public:
     static constexpr int kPoints = 230;       // (Setup: GlassFragmentEffect(w, h, 230, ...))
     static constexpr float kLength = 1.5f;    // its seconds (Update: on while its clock is <= 1.5)
-    static constexpr float kFrame = 1.0f / 60.0f;
+    static constexpr float kFrame = 0.05f; // (BtlMain::Update -> UpdateScene: each module's Update once an update, dt 0.05)
 
     // w, h: half the screen's size
     void build(int w, int h, Rand48& rng);
@@ -45,7 +45,7 @@ public:
     // Its alpha by its clock (+0x11c: 1 - t / 1.5)
     float alpha() const { return 1.0f - std::max(clock - kFrame, 0.0f) / kLength; } // (set after the frame, by its clock before)
     bool running() const { return built && clock <= kLength; }
-    // Its frames to `t` seconds (one each 1/60 s)
+    // Its frames to `t` seconds (one each update, 0.05 s)
     void advanceTo(float t);
 
     std::vector<GlassShard> shards;

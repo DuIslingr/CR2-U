@@ -1977,6 +1977,19 @@ The port gave such a row no tap at all. Now `drawSkillList` marks it (`kRowNoPic
 plays 0xb6 - in the field's menus (the shop, the camp's lists, the world select, the library, the
 pub, the manual) and in a battle's lists.
 
+### Round 97: a button that is off
+
+`CircleBtn::CheckTap(x, y, sound)`: on a button that is off (+0x84 0) it returns nothing and, when
+asked (r3 1), plays SE 0xb6. The callers' r3, read from the library's ARM code: every menu's
+`TouchSimpleRelease` passes 1 - `CampMenu`, `ShopFirstMenu`, `ShopSecondMenu`, `PubTopMenu`,
+`PubDetailMenu`, `PartyOrganizationMenu`, `BattleFirstMenu`, `BattleSoloMenu`, `BattleYNChoice`,
+`GameTitleMenu` -; their presses and moves pass 0 but for the camp's, the first shop menu's, the
+title's and the choice's (1: also on the press). The port gave an off button's id to its menu (the
+shop's kinds then opened an empty list to sell; a battle's command played 0xb4) or, for the camp's
+Items, no tap. Now `drawCommandMenu` marks an off button (`kRowNoPick`, as round 96's rows) and its
+tap plays 0xb6. (The press's extra 0xb6 on those four menus is not followed: the port acts on the
+release.) The title's Load button with no save is left out (`CreateCircleButton`'s skip), not off.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

@@ -3264,7 +3264,8 @@ void Viewer::drawCommandMenu(const std::string& anim, float t, const Mat4& view,
         }
         drawFigure(c.fig, view.data());
         float sx, sy, ex, ey;
-        if (uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) tapRects.push_back({n, sx, sy, ex, ey});
+        if (uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey))
+            tapRects.push_back({look == 0 ? kRowNoPick : n, sx, sy, ex, ey}); // (CircleBtn::CheckTap: off, released on - SE 0xb6)
         const auto lt = labels.find(n);
         float tx, ty;
         if (lt != labels.end() && w > 0 && uiJoint(c, "typeM_C01", tx, ty)) drawBorderedText(lt->second, 24, tx, ty, w, h);

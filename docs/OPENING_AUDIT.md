@@ -1386,6 +1386,18 @@ The port switched in the release's update both ways. Now a top button starts the
 the camp again in the fourth tick, with its opening and lock. `--play d0104 --input "tab camp
 items back back"` (and `equip`, `sopia`): each list and the camp come and go as before, later.
 
+### Round 57: a camp list's opening, and an item picked
+
+A list made by `InterfaceMain` sets its +0x1c to 30 and clears it when its main frame's opening
+(0.2 s) has played (`CampItemListMenu::Update` state 1): touches taken from the fourth update after
+the one it was made in. An item picked (state 3) plays the list's frame back and returns 9 - 10 for
+item 0x24 - in the update it reaches its start, the fourth after the release, on which `InterfaceMain`
+makes the use menus (0x2f, 0x30 and 0x2e; 0x32 for 0x24), stepped once there. The port took a list's
+taps from its first update and opened the use step in the pick's; now `campListOpening` holds them
+off, and the pick plays the list's close (`campListCloseTarget` the item) before the use step.
+`--play d0104 --item 4:3 --input "tab camp items down down enter enter enter"`: the first `down`
+falls in the list's lock, the second takes it to Plum, used on the first character.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

@@ -1397,9 +1397,15 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                 if (!script->running()) script->tick();
                 // (the camp closing: InterfaceMain's +0xbc in the fourth update after the release's;
                 // FldMain's step 5 -> 1 the next, step 1's control the one after)
-                if (campOpen && campListCloseAt >= 0 && ++campListCloseTicks >= 4) { // (the camp made again)
-                    campListCloseAt = -1, campList = 0, campCursor = 0, campSopiaDetail = 0;
-                    campStart = campOpenedAt = uiClock - cr2::EventRuntime::kTick;
+                if (campOpen && campListCloseAt >= 0 && ++campListCloseTicks >= 4) {
+                    campListCloseAt = -1;
+                    if (campListCloseTarget > 0) { // (the use menus)
+                        campItem = campListCloseTarget, campFace = 0, campUseStart = uiClock - cr2::EventRuntime::kTick;
+                        campUse = campItem == 36 ? 3 : 1;
+                    } else { // (the camp made again)
+                        campList = 0, campCursor = 0, campSopiaDetail = 0;
+                        campStart = campOpenedAt = uiClock - cr2::EventRuntime::kTick;
+                    }
                 }
                 if (campOpen && campCloseAt >= 0 && ++campCloseTicks >= 5) {
                     if (campCloseTarget != 100) {
@@ -2129,9 +2135,10 @@ void Viewer::campPickItem(int item) {
     const auto r = std::find_if(rows.begin(), rows.end(), [&](const ListRow& x) { return x.id == item; });
     if (r == rows.end() || !r->selectable) return (void)SDL_Log("camp: item %d not usable here", item);
     audio.playSe(0xb4, false);
-    campItem = item, campUseStart = uiClock, campFace = 0;
     SDL_Log("camp: using %s", r->name.c_str());
-    campUse = item == 36 ? 3 : 1;
+    // (state 3: the list's frame played back, then 9 - or 10 for item 36 - and InterfaceMain makes
+    // the use menus, stepped once there)
+    if (campListCloseAt < 0) campListCloseAt = uiClock, campListCloseFrom = uiClock - campStart, campListCloseTicks = 0, campListCloseTarget = item;
 }
 
 // The sopia's windows (CampSopiaStatusMenu, sopiaWin_io: its picture - sopiaPic with
@@ -2640,7 +2647,7 @@ void Viewer::drawPubRequest(const Mat4& view, int w, int h) {
 
 // a camp button pressed (CampMenu::TouchSimpleRelease: 0xb4; InterfaceMain's camp step by it)
 void Viewer::campPress(int id) {
-    if (campCloseAt >= 0 || campListCloseAt >= 0 || campOpening()) return; // (state 1 on: the menu closing; or still opening, +0x1c)
+    if (campCloseAt >= 0 || campListCloseAt >= 0 || campOpening() || campListOpening()) return; // (state 1 on: the menu closing; or still opening, +0x1c)
     if (campUse) return campUseTap(id);
     if (campLink) {
         if (id == 100) audio.playSe(0xb5, false), campLink = 0, campStart = uiClock;
@@ -2682,11 +2689,11 @@ void Viewer::campPress(int id) {
 // items, 0x2f / 0x30 / 0x3a / 0x33 the equipment, 0x36 the sopia, 0x2a the options, 0x73 / 0x6d
 // the links), made and stepped once in that update
 void Viewer::campListBack() {
-    if (campListCloseAt < 0) campListCloseAt = uiClock, campListCloseFrom = uiClock - campStart, campListCloseTicks = 0;
+    if (campListCloseAt < 0) campListCloseAt = uiClock, campListCloseFrom = uiClock - campStart, campListCloseTicks = 0, campListCloseTarget = 0;
 }
 void Viewer::campEnter(int id) {
     campCloseAt = -1, campCloseTicks = 0, campCloseTarget = 100;
-    campStart = uiClock - cr2::EventRuntime::kTick;
+    campStart = campListOpenedAt = uiClock - cr2::EventRuntime::kTick;
     if (id == 201 || id == 202) {
         campLink = id;
         SDL_Log("camp: %s", id == 201 ? "scenarios" : "the pub's request");
@@ -2708,7 +2715,7 @@ void Viewer::campEnter(int id) {
     }
 }
 void Viewer::campKey(SDL_Keycode k) {
-    if (campCloseAt >= 0 || campListCloseAt >= 0 || campOpening()) return;
+    if (campCloseAt >= 0 || campListCloseAt >= 0 || campOpening() || campListOpening()) return;
     keysUsed = true;
     if (optionsKey(k)) return;
     if (campUse) { // (whom: Left / Right, Return; how many: Left / Right, Return yes, Backspace no)

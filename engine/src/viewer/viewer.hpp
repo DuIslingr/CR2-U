@@ -1575,8 +1575,12 @@ struct Viewer {
     // 0.2 s, played back; at its start, in the fourth update, it returns 6 and InterfaceMain makes the
     // camp again - SetCampWindowParameter - stepped once in that update, its opening and lock again)
     float campListCloseAt = -1, campListCloseFrom = 0;
-    int campListCloseTicks = 0;
+    int campListCloseTicks = 0, campListCloseTarget = 0; // (0 the camp again, else the item being used: 9 / 10 - the use menus)
     void campListBack();
+    // (a list made: InterfaceMain +0x1c 30 till its main frame's 0.2 s opening has played - state 1 -
+    // its taps from the fourth update after the one it was made in)
+    float campListOpenedAt = -10;
+    bool campListOpening() const { return campList && uiClock - campListOpenedAt < 5 * cr2::EventRuntime::kTick; }
     float campListTime() const {
         return campListCloseAt < 0 ? uiClock - campStart : std::max(std::min(campListCloseFrom, 0.2f) - (uiClock - campListCloseAt), 0.0f);
     }

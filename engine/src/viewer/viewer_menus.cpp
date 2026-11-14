@@ -183,6 +183,16 @@ auto Viewer::menuList() -> MenuList {
         if ((campList == 16 || campList == 18) && !campSopiaDetail)
             return {&campCursor, int(campRows().size()), 100 + campList * 10 + campCategory};
     }
+    // (every ScrollListMenu drags - its slide area 04 -: the shop's lists, the world select's, the library's, a battle's)
+    if (shop.stage == 3 && shopSwitchAt < 0) return {&shop.focus, int(shopRows().size()), 200 + shop.kind * 10 + shop.who};
+    if ((world.stage == 1 || world.stage == 2) && worldSwitchAt < 0) return {&world.focus, int(worldRows().size()), 300 + world.stage + (world.chapters ? 10 : 0)};
+    if (library.stage == 1 && library.closeAt < 0) return {&library.focus, int(libraryRows().size()), 400};
+    if (battleMode && choosing) {
+        using CI = cr2::CommandInput;
+        const CI::Menu m = commandInput.menu();
+        if (m == CI::Menu::Items || m == CI::Menu::Advent || m == CI::Menu::Awake || m == CI::Menu::Sopia)
+            return {&menuCursor, int(menuChoices().size()), 500 + int(m)};
+    }
     return {};
 }
 bool Viewer::menuScroll(int rows) {
@@ -211,6 +221,19 @@ bool Viewer::consumeInputCancel(crinput::CancelWatch& cancel) {
 }
 bool Viewer::menuPointerDown(float x, float y) {
     const MenuList list = menuList();
+    if (list.cursor && list.count > 1 && listTrack.on && screenW > 0) { // (the bar's track, off the thumb: the list there)
+        const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+        const float ux = (x - 0.5f) * float(screenW) / k, uy = (0.5f - y) * float(screenH) / k;
+        const auto& tr = listTrack;
+        if (ux >= std::min(tr.x0, tr.x1) && ux <= std::max(tr.x0, tr.x1) && uy >= std::min(tr.y0, tr.y1) && uy <= std::max(tr.y0, tr.y1) &&
+            (uy > tr.thumbTop || uy < tr.thumbLow) && tr.up != tr.low) {
+            const float frac = std::clamp((tr.up - uy) / (tr.up - tr.low), 0.0f, 1.0f);
+            const int to = std::clamp(int(std::lround(frac * float(list.count - 1))), 0, list.count - 1);
+            if (to != *list.cursor) *list.cursor = to;
+            audio.playSe(0xb3, false);
+            return true;
+        }
+    }
     if (!list.cursor || list.count <= 0 || x < 0.1f || x > 0.98f || y < 0.12f || y > 0.88f) return false;
     menuSwipe.begin(x, y, list.context);
     return true;

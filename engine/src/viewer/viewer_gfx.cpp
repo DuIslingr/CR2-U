@@ -1023,6 +1023,7 @@ void Viewer::drawLayer(const std::string& image, const Mat4& proj, float shiftX)
 // window (GL) - the resolution's shape letterboxed in it. The scene (smaller while an
 // upscaler is on), then the UI over the resolved frame at full size.
 void Viewer::draw(int fw, int fh) {
+    listTrack.on = false; // (set again by the list drawn this frame, if any)
     if (battleMode && glassPending) grabGlass(fw, fh);
     dev->beginFrame(fw, fh);
     placeScreen(fw, fh);

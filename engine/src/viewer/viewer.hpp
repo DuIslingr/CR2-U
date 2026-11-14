@@ -299,6 +299,9 @@ struct Viewer {
     bool walkStick(float& sx, float& sy, bool& run) const;
     void drawWalkStick(const Mat4& view);
     struct MenuList { int* cursor = nullptr; int count = 0, context = 0; };
+    // (the scroll bar's track - scrlBar's slideAreaS03 .. E03, barLimitUp / Low, the thumb's span - as last drawn:
+    // ScrollListMenu::TouchSimplePress, a press on it above or below the thumb, the list there, SE 0xb3)
+    struct ListTrack { bool on = false; float x0 = 0, y0 = 0, x1 = 0, y1 = 0, up = 0, low = 0, thumbTop = 0, thumbLow = 0; } listTrack;
     mobile::MenuSwipe menuSwipe;
     MenuList menuList();
     bool menuScroll(int rows);

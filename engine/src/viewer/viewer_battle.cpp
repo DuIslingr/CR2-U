@@ -3346,6 +3346,12 @@ void Viewer::drawSkillList(const std::vector<ListRow>& rows, int focused, float 
         UiFig& th = uiFig("scrlmtr_per");
         th.fig.place = cr2::Mat34();
         th.fig.place.m[7] = n > 5 ? -(uy - ly) * (1.0f - shown) * float(first) / float(n - 5) : 0.0f;
+        float tx0, ty0, tx1, ty1;
+        if (uiJoint(bar, "slideAreaS03", tx0, ty0) && uiJoint(bar, "slideAreaE03", tx1, ty1)) {
+            listTrack.on = true, listTrack.x0 = tx0, listTrack.y0 = ty0, listTrack.x1 = tx1, listTrack.y1 = ty1;
+            listTrack.up = uy, listTrack.low = ly;
+            listTrack.thumbTop = uy + th.fig.place.m[7], listTrack.thumbLow = listTrack.thumbTop - (uy - ly) * shown;
+        }
         poseUi(th, "scrlmtr_per", shown * 100.0f / 20.0f);
         drawFigure(th.fig, view.data());
     }

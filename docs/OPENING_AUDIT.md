@@ -2046,8 +2046,21 @@ update later (`titleScenariosGone`), nothing drawn between. `--title --input "ta
 options back"`: the scenarios, the buttons, the options, closed.
 `ScrollListMenu::TouchSimplePress` lights the list's back and switch buttons (round 98) but no row;
 a press on the scroll bar's track (the frame's slide area) jumps the list there with SE 0xb3 - the
-port's lists have no such track tap (not added: the area is the frame's slide collision, which the
-port does not read).
+port's lists had no such track tap (round 102).
+
+### Round 102: dragging the lists, their bar's track
+
+`ScrollListMenu::TouchSimplePress`: on the frame's slide collision (`Cr3UtilCheckHitSlideCollision`)
+"03" - `scrlBar`'s slideAreaS03 .. E03, the bar's track -, above or below the thumb, the list's top
+set by where along the bar (between `barLimitUp` / `barLimitLow`), SE 0xb3; on "04" - the rows'
+area - a drag begins (`SetListScrollDirct`). (The two strings, at 0x50a3b4 / 0x50a3b8 less 0x10000
+in the file, read "03" and "04".) Every list is a `ScrollListMenu`, so every list drags. The port
+dragged only the settings', the manual's and the camp's lists (`menuList`), and had no track. Now
+the shop's lists, the world and chapter selects', the library's and a battle's (items, sopia,
+awakenings, advents) drag too, and a press on the track off the thumb moves the focus there (SE
+0xb3) - the focus taken as the place along the bar, the port's lists keeping the focused row in
+the middle where the original keeps a top row. Not run with a pointer (the headless runs drive the
+lists by keys).
 
 ## Original-code evidence
 

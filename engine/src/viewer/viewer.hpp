@@ -248,6 +248,7 @@ struct Viewer {
     // finger held (2, 0x22) or moved (4), and the update's releases (8, 0x18, 0x48) -, so step 1
     // waits for an update with no finger down and none lifted in it)
     bool pointerDown = false, pointerLifted = false;
+    float pointerFx = -1, pointerFy = -1; // (the finger's place while down: the screen's fractions)
     bool fieldControl() const;
     void queueEvent(const std::string& function);
     int fieldExitHold = -1; // (--play: an event's way out to a vista or battle - the updates FldMain spends on it)

@@ -1990,6 +1990,15 @@ Items, no tap. Now `drawCommandMenu` marks an off button (`kRowNoPick`, as round
 tap plays 0xb6. (The press's extra 0xb6 on those four menus is not followed: the port acts on the
 release.) The title's Load button with no save is left out (`CreateCircleButton`'s skip), not off.
 
+### Round 98: the button under the finger
+
+`CircleBtn::CheckTap` (0x32221c in the library) on a button that is on: `ChangeTapButtonColor(2.0)` -
+`PRG_shiftR`'s texture half across, the lit look -; off it, `ChangeTapButtonColor(1.0)`, the plain
+look. The menus call it on the press and on each move as well as on the release, so a button is lit
+while a finger is on it and goes plain when the finger slides off. The port lit a button only for
+the keys' focus. Now `drawCommandMenu` draws the button under a held pointer (`pointerFx / Fy`,
+kept from the press and its moves) lit too.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

@@ -3255,7 +3255,15 @@ void Viewer::drawCommandMenu(const std::string& anim, float t, const Mat4& view,
         poseUi(c, "circlebtn_fr", float(frameOf ? frameOf : n) / 20.0f);
         // CircleBtn::ChangeTapButtonColor: focused (2) PRG_shiftR's texture half across
         // (OffsetSet1 U 0.5), not selectable (0.5) every material's colour at half
-        const int look = buttonLook ? buttonLook(n) : focusScreen() && n == keyFocus ? 2 : 1;
+        int look = buttonLook ? buttonLook(n) : focusScreen() && n == keyFocus ? 2 : 1;
+        { // (CircleBtn::CheckTap on the press and the move: the one under the finger lit - ChangeTapButtonColor 2)
+            float sx, sy, ex, ey;
+            if (look == 1 && pointerDown && uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey) && screenW > 0) {
+                const float k = std::min(float(screenW) / 0.96f, float(screenH) / 0.64f);
+                const float px = (pointerFx - 0.5f) * float(screenW) / k, py = (0.5f - pointerFy) * float(screenH) / k;
+                if (px >= std::min(sx, ex) && px <= std::max(sx, ex) && py >= std::min(sy, ey) && py <= std::max(sy, ey)) look = 2;
+            }
+        }
         for (ViewMesh& vm : c.fig.meshes) {
             const uint32_t mi = vm.source.material;
             if (mi < c.materials.size() && c.materials[mi] == "PRG_shiftR") vm.material.params[0x5e] = {look == 2 ? 0.5f : 0.0f, 0.0f};

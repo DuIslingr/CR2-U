@@ -1492,6 +1492,9 @@ int main(int argc, char** argv) {
                 const bool cancelled = inputCancel.note(e);
                 consumeInputCancel();
                 if (cancelled) continue;
+                if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || (e.type == SDL_EVENT_MOUSE_MOTION && v.pointerDown)) // (where the finger is: a button under it lit)
+                    screenFraction(e.type == SDL_EVENT_MOUSE_MOTION ? e.motion.x : e.button.x, e.type == SDL_EVENT_MOUSE_MOTION ? e.motion.y : e.button.y,
+                                   v.pointerFx, v.pointerFy);
                 if (e.type == SDL_EVENT_RENDER_DEVICE_RESET) {
                     if (e.render.windowID == SDL_GetWindowID(win) && !dev->restoreAfterContextLoss()) {
                         SDL_LogError(SDL_LOG_CATEGORY_RENDER, "Unable to restore the OpenGL context");

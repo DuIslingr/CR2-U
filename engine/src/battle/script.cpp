@@ -117,14 +117,15 @@ void BattleScript::bind() {
     });
     vm.setNative("Cr3Battle", "SetParamF", [](NativeCall&) {});
     vm.setNative("Cr3Battle", "SetParamS", [](NativeCall&) {});
-    // Invoke: 0 the states cleared; 1 the status windows shown, 2 hidden (and the announcement
-    // cleared and hidden), 3 / 4 the announcement shown / hidden; 5 and 6 switches (+0x237b,
-    // +0x237c) - not read here yet
+    // Invoke: 0 state 33 cleared on each alive; 1 the status windows shown, 2 hidden (and the
+    // announcement cleared and hidden), 3 / 4 the announcement shown / hidden; 5 a switch (+0x237b,
+    // read by nothing the scripts reach), 6 the deaths held / let go (+0x237c, flipped)
     vm.setNative("Cr3Battle", "Invoke", [this, &r](NativeCall& c) {
         switch (c.integer(0)) {
         case 0: r.clearStates(); break;
         case 1: statusShown_ = true; break;
         case 2: statusShown_ = false; break;
+        case 6: r.holdDeaths = !r.holdDeaths; break;
         default: break;
         }
     });

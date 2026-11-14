@@ -82,8 +82,10 @@ void FieldScript::bind() {
         const auto it = gimmicks_.find(c.string(0));
         return it == gimmicks_.end() ? nullptr : &it->second;
     };
+    // (FldUtilSetGimmickVisible: shown or hidden, and its collision's contact on or off with it -
+    // the same switch SetCollision turns, so the last of the two holds)
     vm.setNative("Cr3GimmickData", "Disp", [gimmick](NativeCall& c) {
-        if (GimmickState* g = gimmick(c)) g->visible = c.boolean(1);
+        if (GimmickState* g = gimmick(c)) g->visible = g->collision = c.boolean(1);
     });
     vm.setNative("Cr3GimmickData", "IsDisp", [gimmick](NativeCall& c) {
         const GimmickState* g = gimmick(c);

@@ -153,6 +153,7 @@ struct GameState {
         bool worldSelect = false; // (ReserveWorldSelect: cr3_script_work[4] - FldMain step 10)
         bool shop = false;        // (ReserveShop - FldMain step 0xb)
         bool party = false;       // (ReserveParty - FldMain step 0xc)
+        int partyType = 0;        // (its argument, script_work +0x4c: 0 the pub's console first, else the slots alone - QuickParty)
         bool chapter = false;     // (ReserveChapter - FldMain step 0xe)
         bool library = false;     // (ReserveLibrary - FldMain step 0xf)
         bool camp = false;        // (ReserveCamp - FldMain step 5)

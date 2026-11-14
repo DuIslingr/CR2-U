@@ -235,6 +235,9 @@ public:
     bool scriptTurnReserved() const { return scripted_.reserved; } // (BtlCommand::StepEvent: no menus then)
     // Invoke(0): every fighter standing rid of its states (BtlStateManager::Clear)
     void clearStates();
+    // Cr3BattleEvent_Invoke(6): BtlWork +0x237c flipped - while set, ActionDeadStandby holds each
+    // death where it stands (battle_299's talk over its two downed)
+    bool holdDeaths = false;
     // BtlCalc::Escape for the party: sure in its turn break or with skill (4, 3) - its own, or
     // either standing's; else the party's mean level (+0x24) less the monsters' levels added up
     // (+0x26) against -50 / -1 / 49: 40, 50, 60, 70 in 100. A success ends the battle (escaped()),

@@ -174,15 +174,13 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
         if (f.has(5, 8)) f.addState(33, 0, 1);
         levels += f.level, ++count;
     }
-    // BtlWork::CheckChargeSkill: the charge at 100 when the first standing has the skill (5, 4)
+    // BtlWork::CheckChargeSkill: the charge at 100 when either standing has the skill (5, 4) - the
+    // first, else the second
     charge_ = 0;
     exp_ = sp_ = oz_ = 0;
     std::fill(std::begin(drops_), std::end(drops_), short(0)), std::fill(std::begin(sopiaDrops_), std::end(sopiaDrops_), false); // (InitializeDrop)
     for (int k = 0; k < 2; ++k)
-        if (fighters_[size_t(k)].alive) {
-            if (fighters_[size_t(k)].has(5, 4)) charge_ = 100;
-            break;
-        }
+        if (fighters_[size_t(k)].alive && fighters_[size_t(k)].has(5, 4)) charge_ = 100;
     const int average = count ? levels / count : 1;
     // the monsters (BtlWork::SetupEnemy): their own level, else near the party's within the
     // dungeon level's band
@@ -1018,12 +1016,12 @@ void BattleRules::chargeFor(const Event& e, const BattleData::Command& c, bool f
     int n = 0;
     if (e.target >= 2) {
         if (e.actor >= 2) return;
-        n = e.blocked || t.guarding ? 0 : e.critical ? 30 : e.hit ? 15 : 0;
+        n = e.blocked || t.guarding || t.hasState(4) ? 0 : e.critical ? 30 : e.hit ? 15 : 0; // (state 4: an auto guard's too)
         if (charged(e.actor)) n = calcValue(n, 50);
     } else {
         if (!e.hit && first) return;
         n = e.damage >= t.maxHp / 2 ? 30 : e.damage > t.maxHp / 5 ? 20 : 15;
-        if (t.guarding) n = n / 2;
+        if (t.guarding || t.hasState(4)) n = n / 2;
         if (charged(e.target)) n = calcValue(n, 50);
     }
     addCharge(n);
@@ -1032,7 +1030,8 @@ void BattleRules::chargeFor(const Event& e, const BattleData::Command& c, bool f
 void BattleRules::moveGauge(const Event& e, const BattleData::Command& c) {
     if (break_ != 0) return; // (a break now, or one coming)
     int points = (e.hit && c.kind == 27) + e.weak + e.critical + e.defeated;
-    if (fighters_[size_t(e.target)].guarding) points = 0;
+    // (UpdateBreakGauge: none on a blow blocked, +0xf7b, or on one with state 4 - guarding, an auto guard's)
+    if (e.blocked || fighters_[size_t(e.target)].guarding || fighters_[size_t(e.target)].hasState(4)) points = 0;
     if (e.target == e.actor) points = -points;
     gauge_ = std::clamp(gauge_ + (e.actor < 2 ? points : -points), -4, 4);
     if (gauge_ == 4 || gauge_ == -4) break_ = 3;
@@ -1491,9 +1490,10 @@ void BattleRules::calcStatus(int actor, int target, const BattleData::Command& c
     else if (c.attach == 4) t.element = 0;
 }
 
+// (Cr3BattleEvent_Invoke(0): each one alive, state 33 - back up once when downed - cleared)
 void BattleRules::clearStates() {
     for (Fighter& f : fighters_)
-        if (f.alive) f.guarding = false; // (the only state kept yet)
+        if (f.present && f.alive) f.clearState(33);
 }
 
 } // namespace cr2

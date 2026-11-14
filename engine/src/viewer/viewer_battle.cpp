@@ -1125,6 +1125,8 @@ void Viewer::stepBattleShow() {
         for (int k = 0; k < 2; ++k) { // (the MP kept - the most with RestoreMp, skill 3, 5, standing; the HP back: Cr3RestorePlayerHP)
             const cr2::Fighter& f = battleRules->fighter(k);
             if (f.present && f.id >= 1 && f.id <= 9) game.mp[f.id - 1] = f.alive && f.has(3, 5) ? -1 : f.mp;
+            // (StepBattleOut: the party wiped out, BtlWork +0x15 2 - each one's MP back to the most)
+            if (f.present && f.id >= 1 && f.id <= 9 && battleRules->outcome() == 2) game.mp[f.id - 1] = -1;
         }
         battleStep = BattleStep::Over, announceKept = false; // (the actions over: +0x131 set again)
         SDL_Log("battle over: %s (%.1f s)", battleRules->exited() ? "its script's exit" : battleRules->outcome() == 1 ? "won" : "lost", battleClock);
@@ -1475,6 +1477,20 @@ void Viewer::finishResult() {
         game.level[r.ch] = n.level, game.exp[r.ch] = n.exp;
         game.bonus[r.ch] = game.bonus[r.ch].at(n.level); // (Cr3UpdatePlayerData: the levels past the mark counted)
     }
+    // BtlResult::CheckLvUp's list goes on past the battle's two to every other character: one with
+    // its flag (3031 + its number, 0 .. 6; none for 7, 8) takes 70 in 100 of the EXP (BtlCalcValue2,
+    // the total after its bonuses), to the most level's at most - ProcessResult writes all nine back
+    for (int ch = 0; ch < 7; ++ch) {
+        if (ch == result.member[0].ch || ch == result.member[1].ch || !game.flag(3031 + ch)) continue;
+        const int most = maxLevel();
+        const int gain = std::clamp(result.exp * 70 / 100, 0, std::max(cr2::levelExp(most) - game.exp[ch], 0));
+        if (gain <= 0) continue;
+        game.exp[ch] += gain;
+        int lv = std::max(game.level[ch], 1);
+        while (lv < most && cr2::levelExp(lv + 1) <= game.exp[ch]) ++lv;
+        if (lv != game.level[ch]) SDL_Log("result: %s (not fighting) to level %d", messageText("charaname", ch + 1).c_str(), lv);
+        game.level[ch] = lv, game.bonus[ch] = game.bonus[ch].at(lv);
+    }
     // CheckSpUp: each sopia the party carries (once), its SP, a level each time it passes its
     // table's next (5 at most) - each level's command (or auto skill) learned
     if (result.sp > 0) {
@@ -1546,6 +1562,10 @@ bool Viewer::stepDeaths(bool collect) {
         BattleUnit* u = unitOf(d.f);
         const cr2::BattleData::Monster* m = d.f >= 2 ? battleRules->fighter(d.f).monster : nullptr;
         if (!u || d.stage >= 9) continue;
+        if (d.stage == 0 && battleRules->holdDeaths) { // (ActionDeadStandby: +0x237c set, Invoke(6) - held)
+            wait = true;
+            continue;
+        }
         // (ActionDeadStandby: a monster with its +0x3a lets its damage motion play out first)
         if (d.stage == 0 && m && m->deathMotion && battleClock - d.hitAt < motionLength(*u, "bd01")) {
             wait = true;

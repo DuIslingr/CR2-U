@@ -88,7 +88,9 @@ void bindGameState(ScriptVM& vm, GameState& state) {
     vm.setNative("Cr3System", "SetComeFromBattleToField", [&next](NativeCall&) { next.fieldMode = 1; });
     vm.setNative("Cr3System", "ReserveWorldSelect", [&next](NativeCall&) { next.worldSelect = true; }); // (FldUtilReserveWorldSelect)
     vm.setNative("Cr3System", "ReserveShop", [&next](NativeCall&) { next.shop = true; });
-    vm.setNative("Cr3System", "ReserveParty", [&next](NativeCall&) { next.party = true; });
+    vm.setNative("Cr3System", "ReserveParty", [&next](NativeCall& c) { // (FldUtilReserveParty: the type kept for FldPartyOrganize::Init)
+        next.party = true, next.partyType = c.count() > 0 ? c.integer(0) : 0;
+    });
     vm.setNative("Cr3System", "ReserveChapter", [&next](NativeCall&) { next.chapter = true; });
     vm.setNative("InterfaceWindow", "GetChapterID", [&state](NativeCall& c) { c.result(state.selectChapter); }); // (CR3InterfaceEvent_GetSelectChapterID)
     vm.setNative("Cr3System", "GetDungeonNum", [&state](NativeCall& c) { c.result(state.dungeon); });

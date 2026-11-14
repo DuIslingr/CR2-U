@@ -1727,7 +1727,10 @@ void Viewer::branchAfterField() {
     if (n.party) { // (FldMain step 0xc: the party)
         n.party = false;
         party = PartyMenu(), party.stage = 1, party.at = uiClock, party.inTicks = 0; // (the console in first: state 0)
-        SDL_Log("party: open");
+        if (n.partyType != 0) // (FldPartyOrganize::InterfaceInit: SetPartyOrganizationDirectParameter, interface 0x65 -
+            party.stage = 2, party.titleAt = uiClock; // no console, state 0xf: the slots and their title, 0x1b, at once)
+        SDL_Log("party: open%s", n.partyType ? " (the slots alone)" : "");
+        n.partyType = 0;
         return;
     }
     if (n.pub) { // (FldMain step 0xd: the pub)
@@ -4259,10 +4262,11 @@ std::vector<int> Viewer::shopChars() const { // (the characters an equipment lis
     if (c.empty()) c.push_back(0);
     return c;
 }
-int Viewer::spareCount(int id) const { // (Cr3UtilGetNotEquippedItemNumber: held, less those worn)
-    int worn = 0;
-    for (int c = 0; c < 9; ++c)
-        for (int s = 0; s < 3; ++s) worn += game.equip[c][s] == id;
+int Viewer::spareCount(int id) const { // (Cr3UtilGetNotEquippedItemNumber: held, less those worn by the
+    int worn = 0;                         // characters 1 .. 7 that have joined - Cr3UtilValidCharacter, flags 0x3fd ..)
+    for (int c = 0; c < 7; ++c)
+        if (game.flag(0x3fd + c))
+            for (int s = 0; s < 3; ++s) worn += game.equip[c][s] == id;
     return std::max(int(game.itemCount[id]) - worn, 0);
 }
 auto Viewer::shopRows() -> std::vector<ListRow> {

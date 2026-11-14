@@ -2192,6 +2192,49 @@ against hand transcriptions; fixed:
 Left as they are (the random rolls' count, no visible rule): a roll at chance 0, a counter's roll
 when a state already makes it sure, and a pair of targets' rolls in the original's order.
 
+### Round 109: the scripts' calls and the battle's data
+
+Checked against the natives each script reaches (`tools/sq_bindings.py`'s map, every script
+disassembled) and against the data the battle reads; fixed:
+- `Cr3Battle.Invoke(0)` clears state 33 (back up once when downed) on each one alive
+  (`Cr3BattleEvent_Invoke`); the port cleared guarding instead. The bosses that strip the revive at
+  each command phase (battles 221, 228, 234, 265, 271, 274, 279, 280, 283, 301) now do.
+- `Invoke(6)` flips BtlWork +0x237c, and `ActionDeadStandby` holds each death while it is set
+  (battle_299, the pub's sparring: its talk over the two downed). The port ignored it; the hold is
+  in. Open: the original's `Command_End` is a step of the actor's own action table
+  (`ActionCommonEventCommandEnd`), so it runs while the downed still wait, where the port's runs after
+  the deaths - so battle_299's two still fall before its talk.
+- `Cr3System.ReserveParty(type)` keeps its type (`FldUtilReserveParty`, script_work +0x4c), and
+  `FldPartyOrganize::InterfaceInit` opens the console menu (0x4f) for 0 and the slots alone (0x65,
+  `PartyOrganizationMenu::Initialize`: state 0xf, the title made at once) otherwise - `QuickParty`
+  in d11, d13 and t01. The port always showed the console.
+- `Cr3GimmickData.Disp` turns the gimmick's collision with it (`FldUtilSetGimmickVisible`'s
+  `EnableContactResponse`, the switch `SetCollision` turns too), so `Disp(true)` after
+  `SetCollision(false)` makes it solid again.
+- The characters not fighting take 70 in 100 of the battle's EXP when their flag is set (3031 + the
+  character, 0 .. 6: `BtlResult::CheckLvUp`'s list goes on past the battle's two; `ProcessResult`
+  writes all nine back), to the most level's EXP at most. The port gave them none.
+- A battle lost with the party wiped out (BtlWork +0x15 2) puts each one's MP back to the most
+  (`StepBattleOut`); the port kept it drained.
+- The shop's count of an item to spare (`Cr3UtilGetNotEquippedItemNumber`) takes off only what the
+  characters 1 .. 7 that have joined wear (`Cr3UtilValidCharacter`); the port counted all nine, so
+  gear on those not yet joined - and records 8 and 9 - held items back from selling.
+- The charge at 100 at the start (`CheckChargeSkill`) is the first's skill, else the second's; the
+  port looked at the first standing alone.
+- The break gauge gets nothing from a blow blocked or one on a fighter with state 4, an auto guard's
+  as well as a defence (`UpdateBreakGauge`); the charge the same (`UpdateChargeGauge`). The port knew
+  only the defence.
+
+Read and matching: the rest of `Cr3Battle` (`SetParamI` / `GetParamI` and their ids, `SetPair`,
+`ReserveCommand`), `Cr3System`'s party, items, sopia, equipment and reservations, `Cr3Work`,
+`Cr3Flag`, `Cr3Save`, `Cr3Fade`, `EvtScene`, `VistaEvent`'s quakes and lights, `EvtWindow`,
+`InterfaceWindow`, the gimmicks' spots and touch actions, the field map and camera calls; the battle
+data's strides and offsets, character and monster growth, the sopia combinations, the EXP / Oz / SP
+gains, the drop and steal tables, the shop's rank and filters, the encounter tables, the treasure
+boxes. The iOS HD build (made from the 2.0.0 sources) has the same game rules as Android 2.1.2; its
+differences are the platform's (Game Center, the store, the save paths, a fit offset table, the BGM
+loop units).
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

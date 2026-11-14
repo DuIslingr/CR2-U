@@ -1898,6 +1898,15 @@ shards flying three times as far and as fast. Now `GlassFragments::kFrame` is 0.
 `cr2tool glass 200`: 443.8 shards a seed, 93.86% of the screen, 0.69 still on it at the end (faded).
 Not compared with footage: no clip of the third awakening was at hand.
 
+### Round 90: the battle's other post effects
+
+`BtlMain::Render` calls `PostEffectMono` (pass 0) and `PostEffectGlassFragments` (pass 1) only;
+`PostEffectDOF`, `PostEffectBlur` and `PostEffectBloom` have no caller in the library. The lens flare
+(`BtlPostEffectLensFlare`) is made, set up and registered with every battle, given the light's
+direction (`SetLights`, under a debug switch, `IsEnabled(0xec)`) and the camera, but its `Draw`
+renders only while its +0x100 is set, and nothing sets it - the constructor clears it, nothing
+writes it after. So a battle shows none of them; the port, which has none, is as the original.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

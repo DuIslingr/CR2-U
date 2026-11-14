@@ -1432,6 +1432,11 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
                         break;
                     }
                 }
+                if (pub.stage && pubCloseAt >= 0 && ++pubCloseTicks >= 4) { // (3 reported)
+                    pubCloseAt = -1;
+                    pubEnd(3);
+                    break;
+                }
                 if (shop.stage && shopCloseAt >= 0 && ++shopCloseTicks >= 4) { // (the cut-in gone: the shop over)
                     shopCloseAt = -1;
                     shopClose(shopCloseEvent ? shopCloseCall.c_str() : nullptr);
@@ -3835,6 +3840,7 @@ int Viewer::pubSign(int id) const {
 }
 void Viewer::openPub() {
     pub = Pub();
+    pubCloseAt = -1;
     pub.stage = 1, pub.at = uiClock;
     SDL_Log("pub: %zu requests posted", pubPosters().size());
 }
@@ -3846,9 +3852,10 @@ void Viewer::pubEnd(int result) { // (PubMainMenu: ResultPubParameter - FldMain'
     else pendingBranch = true;
 }
 void Viewer::pubTap(int id) {
+    if (pubCloseAt >= 0) return; // (closing)
     const std::vector<int> posters = pubPosters();
     if (pub.stage == 1) {
-        if (id == 100) return audio.playSe(0xb5, false), pubEnd(3);
+        if (id == 100) { if (pubCloseAt < 0) audio.playSe(0xb5, false), pubCloseAt = uiClock, pubCloseFrom = uiClock - pub.at, pubCloseTicks = 0; return; }
         if (id == 35) return audio.playSe(0xb4, false), void((pub.stage = 4, pub.at = uiClock, pub.listFocus = 0)); // (Check: PubTopMenu 200)
         if (id >= 1000 && id < 1000 + int(posters.size())) {
             const int k = id - 1000;
@@ -3898,6 +3905,7 @@ void Viewer::pubMove(SDL_Keycode k) {
     SDL_Log("pub: %s in focus", to ? ("poster " + std::to_string(to)).c_str() : "check");
 }
 void Viewer::pubKey(SDL_Keycode k) {
+    if (pubCloseAt >= 0) return; // (closing)
     if (pub.stage == 4 && (k == SDLK_LEFT || k == SDLK_RIGHT)) {
         const int count = pubListCount();
         pubTap(2000 + (pub.listFocus + (k == SDLK_LEFT ? count - 2 : 0)) % count + 1);
@@ -3910,7 +3918,7 @@ void Viewer::pubKey(SDL_Keycode k) {
     else if (k == SDLK_BACKSPACE) pub.stage == 3 ? pubTap(7602) : pubTap(100);
 }
 void Viewer::drawPub(const Mat4& view, int w, int h) {
-    const float t = uiClock - pub.at;
+    const float t = pubCloseAt < 0 ? uiClock - pub.at : std::max(std::min(pubCloseFrom, 0.15f) - (uiClock - pubCloseAt), 0.0f); // (played back as it closes)
     auto part = [&](const char* fig, const char* anim, float x = 0, float y = 0, float tt = -1) -> UiFig& {
         UiFig& u = uiFig(fig);
         u.fig.place = cr2::Mat34();

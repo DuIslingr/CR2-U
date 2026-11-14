@@ -1587,6 +1587,18 @@ Not run: the shop is reached through t0101's `c103_00` and its talks, which no h
 through to the shop's Back. The menus within the shop (buy, sell, the lists, the quantity, the
 cut-in's lines) were not gone through.
 
+### Round 73: the pub's way out
+
+`FldPUB::Execute` (step 0xd): the update after, `SetPubParameter` (+0x1c 30; `PubTitleMenu` 0x69,
+`PubTopMenu` 0x6a, `PubMainMenu` 0x68), then `CheckPubStatus` (+0xd0, set by `ResultPubParameter`):
+1 / 2 call the request's event, 3 `CallAtMenuFinished`. Back: `PubTopMenu` plays its +0x48 -
+`checkBtn_io`, 0.15 s (the part by `PubTopMenu::Initialize`'s literal pool, the store at 0x2d86d4) -
+back and goes at its end, the third update; `PubMainMenu`'s state 0xf waits for 0x6a to be gone
+(`GetWindowMenuParameter`) and reports 3 the update after, which FldPUB reads the next. The port
+ended the pub in the release's update; now its Back plays the pub's parts back and reports 3 in the
+fourth update (`pubCloseAt`). Not run (the pub is reached through t0101's events); the request's
+accept and give-up (their questions, states 0xb .. 0xd) not gone through.
+
 ## Original-code evidence
 
 Fresh REA / Ghidra static inspection of the Android 2.1.2 library (`provider_id: ghidra`,

@@ -1946,6 +1946,10 @@ struct Viewer {
     } shop;
     // (ShopFirstMenu's Back / Talk: its close, the cut-in told 1 / 3 - its cutInSgl_io played back (0.2 s),
     // state 0x17 - and the shop over once the cut-in is gone, the fourth update; FldShop's 4 / 3 the next)
+    // (the pub's Back: PubTopMenu's checkBtn_io played back (0.15 s) and the menu gone at its end; PubMainMenu
+    // - state 0xf - sees it the next update and reports 3, FldPUB the one after)
+    float pubCloseAt = -1, pubCloseFrom = 0;
+    int pubCloseTicks = 0;
     float shopCloseAt = -1, shopCloseFrom = 0;
     int shopCloseTicks = 0;
     std::string shopCloseCall;

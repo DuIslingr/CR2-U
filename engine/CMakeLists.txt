@@ -39,6 +39,8 @@ target_compile_options(squirrel2 PRIVATE $<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w -fno
 # Core library: everything that is not an app entry point, so tools can reuse it
 add_library(cr2core STATIC
     src/assets/mvgl.cpp
+    src/assets/vita_pfs.cpp
+    src/crypto/crypto.cpp
     src/assets/image.cpp
     src/assets/geom.cpp
     src/assets/smooth.cpp
@@ -394,20 +396,13 @@ elseif(CR2_GLES)
     message(STATUS "GL device: OpenGL ES 3.0 (${CR2_GLES_LIBRARY})")
 endif()
 target_link_libraries(cr2view PRIVATE cr2core SDL3::SDL3)
-# The setup (viewer/setup.cpp): a Vita NoNpDrm dump's files decrypted (third_party/psvpfsparser -
-# Vita3K's, GPL-2.0) - the first start's, a phone's too, and one copied into vita/ on any start -,
-# and a dump's archive - .rar, .7z, .zip, .vpk - unpacked (libarchive: the system's, else built here
-# - CR_FETCH_DEPS; without it, a folder only). iOS too: a dump copied into the Files app's vita/ is decrypted
-# there as on a desktop or a phone
-file(GLOB CR_PSVPFS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/third_party/psvpfsparser/*.cpp)
-add_library(psvpfs STATIC ${CR_PSVPFS_SOURCES})
-target_include_directories(psvpfs SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/psvpfsparser)
-target_compile_features(psvpfs PUBLIC cxx_std_17)
-if(NOT MSVC)
-    target_compile_options(psvpfs PRIVATE -w)
-endif()
-target_link_libraries(cr2view PRIVATE psvpfs)
-target_compile_definitions(cr2view PRIVATE CR_HAVE_PSVPFS=1)
+# The setup (viewer/setup.cpp): a Vita NoNpDrm dump's files decrypted (assets/vita_pfs, its SELF
+# programs too - crypto/: the project's own, in cr2core) - the first start's, a phone's too, and one
+# copied into vita/ on any start -, and a dump's archive - .rar, .7z, .zip, .vpk - unpacked (libarchive:
+# the system's, else built here - CR_FETCH_DEPS; without it, a folder only). iOS too: a dump or its
+# archive copied into the Files app's vita/, or picked in the setup, is decrypted there as on a
+# desktop or a phone
+target_compile_definitions(cr2view PRIVATE CR_HAVE_VITA_DECRYPT=1)
 find_package(LibArchive QUIET)
 if(NOT LibArchive_FOUND AND CR_FETCH_DEPS)
     include(FetchContent)
@@ -532,6 +527,9 @@ if(NOT ANDROID AND NOT IOS)
     target_link_libraries(save-integrity-tests PRIVATE cr2core SDL3::SDL3)
     target_compile_definitions(save-integrity-tests PRIVATE TEST_NAMESPACE=cr2 SAVE_LAST_REQUIRED="map")
     add_test(NAME save-integrity COMMAND save-integrity-tests)
+    add_executable(vita-pfs-tests tools/vita_pfs_test.cpp)
+    target_link_libraries(vita-pfs-tests PRIVATE cr2core)
+    add_test(NAME vita-pfs COMMAND vita-pfs-tests)
     add_executable(event-reset-tests tools/event_reset_test.cpp)
     target_link_libraries(event-reset-tests PRIVATE cr2core SDL3::SDL3)
     target_compile_definitions(event-reset-tests PRIVATE TEST_NAMESPACE=cr2)

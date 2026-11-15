@@ -230,6 +230,11 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
     advantage_ = startState(); // (StepBattleIn: drawn, then none where the coupling's flag says)
     if (cp && cp->flag) advantage_ = 0;
     else if (cheats.firstStrike) advantage_ = 1; // (Cheats: Always First Strike - never an assault either)
+    storyLoss_ = storyLoss(coupling), idleRounds_ = 0, foeHp_ = foeHp();
+    // (One-Hit Kills not in the opening's Neron - 221: unwinnable in the original, Darwin alone at the script's
+    // stats, Neron's 20000 HP back each turn, its script's Gehenna Flame ending it on the third -, so the story
+    // starts as the original's does)
+    if (coupling == 221) cheats.oneHit = false;
     applyCheats();
     return true;
 }
@@ -1319,6 +1324,14 @@ void BattleRules::endTurn() {
     // BtlTurnEnd: a break ends, or one coming begins
     if (break_ == 1 || break_ == 2) break_ = 0, gauge_ = 0;
     else if (break_ == 3) break_ = gauge_ == 4 ? 1 : 2;
+    // (Cheats: Infinite HP in the story's losses lapses once no foe can fall - three turns in a row ending with no
+    // foe's HP down, the life pools' refills counted: Neron, Amon -, so the party falls and the script goes on)
+    if (storyLoss_ && cheats.hp) {
+        const int hp = foeHp();
+        idleRounds_ = hp < foeHp_ ? 0 : idleRounds_ + 1;
+        foeHp_ = hp;
+        if (idleRounds_ >= 3) cheats.hp = false;
+    }
     applyCheats(); // (the poison's HP back, the gauges full again for the next turn)
     ++turn_;
 }

@@ -134,6 +134,17 @@ public:
         bool hp = false, mp = false, oneHit = false, fullBreak = false, fullCharge = false, firstStrike = false;
         int exp = 1, sp = 1;
     } cheats;
+    // The story's losses: the battles whose own script ends them when the party falls, the story going on (221 and
+    // 271 Neron, 228 Araki, 234 and 265 the Herald, 279 Amon - `cr2tool story-losses`). Some can be won (Araki; the
+    // Herald and Neron with enough damage in a turn). There Infinite HP lapses once no foe can fall - three turns in a
+    // row with no foe's HP down at the turn's end (Neron's life pool fills him again, Amon blocks) - and the party
+    // falls as the story has it (as CRO-U's ba09bf6); One-Hit Kills stays, the game's own blocks and refills holding -
+    // but for the opening's Neron (221), unwinnable in the original: off there
+    static bool storyLoss(int coupling) {
+        for (int c : {221, 228, 234, 265, 271, 279})
+            if (coupling == c) return true;
+        return false;
+    }
 
     // what a fighter does this turn
     struct Order {
@@ -361,6 +372,14 @@ private:
     void callScript(const char* f) { if (script) script(f); }
     int gauge_ = 0, break_ = 0;
     void applyCheats(); // (the party's HP / MP full, the gauges: at the start and each turn's start and end)
+    bool storyLoss_ = false; // (storyLoss(the coupling): Infinite HP lapses once no foe can fall)
+    int idleRounds_ = 0, foeHp_ = 0;
+    int foeHp() const { // (the monsters' HP, those standing)
+        int sum = 0;
+        for (int k = 2; k < 5; ++k)
+            if (fighters_[size_t(k)].present && fighters_[size_t(k)].alive) sum += fighters_[size_t(k)].hp;
+        return sum;
+    }
     void moveGauge(const Event& e, const BattleData::Command& c);
     void chargeFor(const Event& e, const BattleData::Command& c, bool first);
 };

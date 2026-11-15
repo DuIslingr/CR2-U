@@ -140,6 +140,7 @@ int usage() {
                  "cr2tool encounters <archive> [executable]\n"
                  "cr2tool fight <archive> <coupling> [solo | pair] [seed] [a,b] [dungeon level 0..10]\n"
                  "cr2tool cheats <archive>   (the Options' Cheats in every battle: checked)\n"
+                 "cr2tool story-losses <archive>   (the story's losses still end by their scripts with the cheats on)\n"
                  "cr2tool sound <archive>\n"
                  "cr2tool glass <seeds>\n"
                  "cr2tool save-import <game.dat | cont.dat> [system.dat]  (a CR2-U save on stdout)\n"
@@ -1238,6 +1239,87 @@ int fight(const char* path, int coupling, bool pair, uint32_t seed, const int pa
 // top dungeon band, the rules alone (no scripts): every one won; after each turn the party's HP and MP full,
 // the charge 300, the gauge 4 and the party's turn break; the party first in each without the coupling's flag;
 // the EXP and SP times 5 the same fight's at 1
+// The story's losses (a battle whose own script ends it when the party falls - Amon's, coupling 279 - the story
+// going on) under the Options' Infinite HP and One-Hit Kills: each coupling with its script, the first party at
+// its first levels against the top band - without cheats (does its script end it on the party's loss?), then with
+// both cheats on as the viewer sets them (BattleRules::storyLoss off for those). Every story loss must still end
+int storyLosses(const char* path) {
+    cr2::MvglArchive a;
+    if (!openArchive(a, path)) return 1;
+    std::vector<uint8_t> d;
+    std::string err;
+    cr2::BattleData data;
+    if (!a.read("data\\battledata.dat", d, &err) || !data.parse(d, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
+    const int party[2] = {1, 2};
+    // one fight with its script: 1 won, 2 lost, 3 ended by its script, 0 undecided after 30 turns
+    // (`strong`: the party at level 150, no cheats - can the story's loss be won as the game plays it?)
+    // (`cheat`: 1 Infinite HP alone, 2 with One-Hit Kills too)
+    auto run = [&](int id, int cheat, bool& own, bool strong = false) {
+        cr2::BattleRules r(data, uint32_t(id) * 7919u + 1);
+        r.cheats.hp = cheat >= 1, r.cheats.oneHit = cheat >= 2;
+        std::string e;
+        static const int kStrong[9] = {200, 200, 200, 200, 200, 200, 200, 200, 200};
+        static const int kAlone[2] = {1, 0}; // (the opening's Neron: Darwin alone, as the story sends him)
+        const int* who = id == 221 ? kAlone : party;
+        if (!r.start(id, who, 9, &e, nullptr, nullptr, strong ? kStrong : nullptr)) return -1;
+        cr2::GameState state;
+        const int chars[2] = {who[0] - 1, who[1] - 1}, monsters[3] = {r.fighter(2).id, r.fighter(3).id, r.fighter(4).id};
+        cr2::BattleScript script(a, state, r, id, chars, monsters);
+        bool ok = script.begin() && script.runToEnd();
+        own = script.own();
+        r.script = [&](const std::string& f) {
+            if (script.own() && ok) ok = script.call(f) && script.runToEnd();
+        };
+        if (script.own() && ok) ok = script.call("Battle_Start") && script.runToEnd();
+        while (!r.outcome() && !r.exited() && r.turn() < 30) {
+            std::vector<cr2::BattleRules::Order> orders;
+            for (int k = 0; k < 2; ++k) {
+                const cr2::Fighter& f = r.fighter(k);
+                if (!f.alive) continue;
+                cr2::BattleRules::Order o;
+                o.actor = k, o.command = f.attack;
+                for (int m = 2; m < 5; ++m)
+                    if (r.fighter(m).alive) {
+                        o.target = m;
+                        break;
+                    }
+                orders.push_back(o);
+            }
+            r.playTurn(false, orders);
+            if (r.exitTimer() >= 0) r.exitBattle();
+        }
+        if (strong) { // (how it ended: the turn, the party's and the monsters' HP)
+            std::printf("  %d at level 200: turn %d,", id, r.turn() + 1);
+            for (int i = 0; i < 5; ++i)
+                if (r.fighter(i).present) std::printf(" %s %d/%d", r.fighter(i).name.c_str(), r.fighter(i).hp, r.fighter(i).maxHp);
+            std::printf("\n");
+        }
+        return r.exited() ? 3 : r.outcome();
+    };
+    int losses = 0, stalled = 0, owns = 0;
+    std::string list;
+    for (int id = 0; id <= data.couplings(); ++id) {
+        if (!data.coupling(id)) continue;
+        bool own = false;
+        const int plain = run(id, 0, own);
+        if (plain < 0 || !own) continue;
+        ++owns;
+        if (plain != 3) continue; // (its script didn't end it: an ordinary battle, or one the party won)
+        ++losses;
+        const int hpOnly = run(id, 1, own), cheat = run(id, 2, own);
+        static const char* const kHow[4] = {"stalls", "won", "lost", "script"};
+        const int strong = run(id, 0, own, true);
+        list += " " + std::to_string(id) + "(Infinite HP: " + kHow[std::clamp(hpOnly, 0, 3)] + ", with One-Hit Kills: " + kHow[std::clamp(cheat, 0, 3)] +
+                ", level 200: " + kHow[std::clamp(strong, 0, 3)] + ")";
+        if (!cr2::BattleRules::storyLoss(id)) ++stalled, std::printf("story loss %d: not in BattleRules::storyLoss\n", id);
+        if (hpOnly == 0 || cheat == 0) ++stalled, std::printf("story loss %d: never ends with the cheats on\n", id);
+        if (id == 221 && cheat != 3) ++stalled, std::printf("story loss 221: the opening's Neron not ended by its script with the cheats on\n");
+    }
+    std::printf("story losses: %d of %d battles with their own script end by it on the party's loss:%s; %d problems\n", losses, owns,
+                list.c_str(), stalled);
+    return stalled ? 1 : 0;
+}
+
 int cheats(const char* path) {
     cr2::MvglArchive a;
     if (!openArchive(a, path)) return 1;
@@ -1302,7 +1384,7 @@ int cheats(const char* path) {
         return r.outcome();
     };
     for (int id = 0; id <= data.couplings(); ++id) {
-        if (!data.coupling(id)) continue;
+        if (!data.coupling(id) || cr2::BattleRules::storyLoss(id)) continue; // (the story's losses: story-losses checks them)
         int e1 = 0, s1 = 0, e5 = 0, s5 = 0;
         const int out = run(id, 1, 1, true, e1, s1);
         if (out < 0) continue; // (no set-up)
@@ -1663,6 +1745,7 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[1], "battle") && argc > 3) return battles(argv[2], argv[3]);
     if (!std::strcmp(argv[1], "encounters") && argc > 2) return encounters(argv[2], argc > 3 ? argv[3] : "-");
     if (!std::strcmp(argv[1], "cheats")) return cheats(argv[2]);
+    if (!std::strcmp(argv[1], "story-losses")) return storyLosses(argv[2]);
     if (!std::strcmp(argv[1], "fight") && argc > 3) {
         int party[2] = {1, 2};
         if (argc > 6) std::sscanf(argv[6], "%d,%d", &party[0], &party[1]);

@@ -700,6 +700,7 @@ int main(int argc, char** argv) {
     std::vector<std::pair<int, int>> sopiaArg;
     bool skipBattlesOpt = false;
     uint32_t fightSeed = 1;
+    bool cheatsArg = false;
     int battleId = 0, battleParty[2] = {1, 2}; // (--battle: Darwin and Orlando unless --party)
     float page = 3.0f;
     int width = 0, height = 0;    // the window (--size; else the resolution's, fitted to the display)
@@ -732,6 +733,7 @@ int main(int argc, char** argv) {
         else if (a == "--event" && next) eventName = next, ++i;
         else if (a == "--battle" && next) battleId = std::atoi(next), ++i;
         else if (a == "--skip-battles") skipBattlesOpt = true;
+        else if (a == "--cheats") cheatsArg = true; // (tests: the Options' battle cheats all on, EXP / SP x5)
         else if (a == "--fight" && next) fightMode = !std::strcmp(next, "pair") ? 2 : !std::strcmp(next, "manual") ? 3 : 1, ++i;
         else if (a == "--input" && next) inputArg = next, ++i;
         else if (a == "--flag" && next) flagsArg.push_back(std::atoi(next)), ++i; // (a story flag set to begin with: tests)
@@ -1257,6 +1259,11 @@ int main(int argc, char** argv) {
     if (model == "c001" && leaderDefaulted) v.leaderFollows = true, v.refreshLeader();
     v.stateArg = stateArg;
     v.chargeArg = chargeArg, v.gaugeArg = gaugeArg;
+    if (cheatsArg) {
+        Viewer::Settings::Cheats& c = v.settings.cheats;
+        c.hp = c.mp = c.oneHit = c.fullBreak = c.fullCharge = c.firstStrike = true;
+        c.exp = c.sp = 5;
+    }
     if (battleId > 0 && !v.startBattle(battleId, battleParty)) return 1;
     // the commands: chosen on the screen in a window (--fight manual, or --play), or given (--input)
     v.manualCommands = fightMode == 3 || !inputArg.empty() || (capture.empty() && !playFrom.empty());
@@ -1336,6 +1343,7 @@ int main(int argc, char** argv) {
         if (const char* row = SDL_getenv("CR2_CAPTURE_SETTINGS")) { // (tests: as below, before --run)
             v.optionsOpen = true, v.campOpen = !v.battleMode;
             v.openSettings();
+            if (row[0] == 'c') v.settingsPage = 1, ++row; // ("c<row>": the Cheats page's)
             v.settingsCursor = std::atoi(row);
         }
         for (float t = 0; t < runSeconds; t += 1.0f / 60.0f) v.advance(1.0f / 60.0f, 0, 0, false), catchGlass(); // (--run: on after the walk)
@@ -1468,6 +1476,7 @@ int main(int argc, char** argv) {
         if (const char* row = SDL_getenv("CR2_CAPTURE_SETTINGS"); row && !v.settingsOpen) { // (tests: the Display & Graphics list over the camp's options, that row in focus)
             v.optionsOpen = true, v.campOpen = !v.battleMode;
             v.openSettings();
+            if (row[0] == 'c') v.settingsPage = 1, ++row; // ("c<row>": the Cheats page's)
             v.settingsCursor = std::atoi(row);
         }
         for (int k = 0; k < int(runSeconds * 60.0f + 0.5f); ++k) {
@@ -1806,6 +1815,7 @@ int main(int argc, char** argv) {
             }
             const Uint64 now = SDL_GetTicksNS();
             const float dt = frameClock.step();
+            v.applyFieldCheats(); // (the Options' Cheats outside battle: MP, Oz)
             while (!mouseScript.empty() && mouseScript.front().at <= float(double(now - started) / 1e9)) { // (CR2_MOUSE_SCRIPT's)
                 pushMouse(mouseScript.front().what);
                 mouseScript.erase(mouseScript.begin());

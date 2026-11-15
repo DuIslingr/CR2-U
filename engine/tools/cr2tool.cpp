@@ -139,6 +139,7 @@ int usage() {
                  "cr2tool battle <archive> <coupling | all>\n"
                  "cr2tool encounters <archive> [executable]\n"
                  "cr2tool fight <archive> <coupling> [solo | pair] [seed] [a,b] [dungeon level 0..10]\n"
+                 "cr2tool cheats <archive>   (the Options' Cheats in every battle: checked)\n"
                  "cr2tool sound <archive>\n"
                  "cr2tool glass <seeds>\n"
                  "cr2tool save-import <game.dat | cont.dat> [system.dat]  (a CR2-U save on stdout)\n"
@@ -1233,6 +1234,93 @@ int fight(const char* path, int coupling, bool pair, uint32_t seed, const int pa
     return 0;
 }
 
+// The Options' Cheats (BattleRules::Cheats) in every coupling, the first party at its first levels against the
+// top dungeon band, the rules alone (no scripts): every one won; after each turn the party's HP and MP full,
+// the charge 300, the gauge 4 and the party's turn break; the party first in each without the coupling's flag;
+// the EXP and SP times 5 the same fight's at 1
+int cheats(const char* path) {
+    cr2::MvglArchive a;
+    if (!openArchive(a, path)) return 1;
+    std::vector<uint8_t> d;
+    std::string err;
+    cr2::BattleData data;
+    if (!a.read("data\\battledata.dat", d, &err) || !data.parse(d, &err)) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
+    const int party[2] = {1, 2};
+    int fights = 0, won = 0, problems = 0, scaled = 0, firsts = 0, walls = 0;
+    bool landed = false; // (a party blow not blocked, this fight: none - every one blocked - a story battle's wall, its script ending it)
+    auto problem = [&](int id, const std::string& what) {
+        if (++problems <= 20) std::printf("cheats: coupling %d: %s\n", id, what.c_str());
+    };
+    // one fight: its outcome, the EXP and SP gained; `check` the cheats' state each turn
+    auto run = [&](int id, int exp, int sp, bool check, int& gotExp, int& gotSp) {
+        cr2::BattleRules r(data, uint32_t(id) * 7919u + 1);
+        r.cheats.hp = r.cheats.mp = r.cheats.oneHit = r.cheats.fullBreak = r.cheats.fullCharge = r.cheats.firstStrike = true;
+        r.cheats.exp = exp, r.cheats.sp = sp;
+        std::string e;
+        if (!r.start(id, party, 9, &e)) return -1;
+        landed = false;
+        const cr2::BattleData::Coupling* cp = data.coupling(id);
+        if (check && !(cp && cp->flag)) {
+            if (r.advantage() != 1) problem(id, "not the party first");
+            else ++firsts;
+        }
+        while (!r.outcome() && r.turn() < 50) {
+            std::vector<cr2::BattleRules::Order> orders;
+            for (int k = 0; k < 2; ++k) {
+                const cr2::Fighter& f = r.fighter(k);
+                if (!f.alive) continue;
+                cr2::BattleRules::Order o;
+                o.actor = k, o.command = f.attack;
+                for (int m = 2; m < 5; ++m)
+                    if (r.fighter(m).alive) {
+                        o.target = m;
+                        break;
+                    }
+                orders.push_back(o);
+            }
+            const std::vector<cr2::BattleRules::Event> ev = r.playTurn(false, orders);
+            for (const auto& x : ev)
+                if (x.actor >= 0 && x.actor < 2 && x.hit && !x.blocked) landed = true;
+            if (check && r.turn() == 50 && !r.outcome()) // (undecided: what the last turn did)
+                for (const auto& x : ev)
+                    std::printf("cheats: coupling %d, turn 50: %d -> %d (%s) cmd %d %s%s%s, its HP %d of %d%s\n", id, x.actor, x.target,
+                                x.target >= 0 ? r.fighter(x.target).name.c_str() : "-", x.command, x.failed ? "not done" : x.blocked ? "blocked" : x.hit ? "hit" : "missed",
+                                x.damage ? (" " + std::to_string(x.damage)).c_str() : "", x.heal ? (" heal " + std::to_string(x.heal)).c_str() : "",
+                                x.target >= 0 ? r.fighter(x.target).hp : 0, x.target >= 0 ? r.fighter(x.target).maxHp : 0,
+                                x.target >= 0 && !r.fighter(x.target).alive ? " (down)" : "");
+            if (!check || r.outcome()) continue;
+            for (int k = 0; k < 2; ++k) {
+                const cr2::Fighter& f = r.fighter(k);
+                if (!f.present) continue;
+                if (!f.alive || f.hp != f.maxHp) problem(id, "turn " + std::to_string(r.turn()) + ": " + f.name + " at " + std::to_string(f.hp) + " HP of " + std::to_string(f.maxHp));
+                if (f.mp != f.maxMp) problem(id, "turn " + std::to_string(r.turn()) + ": " + f.name + " at " + std::to_string(f.mp) + " MP of " + std::to_string(f.maxMp));
+            }
+            if (r.charge() != 300) problem(id, "charge " + std::to_string(r.charge()));
+            if (r.gauge() != 4 || r.breakState() != 1) problem(id, "gauge " + std::to_string(r.gauge()) + ", break " + std::to_string(r.breakState()));
+        }
+        gotExp = r.expGained(), gotSp = r.spGained();
+        return r.outcome();
+    };
+    for (int id = 0; id <= data.couplings(); ++id) {
+        if (!data.coupling(id)) continue;
+        int e1 = 0, s1 = 0, e5 = 0, s5 = 0;
+        const int out = run(id, 1, 1, true, e1, s1);
+        if (out < 0) continue; // (no set-up)
+        ++fights;
+        if (out == 1) ++won;
+        else if (!landed) ++walls, std::printf("cheats: coupling %d: every party blow blocked (a story battle: its script ends it)\n", id);
+        else problem(id, out == 2 ? "lost" : "undecided after 50 turns");
+        run(id, 5, 5, false, e5, s5);
+        if (e1 * 5 < 9999999 && s1 * 5 < 9999999) {
+            if (e5 != e1 * 5 || s5 != s1 * 5) problem(id, "EXP / SP x5: " + std::to_string(e5) + " / " + std::to_string(s5) + " from " + std::to_string(e1) + " / " + std::to_string(s1));
+            else if (e1 > 0) ++scaled;
+        }
+    }
+    std::printf("cheats: %d fights, %d won (%d story walls), %d with the party first, %d with EXP / SP x5 exact; %d problems\n", fights, won, walls, firsts,
+                scaled, problems);
+    return problems || fights == 0 ? 1 : 0;
+}
+
 // The screen breaking away (battle/glass.hpp), for seeds 1..n: its shards within the points' hull,
 // none over another (their areas' sum at most its area - the game's tight super triangle takes the
 // hull's thinnest), each triangle's circle holding no other point (Delaunay), how much of the
@@ -1574,6 +1662,7 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[1], "images")) return images(argv[2], argc > 3 ? argv[3] : nullptr, argc > 4 ? argv[4] : nullptr);
     if (!std::strcmp(argv[1], "battle") && argc > 3) return battles(argv[2], argv[3]);
     if (!std::strcmp(argv[1], "encounters") && argc > 2) return encounters(argv[2], argc > 3 ? argv[3] : "-");
+    if (!std::strcmp(argv[1], "cheats")) return cheats(argv[2]);
     if (!std::strcmp(argv[1], "fight") && argc > 3) {
         int party[2] = {1, 2};
         if (argc > 6) std::sscanf(argv[6], "%d,%d", &party[0], &party[1]);

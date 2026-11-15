@@ -126,6 +126,15 @@ public:
     bool breakBonus(int f) const { return (break_ == 1 && f < 2) || (break_ == 2 && f >= 2); }
     int outcome() const; // 0 on, 1 won, 2 lost
 
+    // The Options' Cheats (the port's own, none of the game's - settings.ini's cheat_*), set before start():
+    // the party's (fighters 0, 1) HP and MP never run down, a blow of theirs fells a monster outright, the
+    // break gauge full - the party's turn break every turn -, the charge gauge full, the party striking
+    // first (not in a coupling with its flag: the story's own battles), the EXP and SP times as much
+    struct Cheats {
+        bool hp = false, mp = false, oneHit = false, fullBreak = false, fullCharge = false, firstStrike = false;
+        int exp = 1, sp = 1;
+    } cheats;
+
     // what a fighter does this turn
     struct Order {
         int actor = -1;
@@ -351,6 +360,7 @@ private:
     float exitTimer_ = -1;
     void callScript(const char* f) { if (script) script(f); }
     int gauge_ = 0, break_ = 0;
+    void applyCheats(); // (the party's HP / MP full, the gauges: at the start and each turn's start and end)
     void moveGauge(const Event& e, const BattleData::Command& c);
     void chargeFor(const Event& e, const BattleData::Command& c, bool first);
 };

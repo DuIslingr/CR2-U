@@ -229,7 +229,20 @@ bool BattleRules::start(int coupling, const int party[2], int dungeonLevel, std:
     pattern_ = setup.pattern; // (BtlWork::SetSizePattern: +0x51)
     advantage_ = startState(); // (StepBattleIn: drawn, then none where the coupling's flag says)
     if (cp && cp->flag) advantage_ = 0;
+    else if (cheats.firstStrike) advantage_ = 1; // (Cheats: Always First Strike - never an assault either)
+    applyCheats();
     return true;
+}
+
+void BattleRules::applyCheats() {
+    for (int k = 0; k < 2; ++k) {
+        Fighter& f = fighters_[size_t(k)];
+        if (!f.present || !f.alive) continue;
+        if (cheats.hp) f.hp = f.maxHp;
+        if (cheats.mp) f.mp = f.maxMp;
+    }
+    if (cheats.fullCharge) charge_ = 300;
+    if (cheats.fullBreak) gauge_ = 4, break_ = 1; // (the party's turn break: +100 to its power, half the damage to it)
 }
 
 // BtlCalc::StartState: the party first by the levels apart (its mean less the monsters' mean:
@@ -866,9 +879,11 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
     if (o.actor < 2 && c->mp > 0) {
         const int partner = isPairAction(o.actor) ? a.partner : -1;
         const int cost = useMp(o.actor, partner, c->mp);
-        if (a.mp < cost || (partner >= 0 && fighters_[size_t(partner)].mp < cost)) return fail(0x4c);
-        a.mp -= cost;
-        if (partner >= 0) fighters_[size_t(partner)].mp -= cost;
+        if (!cheats.mp) { // (Cheats: Infinite MP - nothing paid)
+            if (a.mp < cost || (partner >= 0 && fighters_[size_t(partner)].mp < cost)) return fail(0x4c);
+            a.mp -= cost;
+            if (partner >= 0) fighters_[size_t(partner)].mp -= cost;
+        }
     }
     // an awakening's charge (BtlActionCtrl::ActionAwakeStandby: 100 / 200 / 300 by its level, none
     // with the script's switch 42 on - the prologue's)
@@ -991,8 +1006,13 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
         Fighter& tf = fighters_[size_t(t)];
         pendingDamage_[size_t(t)] = 0;
         if (e.hit) {
+            // (Cheats: One-Hit Kills - a party blow that lands, not blocked, takes all a monster's HP - even one
+            // that did none, the first party against a band far over it)
+            if (cheats.oneHit && t >= 2 && o.actor < 2 && !e.blocked) e.damage = std::max(e.damage, tf.hp);
             if (p.mpLoss > 0) e.mpLoss = std::min(p.mpLoss, tf.mp), tf.mp -= e.mpLoss;
+            if (cheats.mp && t < 2) tf.mp = tf.maxMp;
             tf.hp = std::max(tf.hp - e.damage, 0);
+            if (cheats.hp && t < 2) tf.hp = tf.maxHp, tf.canceled = false; // (Cheats: Infinite HP - the number shown, the HP back at once; no instant death)
             if (tf.hp > 0 && tf.canceled) tf.hp = 0, e.instantDeath = true, tf.canceled = false; // (CheckDead: +0xf7a, its HP whatever it was; the command's alone - ClearCommandResult)
             if (tf.hp == 0) {
                 tf.alive = false, e.defeated = true;
@@ -1003,8 +1023,9 @@ void BattleRules::act(const Order& o, std::vector<Event>& out) {
                                 }), tf.states.end());
                 tf.element = tf.monster ? tf.monster->element : tf.element;
                 if (const BattleData::Monster* m = tf.side == 1 ? data_.monster(tf.id) : nullptr) {
-                    exp_ = std::min(exp_ + tf.level * tf.level + m->exp, 9999999);
-                    sp_ = std::min(sp_ + m->sp, 9999999);
+                    // (Cheats: the EXP and SP times as much)
+                    exp_ = int(std::min<int64_t>(exp_ + int64_t(tf.level * tf.level + m->exp) * std::max(cheats.exp, 1), 9999999));
+                    sp_ = int(std::min<int64_t>(sp_ + int64_t(m->sp) * std::max(cheats.sp, 1), 9999999));
                     oz_ = std::min(oz_ + tf.level * 10 + m->oz, 9999999);
                     checkDrops(tf, *m);
                 }
@@ -1066,6 +1087,7 @@ void BattleRules::beginTurn() {
     for (Fighter& f : fighters_) f.guarding = false, f.canceled = false, f.usedSlots = 0; // (ClearEnemyAction)
     scripted_ = Scripted(); // (BtlCommand::StepInit: none given yet)
     callScript("Turn_Start");
+    applyCheats();
 }
 
 void BattleRules::chooseTurn(bool pair, const std::vector<Order>& party) {
@@ -1297,6 +1319,7 @@ void BattleRules::endTurn() {
     // BtlTurnEnd: a break ends, or one coming begins
     if (break_ == 1 || break_ == 2) break_ = 0, gauge_ = 0;
     else if (break_ == 3) break_ = gauge_ == 4 ? 1 : 2;
+    applyCheats(); // (the poison's HP back, the gauges full again for the next turn)
     ++turn_;
 }
 

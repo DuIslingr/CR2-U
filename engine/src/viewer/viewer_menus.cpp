@@ -841,6 +841,7 @@ void Viewer::encountSet(const float* p) {
 }
 void Viewer::encountUpdate(const cr2::Vec3& p, bool paused) {
     if (!encount.on || encount.coupling || !game.encountEnable) return;
+    if (settings.cheats.noBattles) return; // (the Options' Cheats: No Random Battles)
     if (game.flag(0x40e) && game.flag(0x40f) && !game.encountSwitch) return; // (the field menu's switch off)
     const float dx = p[0] - encount.x, dz = p[2] - encount.z;
     encount.x = p[0], encount.z = p[2];

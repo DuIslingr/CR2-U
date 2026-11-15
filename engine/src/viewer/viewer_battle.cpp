@@ -1008,6 +1008,14 @@ void Viewer::startFight(int mode, uint32_t seed) {
     battleFight = mode;
     glassRng.seed(seed); // (the game's lrand48: seeded by the clock)
     battleRules = std::make_unique<cr2::BattleRules>(battleData, seed);
+    { // (the Options' Cheats: the battle's own)
+        const Settings::Cheats& c = settings.cheats;
+        cr2::BattleRules::Cheats& r = battleRules->cheats;
+        r.hp = c.hp, r.mp = c.mp, r.oneHit = c.oneHit, r.fullBreak = c.fullBreak, r.fullCharge = c.fullCharge, r.firstStrike = c.firstStrike;
+        r.exp = c.exp, r.sp = c.sp;
+        if (c.any()) SDL_Log("fight: cheats on (hp %d mp %d one-hit %d break %d charge %d first %d exp x%d sp x%d)", int(c.hp), int(c.mp),
+                             int(c.oneHit), int(c.fullBreak), int(c.fullCharge), int(c.firstStrike), c.exp, c.sp);
+    }
     partyDeaths = 0, lastPartyActor = 0;
     turnEndNumbers.clear(), turnEndNumbersAt = -1;
     battleWipeAt = battleClock; // (StepBattleIn's FadeIn(3, 20): the wipe off the battle)

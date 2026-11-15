@@ -125,6 +125,16 @@ void Viewer::loadSettings() {
         else if (k == "pad_swap") s.padSwap = v != 0;
         else if (k == "field_speed") s.fieldSpeed = std::clamp(v, 1, 5);
         else if (k == "battle_speed") s.battleSpeed = std::clamp(v, 1, 5);
+        else if (k == "cheat_hp") s.cheats.hp = v != 0;
+        else if (k == "cheat_mp") s.cheats.mp = v != 0;
+        else if (k == "cheat_one_hit") s.cheats.oneHit = v != 0;
+        else if (k == "cheat_full_break") s.cheats.fullBreak = v != 0;
+        else if (k == "cheat_full_charge") s.cheats.fullCharge = v != 0;
+        else if (k == "cheat_first_strike") s.cheats.firstStrike = v != 0;
+        else if (k == "cheat_no_battles") s.cheats.noBattles = v != 0;
+        else if (k == "cheat_max_oz") s.cheats.maxOz = v != 0;
+        else if (k == "cheat_exp") s.cheats.exp = v >= 10 ? 10 : v >= 5 ? 5 : v >= 3 ? 3 : v >= 2 ? 2 : 1;
+        else if (k == "cheat_sp") s.cheats.sp = v >= 10 ? 10 : v >= 5 ? 5 : v >= 3 ? 3 : v >= 2 ? 2 : 1;
     }
     std::fclose(f);
     if (!kindSeen && s.display) s.fullscreenKind = s.display; // (an older settings.ini's: its fullscreen, F11's)
@@ -144,6 +154,11 @@ void Viewer::saveSettings() const {
     SDL_free(serialized);
     text += "lock_orientation=" + std::to_string(int(s.lockOrientation)) + "\nlandscape_flipped=" + std::to_string(int(s.landscapeFlipped)) + "\n";
     text += "cutout=" + std::to_string(int(s.cutout)) + "\n";
+    const Settings::Cheats& c = s.cheats; // (the Options' Cheats)
+    text += "cheat_hp=" + std::to_string(int(c.hp)) + "\ncheat_mp=" + std::to_string(int(c.mp)) + "\ncheat_one_hit=" + std::to_string(int(c.oneHit)) +
+            "\ncheat_full_break=" + std::to_string(int(c.fullBreak)) + "\ncheat_full_charge=" + std::to_string(int(c.fullCharge)) +
+            "\ncheat_first_strike=" + std::to_string(int(c.firstStrike)) + "\ncheat_no_battles=" + std::to_string(int(c.noBattles)) +
+            "\ncheat_max_oz=" + std::to_string(int(c.maxOz)) + "\ncheat_exp=" + std::to_string(c.exp) + "\ncheat_sp=" + std::to_string(c.sp) + "\n";
     if (!keepData.empty()) text += "data=" + keepData + "\n";
     std::string error;
     if (!crstorage::replaceFile(savePath(settingsFile()), text, &error)) SDL_Log("settings: %s", error.c_str());
@@ -237,7 +252,45 @@ std::string Viewer::shortDir(const std::string& dir) {
     if (at != std::string::npos && at > 0) at = dir.find_last_of("/\\", at - 1);
     return at == std::string::npos ? dir : "..." + dir.substr(at);
 }
+// The Options' Cheats page: the port's own, none of the game's
+auto Viewer::cheatRows() -> std::vector<SettingRow> {
+    Settings::Cheats& c = settings.cheats;
+    std::vector<SettingRow> rows;
+    auto onOff = [](bool b) { return std::string(b ? "On" : "Off"); };
+    auto flip = [](bool& b) { return [&b](int) { b = !b; }; };
+    auto times = [](int& v) {
+        return [&v](int d) {
+            static const int kTimes[5] = {1, 2, 3, 5, 10};
+            int i = 0;
+            while (i < 4 && kTimes[i] != v) ++i;
+            v = kTimes[((i + (d < 0 ? -1 : 1)) % 5 + 5) % 5];
+        };
+    };
+    auto x = [](int v) { return v > 1 ? std::to_string(v) + "x" : std::string("Off"); };
+    rows.push_back({"Infinite HP", onOff(c.hp), "The party's HP back to full after every blow: never felled", true, flip(c.hp)});
+    rows.push_back({"Infinite MP", onOff(c.mp), "The party's skills and sopia cost no MP; MP full between battles too", true, flip(c.mp)});
+    rows.push_back({"One-Hit Kills", onOff(c.oneHit), "A party blow that lands fells the monster (a miss is still a miss)", true, flip(c.oneHit)});
+    rows.push_back({"Full Break Gauge", onOff(c.fullBreak), "The break gauge always full: the party's turn break every turn (+100 power, half the damage taken)",
+                    true, flip(c.fullBreak)});
+    rows.push_back({"Full Charge Gauge", onOff(c.fullCharge), "The charge gauge always at 300: awakenings and advents whenever offered", true, flip(c.fullCharge)});
+    rows.push_back({"Always First Strike", onOff(c.firstStrike), "The party strikes first in every random battle; never a monster assault", true,
+                    flip(c.firstStrike)});
+    rows.push_back({"No Random Battles", onOff(c.noBattles), "No encounters while walking; the story's battles still come", true, flip(c.noBattles)});
+    rows.push_back({"EXP Multiplier", x(c.exp), "The EXP the monsters give, this many times as much", true, times(c.exp)});
+    rows.push_back({"SP Multiplier", x(c.sp), "The SP the sopia gain, this many times as much", true, times(c.sp)});
+    rows.push_back({"Max Oz", onOff(c.maxOz), "The Oz kept at 9,999,999 (turned off it stays where it is)", true, flip(c.maxOz)});
+    rows.push_back({"All Off", "", "Every cheat off", true, [&c](int) { c = Settings::Cheats(); }});
+    rows.push_back({"Back", "", "Back to the settings", true, [this](int) { settingsPage = 0, settingsCursor = 0; }});
+    return rows;
+}
+void Viewer::applyFieldCheats() {
+    const Settings::Cheats& c = settings.cheats;
+    if (c.mp)
+        for (int& m : game.mp) m = -1; // (MPFullRecovery's: the most)
+    if (c.maxOz) game.oz = 9999999;
+}
 auto Viewer::settingRows() -> std::vector<SettingRow> {
+    if (settingsPage == 1) return cheatRows();
     Settings& s = settings;
     std::vector<SettingRow> rows;
     auto step = [](int& v, const std::vector<int>& values, int dir) {
@@ -370,7 +423,13 @@ auto Viewer::settingRows() -> std::vector<SettingRow> {
     if (titleOptions()) // (the saves: only before a game is loaded - its confirmation over the options)
         rows.push_back({"Import Vita Saves", "", "Import your decrypted Vita saves (docs/VITA_SAVES.md) - or press I in the options", true,
                         [this](int) { settingsOpen = false, optionTap(3111); }});
-    rows.push_back({"Defaults", "", "Every setting here back to its default", true, [&s](int) { s = Settings(); }});
+    rows.push_back({"Cheats", s.cheats.any() ? "On" : "", "The port's own cheats: infinite HP / MP, one-hit kills, the gauges full, EXP and SP multipliers ...",
+                    true, [this](int) { settingsPage = 1, settingsCursor = 0; }});
+    rows.push_back({"Defaults", "", "Every setting here back to its default (the cheats as they are)", true, [&s](int) {
+                        const Settings::Cheats keep = s.cheats;
+                        s = Settings();
+                        s.cheats = keep;
+                    }});
     return rows;
 }
 void Viewer::settingChange(int row, int dir) {
@@ -380,12 +439,19 @@ void Viewer::settingChange(int row, int dir) {
     applySettings();
     saveSettings();
     const std::vector<SettingRow> now = settingRows();
-    SDL_Log("settings: %s %s", now[size_t(row)].label.c_str(), now[size_t(row)].value.c_str());
+    if (row < int(now.size())) // (a page changed: another list)
+        SDL_Log("%s: %s %s", settingsPage ? "cheats" : "settings", now[size_t(row)].label.c_str(), now[size_t(row)].value.c_str());
     audio.playSe(0xb4, false);
 }
 // (over the options, which stay open beneath: what waits for them closing waits on)
-void Viewer::openSettings() { settingsOpen = true, settingsStart = uiClock, settingsCursor = 0; }
-void Viewer::closeSettings() { settingsOpen = false, optionsStart = uiClock; }
+void Viewer::openSettings() { settingsOpen = true, settingsStart = uiClock, settingsCursor = 0, settingsPage = 0; }
+void Viewer::closeSettings() {
+    if (settingsPage) { // (the Cheats: back to the settings first)
+        settingsPage = 0, settingsCursor = 0;
+        return;
+    }
+    settingsOpen = false, optionsStart = uiClock;
+}
 void Viewer::drawSettings(const Mat4& view, int w, int h) {
     tapRects.clear();
     const std::vector<SettingRow> rows = settingRows();

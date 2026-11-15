@@ -172,7 +172,18 @@ struct Viewer {
         bool padSwap = false;     // a controller's: × (south) confirms, ○ (east) goes back - else as the Vita
         int fieldSpeed = 1;       // the field while the player walks it (nothing running there), this many times as fast: 1, 2 .. 5
         int battleSpeed = 1;      // the battles, this many times as fast: 1, 2 .. 5
+        // the Options' Cheats (the port's own, none of the game's): the battles' (cr2::BattleRules::Cheats),
+        // no random battles, the Oz at its most
+        struct Cheats {
+            bool hp = false, mp = false, oneHit = false, fullBreak = false, fullCharge = false, firstStrike = false;
+            bool noBattles = false, maxOz = false;
+            int exp = 1, sp = 1; // (1, 2, 3, 5, 10)
+            bool any() const { return hp || mp || oneHit || fullBreak || fullCharge || firstStrike || noBattles || maxOz || exp > 1 || sp > 1; }
+        } cheats;
     } settings;
+    // the cheats outside battle, each frame: the party's MP full between battles (Infinite MP), the Oz at
+    // its most (Max Oz)
+    void applyFieldCheats();
     bool settingsPersist = false;
     int rendererInUse = 0;        // (the device that started: the Renderer row's "next start")
     SDL_Window* window = nullptr;
@@ -199,6 +210,8 @@ struct Viewer {
     };
     bool settingsOpen = false;
     int settingsCursor = 0;
+    int settingsPage = 0; // (0 the settings, 1 the Cheats)
+    std::vector<SettingRow> cheatRows();
     float settingsStart = 0;
     std::vector<SettingRow> settingRows();
     void settingChange(int row, int dir);

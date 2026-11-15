@@ -1,93 +1,30 @@
-# CR2-U v0.7.0
+# CR2-U v0.7.1
 
-A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux, Android, and now
-iPhone and iPad.
+A fix release for [v0.7.0](https://github.com/DuIslingr/CR2-U/releases/tag/v0.7.0): a controller
+Windows stopped finding, text on more Android phones, and clearer setup messages. Everything in
+v0.7.0's notes still applies.
 
-## What's new
+## Fixed
 
-### iPhone and iPad
-
-- **A new iOS build** (iOS 15 or later): an unsigned `.ipa` to sideload with AltStore, Sideloadly
-  or similar. It draws through Vulkan (MoltenVK), with MetalFX as an upscaler from iOS 16, and falls
-  back to OpenGL ES. It runs at up to 120 Hz on ProMotion screens.
-- **Your game files** go in the app's own folder, *Chaos Rings II* in the Files app (or in Finder
-  with the phone connected). On the first start the setup asks for them and copies them in: the
-  iPad version's `.ipa`, an Android APK and OBB, or a Vita dump.
-- **Foldables** like the iPhone Duo: the picture follows when you fold or unfold. The new **Camera
-  Cutout** option keeps menus and text clear of the notch or punch hole (Avoid) or lets them use
-  the whole screen (Ignore).
-- Text falls back to the system's fonts where the game's own lack a character.
-- Switching to another app and back no longer leaves the picture frozen.
-
-### Cheats
-
-A new **Cheats** page in the options (the port's own, all off by default):
-
-- **Infinite HP** and **Infinite MP:** the party is never felled and pays nothing for skills and
-  sopia. MP is also kept full between battles.
-- **One-Hit Kills:** any party blow that lands fells the monster. A miss is still a miss.
-- **Full Break Gauge:** the party gets a turn break every turn (+100 power, half the damage taken).
-- **Full Charge Gauge:** the charge gauge stays at 300, so awakenings and advents are always
-  ready.
-- **Always First Strike:** the party moves first in every random battle; no more monster
-  assaults.
-- **No Random Battles:** no encounters while walking. The story's battles still come.
-- **EXP Multiplier** and **SP Multiplier:** 2, 3, 5 or 10 times as much.
-- **Max Oz:** 9,999,999 Oz.
-
-Story battles keep their own rules. The cheats are saved with your settings.
-
-### Setup and files
-
-- **Android, missing text** (issue #4): the font is now found in any APK next to the OBB. Without
-  one (an iPad or Vita copy on a phone), Android's own fonts are used, whichever the phone has.
-- **`font/` folder:** put your own fonts in the game folder's `font/` and they're used in place of
-  the game's.
-- **Android bundles** (`.xapk`, `.apks`, or a `.zip` of the APK and OBB) and an `.ipa` you put in
-  `ios/` yourself are unpacked on the first start. A progress window shows while that runs.
-- **Vita dumps:** `.rar` archives that failed to unpack before now work, and a dropped archive is
-  tried again if the first attempt fails. Vita dumps are decrypted by the port's own code.
-- **Vita copies, random battles:** monsters now appear while you walk the dungeons. Before, a Vita
-  copy had no random battles at all, on any platform.
-- **A log for bug reports:** `cr2view.log` in the profile folder (in the app's folder on iOS), with
-  the previous start's kept as `cr2view.prev.log`.
-
-### Controls and display
-
-- **Controllers** can be plugged in or out while you play.
-- **F11** or **Alt+Enter** switches between a window and fullscreen.
-
-### Closer to the original
-
-Another long pass against the original's code and reference videos, rounds 33 to 106:
-
-- **Menus:** the camp, shop, pub, library, party organization, world and chapter select, title,
-  options and manual open, close and answer on the original's steps. Lists close before what you
-  picked opens, and rows play out and back in when you change the category or character.
-- **Lists and buttons:** every list can be dragged, and a press on the scroll bar's track jumps
-  there. Buttons light up while your finger is on them. A greyed-out button or row plays the
-  original's "can't" sound and does nothing else.
-- **Battles:** boss battles take their scripted pauses; sopia and item motions, launch effects and
-  waits are timed as in the original; the attacker faces its target from the start; and the
-  breaking-glass ending runs at the original's rate. The damage formulas, instant death, status
-  rolls, healing, criticals and pair rules were checked line by line, along with the order in which
-  a blow's targets are worked out.
-- **Field:** the map name, the dungeon map, saving, the leader's turns and the party members'
-  fidgets follow the original's timing. A finger left down at the end of an event no longer moves
-  the leader.
-- **Text:** Oz amounts, the clock and item counts are formatted as in the original, and pages
-  break and wait as the original's do, fast-forward included.
-- **Saves:** clear-data carry-over, the level bonus past level 20, the play-time cap, the
-  encounter switch and the Vita's options are kept as the original keeps them.
+- **Flydigi controllers on Windows:** a Vader 4 Pro, wired or through its receiver, wasn't found since
+  v0.7.0's SDL update. SDL 3.4 added its own Flydigi driver, which takes the controller and then gets
+  no input from it; CR2-U now leaves that driver off on Windows, so the controller is read through
+  XInput as before. Setting the environment variable `SDL_JOYSTICK_HIDAPI_FLYDIGI=1` turns SDL's
+  driver back on. Every controller SDL finds is now written to `cr2view.log`, so if one still isn't
+  picked up, the log shows why.
+- **Text on Android phones with their maker's own fonts:** when neither the game's font nor
+  Android's usual ones are there (an iPad or Vita copy on such a phone), CR2-U now reads the phone's
+  own font list and uses its default font, then the fonts it names for Japanese, Chinese and Korean.
+  v0.7.0 only looked through the font folder.
+- **Setup messages:** when a picked Vita archive couldn't be unpacked because a folder couldn't be
+  made or a file written, the message gave no reason. It now names the folder or file and why.
 
 ### Thanks to metastigma
 
-Thanks to [metastigma](https://github.com/metastigma), whose Chaos Rings Omega fork
-([CRO-U-metastigma](https://github.com/metastigma/CRO-U-metastigma)) led to part of this release:
-
-- **From reviewing their fork:** controller hot-plug, after their Windows controller work; F11 /
-  Alt+Enter for fullscreen, which their fork had first; and the move to SDL 3.4.20
-  ([e402211](https://github.com/DuIslingr/CR2-U/commit/e402211)).
+[metastigma](https://github.com/metastigma) reported the Flydigi problem and investigated it in their
+fork ([CRO-U-metastigma#42](https://github.com/metastigma/CRO-U-metastigma/pull/42),
+[#43](https://github.com/metastigma/CRO-U-metastigma/pull/43)); this release takes the narrower fix
+above instead of their development build of SDL.
 
 ## Downloads
 
@@ -119,7 +56,7 @@ The README's "What you need" section lists which releases of the game work and w
 
 ## Good to know
 
-- **Android, updating:** v0.7.0 installs over v0.5.0, keeping your game files and saves.
+- **Android, updating:** v0.7.1 installs over v0.7.0 and v0.5.0, keeping your game files and saves.
 - **No game data is included.** You need your own copy; the port reads it at run time.
 - **Tested on:** Linux (played), Windows (under Wine). The macOS, Android and iOS builds are made
   by CI. Reports are welcome.

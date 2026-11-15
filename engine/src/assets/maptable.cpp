@@ -50,14 +50,19 @@ bool findEncountTable(const std::vector<uint8_t>& d, EncountTable& out) {
     out.cells.clear();
     constexpr size_t kTable = 14 * 48 * 4; // (each table's bytes)
     auto i32 = [&](size_t p) { int32_t v; std::memcpy(&v, &d[p], 4); return v; };
-    for (size_t at = 0; at + 3 * kTable <= d.size(); at += 4) {
-        bool town = true;
-        for (size_t k = 0; k < 16 && town; ++k)
-            town = i32(at + k * 4) == -1 && i32(at + 2 * kTable + k * 4) == 20 && i32(at + kTable + k * 4) == 0;
-        if (!town || i32(at + 16 * 4) != 0 || i32(at + 48 * 4) == 0) continue; // (the row's end; d01's first area)
-        for (size_t k = 0; k < 14 * 48; ++k) out.cells.push_back({i32(at + k * 4), i32(at + kTable + k * 4), i32(at + 2 * kTable + k * 4)});
-        return true;
-    }
+    // the three tables' order: the iPad's and Android's areas, steps, chances; the Vita's (CR2.self, eboot.bin)
+    // steps, chances, areas - the same values
+    static const size_t kOrders[2][3] = {{0, 1, 2}, {2, 0, 1}}; // (each table's place: areas, steps, chances)
+    for (const auto& o : kOrders)
+        for (size_t at = 0; at + 3 * kTable <= d.size(); at += 4) {
+            const size_t areas = at + o[0] * kTable, steps = at + o[1] * kTable, chances = at + o[2] * kTable;
+            bool town = true;
+            for (size_t k = 0; k < 16 && town; ++k)
+                town = i32(areas + k * 4) == -1 && i32(chances + k * 4) == 20 && i32(steps + k * 4) == 0;
+            if (!town || i32(areas + 16 * 4) != 0 || i32(areas + 48 * 4) == 0) continue; // (the row's end; d01's first area)
+            for (size_t k = 0; k < 14 * 48; ++k) out.cells.push_back({i32(areas + k * 4), i32(steps + k * 4), i32(chances + k * 4)});
+            return true;
+        }
     return false;
 }
 

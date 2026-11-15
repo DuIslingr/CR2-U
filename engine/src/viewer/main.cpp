@@ -1210,6 +1210,29 @@ int main(int argc, char** argv) {
                                                  // (Android's own: the iPad's or a Vita copy without its font, played on a phone)
                                                  "/system/fonts/Roboto-Regular.ttf", "/system/fonts/NotoSans-Regular.ttf",
                                                  "/system/fonts/DroidSans.ttf", "/system/fonts/RobotoStatic-Regular.ttf"});
+#ifdef SDL_PLATFORM_ANDROID
+            // (none of those - a maker's Android with fonts of its own, issue #4: an iPad copy on a Helio G100
+            // phone, "font none"): any in /system/fonts with the Latin letters, a Regular one first
+            if (fp.empty()) {
+                std::error_code ec;
+                std::vector<std::string> found;
+                for (const auto& entry : std::filesystem::directory_iterator("/system/fonts", ec)) {
+                    std::string ext = entry.path().extension().string();
+                    for (char& c : ext) c = char(std::tolower(static_cast<unsigned char>(c)));
+                    if (ext == ".ttf" || ext == ".otf" || ext == ".ttc") found.push_back(entry.path().string());
+                }
+                std::sort(found.begin(), found.end(), [](const std::string& a, const std::string& b) {
+                    const bool ra = a.find("Regular") != std::string::npos, rb = b.find("Regular") != std::string::npos;
+                    return ra != rb ? ra : a < b;
+                });
+                for (const std::string& f : found)
+                    if (cr2::TextRasterizer::covers(f, "AZaz09") == 1) {
+                        fp = f;
+                        SDL_Log("font: none of the usual system fonts; %s from /system/fonts", f.c_str());
+                        break;
+                    }
+            }
+#endif
         }
 #ifdef SDL_PLATFORM_IOS
         if (fp.empty() && apkFont.empty()) { // (the iPad's copy - its font iOS's own -: ArialMT, through CoreText - iOS keeps none at fixed paths)

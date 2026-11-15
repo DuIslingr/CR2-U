@@ -1,30 +1,30 @@
-# CR2-U v0.7.1
+# CR2-U v0.7.2
 
-A fix release for [v0.7.0](https://github.com/DuIslingr/CR2-U/releases/tag/v0.7.0): a controller
-Windows stopped finding, text on more Android phones, and clearer setup messages. Everything in
-v0.7.0's notes still applies.
+A fix release for [v0.7.1](https://github.com/DuIslingr/CR2-U/releases/tag/v0.7.1): Flydigi controllers
+on Windows, the cheats in the battles the story has you lose, and the title screen on wide screens.
+Everything in v0.7.0's and v0.7.1's notes still applies.
 
 ## Fixed
 
-- **Flydigi controllers on Windows:** a Vader 4 Pro, wired or through its receiver, wasn't found since
-  v0.7.0's SDL update. SDL 3.4 added its own Flydigi driver, which takes the controller and then gets
-  no input from it; CR2-U now leaves that driver off on Windows, so the controller is read through
-  XInput as before. Setting the environment variable `SDL_JOYSTICK_HIDAPI_FLYDIGI=1` turns SDL's
-  driver back on. Every controller SDL finds is now written to `cr2view.log`, so if one still isn't
-  picked up, the log shows why.
-- **Text on Android phones with their maker's own fonts:** when neither the game's font nor
-  Android's usual ones are there (an iPad or Vita copy on such a phone), CR2-U now reads the phone's
-  own font list and uses its default font, then the fonts it names for Japanese, Chinese and Korean.
-  v0.7.0 only looked through the font folder.
-- **Setup messages:** when a picked Vita archive couldn't be unpacked because a folder couldn't be
-  made or a file written, the message gave no reason. It now names the folder or file and why.
+- **Flydigi controllers on Windows, take two:** v0.7.1's fix didn't bring the Vader 4 Pro back. The
+  Windows build now uses SDL's development version from 2026-11-14, which has SDL's later Flydigi
+  fixes - the setup metastigma's fork uses and its user confirmed works with this controller, wired
+  and through its receiver. v0.7.1's workaround is gone. Other platforms keep SDL 3.4.20. Every
+  controller SDL finds is still written to `cr2view.log`.
+- **Cheats in the battles the story has you lose:** in the six battles whose story carries on after
+  the party falls (Neron's twice, Araki, the Herald's twice, Amon), Infinite HP no longer keeps you
+  standing forever: it holds while a foe can still fall, and lapses once none can (Neron's HP comes
+  all the way back every turn, Amon blocks every blow), so the defeat and the story come. One-Hit
+  Kills still works there - Araki and the Herald can be beaten - except in the opening's battle with
+  Neron, which can't be won in the original either, so the story starts as it should.
+- **The title screen fills wide screens:** on a phone or a 16:9 monitor the title's painting stayed
+  in the middle between black bars. It now stretches across the screen as the Android original's
+  does, with every release of the game (iPad, Android, Vita).
 
 ### Thanks to metastigma
 
-[metastigma](https://github.com/metastigma) reported the Flydigi problem and investigated it in their
-fork ([CRO-U-metastigma#42](https://github.com/metastigma/CRO-U-metastigma/pull/42),
-[#43](https://github.com/metastigma/CRO-U-metastigma/pull/43)); this release takes the narrower fix
-above instead of their development build of SDL.
+[metastigma](https://github.com/metastigma) reported the Flydigi problem and worked out the Windows
+SDL setup in their fork ([CRO-U-metastigma#42](https://github.com/metastigma/CRO-U-metastigma/pull/42)).
 
 ## Downloads
 
@@ -56,7 +56,7 @@ The README's "What you need" section lists which releases of the game work and w
 
 ## Good to know
 
-- **Android, updating:** v0.7.1 installs over v0.7.0 and v0.5.0, keeping your game files and saves.
+- **Android, updating:** v0.7.2 installs over v0.7.1, v0.7.0 and v0.5.0, keeping your game files and saves.
 - **No game data is included.** You need your own copy; the port reads it at run time.
 - **Tested on:** Linux (played), Windows (under Wine). The macOS, Android and iOS builds are made
   by CI. Reports are welcome.

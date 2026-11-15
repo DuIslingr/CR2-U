@@ -1786,6 +1786,19 @@ int main(int argc, char** argv) {
                     if (!v.loadField(fieldName, at, binary, data, callEntry)) running = false;
                 } else running = false;
             }
+            // In the background (a phone's): nothing drawn and the game held - iOS refuses a background app's GPU
+            // work, and the device it leaves draws nothing again (on an iPhone: the picture frozen on return, the
+            // game running on beneath it). The frame clock is stopped meanwhile. Back in front: the window's
+            // drawing surface made anew
+            if (frameClock.backgrounded()) {
+                SDL_Delay(20);
+                continue;
+            }
+            if (static Uint64 resumes = 0; frameClock.resumes() != resumes) {
+                resumes = frameClock.resumes();
+                dev->surfaceChanged();
+                SDL_Log("lifecycle: back from the background (%llu), the drawing surface made anew", (unsigned long long)resumes);
+            }
             if (const Uint64 period = v.settings.fps > 0 ? Uint64(1000000000) / Uint64(v.settings.fps) : 0) {
                 const Uint64 t = SDL_GetTicksNS();
                 if (t < nextFrame) SDL_DelayPrecise(nextFrame - t);

@@ -18,8 +18,10 @@ int main() {
         event.type = SDL_EVENT_WINDOW_FOCUS_LOST;
         clock.note(event, s+s/10);
         check(near(clock.step(s+s/10), 0.05f), "desktop focus change alone does not pause gameplay");
+        check(!clock.backgrounded() && clock.resumes() == 0, "in front, never resumed");
         event.type = SDL_EVENT_WILL_ENTER_BACKGROUND;
         clock.note(event, 2*s);
+        check(clock.backgrounded(), "backgrounded from the will phase (nothing drawn there)");
         event.type = SDL_EVENT_DID_ENTER_BACKGROUND;
         clock.note(event, 3*s); // duplicate lifecycle phase must not move the pause start
         check(clock.ticksNS(3602*s) == 2*s, "an hour in the background does not advance active time");
@@ -31,6 +33,7 @@ int main() {
         clock.note(event, 3604*s);
         clock.note(event, 3604*s+1); // duplicate cannot subtract a second interval
         check(clock.ticksNS(3604*s) == 2*s, "excluded time is subtracted exactly once");
+        check(!clock.backgrounded() && clock.resumes() == 1, "one return counted once (the surface made anew once)");
         check(clock.step(3604*s) == 0, "first resumed frame rebases its delta");
         check(near(clock.step(3604*s+s/20), 0.05f), "normal updates resume immediately");
         check(near(clock.step(3605*s+s/20), 1.0f), "ordinary foreground stalls keep prior timing policy");

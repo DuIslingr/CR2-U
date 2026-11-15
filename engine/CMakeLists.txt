@@ -228,14 +228,27 @@ if(NOT IOS) # (the command-line tool: a desktop's)
     target_link_libraries(cr2tool PRIVATE cr2core)
 endif()
 
-# The viewer: SDL3 (the system's when present, else built from source as CR1:U does) and OpenGL 3.3
-find_package(SDL3 CONFIG QUIET)
+# The viewer: SDL3 (the system's when present, else built from source as CR1:U does) and OpenGL 3.3. Windows
+# always builds its own, from SDL's development branch at 59ccf612 (2026-11-14): the Flydigi Vader 4 Pro, wired
+# and through its receiver, isn't found with 3.4.20 - not with its HIDAPI Flydigi driver off either (CRO-U #4) -,
+# and works with that commit, as the metastigma fork has it and its user verified (metastigma/CRO-U-metastigma#42,
+# #45): SDL's Flydigi XInput detection and ignored-devices fixes after 3.4.20 (as CRO-U's c2de196). Back to a
+# release once one carries them
+if(NOT WIN32)
+    find_package(SDL3 CONFIG QUIET)
+endif()
 if(NOT SDL3_FOUND)
     include(FetchContent)
-    FetchContent_Declare(SDL3
-        GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-        GIT_TAG release-3.4.20  # the stable SDL3 of 2026-11 (as the Linux packages carry): its controller hot-plug fixes
-        GIT_SHALLOW TRUE)
+    if(WIN32)
+        FetchContent_Declare(SDL3
+            GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+            GIT_TAG 59ccf612c1ee00e3845947503ead7da3f46f6615)
+    else()
+        FetchContent_Declare(SDL3
+            GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+            GIT_TAG release-3.4.20  # the stable SDL3 of 2026-11 (as the Linux packages carry): its controller hot-plug fixes
+            GIT_SHALLOW TRUE)
+    endif()
     set(SDL_SHARED OFF CACHE BOOL "" FORCE)
     set(SDL_STATIC ON CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(SDL3)

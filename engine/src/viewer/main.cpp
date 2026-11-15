@@ -669,14 +669,6 @@ int main(int argc, char** argv) {
     if (argc > 1 && std::strcmp(argv[1], "--selftest-input-cancel") == 0) return inputCancelViewerSelfTest();
     if (argc > 1 && std::strcmp(argv[1], "--selftest-pad-controls") == 0) return padControlsSelfTest();
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
-#ifdef SDL_PLATFORM_WINDOWS
-    // Flydigi pads (as CRO-U's e879bee - its #4: a Vader 4 Pro, wired and through its receiver, not found since SDL
-    // 3.4.20): SDL 3.4.0 added a HIDAPI driver for Flydigi controllers, on by default, which takes the pad and then
-    // gets no input from one in XInput mode (SDL's own fixes are on its development branch only, after 3.4.20). Off
-    // here, so the pad is read through XInput as with SDL 3.2.0, where it worked. SDL_JOYSTICK_HIDAPI_FLYDIGI=1 in
-    // the environment turns it back on (the environment's value wins over this one)
-    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_FLYDIGI, "0");
-#endif
     std::string data, model, capture, animName, renderer = "vulkan", lights = "d0101c", fieldName, at = "defaultPos", binary;
     float walkX = 0, walkY = 0, walkSeconds = 0; // --walk: the field's character runs first (captures)
     float drag[5] = {0, 0, 0, 0, 0};               // --drag x0,y0,x1,y1,s: then a finger's drag that long (the screen's fractions; held for the capture)
@@ -1721,7 +1713,8 @@ int main(int argc, char** argv) {
                     if ((k == SDLK_UP || k == SDLK_DOWN) && !f.anims.empty())
                         v.loadAnim(f, (f.animIndex + (k == SDLK_DOWN ? 1 : f.anims.size() - 1)) % f.anims.size());
                 } else if (e.type == SDL_EVENT_JOYSTICK_ADDED) { // (logged: what SDL found, and whether it maps it as a
-                    // gamepad - a pad that never takes shows here; as CRO-U's e879bee)
+                    // gamepad - a pad that never takes shows here; as CRO-U's e879bee - Windows' Flydigi pads: SDL's development
+                    // branch, CMakeLists.txt)
                     const SDL_JoystickID id = e.jdevice.which;
                     const char* name = SDL_GetJoystickNameForID(id);
                     SDL_Log("joystick: %s (%04x:%04x, type %d)%s", name ? name : "(unnamed)", unsigned(SDL_GetJoystickVendorForID(id)),

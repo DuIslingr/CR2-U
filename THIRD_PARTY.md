@@ -35,7 +35,7 @@ repository; in the CI artifacts):
 
 | What | Licence |
 |---|---|
-| [SDL 3.2.0](https://github.com/libsdl-org/SDL) (linked in statically) | zlib |
+| [SDL 3.4.20](https://github.com/libsdl-org/SDL) (linked in statically; on Windows its development branch at 59ccf612) | zlib |
 | [zlib 1.3.1](https://github.com/madler/zlib) (Windows, Android) | zlib |
 | [libarchive 3.7.7](https://github.com/libarchive/libarchive) (Windows, macOS: the setup reads a Vita dump's .rar, .7z, .zip, .vpk) | BSD-2-Clause |
 | [FreeType 2.13.3](https://gitlab.freedesktop.org/freetype/freetype) (Windows, macOS, Android: the text) | FreeType License or GPL-2.0 - used here under the GPL |

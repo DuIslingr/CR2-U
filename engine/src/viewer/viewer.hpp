@@ -1316,6 +1316,7 @@ struct Viewer {
         ViewFigure fig;
         std::vector<std::string> joints, materials;
         bool loaded = false;
+        float posedStretch = 1; // (title_bg: the across scale it was last posed at)
     };
     bool underPointer(UiFig& u); // (its tapAreaS01 .. E01 under the held pointer)
     void backLook(UiFig& b, const char* material = "PRG_colorO"); // (BattleBack::CheckTouch: the material's colour (1, 2, 3)

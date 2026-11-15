@@ -1117,18 +1117,35 @@ void Viewer::drawTitle() {
     UiFig& bg = uiFig("title_bg");
     bg.fig.place = cr2::Mat34();
     if (aspect >= 1.5f) bg.fig.place.m[0] = aspect / 1.5f;
-    // (as it rests: posed by an animation of its name it came out all but black - Android's painting is still)
+    // (as it rests: posed by an animation of its name it came out all but black - Android's painting is still -, but
+    // posed at rest whenever its stretch changes: the place is applied in the posing, so the painting stayed 3:2 between
+    // black bars on a wider screen)
+    if (bg.fig.place.m[0] != bg.posedStretch) pose(bg.fig, 0), bg.posedStretch = bg.fig.place.m[0];
     drawFigure(bg.fig, view.data());
     UiFig& ti = uiFig("title");
+    auto poseTitle = [&] {
+        if (tm.stage == 2) poseUi(ti, "title_in", age);
+        else if (tm.stage == 3) poseUi(ti, "title_loop", age, true);
+        else if (tm.stage == 4) poseUi(ti, "title_wait", age);
+        else if (tm.stage == 5) poseUi(ti, "title_wait", 1e6f); // (its end: the buttons' places)
+        else if (tm.stage == 9) poseUi(ti, "title_out", 1e6f); // (the options over it: the title out, its painting left)
+        else poseUi(ti, "title_in", std::max(titleAnimLength("title", "title_in") - (tm.stage == 10 ? age : 1e6f), 0.0f)); // (backwards: gone)
+    };
+    if (bg.fig.meshes.empty() && aspect >= 1.5f) { // (the iPad's and the Vita's painting, GEO_titleBG: stretched across a screen
+        // wider than 3:2 as Android's title_bg is - drawn alone first, the title's lettering over it as it is)
+        ti.fig.place = cr2::Mat34();
+        ti.fig.place.m[0] = aspect / 1.5f;
+        poseTitle();
+        for (ViewMesh& vm : ti.fig.meshes) {
+            const uint32_t j = vm.source.palette.empty() ? ~0u : vm.source.palette[0];
+            vm.hidden = !(j < ti.joints.size() && ti.joints[j] == "GEO_titleBG");
+        }
+        drawFigure(ti.fig, view.data());
+    }
     ti.fig.place = cr2::Mat34();
     for (ViewMesh& vm : ti.fig.meshes) vm.hidden = false;
-    if (tm.stage == 2) poseUi(ti, "title_in", age);
-    else if (tm.stage == 3) poseUi(ti, "title_loop", age, true);
-    else if (tm.stage == 4) poseUi(ti, "title_wait", age);
-    else if (tm.stage == 5) poseUi(ti, "title_wait", 1e6f); // (its end: the buttons' places)
-    else if (tm.stage == 9) poseUi(ti, "title_out", 1e6f); // (the options over it: the title out, its painting left)
-    else poseUi(ti, "title_in", std::max(titleAnimLength("title", "title_in") - (tm.stage == 10 ? age : 1e6f), 0.0f)); // (backwards: gone)
-    if (!bg.fig.meshes.empty()) hideJoint(ti, "GEO_titleBG"); // (title_bg in its place)
+    poseTitle();
+    if (!bg.fig.meshes.empty() || aspect >= 1.5f) hideJoint(ti, "GEO_titleBG"); // (title_bg in its place, or drawn stretched above)
     if (tm.stage == 9) // (under the options: the painting alone - the credit line and "Please Touch" sat on their buttons)
         for (const char* j : {"GEO_fontMaruC", "GEO_press"}) hideJoint(ti, j);
     drawFigure(ti.fig, view.data());

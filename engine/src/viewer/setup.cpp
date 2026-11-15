@@ -725,7 +725,7 @@ bool unpackArchive(const std::string& path, const std::string& to, const std::fu
             }
             if (progress && total) progress(double(archive_filter_bytes(a, -1)) / double(total));
         }
-        if (!SDL_CloseIO(f)) ok = false;
+        if (!SDL_CloseIO(f) && ok) ok = false, fail(error, out + ": can't be written (" + SDL_GetError() + ")");
     }
     if (ok && r != ARCHIVE_EOF)
         ok = false, fail(error, archive_error_string(a) ? std::string(archive_error_string(a))
@@ -1342,9 +1342,10 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                 std::string why;
                 const bool ok = inGameFolder(roots, [&](const std::string& r) {
                     const std::string v = r + "vita/", u = v + ".unpack/";
-                    if (!isDir(v) && !SDL_CreateDirectory(v.c_str())) return 0;
+                    // (a folder that can't be made: said - the message was blank, on a phone whose vita/ was made over adb)
+                    if (!isDir(v) && !SDL_CreateDirectory(v.c_str())) return why = v + " can't be made (" + SDL_GetError() + ")", 0;
                     if (isDir(u)) removeTree(u);
-                    if (!SDL_CreateDirectory(u.c_str())) return 0;
+                    if (!SDL_CreateDirectory(u.c_str())) return why = u + " can't be made (" + SDL_GetError() + ")", 0;
                     if (unpackArchive(files.front(), u, want, &why, [&](double x) { bar.show(x); })) return unpacked = u, 1;
                     removeTree(u);
                     return why.find("can't be written") != std::string::npos ? 0 : -1;

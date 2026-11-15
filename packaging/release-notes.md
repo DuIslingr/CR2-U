@@ -39,14 +39,16 @@ Story battles keep their own rules. The cheats are saved with your settings.
 
 ### Setup and files
 
-- **Android, missing text** (issue #4): the font is now found in any APK next to the OBB, and
-  Android's own fonts are used if none is there.
+- **Android, missing text** (issue #4): the font is now found in any APK next to the OBB. Without
+  one (an iPad or Vita copy on a phone), Android's own fonts are used, whichever the phone has.
 - **`font/` folder:** put your own fonts in the game folder's `font/` and they're used in place of
   the game's.
 - **Android bundles** (`.xapk`, `.apks`, or a `.zip` of the APK and OBB) and an `.ipa` you put in
   `ios/` yourself are unpacked on the first start. A progress window shows while that runs.
 - **Vita dumps:** `.rar` archives that failed to unpack before now work, and a dropped archive is
   tried again if the first attempt fails. Vita dumps are decrypted by the port's own code.
+- **Vita copies, random battles:** monsters now appear while you walk the dungeons. Before, a Vita
+  copy had no random battles at all, on any platform.
 - **A log for bug reports:** `cr2view.log` in the profile folder (in the app's folder on iOS), with
   the previous start's kept as `cr2view.prev.log`.
 

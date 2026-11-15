@@ -1,8 +1,10 @@
 #include "gfx/text.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 
 #ifdef __APPLE__
 #include <CoreText/CoreText.h>
@@ -296,6 +298,121 @@ std::string TextRasterizer::firstFont(const std::vector<std::string>& candidates
         }
     }
     return {};
+}
+
+std::vector<std::string> TextRasterizer::androidFonts(const std::string& root) {
+    namespace fs = std::filesystem;
+    static const char* const kDirs[] = {"/system/fonts/", "/product/fonts/", "/system_ext/fonts/", "/vendor/fonts/"};
+    auto exists = [](const std::string& p) {
+        std::error_code ec;
+        return fs::is_regular_file(fs::u8path(p), ec);
+    };
+    auto locate = [&](const std::string& name) -> std::string {
+        if (!name.empty() && name[0] == '/') return exists(root + name) ? root + name : std::string();
+        for (const char* d : kDirs)
+            if (const std::string p = root + d + name; exists(p)) return p;
+        return {};
+    };
+    auto attr = [](const std::string& tag, const char* key) -> std::string {
+        const std::string k = std::string(" ") + key + "=\"";
+        const size_t at = tag.find(k);
+        if (at == std::string::npos) return {};
+        const size_t b = at + k.size(), e = tag.find('"', b);
+        return e == std::string::npos ? std::string() : tag.substr(b, e - b);
+    };
+    // (a family's rank: 0 the default sans-serif, 1 Japanese, 2 Simplified Chinese, 3 Traditional, 4 Korean, -1 none)
+    auto rank = [](const std::string& lang, const std::string& name) {
+        if (name == "sans-serif") return 0;
+        int best = -1;
+        size_t i = 0;
+        while (i < lang.size()) {
+            size_t e = lang.find_first_of(" ,", i);
+            if (e == std::string::npos) e = lang.size();
+            const std::string t = lang.substr(i, e - i);
+            i = e + 1;
+            int r = -1;
+            if (t.rfind("ja", 0) == 0 || t.find("Jpan") != std::string::npos) r = 1;
+            else if (t.rfind("zh-Hans", 0) == 0 || t.find("Hans") != std::string::npos || t == "zh" || t == "zh-CN") r = 2;
+            else if (t.rfind("zh-Hant", 0) == 0 || t.find("Hant") != std::string::npos || t == "zh-TW") r = 3;
+            else if (t.rfind("ko", 0) == 0 || t.find("Kore") != std::string::npos) r = 4;
+            if (r >= 0 && (best < 0 || r < best)) best = r;
+        }
+        return best;
+    };
+    std::vector<std::string> ranked[5];
+    for (const char* xml : {"/product/etc/fonts_customization.xml", "/system/etc/font_fallback.xml", "/system/etc/fonts.xml",
+                            "/vendor/etc/fonts.xml", "/system/etc/fallback_fonts.xml", "/system/etc/system_fonts.xml"}) {
+        std::string s;
+        if (std::FILE* f = std::fopen((root + xml).c_str(), "rb")) {
+            char buf[65536];
+            for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) s.append(buf, n);
+            std::fclose(f);
+        }
+        if (s.empty()) continue;
+        for (size_t f = s.find("<family"); f != std::string::npos; f = s.find("<family", f + 1)) {
+            const size_t tagEnd = s.find('>', f), end = s.find("</family>", f);
+            if (tagEnd == std::string::npos || end == std::string::npos) break;
+            const std::string tag = s.substr(f, tagEnd - f);
+            const int r = rank(attr(tag, "lang"), attr(tag, "name"));
+            if (r < 0) continue;
+            std::vector<std::string> regular, other; // (the 400 weight first)
+            for (size_t t = s.find("<font", tagEnd); t != std::string::npos && t < end; t = s.find("<font", t + 1)) {
+                const size_t te = s.find('>', t);
+                if (te == std::string::npos || te > end) break;
+                if (std::isalpha(static_cast<unsigned char>(s[t + 5])) || s[t + 5] == '-') continue; // (<fontVariation...>)
+                const std::string ftag = s.substr(t, te - t);
+                std::string file;
+                if (s[te - 1] != '/') {
+                    size_t a = te + 1, b = s.find('<', a);
+                    if (b == std::string::npos) break;
+                    while (a < b && std::isspace(static_cast<unsigned char>(s[a]))) ++a;
+                    while (b > a && std::isspace(static_cast<unsigned char>(s[b - 1]))) --b;
+                    file = s.substr(a, b - a);
+                }
+                if (file.empty()) file = attr(ftag, "path");
+                // (not italics, nor a serif family's stand-in - fallbackFor="serif")
+                if (file.empty() || attr(ftag, "style") == "italic" || !attr(ftag, "fallbackFor").empty()) continue;
+                const std::string w = attr(ftag, "weight");
+                (w == "400" || w.empty() ? regular : other).push_back(file);
+            }
+            for (auto* list : {&regular, &other})
+                for (const std::string& file : *list)
+                    if (const std::string p = locate(file); !p.empty()) ranked[r].push_back(p);
+        }
+    }
+    std::vector<std::string> out;
+    auto add = [&out](const std::string& p) {
+        if (std::find(out.begin(), out.end(), p) == out.end()) out.push_back(p);
+    };
+    for (const auto& list : ranked)
+        for (const std::string& p : list) add(p);
+    // the font folders themselves (a list that names none of these): sans faces first, then CJK-named, the rest
+    std::vector<std::string> sans, cjk, rest;
+    for (const char* d : kDirs) {
+        std::error_code ec;
+        std::vector<std::string> names;
+        for (const auto& entry : fs::directory_iterator(fs::u8path(root + d), ec)) names.push_back(entry.path().filename().u8string());
+        std::sort(names.begin(), names.end());
+        for (const std::string& name : names) {
+            std::string lower = name;
+            for (char& c : lower) c = char(std::tolower(static_cast<unsigned char>(c)));
+            const std::string ext = lower.size() > 4 ? lower.substr(lower.size() - 4) : std::string();
+            if (ext != ".ttf" && ext != ".otf" && ext != ".ttc") continue;
+            auto has = [&lower](const char* k) { return lower.find(k) != std::string::npos; };
+            if (has("emoji") || has("symbol") || has("italic")) continue;
+            const std::string path = root + d + name;
+            if (has("cjk") || has("jp") || has("sc-") || has("tc-") || has("kr") || has("han")) cjk.push_back(path);
+            else if (has("roboto") || has("sans")) sans.push_back(path);
+            else rest.push_back(path);
+        }
+    }
+    for (auto* list : {&sans, &cjk, &rest}) {
+        std::stable_sort(list->begin(), list->end(), [](const std::string& a, const std::string& b) {
+            return a.find("Regular") != std::string::npos && b.find("Regular") == std::string::npos;
+        });
+        for (const std::string& p : *list) add(p);
+    }
+    return out;
 }
 
 } // namespace cr2

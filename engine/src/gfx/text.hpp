@@ -50,6 +50,13 @@ public:
 
     // the first of the candidates that loads (empty ones skipped)
     static std::string firstFont(const std::vector<std::string>& candidates);
+    // Android's fonts beyond the AOSP file names, under `root` ("" on a device), in the order to try (as CRO-U's
+    // ad7f7b3, Latin first for this game's English): the system's own font lists' (fonts_customization.xml,
+    // font_fallback.xml, fonts.xml, the old fallback_fonts.xml / system_fonts.xml) default sans-serif family, then
+    // the Japanese, Chinese (Simplified, Traditional) and Korean ones - the 400 weight first, no italics nor a
+    // serif stand-in -, then the font folders' files (/system, /product, /system_ext, /vendor fonts/): sans faces,
+    // CJK-named ones, the rest - no emoji, symbols or italics
+    static std::vector<std::string> androidFonts(const std::string& root);
 
 private:
     struct Impl;

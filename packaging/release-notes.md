@@ -1,72 +1,91 @@
-# CR2-U v0.5.0
+# CR2-U v0.7.0
 
-A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux and Android.
+A from-scratch reimplementation of *Chaos Rings II* for Windows, macOS, Linux, Android, and now
+iPhone and iPad.
 
 ## What's new
 
-### Controller, as on the Vita
+### iPhone and iPad
 
-- **Battles:** Up / Down move through the commands and the targets, with the cursor sound.
-- **Camp:** L / R switch the item category and the equipment's character. Up / Down move through
-  the camp's buttons and skip greyed-out ones.
-- **Shop:** in the equipment lists L / R change the character and Left / Right the kind (weapons,
-  armour, accessories).
-- **Yes / No questions:** a cursor starts on Yes; Up / Down move it, ○ answers, × is No.
-- **Game over:** its question now takes keys, buttons and clicks. Before, nothing answered it.
-- **Pub board:** the d-pad moves over the posters and the Check button.
-- Cursors light up once you move them with a key or button. `docs/CONTROLS.md` has the full layout.
+- **A new iOS build** (iOS 15 or later): an unsigned `.ipa` to sideload with AltStore, Sideloadly
+  or similar. It draws through Vulkan (MoltenVK), with MetalFX as an upscaler from iOS 16, and falls
+  back to OpenGL ES. It runs at up to 120 Hz on ProMotion screens.
+- **Your game files** go in the app's own folder, *Chaos Rings II* in the Files app (or in Finder
+  with the phone connected). On the first start the setup asks for them and copies them in: the
+  iPad version's `.ipa`, an Android APK and OBB, or a Vita dump.
+- **Foldables** like the iPhone Duo: the picture follows when you fold or unfold. The new **Camera
+  Cutout** option keeps menus and text clear of the notch or punch hole (Avoid) or lets them use
+  the whole screen (Ignore).
+- Text falls back to the system's fonts where the game's own lack a character.
+- Switching to another app and back no longer leaves the picture frozen.
+
+### Cheats
+
+A new **Cheats** page in the options (the port's own, all off by default):
+
+- **Infinite HP** and **Infinite MP:** the party is never felled and pays nothing for skills and
+  sopia. MP is also kept full between battles.
+- **One-Hit Kills:** any party blow that lands fells the monster. A miss is still a miss.
+- **Full Break Gauge:** the party gets a turn break every turn (+100 power, half the damage taken).
+- **Full Charge Gauge:** the charge gauge stays at 300, so awakenings and advents are always
+  ready.
+- **Always First Strike:** the party moves first in every random battle; no more monster
+  assaults.
+- **No Random Battles:** no encounters while walking. The story's battles still come.
+- **EXP Multiplier** and **SP Multiplier:** 2, 3, 5 or 10 times as much.
+- **Max Oz:** 9,999,999 Oz.
+
+Story battles keep their own rules. The cheats are saved with your settings.
+
+### Setup and files
+
+- **Android, missing text** (issue #4): the font is now found in any APK next to the OBB, and
+  Android's own fonts are used if none is there.
+- **`font/` folder:** put your own fonts in the game folder's `font/` and they're used in place of
+  the game's.
+- **Android bundles** (`.xapk`, `.apks`, or a `.zip` of the APK and OBB) and an `.ipa` you put in
+  `ios/` yourself are unpacked on the first start. A progress window shows while that runs.
+- **Vita dumps:** `.rar` archives that failed to unpack before now work, and a dropped archive is
+  tried again if the first attempt fails. Vita dumps are decrypted by the port's own code.
+- **A log for bug reports:** `cr2view.log` in the profile folder (in the app's folder on iOS), with
+  the previous start's kept as `cr2view.prev.log`.
+
+### Controls and display
+
+- **Controllers** can be plugged in or out while you play.
+- **F11** or **Alt+Enter** switches between a window and fullscreen.
 
 ### Closer to the original
 
-The opening, the field and the battles were checked step by step against the original's code and
-reference videos, and their timing now matches:
+Another long pass against the original's code and reference videos, rounds 33 to 106:
 
-- **Cutscenes:** fades, camera moves, message windows and portraits open and close on the
-  original's frames. Taps turn pages as in the original, and centred lines (tutorial titles,
-  announcements) are centred again.
-- **Field:** talking and events start and end on the original's frames, and the leader no longer
-  snaps round to face someone. Leaving an area fades to black first. The camera eases after the
-  leader, and characters turn smoothly.
-- **Encounters:** the leader takes two more steps before the wipe, which takes 0.25 s; the battle
-  starts 1.4 s after the encounter.
-- **Battles:** the first turn comes 1.3 s in. Attacks, items, spells (monsters' too), awakenings and
-  sopia skills are paced and framed as in the original: fighters run in again against two small
-  monsters instead of swinging in place, the second attack angle keeps the attacker in the shot,
-  damage numbers appear at the chest, a magic barrier shows before turning a spell back on the
-  caster, action names stay on the banner until the next action or the end of the turn, and a
-  defeated monster vanishes as the blow lands. A fighter still reeling from a hit finishes that
-  motion before taking its turn. Using an item, a fighter raises an arm with the item's glow in the
-  hand (before, they just stood there). Status messages follow the action's name on the banner, a
-  second each, and the action waits for them to finish. A battle (including `--battle`) now fades
-  out with its music before the field fades back in.
-- **Results:** the victory pose plays once and holds behind the results (showing whoever landed the
-  last blow after a solo turn, both after a Pair turn). EXP fills over 3 s, and level-ups and
-  rewards wait for a tap. Escaping takes about 2 s.
-- A line's voice stays quiet while you fast-forward or skip.
+- **Menus:** the camp, shop, pub, library, party organization, world and chapter select, title,
+  options and manual open, close and answer on the original's steps. Lists close before what you
+  picked opens, and rows play out and back in when you change the category or character.
+- **Lists and buttons:** every list can be dragged, and a press on the scroll bar's track jumps
+  there. Buttons light up while your finger is on them. A greyed-out button or row plays the
+  original's "can't" sound and does nothing else.
+- **Battles:** boss battles take their scripted pauses; sopia and item motions, launch effects and
+  waits are timed as in the original; the attacker faces its target from the start; and the
+  breaking-glass ending runs at the original's rate. The damage formulas, instant death, status
+  rolls, healing, criticals and pair rules were checked line by line, along with the order in which
+  a blow's targets are worked out.
+- **Field:** the map name, the dungeon map, saving, the leader's turns and the party members'
+  fidgets follow the original's timing. A finger left down at the end of an event no longer moves
+  the leader.
+- **Text:** Oz amounts, the clock and item counts are formatted as in the original, and pages
+  break and wait as the original's do, fast-forward included.
+- **Saves:** clear-data carry-over, the level bonus past level 20, the play-time cap, the
+  encounter switch and the Vita's options are kept as the original keeps them.
 
-### Graphics
+### Thanks to metastigma
 
-- **FSR 4** (AMD RX 6000 or later, Linux and Windows): a new Upscaler choice. AMD's files can't be
-  included; put them in `fsr4/` (its `README.txt` lists them). On Linux they run natively through
-  ffx-vk-linux, without Wine.
-- **FSR 3.1.6:** the built-in FSR is updated to AMD's FSR SDK 2.4.
-- **Fewer hitches with Vulkan:** compiled shaders are kept between runs (`vulkan-pipelines.bin` in
-  the profile folder), so starts and new screens are smoother.
-- **Phones:** the picture fills the whole screen, around a camera hole too; menus and buttons stay
-  inside the safe area.
+Thanks to [metastigma](https://github.com/metastigma), whose Chaos Rings Omega fork
+([CRO-U-metastigma](https://github.com/metastigma/CRO-U-metastigma)) led to part of this release:
 
-### Setup and platforms
-
-- **Android:** the first-start setup now runs on the phone too. Pick your APK and OBB, `.ipa` or
-  Vita archive, and the files are copied in.
-- **Vita dumps:** a NoNpDrm dump copied into `vita/` is decrypted on the next start, on PC and
-  phone.
-- **Vita, Prequel Trilogy:** the port no longer picks up Chaos Rings III's files from the trilogy
-  folder, which closed the app.
-- **New Game Plus:** the opening now plays. Before, you were left on the lava field with nothing to
-  do (reported by [asbel12](https://github.com/asbel12)).
-- **Android:** no more green frame around the screen after using a controller or keyboard.
-- **Windows:** the "Swap ○ and ×" setting and the staff roll's symbols show correctly.
+- **From reviewing their fork:** controller hot-plug, after their Windows controller work; F11 /
+  Alt+Enter for fullscreen, which their fork had first; and the move to SDL 3.4.20
+  ([e402211](https://github.com/DuIslingr/CR2-U/commit/e402211)).
 
 ## Downloads
 
@@ -76,6 +95,7 @@ reference videos, and their timing now matches:
 | `CR2-U-macos-universal.zip` | macOS 11+ (Apple silicon and Intel) |
 | `CR2-U-x86_64.AppImage` / `CR2-U-linux-x86_64.tar.gz` | Linux x86-64 |
 | `CR2-U-android.apk` | Android 7+ |
+| `CR2-U-ios-unsigned.ipa` | iPhone and iPad, iOS 15+ (sideload it) |
 
 ## Getting started
 
@@ -89,18 +109,19 @@ reference videos, and their timing now matches:
 - **Android:** install the APK and start it; the setup asks for your game files. Or copy them over
   USB into `Android/data/local.preservation.chaosrings2/files/`, in an `ios/`, `android/` or `vita/`
   folder.
+- **iPhone and iPad:** sideload the `.ipa` (AltStore, Sideloadly or similar) and start it; the
+  setup asks for your game files. Or copy them into *Chaos Rings II* in the Files app, in an
+  `ios/`, `android/` or `vita/` folder.
 
 The README's "What you need" section lists which releases of the game work and what each needs.
 
 ## Good to know
 
-- **Android, updating:** from this version on, each release installs over the one before it.
-  Earlier versions were each signed with a different key, so uninstall the old one first - one
-  last time. That deletes the game files you copied in and your saves, so keep a copy of them.
+- **Android, updating:** v0.7.0 installs over v0.5.0, keeping your game files and saves.
 - **No game data is included.** You need your own copy; the port reads it at run time.
-- **Tested on:** Linux (played), Windows (under Wine). The macOS and Android builds are made by CI
-  but haven't been run on real hardware yet. Reports are welcome.
+- **Tested on:** Linux (played), Windows (under Wine). The macOS, Android and iOS builds are made
+  by CI. Reports are welcome.
 - **DLSS** isn't in these builds (NVIDIA's library can't ship with GPL code); you can build it
   yourself (README, Building from source).
-- Licence GPL-2.0-or-later (the macOS app is GPL-3.0 because of MoltenVK). A fan preservation
-  project, not affiliated with Square Enix or Media.Vision.
+- Licence GPL-2.0-or-later (the macOS and iOS apps are GPL-3.0 because of MoltenVK). A fan
+  preservation project, not affiliated with Square Enix or Media.Vision.

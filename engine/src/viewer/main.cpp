@@ -800,12 +800,19 @@ int main(int argc, char** argv) {
         else if (a == "--run" && next) runSeconds = float(std::atof(next)), ++i;
         else if (a == "--sharpness" && next) sharpness = std::clamp(float(std::atof(next)), 0.0f, 1.0f), ++i;
     }
-#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+#if !defined(SDL_PLATFORM_ANDROID)
     // the log, also into cr2view.log in the profile folder (the last start's kept as cr2view.prev.log): the Windows
-    // build has no console, so a report can come with it. Not for captures, exports or a test's virtual controller
+    // build has no console, so a report can come with it - an iPhone's in its Documents, to be seen in the Files
+    // app. Not for captures, exports or a test's virtual controller
     if (capture.empty() && !exportTextures && !exportModels && !std::getenv("CR2_PAD_SCRIPT")) {
         static std::FILE* logFile = nullptr;
+#ifdef SDL_PLATFORM_IOS
+        const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
+        const std::string where = docs ? std::string(docs) : Viewer::savePath("");
+        const std::string path = where + (where.empty() || where.back() == '/' ? "" : "/") + "cr2view.log", prev = path.substr(0, path.size() - 4) + ".prev.log";
+#else
         const std::string path = Viewer::savePath("cr2view.log"), prev = Viewer::savePath("cr2view.prev.log");
+#endif
         std::remove(prev.c_str());
         std::rename(path.c_str(), prev.c_str());
         if ((logFile = std::fopen(path.c_str(), "w"))) {
@@ -863,6 +870,13 @@ int main(int argc, char** argv) {
         if (std::filesystem::is_directory(data, ec)) unbundle(data);
     }
     std::vector<std::string> searched; // (where a copy was looked for: the message if none)
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
+    { // (a phone's game folder: its release folders and font/ made on every start, so USB or the Files app shows them)
+        const std::vector<std::string> places = dataPlaces();
+        if (!places.empty())
+            for (const char* f : {"ios", "android", "vita", "font"}) SDL_CreateDirectory((places.front() + f).c_str());
+    }
+#endif
     if (data.empty()) { // (CR2_DATA, else a copy in a game folder: vita/, android/, ios/ ...)
         searched = dataPlaces();
         for (const std::string& place : searched) unbundle(place + "android");
@@ -1153,6 +1167,15 @@ int main(int argc, char** argv) {
     v.upscale = upscale;
     dev->setUpscaler(upscale);
     v.window = capture.empty() ? win : nullptr; // (a capture's hidden window stays as it is)
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
+    { // (a phone's screen, for a report: the window in points and pixels, its safe area - a foldable's either screen)
+        int ww = 0, wh = 0, pw = 0, ph = 0;
+        SDL_Rect safe{};
+        SDL_GetWindowSize(win, &ww, &wh), SDL_GetWindowSizeInPixels(win, &pw, &ph), SDL_GetWindowSafeArea(win, &safe);
+        SDL_Log("screen: %dx%d points, %dx%d pixels, safe area %d,%d %dx%d, display scale %.2f", ww, wh, pw, ph, safe.x, safe.y, safe.w, safe.h,
+                double(SDL_GetWindowDisplayScale(win)));
+    }
+#endif
     v.rendererInUse = dev->offscreen() ? 0 : 1;
     v.settings.upscaler = int(upscale.mode); // (one that can't run here: off)
     v.applySettings();
@@ -1186,6 +1209,13 @@ int main(int argc, char** argv) {
                                                  "/system/fonts/Roboto-Regular.ttf", "/system/fonts/NotoSans-Regular.ttf",
                                                  "/system/fonts/DroidSans.ttf", "/system/fonts/RobotoStatic-Regular.ttf"});
         }
+#ifdef SDL_PLATFORM_IOS
+        if (fp.empty() && apkFont.empty()) { // (the iPad's copy - its font iOS's own -: ArialMT, through CoreText - iOS keeps none at fixed paths)
+            std::string p;
+            int face = 0;
+            if (cr2::TextRasterizer::appleFont("ArialMT", p, face)) fp = p, v.fontFace = face;
+        }
+#endif
         v.loadMessageWindow(fp, std::move(apkFont), apkFontFrom);
         v.initEventDrawing();
         v.pageSeconds = page;

@@ -464,7 +464,7 @@ void Viewer::loadMessageWindow(const std::string& fontPath, std::vector<uint8_t>
     std::string err;
     if (!loadFigure("sendcsr_loop.geom", pageCursor, &err)) SDL_Log("page cursor: %s", err.c_str());
     if (!loadFigure("msgcsr_loop.geom", conversationCursor, &err)) SDL_Log("page cursor: %s", err.c_str());
-    if (!fontPath.empty() && !font.load(fontPath, &err)) SDL_Log("font: %s", err.c_str());
+    if (!fontPath.empty() && !font.load(fontPath, &err, fontFace)) SDL_Log("font: %s", err.c_str());
     else if (fontPath.empty() && !fontBytes.empty() && !font.loadMemory(std::move(fontBytes), fontName, &err)) SDL_Log("font: %s", err.c_str());
     // (the code points the game's font lacks - Hangul, simplified Chinese - from the system's, as
     // Android's: CR2_FONT_FALLBACK, else a Noto CJK where the distributions put it, else Windows'
@@ -491,6 +491,17 @@ void Viewer::loadMessageWindow(const std::string& fontPath, std::vector<uint8_t>
         if (!font.addFallback(f, &err)) SDL_Log("font: %s", err.c_str());
         else fallback += (fallback.empty() ? "" : ", ") + f;
     }
+#ifdef SDL_PLATFORM_IOS
+    // (iOS: its own faces through CoreText, as the iPad release asks UIKit for them - Japanese, then Simplified and
+    // Traditional Chinese, then Korean)
+    if (!(fb && *fb) && font.loaded())
+        for (const char* name : {"HiraKakuProN-W6", "PingFangSC-Regular", "PingFangTC-Regular", "AppleSDGothicNeo-Regular"}) {
+            std::string p;
+            int face = 0;
+            if (cr2::TextRasterizer::appleFont(name, p, face) && font.addFallback(p, &err, face))
+                fallback += (fallback.empty() ? "" : ", ") + std::string(name);
+        }
+#endif
     SDL_Log("message windows: vista %zu meshes, narration %zu joints; font %s%s%s", vistaWindow.fig.meshes.size(),
             narrationWindow.joints.size(), font.loaded() ? font.path().c_str() : "none (no text)", fallback.empty() ? "" : ", then ",
             fallback.c_str());

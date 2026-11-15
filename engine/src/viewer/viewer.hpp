@@ -168,6 +168,7 @@ struct Viewer {
         bool hdModels = false;    // replacement models from models/hd (what loads next)
         int smoothModels = 0;     // smoothed models (assets/smooth.hpp): 0 off, 2 / 3 the PN triangles' level (what loads next)
         bool lockOrientation = false, landscapeFlipped = false;
+        bool cutout = false; // (a phone's Camera Cutout: false Avoid - the menus clear of it -, true Ignore)
         bool padSwap = false;     // a controller's: × (south) confirms, ○ (east) goes back - else as the Vita
         int fieldSpeed = 1;       // the field while the player walks it (nothing running there), this many times as fast: 1, 2 .. 5
         int battleSpeed = 1;      // the battles, this many times as fast: 1, 2 .. 5
@@ -756,6 +757,7 @@ struct Viewer {
     int systemOptions[5] = {-1, -1, -1, -1, -1};
     void readSystem();
     void applySystem();
+    int fontFace = 0; // (the main font's face in a collection: iOS's from CoreText)
     std::vector<std::string> ownCjkFonts; // (font/'s fonts with Japanese / Chinese / Korean: the fallbacks, first)
     int deviceLanguage();
     void setVersionUpFlags();

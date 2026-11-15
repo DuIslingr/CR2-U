@@ -156,6 +156,9 @@ target_include_directories(cr2core SYSTEM PRIVATE third_party)
 target_include_directories(cr2core PUBLIC src)
 target_include_directories(cr2core PRIVATE third_party/hevag) # (the HE-VAG filter table: vgmstream's, ISC)
 target_link_libraries(cr2core PUBLIC squirrel2)
+if(APPLE) # (gfx/text.cpp: the system's fonts by name from CoreText - iOS has none at fixed paths)
+    target_link_libraries(cr2core PUBLIC "-framework CoreText" "-framework CoreFoundation")
+endif()
 # The Android release's APK (its library: the maps' table; its fonts): zlib (the system's) inflates
 # them; without it, only an unpacked APK's
 # zlib and the like: the system's, else (Windows, macOS, Android - CR_FETCH_DEPS) built here from

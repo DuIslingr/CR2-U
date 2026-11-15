@@ -23,13 +23,13 @@ public:
     TextRasterizer& operator=(const TextRasterizer&) = delete;
 
     // a font file (OpenType / TrueType, face 0); false: none could be read
-    bool load(const std::string& path, std::string* error = nullptr);
+    bool load(const std::string& path, std::string* error = nullptr, int face = 0); // (`face`: a collection's)
     // the same from memory (the APK's fonts): `name` stands for its path
     bool loadMemory(std::vector<uint8_t> bytes, const std::string& name, std::string* error = nullptr);
     bool loaded() const;
     // a font for the code points the first lacks (as Android's Paint falls back on the system's:
     // Hangul, simplified Chinese), tried in the order added; false: none could be read
-    bool addFallback(const std::string& path, std::string* error = nullptr);
+    bool addFallback(const std::string& path, std::string* error = nullptr, int face = 0);
     const std::string& path() const { return path_; }
 
     // one line of UTF-8 at `sizePx` (rows top first): white, the coverage in alpha. Empty when the
@@ -41,6 +41,10 @@ public:
     Image render(const std::string& utf8, int sizePx, int& width, int& height, std::vector<float>* penX = nullptr,
                  int border = 0);
 
+    // Apple's (iOS, macOS): the system font of this PostScript name ("ArialMT", "HiraKakuProN-W6",
+    // "PingFangSC-Regular") - its file from CoreText, its face in a collection by that name. False
+    // elsewhere, or when the system has no such font (iOS keeps none at fixed paths)
+    static bool appleFont(const std::string& postScriptName, std::string& path, int& face);
     // whether the font file has every code point of `utf8`: 1 yes, 0 no, -1 not a font FreeType reads
     static int covers(const std::string& path, const std::string& utf8);
 

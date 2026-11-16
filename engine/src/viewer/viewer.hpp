@@ -653,6 +653,15 @@ struct Viewer {
     static constexpr float kWait1_5s = 31 * cr2::EventRuntime::kTick, kWait2s = 41 * cr2::EventRuntime::kTick, kWait3s = 61 * cr2::EventRuntime::kTick;
     static constexpr float kBattleOutSeconds = 25 * cr2::EventRuntime::kTick;
     float battleOutAt = -1;
+    // a fight's way out, once its last is shown (`over`): 1 the story's - back to it -, 2 a battle on its own's
+    // (--battle: then the end) once it ended (`ended`: a script's exit, an escape, a loss, a win's result read), 0
+    // none. Not the second for a battle of the story whose way out is under way - inFlow cleared the update before:
+    // that way out went to the title, the story dropped (the opening's Neron, ended by its script: issue #5)
+    static int battleWayOut(bool over, bool inFlow, bool standaloneOut, bool outUnderWay, bool ended) {
+        if (!over) return 0;
+        if (inFlow) return 1;
+        return !standaloneOut && !outUnderWay && ended ? 2 : 0;
+    }
     void beginBattleOut();
     void leaveBattle();
     void afterBattle();

@@ -1443,16 +1443,18 @@ void Viewer::advance(float dt, float sx, float sy, bool run) {
         const bool exitNow = battleRules && battleRules->exited(); // (Cr3BattleEvent_Exit: the way out at once)
         // (no pause of its own: a win's StepResult, a loss's StepGameover, an escape's step 0x1f go
         // to StepBattleOut the update after)
-        if (fightingInFlow && battleStep == BattleStep::Over && (exitNow || (!battleScriptRunning() && battleClock >= showEnd)) &&
-            (result.stage == 0 || result.stage >= 4) && gameOver.stage == 0) {
+        const bool over = battleStep == BattleStep::Over && (exitNow || (!battleScriptRunning() && battleClock >= showEnd)) &&
+                          (result.stage == 0 || result.stage >= 4) && gameOver.stage == 0;
+        const bool ended = battleFight != 0 && battleRules &&
+                           (battleRules->exited() || battleRules->escaped() || battleRules->outcome() == 2 || result.stage >= 4);
+        const int wayOut = battleWayOut(over, fightingInFlow, standaloneOut, battleOutAt >= 0, ended);
+        if (wayOut == 1) {
             fightingInFlow = false;
             beginBattleOut();
             SDL_Log("play: battle %s", battleRules->exited() ? "ended by its script" : battleRules->escaped() ? "escaped" : battleRules->outcome() == 1 ? "won" : "lost (back to the field: no game over yet in the story)");
             if (ex.on && battleRules->outcome() == 1 && !randomBattle && ex.grind > 0) ex.grind = 0, exploreLog("  (won: no more fighting first)");
             ++battlesSkipped;
-        } else if (!fightingInFlow && !standaloneOut && battleFight != 0 && battleRules && battleStep == BattleStep::Over &&
-                   (exitNow || (!battleScriptRunning() && battleClock >= showEnd)) && (result.stage == 0 || result.stage >= 4) && gameOver.stage == 0 &&
-                   (battleRules->exited() || battleRules->escaped() || battleRules->outcome() == 2 || result.stage >= 4)) {
+        } else if (wayOut == 2) {
             // (a battle on its own - --battle -: no field to go back to; its way out, then the end,
             // as the game over's "no" - the title, which this mode has none of)
             standaloneOut = true;

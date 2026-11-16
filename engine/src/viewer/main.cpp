@@ -653,6 +653,14 @@ int newSessionSelfTest() {
             ++problems; std::puts("new session FAILED: abandoned scene audio survived");
         }
     }
+    // a battle of the story: its way out back to the story, and the update after (inFlow cleared, the way out under
+    // way) not a lone battle's way out to the title (issue #5: the opening's Neron, ended by its script); a --battle
+    // fight's own way out once it ended
+    if (Viewer::battleWayOut(true, true, false, false, true) != 1 || Viewer::battleWayOut(true, false, false, true, true) != 0 ||
+        Viewer::battleWayOut(true, false, false, false, true) != 2 || Viewer::battleWayOut(true, false, true, false, true) != 0 ||
+        Viewer::battleWayOut(false, true, false, false, true) != 0 || Viewer::battleWayOut(true, false, false, false, false) != 0) {
+        ++problems; std::puts("new session FAILED: a battle of the story's way out went to the title");
+    }
     if (!leaderByDefault(true,true,false,false) || leaderByDefault(true,false,false,false) || leaderByDefault(false,true,false,false)) {
         ++problems; std::puts("new session FAILED: a game from the title has no leader");
     }

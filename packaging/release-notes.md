@@ -1,30 +1,25 @@
-# CR2-U v0.7.2
+# CR2-U v0.7.3
 
-A fix release for [v0.7.1](https://github.com/DuIslingr/CR2-U/releases/tag/v0.7.1): Flydigi controllers
-on Windows, the cheats in the battles the story has you lose, and the title screen on wide screens.
-Everything in v0.7.0's and v0.7.1's notes still applies.
+A fix release for [v0.7.2](https://github.com/DuIslingr/CR2-U/releases/tag/v0.7.2): Flydigi controllers
+on Windows, and the story carrying on after the opening battle. Everything in v0.7.0's, v0.7.1's and
+v0.7.2's notes still applies.
 
 ## Fixed
 
-- **Flydigi controllers on Windows, take two:** v0.7.1's fix didn't bring the Vader 4 Pro back. The
-  Windows build now uses SDL's development version from 2026-11-14, which has SDL's later Flydigi
-  fixes - the setup metastigma's fork uses and its user confirmed works with this controller, wired
-  and through its receiver. v0.7.1's workaround is gone. Other platforms keep SDL 3.4.20. Every
-  controller SDL finds is still written to `cr2view.log`.
-- **Cheats in the battles the story has you lose:** in the six battles whose story carries on after
-  the party falls (Neron's twice, Araki, the Herald's twice, Amon), Infinite HP no longer keeps you
-  standing forever: it holds while a foe can still fall, and lapses once none can (Neron's HP comes
-  all the way back every turn, Amon blocks every blow), so the defeat and the story come. One-Hit
-  Kills still works there - Araki and the Herald can be beaten - except in the opening's battle with
-  Neron, which can't be won in the original either, so the story starts as it should.
-- **The title screen fills wide screens:** on a phone or a 16:9 monitor the title's painting stayed
-  in the middle between black bars. It now stretches across the screen as the Android original's
-  does, with every release of the game (iPad, Android, Vita).
+- **Flydigi controllers on Windows, take three:** v0.7.2's SDL update found the Vader 4 Pro, but it
+  shows up as two "Xbox 360 Controller" devices, and its input comes on the second, which was never
+  opened, so the pad looked found but did nothing. Now every controller is opened, and the one you
+  press or move takes over. Every controller SDL finds is still written to `cr2view.log`.
+- **The story goes on after the opening battle:** losing to Neron in the opening, as the story has
+  it, sent v0.7.0 - v0.7.2 back to the title screen instead of on into the story
+  ([#5](https://github.com/DuIslingr/CR2-U/issues/5)). A battle's way out was also taken for the one
+  of a battle run on its own, which ends at the title. Escapes and the story's other battles could
+  hit the same path. They all go back to the story now.
 
 ### Thanks to metastigma
 
-[metastigma](https://github.com/metastigma) reported the Flydigi problem and worked out the Windows
-SDL setup in their fork ([CRO-U-metastigma#42](https://github.com/metastigma/CRO-U-metastigma/pull/42)).
+[metastigma](https://github.com/metastigma) sent the log that showed the Vader 4 Pro's two devices
+(CRO-U #4).
 
 ## Downloads
 
@@ -56,7 +51,7 @@ The README's "What you need" section lists which releases of the game work and w
 
 ## Good to know
 
-- **Android, updating:** v0.7.2 installs over v0.7.1, v0.7.0 and v0.5.0, keeping your game files and saves.
+- **Android, updating:** v0.7.3 installs over v0.7.2, v0.7.1, v0.7.0 and v0.5.0, keeping your game files and saves.
 - **No game data is included.** You need your own copy; the port reads it at run time.
 - **Tested on:** Linux (played), Windows (under Wine). The macOS, Android and iOS builds are made
   by CI. Reports are welcome.

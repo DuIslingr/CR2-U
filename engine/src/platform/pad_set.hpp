@@ -12,10 +12,20 @@ namespace crinput {
 class PadSet {
 public:
     SDL_Gamepad* active() const { return pad_; }
+    // The pads a test takes, by joystick id - its own virtual ones - while it runs (none: every pad, as in play). Another
+    // session's virtual "Xbox 360 Controller" (Vita3K driven through uinput) cost CR3-U's suite three battle cases; as
+    // CRO-U's 80f34cb, CR3-U's 537c560: an outside pad is never opened, taken nor handed over to
+    std::vector<SDL_JoystickID> allow;
+    bool allowed(SDL_JoystickID id) const {
+        if (allow.empty()) return true;
+        for (SDL_JoystickID a : allow)
+            if (a == id) return true;
+        return false;
+    }
     // SDL_EVENT_GAMEPAD_ADDED: opened; the active one if none is (or the one held went quiet: a wireless pad's
     // receiver keeps a dead handle). True when the active pad changed
     bool added(SDL_JoystickID id) {
-        if (find(id)) return false;
+        if (!allowed(id) || find(id)) return false;
         SDL_Gamepad* g = SDL_OpenGamepad(id);
         if (!g) return false;
         if (!pad_ || !SDL_GamepadConnected(pad_)) {
@@ -44,7 +54,7 @@ public:
             int count = 0;
             if (SDL_JoystickID* ids = SDL_GetGamepads(&count)) {
                 for (int k = 0; k < count && !pad_; ++k)
-                    if (ids[k] != id) pad_ = SDL_OpenGamepad(ids[k]);
+                    if (ids[k] != id && allowed(ids[k])) pad_ = SDL_OpenGamepad(ids[k]);
                 SDL_free(ids);
             }
         }
@@ -56,7 +66,7 @@ public:
         SDL_JoystickID id = 0;
         if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) id = e.gbutton.which;
         else if (e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION && std::abs(int(e.gaxis.value)) > 16000) id = e.gaxis.which;
-        if (!id || (pad_ && SDL_GetGamepadID(pad_) == id)) return false;
+        if (!id || !allowed(id) || (pad_ && SDL_GetGamepadID(pad_) == id)) return false;
         for (size_t k = 0; k < more_.size(); ++k)
             if (SDL_GetGamepadID(more_[k]) == id) {
                 SDL_Gamepad* was = pad_;

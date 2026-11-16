@@ -410,11 +410,16 @@ int padControlsSelfTest() {
       // second): both opened, the first the active one; a button, then a stick past half way, on the other makes it
       // active, the first staying open; the active one gone, the open other takes over
         crinput::PadSet pads;
+        // (an outside pad first - another session's, listed ahead of the test's own -: never opened, taken nor handed over to)
+        desc.name = "Xbox 360 Controller (another session's)";
+        const SDL_JoystickID outside = SDL_AttachVirtualJoystick(&desc);
+        SDL_Joystick* so = outside ? SDL_OpenJoystick(outside) : nullptr;
         desc.name = "CR2-U test pad (first half)";
         const SDL_JoystickID a = SDL_AttachVirtualJoystick(&desc);
         desc.name = "CR2-U test pad (second half)";
         const SDL_JoystickID b = SDL_AttachVirtualJoystick(&desc);
         SDL_Joystick* sb = b ? SDL_OpenJoystick(b) : nullptr;
+        pads.allow = {a, b};
         auto feed = [&] { // (the events as the window's loop takes them)
             SDL_UpdateJoysticks();
             SDL_Event e;
@@ -425,7 +430,15 @@ int padControlsSelfTest() {
         };
         feed();
         auto activeId = [&] { return pads.active() ? SDL_GetGamepadID(pads.active()) : 0; };
-        check(a && b && sb && pads.open() == 2 && activeId() == a, "one pad as two: both opened, the first active");
+        check(a && b && sb && pads.open() == 2 && activeId() == a, "one pad as two: both opened, the first active (the outside pad not)");
+        if (so) {
+            SDL_SetJoystickVirtualButton(so, SDL_GAMEPAD_BUTTON_SOUTH, true);
+            feed();
+            SDL_SetJoystickVirtualButton(so, SDL_GAMEPAD_BUTTON_SOUTH, false);
+            feed();
+        }
+        pads.activity([&] { SDL_Event e{}; e.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN, e.gbutton.which = outside; return e; }());
+        check(outside && activeId() == a && pads.open() == 2, "an outside pad's button: not taken");
         SDL_SetJoystickVirtualButton(sb, SDL_GAMEPAD_BUTTON_SOUTH, true);
         feed();
         SDL_SetJoystickVirtualButton(sb, SDL_GAMEPAD_BUTTON_SOUTH, false);
@@ -439,8 +452,12 @@ int padControlsSelfTest() {
         SDL_DetachVirtualJoystick(a);
         feed();
         check(activeId() == b && pads.open() == 1, "the active pad gone: the open other takes over");
+        SDL_DetachVirtualJoystick(b); // (its removal: the fallback walks SDL's pads - the outside one among them)
+        feed();
+        check(!pads.active() && pads.open() == 0, "the test's last pad gone: the outside pad not handed over to");
         pads.closeAll();
-        SDL_DetachVirtualJoystick(b);
+        if (so) SDL_CloseJoystick(so);
+        SDL_DetachVirtualJoystick(outside);
     }
     SDL_Quit();
     std::printf("viewer pad controls: %d problems\n", problems);
@@ -1612,7 +1629,8 @@ int main(int argc, char** argv) {
             desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
             desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
             desc.name = "CR2-U test controller";
-            if (const SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc)) testPad = SDL_OpenJoystick(id);
+            if (const SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc))
+                testPad = SDL_OpenJoystick(id), pads.allow = {id}; // (the run's own pad alone: no other session's)
             std::string all = ps;
             for (size_t at = 0; at < all.size();) {
                 const size_t sp = std::min(all.find(' ', at), all.size());

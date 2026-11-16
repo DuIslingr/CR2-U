@@ -55,6 +55,7 @@
 #include "gfx/cache_trim.hpp"
 #include "platform/atomic_file.hpp"
 #include "platform/lifecycle_clock.hpp"
+#include "platform/pad_set.hpp"
 #include "viewer/setup.hpp"
 
 using namespace cr2_viewer;
@@ -405,6 +406,42 @@ int padControlsSelfTest() {
     SDL_CloseGamepad(pad);
     SDL_CloseJoystick(stick);
     SDL_DetachVirtualJoystick(id);
+    { // One pad as two (CRO-U #4: a Flydigi Vader 4 Pro on Windows, two "Xbox 360 Controller" devices, its input on the
+      // second): both opened, the first the active one; a button, then a stick past half way, on the other makes it
+      // active, the first staying open; the active one gone, the open other takes over
+        crinput::PadSet pads;
+        desc.name = "CR2-U test pad (first half)";
+        const SDL_JoystickID a = SDL_AttachVirtualJoystick(&desc);
+        desc.name = "CR2-U test pad (second half)";
+        const SDL_JoystickID b = SDL_AttachVirtualJoystick(&desc);
+        SDL_Joystick* sb = b ? SDL_OpenJoystick(b) : nullptr;
+        auto feed = [&] { // (the events as the window's loop takes them)
+            SDL_UpdateJoysticks();
+            SDL_Event e;
+            while (SDL_PollEvent(&e))
+                if (e.type == SDL_EVENT_GAMEPAD_ADDED) pads.added(e.gdevice.which);
+                else if (e.type == SDL_EVENT_GAMEPAD_REMOVED) pads.removed(e.gdevice.which);
+                else pads.activity(e);
+        };
+        feed();
+        auto activeId = [&] { return pads.active() ? SDL_GetGamepadID(pads.active()) : 0; };
+        check(a && b && sb && pads.open() == 2 && activeId() == a, "one pad as two: both opened, the first active");
+        SDL_SetJoystickVirtualButton(sb, SDL_GAMEPAD_BUTTON_SOUTH, true);
+        feed();
+        SDL_SetJoystickVirtualButton(sb, SDL_GAMEPAD_BUTTON_SOUTH, false);
+        feed();
+        check(activeId() == b && pads.open() == 2, "one pad as two: a button on the second makes it active, the first still open");
+        pads.activity([&] { SDL_Event e{}; e.type = SDL_EVENT_GAMEPAD_AXIS_MOTION, e.gaxis.which = a, e.gaxis.value = 12000; return e; }());
+        check(activeId() == b, "a stick barely pushed on the other: not taken");
+        pads.activity([&] { SDL_Event e{}; e.type = SDL_EVENT_GAMEPAD_AXIS_MOTION, e.gaxis.which = a, e.gaxis.value = -20000; return e; }());
+        check(activeId() == a, "a stick past half way on the other: taken");
+        if (sb) SDL_CloseJoystick(sb);
+        SDL_DetachVirtualJoystick(a);
+        feed();
+        check(activeId() == b && pads.open() == 1, "the active pad gone: the open other takes over");
+        pads.closeAll();
+        SDL_DetachVirtualJoystick(b);
+    }
     SDL_Quit();
     std::printf("viewer pad controls: %d problems\n", problems);
     return problems ? 1 : 0;
@@ -1536,6 +1573,7 @@ int main(int argc, char** argv) {
         // the arrows, repeating as InputEquipment's do (after 0.6 s, then every 0.08 s), L / R a list's
         // page, START the title's "Please Touch", □ held the fast-forward; △ (the port's own: the Vita's is
         // a touch) the field's tab. On the field the left stick walks, a long push running
+        crinput::PadSet pads; // (every gamepad opened; the active one `pad`, the last touched - PadSet)
         SDL_Gamepad* pad = nullptr;
         SDL_Keycode padDir = 0;
         Uint64 padDirNext = 0;
@@ -1719,27 +1757,22 @@ int main(int argc, char** argv) {
                     const char* name = SDL_GetJoystickNameForID(id);
                     SDL_Log("joystick: %s (%04x:%04x, type %d)%s", name ? name : "(unnamed)", unsigned(SDL_GetJoystickVendorForID(id)),
                             unsigned(SDL_GetJoystickProductForID(id)), int(SDL_GetJoystickTypeForID(id)), SDL_IsGamepad(id) ? "" : " - not a gamepad to SDL");
-                } else if (e.type == SDL_EVENT_GAMEPAD_ADDED) {
-                    // (taken while none is in use - or the one held went quiet: a wireless pad's receiver keeps a dead handle)
-                    if (!pad || !SDL_GamepadConnected(pad))
-                        if (SDL_Gamepad* added = SDL_OpenGamepad(e.gdevice.which)) {
-                            if (pad) SDL_CloseGamepad(pad), padDir = 0, padDirNext = 0;
-                            pad = added;
-                            SDL_Log("controller: %s", SDL_GetGamepadName(pad));
-                        }
-                } else if (e.type == SDL_EVENT_GAMEPAD_REMOVED) {
-                    if (pad && SDL_GetGamepadID(pad) == e.gdevice.which) {
-                        SDL_CloseGamepad(pad), pad = nullptr, padDir = 0, padDirNext = 0;
-                        int count = 0; // (another still connected: that one, not none until a new one comes)
-                        if (SDL_JoystickID* ids = SDL_GetGamepads(&count)) {
-                            for (int k = 0; k < count && !pad; ++k)
-                                if (ids[k] != e.gdevice.which) pad = SDL_OpenGamepad(ids[k]);
-                            SDL_free(ids);
-                        }
+                } else if (e.type == SDL_EVENT_GAMEPAD_ADDED || e.type == SDL_EVENT_GAMEPAD_REMOVED) {
+                    // (every one opened - a pad may come as two devices, its input on the second; the active one: the first,
+                    // then the last touched; its going hands over to another open one - PadSet)
+                    const bool changed = e.type == SDL_EVENT_GAMEPAD_ADDED ? pads.added(e.gdevice.which) : pads.removed(e.gdevice.which);
+                    pad = pads.active();
+                    if (changed) {
+                        padDir = 0, padDirNext = 0;
                         if (pad) SDL_Log("controller: %s", SDL_GetGamepadName(pad));
                     }
-                } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad) {
-                    if (const SDL_Keycode key = v.padButtonKey(SDL_GamepadButton(e.gbutton.button))) pushKey(key);
+                } else if (e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION) {
+                    if (pads.activity(e)) // (a stick or trigger past half way on another open pad: that one taken)
+                        pad = pads.active(), padDir = 0, padDirNext = 0, SDL_Log("controller: %s (taken)", SDL_GetGamepadName(pad));
+                } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+                    if (pads.activity(e)) // (a button on another open pad: that one taken, the press its own)
+                        pad = pads.active(), padDir = 0, padDirNext = 0, SDL_Log("controller: %s (taken)", SDL_GetGamepadName(pad));
+                    if (const SDL_Keycode key = pad ? v.padButtonKey(SDL_GamepadButton(e.gbutton.button)) : 0) pushKey(key);
                 } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
                     v.pointerCancelled = false;
                     v.pointerDown = true;

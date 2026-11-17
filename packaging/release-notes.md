@@ -1,6 +1,7 @@
 # CR2-U v0.7.4
 
-The port's own menus now come in nine languages. Everything in v0.7.0's - v0.7.3's notes still applies.
+The port's own menus now come in nine languages, and a fan translation of the game's text can be added
+as a language of its own. Everything in v0.7.0's - v0.7.3's notes still applies.
 
 ## New
 
@@ -14,6 +15,13 @@ The port's own menus now come in nine languages. Everything in v0.7.0's - v0.7.3
     `engine/lang/README.md`) in your game folder or the profile folder, and it is read first.
   - Only the shared strings' Russian has been written by a person (metastigma's); the rest of each
     language is a machine translation, not yet reviewed by native speakers. Corrections are welcome.
+- **Fan translations:** a translation of the game's text - the game's files it changed, `message/*.dat`
+  with the translated text in English's place and any redrawn art, `images/*.img` - goes in
+  `translation/ru/` (named by its language) in the game folder or the profile folder. It is then a
+  language of its own after the game's, e.g. "Русский" in Options > Language; English stays, and
+  *Menu Language*'s Auto follows it. The `.zip`, `.rar` or `.7z` a translation comes in can be dropped
+  into `translation/` as it is: it is unpacked on the next start. A file the translation doesn't
+  have stays the game's English. The README and `translation/README.txt` have the details.
 
 ## Fixed
 
@@ -28,7 +36,9 @@ The port's own menus now come in nine languages. Everything in v0.7.0's - v0.7.3
 
 [metastigma](https://github.com/metastigma) asked for the menus in every language (CRO-U #10) and
 wrote the Russian of the strings CRO-U shares
-([CRO-U-metastigma#51](https://github.com/metastigma/CRO-U-metastigma/pull/51)).
+([CRO-U-metastigma#51](https://github.com/metastigma/CRO-U-metastigma/pull/51)). They also asked for
+the fan translation folder and sent the first files of their Russian translation to build it with
+(CRO-U #11).
 
 ## Downloads
 

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <map>
 
 #ifdef __APPLE__
 #include <CoreText/CoreText.h>
@@ -44,6 +45,7 @@ struct TextRasterizer::Impl {
     FT_Library lib = nullptr;
     FT_Face face = nullptr;
     std::vector<FT_Face> fallbacks;
+    std::map<FT_Face, bool> wideCyrillic; // (fullWidthCyrillic's, per face)
     std::vector<uint8_t> bytes; // (a face from memory reads them while it lives)
     ~Impl() {
         if (face) FT_Done_Face(face);
@@ -72,6 +74,8 @@ bool TextRasterizer::load(const std::string& path, std::string* error, int face)
     impl_->face = f;
     impl_->bytes.clear();
     path_ = path;
+    impl_->wideCyrillic.clear(); // (a face freed: its address may come back)
+    ++generation_;
     return true;
 }
 
@@ -89,6 +93,8 @@ bool TextRasterizer::loadMemory(std::vector<uint8_t> bytes, const std::string& n
     impl_->face = f;
     impl_->bytes = std::move(bytes);
     path_ = name;
+    impl_->wideCyrillic.clear(); // (a face freed: its address may come back)
+    ++generation_;
     return true;
 }
 
@@ -101,6 +107,7 @@ bool TextRasterizer::addFallback(const std::string& path, std::string* error, in
         return false;
     }
     impl_->fallbacks.push_back(f);
+    ++generation_;
     return true;
 }
 
@@ -164,6 +171,30 @@ int TextRasterizer::covers(const std::string& path, const std::string& utf8) {
     return got;
 }
 
+bool TextRasterizer::drawsAll(const std::string& utf8) const {
+    if (!impl_->face) return false;
+    for (uint32_t cp : codePoints(utf8)) {
+        if (cp == '\n' || cp == '\r' || cp == '\t' || FT_Get_Char_Index(impl_->face, cp)) continue;
+        bool any = false;
+        for (FT_Face b : impl_->fallbacks) any = any || FT_Get_Char_Index(b, cp) != 0;
+        if (!any) return false;
+    }
+    return true;
+}
+
+// whether a face draws Cyrillic full-width, as the Japanese ones do (JIS X 0208's letters: the game's TypeBank Gothic,
+// Noto Sans CJK JP): its А at least 0.8 em wide; a face without Cyrillic, no
+bool TextRasterizer::fullWidthCyrillic(void* face) const {
+    FT_Face f = static_cast<FT_Face>(face);
+    auto known = impl_->wideCyrillic.find(f);
+    if (known != impl_->wideCyrillic.end()) return known->second;
+    bool wide = false;
+    if (FT_UInt g = FT_Get_Char_Index(f, 0x410); g && !FT_Load_Glyph(f, g, FT_LOAD_NO_SCALE))
+        wide = f->units_per_EM && float(f->glyph->metrics.horiAdvance) >= 0.8f * float(f->units_per_EM);
+    impl_->wideCyrillic[f] = wide;
+    return wide;
+}
+
 Image TextRasterizer::render(const std::string& utf8, int sizePx, int& width, int& height, std::vector<float>* penX, int border) {
     Image img;
     width = height = 0;
@@ -196,6 +227,13 @@ Image TextRasterizer::render(const std::string& utf8, int sizePx, int& width, in
         for (size_t k = 0; !g && k < impl_->fallbacks.size(); ++k) // (the first font without it: a fallback's)
             if (FT_UInt h = FT_Get_Char_Index(impl_->fallbacks[k], cp)) gf = impl_->fallbacks[k], g = h;
         if (!g) gf = f; // (none has it: the first's missing glyph)
+        else if (cp >= 0x400 && cp <= 0x52f && fullWidthCyrillic(gf)) // (Cyrillic - the port's own text in Russian, a fan translation:
+            for (FT_Face b : impl_->fallbacks)                          // a Japanese face's full-width letters, a fallback's proportional ones first)
+                if (b != gf && !fullWidthCyrillic(b))
+                    if (FT_UInt h = FT_Get_Char_Index(b, cp)) {
+                        gf = b, g = h;
+                        break;
+                    }
         if (prev && g && gf == prevFace && FT_HAS_KERNING(gf)) {
             FT_Vector k;
             if (!FT_Get_Kerning(gf, prev, g, FT_KERNING_DEFAULT, &k)) advance += float(k.x) / 64.0f;
@@ -281,6 +319,7 @@ bool TextRasterizer::addFallback(const std::string& path, std::string* error, in
     return false;
 }
 int TextRasterizer::covers(const std::string&, const std::string&) { return -1; }
+bool TextRasterizer::drawsAll(const std::string&) const { return false; }
 bool TextRasterizer::appleFont(const std::string&, std::string&, int&) { return false; }
 Image TextRasterizer::render(const std::string&, int, int& width, int& height, std::vector<float>*, int) {
     width = height = 0;

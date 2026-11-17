@@ -3527,7 +3527,11 @@ void Viewer::drawSkillList(const std::vector<ListRow>& rows, int focused, float 
         // Spanish - Cr3UtilOptionLanguage 1..4 -, then SetTextRender's 4 less)
         const float rowSize = optionLanguage >= 1 && optionLanguage <= 4 ? 22.0f : 24.0f;
         if (r.worn) uiTextTint[2] = 0;
-        if (uiJoint(b, "typeS_L00", x, y)) drawBorderedText(r.name, rowSize, x, y, w, h, true, r.selectable || r.worn ? 1.0f : 0.5f);
+        if (uiJoint(b, "typeS_L00", x, y)) {
+            float rx = 0, ry = 0; // (fit: up to the number's place, the row's right)
+            const float most = r.fit && uiJoint(b, "call_dotNum_id01", rx, ry) && rx > x ? rx - x : 0.0f;
+            drawBorderedText(r.name, rowSize, x, y, w, h, true, r.selectable || r.worn ? 1.0f : 0.5f, most);
+        }
         uiTextTint[2] = 1;
         if (r.number >= 0 && uiJoint(b, "call_dotNum_id01", x, y)) // (a price: SetOZNumbers' 3 places on, for its "/OZ")
             drawDigits(r.number, r.lacking ? 100 : 90, r.price ? 7 : 4, x, y, uiProjection(w, h), r.selectable || r.lacking ? 1.0f : 0.5f, 1, false, r.price ? 3 : 0);

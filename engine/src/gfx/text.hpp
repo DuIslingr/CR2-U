@@ -31,6 +31,10 @@ public:
     // Hangul, simplified Chinese), tried in the order added; false: none could be read
     bool addFallback(const std::string& path, std::string* error = nullptr, int face = 0);
     const std::string& path() const { return path_; }
+    // whether this font or a fallback draws every code point of `utf8`; generation(): one more at each font
+    // loaded or added (what drawsAll said may change)
+    bool drawsAll(const std::string& utf8) const;
+    int generation() const { return generation_; }
 
     // one line of UTF-8 at `sizePx` (rows top first): white, the coverage in alpha. Empty when the
     // text draws nothing. `width` / `height` the bitmap's (Text2Bitmap's measureText / font metrics)
@@ -59,9 +63,11 @@ public:
     static std::vector<std::string> androidFonts(const std::string& root);
 
 private:
+    bool fullWidthCyrillic(void* face) const; // (an FT_Face)
     struct Impl;
     std::unique_ptr<Impl> impl_;
     std::string path_;
+    int generation_ = 0;
 };
 
 } // namespace cr2

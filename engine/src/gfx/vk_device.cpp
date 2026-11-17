@@ -12,6 +12,7 @@
 // DLSS, and the UI draws over that.
 
 #include "gfx/render_device.hpp"
+#include "platform/ui_text.hpp" // (N_: the reasons shown in the Options, translated there)
 
 #ifdef CR_HAVE_VULKAN
 
@@ -714,19 +715,19 @@ public:
 
     std::string upscalerProblem(Upscaler m) const override {
         if (m == Upscaler::Off) return "";
-        if (!upscaleCaps_) return "this GPU lacks what temporal upscaling needs";
-        if (m == Upscaler::Fsr3) return fsrSupported_ ? "" : "this GPU can't run FSR 3.1";
+        if (!upscaleCaps_) return N_("this GPU lacks what temporal upscaling needs");
+        if (m == Upscaler::Fsr3) return fsrSupported_ ? "" : N_("this GPU can't run FSR 3.1");
         if (m == Upscaler::MetalFx) {
 #ifdef __APPLE__
             return metalObjects_ ? metalfx_.problem() : "needs MoltenVK's VK_EXT_metal_objects";
 #else
-            return "MetalFX is Apple's: macOS only";
+            return N_("MetalFX is Apple's: macOS only");
 #endif
         }
         if (m == Upscaler::Fsr4) {
             if (!fsr4_.problem().empty()) return fsr4_.problem();
             if ((sceneDepthAspect_ & VK_IMAGE_ASPECT_STENCIL_BIT) && !(maintenance8_ && sceneDepthFormat_ == VK_FORMAT_D32_SFLOAT_S8_UINT))
-                return "FSR 4 needs VK_KHR_maintenance8 and a D32S8 depth here (the scene's depth has a stencil)";
+                return N_("FSR 4 needs VK_KHR_maintenance8 and a D32S8 depth here (the scene's depth has a stencil)");
             return "";
         }
         return dlss_.problem();

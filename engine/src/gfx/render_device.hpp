@@ -4,6 +4,7 @@
 // clip-space matrices and per-draw material state (here MVGL's: GL blend factors, culling, depth,
 // and either the game's generated shaders' shading - shading.glsl - or a fixed path).
 
+#include "platform/ui_text.hpp" // (N_)
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -213,7 +214,7 @@ public:
     virtual void setSamples(int /*n*/) {}
 
     // Temporal upscaling: whether a mode can run here ("" = yes, else why not)
-    virtual std::string upscalerProblem(Upscaler m) const { return m == Upscaler::Off ? "" : "needs the Vulkan renderer"; }
+    virtual std::string upscalerProblem(Upscaler m) const { return m == Upscaler::Off ? "" : N_("needs the Vulkan renderer"); }
     virtual void setUpscaler(const UpscaleSettings& /*s*/) {}
     // The scene's size in a frame of this size (smaller while an upscaler is on)
     virtual void sceneSize(int w, int h, int& sw, int& sh) const {

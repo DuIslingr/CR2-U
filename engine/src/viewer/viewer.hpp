@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/vita_import_ui.hpp"
+#include "platform/ui_text.hpp"
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -55,6 +56,9 @@
 std::string storedData(); // (settings.ini's data=: below)
 
 namespace cr2_viewer {
+
+using uitext::tr; // the port's own text in the player's language (platform/ui_text.hpp)
+using uitext::trf;
 
 using cr2::Mat4;
 
@@ -180,7 +184,11 @@ struct Viewer {
             int exp = 1, sp = 1; // (1, 2, 3, 5, 10)
             bool any() const { return hp || mp || oneHit || fullBreak || fullCharge || firstStrike || noBattles || maxOz || exp > 1 || sp > 1; }
         } cheats;
+        std::string uiLang = "auto"; // the Menu Language (the port's own text, platform/ui_text.hpp): "auto" (the game's language's) or a code
     } settings;
+    // that language set (applyUiLanguage: CR_UI_LANG over it) - again as the game's language changes, for "auto"
+    void applyUiLanguage();
+    int uiLangFor = -2; // (the optionLanguage it was set for)
     // the cheats outside battle, each frame: the party's MP full between battles (Infinite MP), the Oz at
     // its most (Max Oz)
     void applyFieldCheats();
@@ -1478,6 +1486,7 @@ struct Viewer {
         bool price = false;     // (the shops': its number an OZ price - ScrollListItem::SetOZNumbers)
         bool lacking = false;   // (BattleSkillListMenu: its MP / charge more than there is - SetNumbers' set 100, red)
         bool worn = false;      // (ShopWepon*ListMenu: the one the character wears - its name yellow, 1 1 0)
+        bool fit = false;       // (the port's own settings: a name past the row's right end - a translation's - squeezed into it)
     };
     static void sopiaRowIcon(const cr2::BattleData::Sopia& so, ListRow& r);
     // the rows centred on the focused one (ScrollListMenu::PartsPose: two either side shown; the

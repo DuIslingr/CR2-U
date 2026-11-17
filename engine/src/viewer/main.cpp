@@ -149,6 +149,25 @@ std::vector<std::string> dataPlaces() {
 #endif
     return out;
 }
+// The port's own text (platform/ui_text.hpp) before the viewer starts - the setup's dialogs: the catalogs' folders (lang/ in
+// a game folder or the profile folder: read before the built-in ones) and the language settings.ini names (Menu Language);
+// "auto" and a first start: the system's (the game's own language comes with its system data - Viewer::applyUiLanguage)
+static void startUiText() {
+    for (const std::string& place : dataPlaces()) uitext::addFolder(place + "lang/");
+    uitext::addFolder(Viewer::savePath("lang/")); // (the profile folder's - a phone's)
+    std::string want = "auto";
+    if (std::FILE* f = std::fopen(Viewer::savePath(Viewer::settingsFile()).c_str(), "rb")) {
+        char line[256];
+        while (std::fgets(line, sizeof line, f))
+            if (std::strncmp(line, "ui_lang=", 8) == 0) want.assign(line + 8, std::strcspn(line + 8, "\r\n"));
+        std::fclose(f);
+    }
+    const char* forced = SDL_getenv("CR_UI_LANG"); // (tests, captures)
+    if (forced && *forced) want = forced;
+    if (want.empty() || want == "auto") want = uitext::systemLanguage();
+    if (!uitext::setLanguage(want)) uitext::setLanguage("en");
+    SDL_Log("interface text: %s", uitext::language().c_str());
+}
 // settings.ini's data= set (the setup's), its other lines kept
 void storeData(const std::string& path) {
     char* dir = SDL_GetPrefPath("DuIslingr", "CR2-U");
@@ -661,6 +680,26 @@ int newSessionSelfTest() {
         Viewer::battleWayOut(false, true, false, false, true) != 0 || Viewer::battleWayOut(true, false, false, false, false) != 0) {
         ++problems; std::puts("new session FAILED: a battle of the story's way out went to the title");
     }
+    if (!SDL_getenv("CR_UI_LANG")) { // Menu Language (platform/ui_text): first; Auto follows the game's language, a step names English, then a catalog
+        Viewer v;
+        v.optionLanguage = 1;
+        v.applyUiLanguage();
+        std::vector<Viewer::SettingRow> rows = v.settingRows();
+        bool ok = !rows.empty() && rows[0].label == "Menu Language" && rows[0].value == "Auto (English)";
+        v.optionLanguage = 3; // (German)
+        v.applyUiLanguage();
+        ok = ok && uitext::language() == "de" && v.settingRows()[0].label != "Menu Language";
+        rows = v.settingRows();
+        rows[0].change(1);
+        ok = ok && v.settings.uiLang == "en" && uitext::language() == "en";
+        rows = v.settingRows();
+        rows[0].change(1);
+        ok = ok && v.settings.uiLang != "en" && v.settings.uiLang != "auto" && uitext::language() == v.settings.uiLang &&
+             v.settingRows()[0].label != "Menu Language";
+        std::printf("menu language: %zu languages, Auto -> en -> %s: %s\n", uitext::languages().size(), v.settings.uiLang.c_str(), ok ? "ok" : "WRONG");
+        if (!ok) { ++problems; std::puts("new session FAILED: the Menu Language row"); }
+        uitext::setLanguage("en");
+    }
     if (!leaderByDefault(true,true,false,false) || leaderByDefault(true,false,false,false) || leaderByDefault(false,true,false,false)) {
         ++problems; std::puts("new session FAILED: a game from the title has no leader");
     }
@@ -941,6 +980,7 @@ int main(int argc, char** argv) {
             for (const char* f : {"ios", "android", "vita", "font"}) SDL_CreateDirectory((places.front() + f).c_str());
     }
 #endif
+    startUiText(); // (the setup's dialogs in the player's language)
     if (data.empty()) { // (CR2_DATA, else a copy in a game folder: vita/, android/, ios/ ...)
         searched = dataPlaces();
         for (const std::string& place : searched) unbundle(place + "android");

@@ -36,6 +36,14 @@ target_include_directories(squirrel2 PRIVATE ${THIRD_PARTY_DIR}/squirrel2/squirr
 target_compile_options(squirrel2 PRIVATE $<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w -fno-strict-aliasing>
     $<IF:$<CXX_COMPILER_ID:MSVC>,/FI${CMAKE_CURRENT_SOURCE_DIR}/src/script/squirrel_prefix.h,-include ${CMAKE_CURRENT_SOURCE_DIR}/src/script/squirrel_prefix.h>)
 
+# The port's own interface text in other languages (platform/ui_text.hpp): lang/<code>.po built in (cr2uitext, below)
+file(GLOB UI_TEXT_CATALOGS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/lang/*.po)
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ui_text_catalogs.cpp
+    COMMAND ${CMAKE_COMMAND} -DLANG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/lang -DOUT=${CMAKE_CURRENT_BINARY_DIR}/ui_text_catalogs.cpp
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_lang.cmake
+    DEPENDS ${UI_TEXT_CATALOGS} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_lang.cmake
+    COMMENT "Interface text catalogs (lang/*.po)")
+
 # Core library: everything that is not an app entry point, so tools can reuse it
 add_library(cr2core STATIC
     src/assets/mvgl.cpp
@@ -411,7 +419,11 @@ elseif(CR2_GLES)
     target_compile_definitions(cr2view PRIVATE CR_GLES=1)
     message(STATUS "GL device: OpenGL ES 3.0 (${CR2_GLES_LIBRARY})")
 endif()
-target_link_libraries(cr2view PRIVATE cr2core SDL3::SDL3)
+# (its own library: it reads loose catalogs and the system's locale through SDL, which cr2core goes without)
+add_library(cr2uitext STATIC src/platform/ui_text.cpp ${CMAKE_CURRENT_BINARY_DIR}/ui_text_catalogs.cpp)
+target_include_directories(cr2uitext PUBLIC src)
+target_link_libraries(cr2uitext PUBLIC SDL3::SDL3)
+target_link_libraries(cr2view PRIVATE cr2core cr2uitext SDL3::SDL3)
 # The setup (viewer/setup.cpp): a Vita NoNpDrm dump's files decrypted (assets/vita_pfs, its SELF
 # programs too - crypto/: the project's own, in cr2core) - the first start's, a phone's too, and one
 # copied into vita/ on any start -, and a dump's archive - .rar, .7z, .zip, .vpk - unpacked (libarchive:
@@ -495,8 +507,17 @@ endif()
 if(NOT ANDROID AND NOT IOS)
     enable_testing()
     add_executable(vita-import-tests tools/vita_import_test.cpp)
-    target_link_libraries(vita-import-tests PRIVATE cr2core SDL3::SDL3)
+    target_link_libraries(vita-import-tests PRIVATE cr2core cr2uitext SDL3::SDL3)
     add_test(NAME vita-import COMMAND vita-import-tests)
+    add_executable(ui-text-tests tools/ui_text_test.cpp)
+    target_include_directories(ui-text-tests PRIVATE src)
+    target_link_libraries(ui-text-tests PRIVATE cr2uitext SDL3::SDL3)
+    add_test(NAME ui-text COMMAND ui-text-tests)
+    # the catalogs up to date with the code's strings (tools/ui_strings.py)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME ui-strings COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/ui_strings.py --check)
+    endif()
     find_package(Threads REQUIRED)
     add_executable(input-cancel-tests tools/input_cancel_test.cpp)
     target_include_directories(input-cancel-tests PRIVATE src)

@@ -1,0 +1,1064 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: the port's interface text\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: de\n"
+"X-Language-Name: Deutsch\n"
+"Last-Translator: Claude (machine translation, unreviewed)\n"
+
+#: src/gfx/render_device.hpp
+msgid "needs the Vulkan renderer"
+msgstr "benötigt den Vulkan-Renderer"
+
+#: src/gfx/vk_device.cpp
+msgid "this GPU lacks what temporal upscaling needs"
+msgstr "dieser GPU fehlt, was temporales Hochskalieren braucht"
+
+#: src/gfx/vk_device.cpp
+msgid "this GPU can't run FSR 3.1"
+msgstr "diese GPU kann FSR 3.1 nicht ausführen"
+
+#: src/gfx/vk_device.cpp
+msgid "MetalFX is Apple's: macOS only"
+msgstr "MetalFX stammt von Apple: nur unter macOS"
+
+#: src/gfx/vk_device.cpp
+msgid ""
+"FSR 4 needs VK_KHR_maintenance8 and a D32S8 depth here (the scene's depth has a stencil)"
+msgstr ""
+"FSR 4 braucht hier VK_KHR_maintenance8 und eine D32S8-Tiefe (die Tiefe der Szene hat eine Schablone)"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Found {0} save slot(s)."
+msgstr "Gefundene Speicherplätze: {0}."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Existing saves will be backed up."
+msgstr "Vorhandene Spielstände werden gesichert."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Invalid suspend skipped."
+msgstr "Ungültiger Zwischenstand übersprungen."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Import now?"
+msgstr "Jetzt importieren?"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Import failed: {0}"
+msgstr "Import fehlgeschlagen: {0}"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Cannot open the folder picker: {0}"
+msgstr "Ordnerauswahl kann nicht geöffnet werden: {0}"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Imported {0} save slot(s)."
+msgstr "Speicherplätze importiert: {0}."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Previous saves backed up."
+msgstr "Bisherige Spielstände wurden gesichert."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Load from the title."
+msgstr "Im Titelbildschirm laden."
+
+#: src/viewer/setup.cpp
+msgid "Any file"
+msgstr "Beliebige Datei"
+
+#: src/viewer/setup.cpp
+msgid "can't be read"
+msgstr "kann nicht gelesen werden"
+
+#: src/viewer/setup.cpp
+msgid "not a zip (no central directory) - an .ipa is one"
+msgstr "kein Zip (kein zentrales Verzeichnis) – eine .ipa ist eines"
+
+#: src/viewer/setup.cpp
+msgid "its directory is past its end"
+msgstr "das Verzeichnis liegt hinter dem Dateiende"
+
+#: src/viewer/setup.cpp
+msgid "a broken directory entry"
+msgstr "ein defekter Verzeichniseintrag"
+
+#: src/viewer/setup.cpp
+msgid "{0}: no local header"
+msgstr "{0}: kein lokaler Header"
+
+#: src/viewer/setup.cpp
+msgid "{0}: can't be written"
+msgstr "{0}: kann nicht geschrieben werden"
+
+#: src/viewer/setup.cpp
+msgid "{0}: can't be unpacked"
+msgstr "{0}: kann nicht entpackt werden"
+
+#: src/viewer/setup.cpp
+msgid "A file picked can't be read ({0})."
+msgstr "Eine gewählte Datei kann nicht gelesen werden ({0})."
+
+#: src/viewer/setup.cpp
+msgid ""
+"A file picked ({0} GB) needs about {1} GB free in {2} - the copy and what it unpacks to -, and there is {3} GB."
+msgstr ""
+"Eine gewählte Datei ({0} GB) braucht etwa {1} GB freien Platz in {2} – für die Kopie und das Entpackte –, vorhanden sind {3} GB."
+
+#: src/viewer/setup.cpp
+msgid "Copying the file picked ({0} of {1}) ..."
+msgstr "Gewählte Datei wird kopiert ({0} von {1}) ..."
+
+#: src/viewer/setup.cpp
+msgid "Copying the file picked ..."
+msgstr "Gewählte Datei wird kopiert ..."
+
+#: src/viewer/setup.cpp
+msgid "A file picked can't be copied into {0}"
+msgstr "Eine gewählte Datei kann nicht nach {0} kopiert werden"
+
+#: src/viewer/setup.cpp
+msgid "can't be opened"
+msgstr "kann nicht geöffnet werden"
+
+#: src/viewer/setup.cpp
+msgid "no Payload/<name>.app in it - not an iOS app"
+msgstr "kein Payload/<name>.app darin – keine iOS-App"
+
+#: src/viewer/setup.cpp
+msgid "{0}: can't be made"
+msgstr "{0}: kann nicht angelegt werden"
+
+#: src/viewer/setup.cpp
+msgid "no work.bin (its licence) to decrypt it with"
+msgstr "keine work.bin (die Lizenz) zum Entschlüsseln"
+
+#: src/viewer/setup.cpp
+msgid "its files don't decrypt (a part of the dump missing or damaged?)"
+msgstr ""
+"die Dateien lassen sich nicht entschlüsseln (fehlt ein Teil des Dumps oder ist er beschädigt?)"
+
+#: src/viewer/setup.cpp
+msgid ""
+"its files can't be read with its own work.bin - not a whole NoNpDrm dump"
+msgstr ""
+"die Dateien lassen sich mit der eigenen work.bin nicht lesen – kein vollständiger NoNpDrm-Dump"
+
+#: src/viewer/setup.cpp
+msgid ""
+"this build can't decrypt the Vita's files - install the dump in Vita3K, then choose Vita3K's folder"
+msgstr ""
+"dieser Build kann die Dateien der Vita nicht entschlüsseln – den Dump in Vita3K installieren und dann den Ordner von Vita3K wählen"
+
+#: src/viewer/setup.cpp src/viewer/viewer_gfx.cpp
+msgid "{0}: {1}"
+msgstr "{0}: {1}"
+
+#: src/viewer/setup.cpp
+msgid "{0}: can't be written ({1})"
+msgstr "{0}: kann nicht geschrieben werden ({1})"
+
+#: src/viewer/setup.cpp
+msgid "an entry it can't read (after the start)"
+msgstr "ein Eintrag, der nicht gelesen werden kann (nach dem Anfang)"
+
+#: src/viewer/setup.cpp
+msgid "an entry it can't read (after {0})"
+msgstr "ein Eintrag, der nicht gelesen werden kann (nach {0})"
+
+#: src/viewer/setup.cpp
+msgid ""
+"this build can't open archives - unpack it first, then choose its folder"
+msgstr ""
+"dieser Build kann keine Archive öffnen – zuerst entpacken, dann den Ordner wählen"
+
+#: src/viewer/setup.cpp
+msgid "no fan translation in it (its rePatch/{0}/)"
+msgstr "keine Fan-Übersetzung darin (ihr rePatch/{0}/)"
+
+#: src/viewer/setup.cpp
+msgid "not a SELF"
+msgstr "kein SELF"
+
+#: src/viewer/setup.cpp
+msgid "a broken SELF"
+msgstr "ein defektes SELF"
+
+#: src/viewer/setup.cpp
+msgid "a broken SELF (a segment past its end)"
+msgstr "ein defektes SELF (ein Segment hinter dem Ende)"
+
+#: src/viewer/setup.cpp
+msgid "a SELF of a kind (or key revision) the port has no key for"
+msgstr ""
+"ein SELF einer Art (oder Schlüsselrevision), für die die Portierung keinen Schlüssel hat"
+
+#: src/viewer/setup.cpp
+msgid "its key doesn't open it (its licence isn't its own?)"
+msgstr "sein Schlüssel öffnet es nicht (gehört die Lizenz nicht dazu?)"
+
+#: src/viewer/setup.cpp
+msgid "a broken SELF (no metadata)"
+msgstr "ein defektes SELF (keine Metadaten)"
+
+#: src/viewer/setup.cpp
+msgid "a broken SELF (its metadata)"
+msgstr "ein defektes SELF (seine Metadaten)"
+
+#: src/viewer/setup.cpp
+msgid "a broken SELF (its keys)"
+msgstr "ein defektes SELF (seine Schlüssel)"
+
+#: src/viewer/setup.cpp
+msgid "a broken SELF (an encrypted segment without its key)"
+msgstr "ein defektes SELF (ein verschlüsseltes Segment ohne Schlüssel)"
+
+#: src/viewer/setup.cpp
+msgid "a segment doesn't inflate"
+msgstr "ein Segment lässt sich nicht entpacken"
+
+#: src/viewer/setup.cpp
+msgid "built without zlib"
+msgstr "ohne zlib gebaut"
+
+#: src/viewer/setup.cpp
+msgid "this build can't decrypt the Vita's programs"
+msgstr "dieser Build kann die Programme der Vita nicht entschlüsseln"
+
+#: src/viewer/setup.cpp
+msgid "it needs about {0} GB free in {1}, and there is {2} GB"
+msgstr "es braucht etwa {0} GB freien Platz in {1}, vorhanden sind {2} GB"
+
+#: src/viewer/setup.cpp
+msgid "Decrypting the Vita release ..."
+msgstr "Vita-Version wird entschlüsselt ..."
+
+#: src/viewer/setup.cpp
+msgid "Copying the Vita release ..."
+msgstr "Vita-Version wird kopiert ..."
+
+#: src/viewer/setup.cpp
+msgid "Decrypting the game's add-on ..."
+msgstr "Add-on des Spiels wird entschlüsselt ..."
+
+#: src/viewer/setup.cpp
+msgid "Copying the game's add-on ..."
+msgstr "Add-on des Spiels wird kopiert ..."
+
+#: src/viewer/setup.cpp
+msgid ""
+"{0}: no licence to decrypt it with (the dump's work.bin, Vita3K's ux0/license)"
+msgstr ""
+"{0}: keine Lizenz zum Entschlüsseln (work.bin des Dumps oder ux0/license von Vita3K)"
+
+#: src/viewer/setup.cpp
+msgid ""
+"{0} plays your own copy of {1}. Choose where it is - any one of them; the files it needs are copied into its folder:"
+msgstr ""
+"{0} spielt mit einer eigenen Kopie von {1}. Bitte auswählen, wo sie liegt – eine beliebige der folgenden genügt; die nötigen Dateien werden in den Ordner von {0} kopiert:"
+
+#: src/viewer/setup.cpp
+msgid "Android - the APK and its {0} (both at once)"
+msgstr "Android – die APK und ihre {0} (beide zugleich)"
+
+#: src/viewer/setup.cpp
+msgid "Android - the .apks (or the APK and its asset packs, all at once)"
+msgstr ""
+"Android – die .apks (oder die APK mit ihren Asset-Packs, alle zugleich)"
+
+#: src/viewer/setup.cpp
+msgid "iOS - the .ipa (an unpacked .app: copy it into ios/ over USB)"
+msgstr "iOS – die .ipa (eine entpackte .app per USB nach ios/ kopieren)"
+
+#: src/viewer/setup.cpp
+msgid ""
+"Vita - a NoNpDrm dump: packed (.zip, .rar, .vpk), or its folder copied in over USB"
+msgstr ""
+"Vita – ein NoNpDrm-Dump: gepackt (.zip, .rar, .vpk) oder sein Ordner, per USB hineinkopiert"
+
+#: src/viewer/setup.cpp
+msgid "What is copied into its folder over USB is found with Look again."
+msgstr ""
+"Was per USB in den Ordner kopiert wurde, wird mit „Erneut suchen“ gefunden."
+
+#: src/viewer/setup.cpp
+msgid "iOS - the .ipa (or a file in its unpacked .app)"
+msgstr "iOS – die .ipa (oder eine Datei in der entpackten .app)"
+
+#: src/viewer/setup.cpp
+msgid ""
+"Vita - Vita3K's folder with the game installed (or the game's {0} folder)"
+msgstr ""
+"Vita – der Ordner von Vita3K mit installiertem Spiel (oder der Ordner {0} des Spiels)"
+
+#: src/viewer/setup.cpp
+msgid "Its folder: {0}"
+msgstr "Ordner der Portierung: {0}"
+
+#: src/viewer/setup.cpp
+msgid "In place:"
+msgstr "Vorhanden:"
+
+#: src/viewer/setup.cpp
+msgid "iOS: {0}"
+msgstr "iOS: {0}"
+
+#: src/viewer/setup.cpp
+msgid "Android: {0}"
+msgstr "Android: {0}"
+
+#: src/viewer/setup.cpp
+msgid "Vita: {0}"
+msgstr "Vita: {0}"
+
+#: src/viewer/setup.cpp
+msgid "Its fan translation: {0}"
+msgstr "Fan-Übersetzung: {0}"
+
+#: src/viewer/setup.cpp
+msgid ""
+"More of them add to it (the Vita's voices and music, Android's art); or Start."
+msgstr ""
+"Weitere Versionen ergänzen sie (Stimmen und Musik der Vita, Grafiken von Android) – oder „Starten“."
+
+#: src/viewer/setup.cpp
+msgid "iOS (.ipa)..."
+msgstr "iOS (.ipa)..."
+
+#: src/viewer/setup.cpp
+msgid "Android (APK + OBB)..."
+msgstr "Android (APK + OBB)..."
+
+#: src/viewer/setup.cpp
+msgid "Android (.apks)..."
+msgstr "Android (.apks)..."
+
+#: src/viewer/setup.cpp
+msgid "Vita..."
+msgstr "Vita..."
+
+#: src/viewer/setup.cpp
+msgid "Vita / Vita3K..."
+msgstr "Vita / Vita3K..."
+
+#: src/viewer/setup.cpp
+msgid "Start"
+msgstr "Starten"
+
+#: src/viewer/setup.cpp
+msgid "Look again"
+msgstr "Erneut suchen"
+
+#: src/viewer/setup.cpp
+msgid "Quit"
+msgstr "Beenden"
+
+#: src/viewer/setup.cpp
+msgid "iOS app (.ipa)"
+msgstr "iOS-App (.ipa)"
+
+#: src/viewer/setup.cpp
+msgid "Any file (one in an unpacked .app)"
+msgstr "Beliebige Datei (in einer entpackten .app)"
+
+#: src/viewer/setup.cpp
+msgid ""
+"That isn't an .ipa. Choose the .ipa - or copy the unpacked .app into {0} over USB, then Look again."
+msgstr ""
+"Das ist keine .ipa. Die .ipa wählen – oder die entpackte .app per USB nach {0} kopieren und dann „Erneut suchen“."
+
+#: src/viewer/setup.cpp
+msgid "Unpacking {0} ..."
+msgstr "{0} wird entpackt ..."
+
+#: src/viewer/setup.cpp
+msgid "No {0} data in {1}"
+msgstr "Keine Daten von {0} in {1}"
+
+#: src/viewer/setup.cpp
+msgid "Copying {0} ..."
+msgstr "{0} wird kopiert ..."
+
+#: src/viewer/setup.cpp
+msgid "can't be written"
+msgstr "kann nicht geschrieben werden"
+
+#: src/viewer/setup.cpp
+msgid "{0} isn't {1}'s iOS release."
+msgstr "{0} ist nicht die iOS-Version von {1}."
+
+#: src/viewer/setup.cpp
+msgid "Android (.apk, .obb, .apks)"
+msgstr "Android (.apk, .obb, .apks)"
+
+#: src/viewer/setup.cpp
+msgid "Choose {0}'s Android release: the APK and its {1}, both at once."
+msgstr ""
+"Die Android-Version von {0} wählen: die APK und ihre {1}, beide zugleich."
+
+#: src/viewer/setup.cpp
+msgid "Copying the Android release ..."
+msgstr "Android-Version wird kopiert ..."
+
+#: src/viewer/setup.cpp
+msgid "Not {0}'s Android release (or not all of it):"
+msgstr "Nicht die Android-Version von {0} (oder nicht vollständig):"
+
+#: src/viewer/setup.cpp
+msgid "Choose the APK and its {0}, both at once."
+msgstr "Die APK und ihre {0} wählen, beide zugleich."
+
+#: src/viewer/setup.cpp
+msgid ""
+"The Android release can't be copied into {0} (nor the profile folder's)."
+msgstr ""
+"Die Android-Version kann nicht nach {0} kopiert werden (auch nicht in den Profilordner)."
+
+#: src/viewer/setup.cpp
+msgid "Where is the Vita release?"
+msgstr "Wo ist die Vita-Version?"
+
+#: src/viewer/setup.cpp
+msgid ""
+"A folder - copied into {0} over USB: a NoNpDrm dump's as it was dumped (its app/, and addcont/ for the Prequel Trilogy), Vita3K's ux0, or the game's own folder"
+msgstr ""
+"Ein Ordner – per USB nach {0} kopiert: der eines NoNpDrm-Dumps wie gedumpt (sein app/ und für die Prequel Trilogy addcont/), ux0 von Vita3K oder der eigene Ordner des Spiels"
+
+#: src/viewer/setup.cpp
+msgid ""
+"An archive - a NoNpDrm dump packed as .zip, .rar or .vpk (a .7z: unpack it on a PC)"
+msgstr ""
+"Ein Archiv – ein NoNpDrm-Dump als .zip, .rar oder .vpk (ein .7z am PC entpacken)"
+
+#: src/viewer/setup.cpp
+msgid "Copied in..."
+msgstr "Hineinkopiert..."
+
+#: src/viewer/setup.cpp
+msgid "An archive..."
+msgstr "Ein Archiv..."
+
+#: src/viewer/setup.cpp src/viewer/viewer_gfx.cpp
+msgid "Back"
+msgstr "Zurück"
+
+#: src/viewer/setup.cpp
+msgid "A folder - Vita3K's (or its ux0), the game's own, or a NoNpDrm dump's"
+msgstr ""
+"Ein Ordner – der von Vita3K (oder sein ux0), der des Spiels oder der eines NoNpDrm-Dumps"
+
+#: src/viewer/setup.cpp
+msgid "An archive - a NoNpDrm dump packed as .rar, .7z, .zip or .vpk"
+msgstr "Ein Archiv – ein NoNpDrm-Dump als .rar, .7z, .zip oder .vpk"
+
+#: src/viewer/setup.cpp
+msgid "A folder..."
+msgstr "Ein Ordner..."
+
+#: src/viewer/setup.cpp
+msgid "A Vita dump (.rar, .7z, .zip, .vpk)"
+msgstr "Ein Vita-Dump (.rar, .7z, .zip, .vpk)"
+
+#: src/viewer/setup.cpp
+msgid ""
+"Copy the Vita release's folder into\n"
+"  {0}\n"
+"over USB from a PC - a NoNpDrm dump's as it was dumped (its app/, and addcont/ for the Prequel Trilogy), Vita3K's ux0, or the game's own folder -, then Continue."
+msgstr ""
+"Den Ordner der Vita-Version per USB vom PC nach\n"
+"  {0}\n"
+"kopieren – den eines NoNpDrm-Dumps wie gedumpt (sein app/ und für die Prequel Trilogy addcont/), ux0 von Vita3K oder den eigenen Ordner des Spiels –, dann „Weiter“."
+
+#: src/viewer/setup.cpp
+msgid "Continue"
+msgstr "Weiter"
+
+#: src/viewer/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - install the add-on in Vita3K too, or choose a dump with it."
+msgstr ""
+"Die Prequel Trilogy hat die Daten von {0} in ihrem Add-on (addcont/PCSG00457/{1}), und das liegt nicht neben {2} – das Add-on ebenfalls in Vita3K installieren oder einen Dump mit Add-on wählen."
+
+#: src/viewer/setup.cpp
+msgid ""
+"No {0} ({1}) in {2} - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it."
+msgstr ""
+"Kein {0} ({1}) in {2} – den Ordner von Vita3K, sein ux0, den eigenen Ordner des Spiels oder einen NoNpDrm-Dump davon wählen."
+
+#: src/viewer/setup.cpp
+msgid ""
+"No {0} ({1}) in the archive - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it."
+msgstr ""
+"Kein {0} ({1}) im Archiv – den Ordner von Vita3K, sein ux0, den eigenen Ordner des Spiels oder einen NoNpDrm-Dump davon wählen."
+
+#: src/viewer/setup.cpp
+msgid "The Vita release in {0}: {1}"
+msgstr "Die Vita-Version in {0}: {1}"
+
+#: src/viewer/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - install it in Vita3K too, or choose the dump with it."
+msgstr ""
+"Die Prequel Trilogy hat die Daten von {0} in ihrem Add-on (addcont/PCSG00457/{1}), und das liegt nicht neben {2} – es ebenfalls in Vita3K installieren oder den Dump mit Add-on wählen."
+
+#: src/viewer/setup.cpp
+msgid "{0} isn't {1}'s Vita release as the port reads it."
+msgstr "{0} ist keine Vita-Version von {1}, wie die Portierung sie liest."
+
+#: src/viewer/setup.cpp
+msgid ""
+"The Vita release in {0} can't be copied into {1} (nor the profile folder's)."
+msgstr ""
+"Die Vita-Version in {0} kann nicht nach {1} kopiert werden (auch nicht in den Profilordner)."
+
+#: src/viewer/setup.cpp
+msgid "Choose its folder..."
+msgstr "Ordner wählen..."
+
+#: src/viewer/setup.cpp
+msgid "Its archive..."
+msgstr "Archiv..."
+
+#: src/viewer/setup.cpp
+msgid "Without it"
+msgstr "Ohne Übersetzung"
+
+#: src/viewer/setup.cpp
+msgid ""
+"This Vita release is in Japanese. A fan translation puts its text over it - gbatemp's English one or Joseas's Spanish one: its rePatch folder ({0}), or the .rar / .zip it comes in. Is one here too?"
+msgstr ""
+"Diese Vita-Version ist auf Japanisch. Eine Fan-Übersetzung legt ihren Text darüber – die englische von gbatemp oder die spanische von Joseas: ihr rePatch-Ordner ({0}) oder das .rar / .zip, in dem sie geliefert wird. Ist auch eine vorhanden?"
+
+#: src/viewer/setup.cpp
+msgid "The fan translation (.rar, .zip, .7z)"
+msgstr "Die Fan-Übersetzung (.rar, .zip, .7z)"
+
+#: src/viewer/setup.cpp
+msgid "Unpacking the fan translation ..."
+msgstr "Fan-Übersetzung wird entpackt ..."
+
+#: src/viewer/setup.cpp
+msgid ""
+"Copy the fan translation's rePatch folder (or the {0} in it) into\n"
+"  {1}\n"
+"over USB from a PC, then Continue."
+msgstr ""
+"Den rePatch-Ordner der Fan-Übersetzung (oder den Ordner {0} darin) per USB vom PC nach\n"
+"  {1}\n"
+"kopieren, dann „Weiter“."
+
+#: src/viewer/setup.cpp
+msgid ""
+"No fan translation in {0} - copy its rePatch folder (or the {1} in it)."
+msgstr ""
+"Keine Fan-Übersetzung in {0} – ihren rePatch-Ordner (oder den Ordner {1} darin) kopieren."
+
+#: src/viewer/setup.cpp
+msgid ""
+"No fan translation in {0} - choose its rePatch folder (or the {1} in it)."
+msgstr ""
+"Keine Fan-Übersetzung in {0} – ihren rePatch-Ordner (oder den Ordner {1} darin) wählen."
+
+#: src/viewer/setup.cpp
+msgid "The fan translation can't be moved to {0}"
+msgstr "Die Fan-Übersetzung kann nicht nach {0} verschoben werden"
+
+#: src/viewer/setup.cpp
+msgid "Copying the fan translation ..."
+msgstr "Fan-Übersetzung wird kopiert ..."
+
+#: src/viewer/setup.cpp
+msgid "The fan translation can't be copied into {0}"
+msgstr "Die Fan-Übersetzung kann nicht nach {0} kopiert werden"
+
+#: src/viewer/setup.cpp
+msgid "{0} can't be unpacked: {1}"
+msgstr "{0} kann nicht entpackt werden: {1}"
+
+#: src/viewer/setup.cpp
+msgid "{0} holds no {1} ({2}) as the port reads it."
+msgstr "{0} enthält kein {1} ({2}), das die Portierung lesen kann."
+
+#: src/viewer/setup.cpp
+msgid "The Vita release is unpacked and decrypted into {0}."
+msgstr "Die Vita-Version wurde nach {0} entpackt und entschlüsselt."
+
+#: src/viewer/setup.cpp
+msgid "{0} isn't needed any more - delete it to get the space back."
+msgstr "{0} wird nicht mehr benötigt – löschen, um den Platz freizugeben."
+
+#: src/viewer/setup.cpp
+msgid "The Vita release is decrypted into {0}."
+msgstr "Die Vita-Version wurde nach {0} entschlüsselt."
+
+#: src/viewer/setup.cpp
+msgid ""
+"The dump you copied in ({0}) isn't needed any more - delete it to get the space back."
+msgstr ""
+"Der hineinkopierte Dump ({0}) wird nicht mehr benötigt – löschen, um den Platz freizugeben."
+
+#: src/viewer/setup.cpp
+msgid ""
+"The dump you copied in ({0} and {1}) isn't needed any more - delete it to get the space back."
+msgstr ""
+"Der hineinkopierte Dump ({0} und {1}) wird nicht mehr benötigt – löschen, um den Platz freizugeben."
+
+#: src/viewer/setup.cpp
+msgid "The Vita dump in {0} can't be decrypted: {1}"
+msgstr "Der Vita-Dump in {0} kann nicht entschlüsselt werden: {1}"
+
+#: src/viewer/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - copy the dump's addcont folder in too, beside its app folder."
+msgstr ""
+"Die Prequel Trilogy hat die Daten von {0} in ihrem Add-on (addcont/PCSG00457/{1}), und das liegt nicht neben {2} – auch den addcont-Ordner des Dumps hineinkopieren, neben seinen app-Ordner."
+
+#: src/viewer/setup.cpp
+msgid ""
+"The Vita dump can't be decrypted into {0} - it can't be written there."
+msgstr ""
+"Der Vita-Dump kann nicht nach {0} entschlüsselt werden – dort kann nicht geschrieben werden."
+
+#: src/viewer/setup.cpp
+msgid ""
+"{0} is unpacked into {1} - the .ipa isn't needed any more: delete it to get the space back."
+msgstr ""
+"{0} wurde nach {1} entpackt – die .ipa wird nicht mehr benötigt: löschen, um den Platz freizugeben."
+
+#: src/viewer/setup.cpp
+msgid "{0} can't be opened by this build - unpack it into {1} first."
+msgstr ""
+"{0} kann von diesem Build nicht geöffnet werden – zuerst nach {1} entpacken."
+
+#: src/viewer/setup.cpp
+msgid ""
+"The fan translation is unpacked into {0} - {1} isn't needed any more: delete it to get the space back."
+msgstr ""
+"Die Fan-Übersetzung wurde nach {0} entpackt – {1} wird nicht mehr benötigt: löschen, um den Platz freizugeben."
+
+#: src/viewer/viewer_gfx.cpp
+msgid "On"
+msgstr "An"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Off"
+msgstr "Aus"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Infinite HP"
+msgstr "Unendliche HP"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The party's HP back to full after every blow: never felled"
+msgstr "Die HP der Gruppe nach jedem Treffer wieder voll: nie besiegt"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Infinite MP"
+msgstr "Unendliche MP"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The party's skills and sopia cost no MP; MP full between battles too"
+msgstr ""
+"Fähigkeiten und Sopia der Gruppe kosten keine MP; MP auch zwischen den Kämpfen voll"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "One-Hit Kills"
+msgstr "Sofort-K.O."
+
+#: src/viewer/viewer_gfx.cpp
+msgid "A party blow that lands fells the monster (a miss is still a miss)"
+msgstr ""
+"Ein Treffer der Gruppe besiegt das Monster (ein Fehlschlag bleibt einer)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Full Break Gauge"
+msgstr "Volle Vorteil-Anzeige"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"The break gauge always full: the party's turn break every turn (+100 power, half the damage taken)"
+msgstr ""
+"Die Vorteil-Anzeige immer voll: jede Runde der Vorteil der Gruppe (+100 Kraft, halber Schaden)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Full Charge Gauge"
+msgstr "Volle Lade-Anzeige"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"The charge gauge always at 300: awakenings and advents whenever offered"
+msgstr ""
+"Die Lade-Anzeige immer auf 300: Erweckungen und Erscheinen, wann immer angeboten"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Always First Strike"
+msgstr "Immer Erstschlag"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"The party strikes first in every random battle; never a monster assault"
+msgstr ""
+"Die Gruppe schlägt in jedem Zufallskampf zuerst zu; nie ein Überraschungsangriff"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "No Random Battles"
+msgstr "Keine Zufallskämpfe"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "No encounters while walking; the story's battles still come"
+msgstr ""
+"Keine Zufallskämpfe beim Gehen; die Kämpfe der Geschichte kommen trotzdem"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "EXP Multiplier"
+msgstr "EXP-Multiplikator"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The EXP the monsters give, this many times as much"
+msgstr "Die EXP der Monster, so viel Mal mehr"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "SP Multiplier"
+msgstr "SP-Multiplikator"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The SP the sopia gain, this many times as much"
+msgstr "Die SP der Sopia, so viel Mal mehr"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Max Oz"
+msgstr "Max. Oz"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The Oz kept at 9,999,999 (turned off it stays where it is)"
+msgstr "Die OZ bleiben bei 9.999.999 (ausgeschaltet bleiben sie, wo sie sind)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "All Off"
+msgstr "Alle aus"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Every cheat off"
+msgstr "Alle Cheats aus"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Back to the settings"
+msgstr "Zurück zu den Einstellungen"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Auto ({0})"
+msgstr "Auto ({0})"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Menu Language"
+msgstr "Menüsprache"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"The language of the port's own text - these settings and its messages; Auto: the game's language"
+msgstr ""
+"Die Sprache der eigenen Texte des Ports – diese Einstellungen und seine Meldungen; Auto: die Sprache des Spiels"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Window"
+msgstr "Fenster"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Fullscreen"
+msgstr "Vollbild"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Borderless"
+msgstr "Randlos"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Display"
+msgstr "Anzeige"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"A window, fullscreen at the display's own mode, or borderless over the desktop"
+msgstr ""
+"Ein Fenster, Vollbild im Modus des Bildschirms oder randlos über dem Desktop"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Resolution"
+msgstr "Auflösung"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The frames' size (Window: the window's own), scaled to the window"
+msgstr ""
+"Die Größe der Bilder (Fenster: die des Fensters), auf das Fenster skaliert"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Camera Cutout"
+msgstr "Kameraaussparung"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Ignore"
+msgstr "Ignorieren"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Avoid"
+msgstr "Aussparen"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Avoid: the menus and text kept clear of the camera's notch or punch hole (the picture fills the screen either way)"
+msgstr ""
+"Vermeiden: Menüs und Text bleiben frei von der Kamerakerbe oder dem Kameraloch (das Bild füllt den Bildschirm so oder so)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "VSync"
+msgstr "VSync"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Each frame waits for the display's refresh: no tearing"
+msgstr ""
+"Jedes Bild wartet auf die Bildwiederholung des Bildschirms: kein Tearing"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Frame Rate"
+msgstr "Bildrate"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Unlimited"
+msgstr "Unbegrenzt"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Frames drawn a second at most; the game itself runs at 20 a second, shown moving between them"
+msgstr ""
+"Höchstens so viele Bilder pro Sekunde; das Spiel selbst läuft mit 20 pro Sekunde, dazwischen flüssig gezeigt"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "{0} (next start)"
+msgstr "{0} (nach Neustart)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Renderer"
+msgstr "Renderer"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Vulkan: the upscalers, MSAA and the faster path; OpenGL where Vulkan won't start"
+msgstr ""
+"Vulkan: die Hochskalierer, MSAA und der schnellere Weg; OpenGL, wo Vulkan nicht startet"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "{0} (n/a)"
+msgstr "{0} (n. v.)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Upscaler"
+msgstr "Hochskalierer"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"The scene renders smaller and is rebuilt at full size; the menus stay sharp"
+msgstr ""
+"Die Szene wird kleiner gerendert und in voller Größe wiederaufgebaut; die Menüs bleiben scharf"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Native AA"
+msgstr "Natives AA"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Quality"
+msgstr "Qualität"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Balanced"
+msgstr "Ausgewogen"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Performance"
+msgstr "Leistung"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Ultra Performance"
+msgstr "Ultra-Leistung"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The scene at {0}% of the frame per side"
+msgstr "Die Szene bei {0} % des Bildes je Seite"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "(DLSS: DLAA)"
+msgstr "(DLSS: DLAA)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Upscale Mode"
+msgstr "Skalierungsmodus"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Sharpness"
+msgstr "Schärfe"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "FSR's sharpening pass (RCAS); DLSS and MetalFX have none"
+msgstr "Der Schärfungsdurchgang von FSR (RCAS); DLSS und MetalFX haben keinen"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Anti-aliasing"
+msgstr "Kantenglättung"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Off while an upscaler is on (its own anti-aliasing)"
+msgstr "Aus, solange ein Hochskalierer an ist (er glättet selbst)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Multisampling: smoother edges"
+msgstr "Multisampling: glattere Kanten"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Anisotropic Filtering"
+msgstr "Anisotrope Filterung"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Textures stay sharp on floors and walls seen at an angle"
+msgstr "Texturen auf Böden und Wänden bleiben auch schräg betrachtet scharf"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Not on this GPU"
+msgstr "Nicht auf dieser GPU"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Texture Filtering"
+msgstr "Texturfilterung"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Sharp"
+msgstr "Scharf"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Smooth"
+msgstr "Glatt"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Sharp: the world's textures magnified by the nearest texel (square pixels up close); Smooth: blended"
+msgstr ""
+"Scharf: die Texturen der Welt mit dem nächsten Texel vergrößert (aus der Nähe quadratische Pixel); Weich: überblendet"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "HD Textures"
+msgstr "HD-Texturen"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Upscaled textures (waifu2x / Real-ESRGAN: tools/hd_textures.py) from {0}"
+msgstr ""
+"Hochskalierte Texturen (waifu2x / Real-ESRGAN: tools/hd_textures.py) aus {0}"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "None in {0} yet: --export-textures, then tools/hd_textures.py"
+msgstr "Noch keine in {0}: --export-textures, dann tools/hd_textures.py"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "HD Models"
+msgstr "HD-Modelle"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Replacement models (glTF) from {0} - from the next scene on"
+msgstr "Ersatzmodelle (glTF) aus {0} – ab der nächsten Szene"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"None in {0} yet: --export-models, edit, save as models/hd/<figure>.glb"
+msgstr ""
+"Noch keine in {0}: --export-models, bearbeiten, als models/hd/<figure>.glb speichern"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Smoother"
+msgstr "Glatter"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Smooth Models"
+msgstr "Glatte Modelle"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Rounder models (4x / 9x triangles), hard edges kept - from the next scene"
+msgstr ""
+"Rundere Modelle (4x / 9x Dreiecke), harte Kanten bleiben – ab der nächsten Szene"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The models as the game built them"
+msgstr "Die Modelle, wie das Spiel sie gebaut hat"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Lock Orientation"
+msgstr "Ausrichtung sperren"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Hold the current landscape direction and restore it on restart"
+msgstr ""
+"Die aktuelle Querformat-Richtung halten und beim Neustart wiederherstellen"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Field Speed"
+msgstr "Lauftempo"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Walking the field 2 .. 5 times as fast - its scenes, talk and menus as they are"
+msgstr ""
+"Das Gehen auf dem Feld 2 bis 5 Mal so schnell – Szenen, Gespräche und Menüs wie sie sind"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Battle Speed"
+msgstr "Kampftempo"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The battles 2 .. 5 times as fast"
+msgstr "Kämpfe 2- bis 5-mal so schnell"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Swap ○ and ×"
+msgstr "○ und × tauschen"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"A controller's × (the bottom button) confirms, ○ (the right one) goes back"
+msgstr ""
+"Am Controller bestätigt × (die untere Taste), ○ (die rechte) geht zurück"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"A controller's ○ (the right button) confirms, × (the bottom one) goes back - as on the Vita"
+msgstr ""
+"Am Controller bestätigt ○ (die rechte Taste), × (die untere) geht zurück – wie auf der Vita"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Import Vita Saves"
+msgstr "Vita-Saves importieren"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Import your decrypted Vita saves (docs/VITA_SAVES.md) - or press I in the options"
+msgstr ""
+"Deine entschlüsselten Vita-Spielstände importieren (docs/VITA_SAVES.md) – oder in den Optionen I drücken"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Cheats"
+msgstr "Cheats"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"The port's own cheats: infinite HP / MP, one-hit kills, the gauges full, EXP and SP multipliers ..."
+msgstr ""
+"Die eigenen Cheats des Ports: unendliche HP / MP, Sofort-K.O., volle Anzeigen, EXP- und SP-Multiplikatoren ..."
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Defaults"
+msgstr "Standardwerte"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Every setting here back to its default (the cheats and the menu language as they are)"
+msgstr ""
+"Alle Einstellungen hier auf den Standard zurück (Cheats und Menüsprache bleiben)"

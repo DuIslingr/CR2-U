@@ -1380,6 +1380,7 @@ bool Viewer::overFast(float fx, float fy) const {
            y <= std::max(fastRect.y0, fastRect.y1);
 }
 void Viewer::advance(float dt, float sx, float sy, bool run) {
+    if (optionLanguage != uiLangFor) applyUiLanguage(); // (Menu Language's Auto: the game's language, as it changes)
     uiClock += dt;
     noteAsk(); // (a question's focus: Yes as it opens)
     if (cr2::EventRuntime* ev = activeEvents()) {

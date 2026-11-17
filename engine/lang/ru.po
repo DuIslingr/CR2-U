@@ -1,0 +1,1047 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: the port's interface text\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: ru\n"
+"X-Language-Name: Русский\n"
+"Last-Translator: metastigma (the Options' strings, CRO-U-metastigma PR #51); Claude (the rest, machine translation, unreviewed)\n"
+
+#: src/gfx/render_device.hpp
+msgid "needs the Vulkan renderer"
+msgstr "требуется рендерер Vulkan"
+
+#: src/gfx/vk_device.cpp
+msgid "this GPU lacks what temporal upscaling needs"
+msgstr ""
+"видеокарта не поддерживает функции, нужные для временного масштабирования"
+
+#: src/gfx/vk_device.cpp
+msgid "this GPU can't run FSR 3.1"
+msgstr "эта видеокарта не поддерживает FSR 3.1"
+
+#: src/gfx/vk_device.cpp
+msgid "MetalFX is Apple's: macOS only"
+msgstr "MetalFX — технология Apple, только для macOS"
+
+#: src/gfx/vk_device.cpp
+msgid ""
+"FSR 4 needs VK_KHR_maintenance8 and a D32S8 depth here (the scene's depth has a stencil)"
+msgstr ""
+"FSR 4 здесь нужны VK_KHR_maintenance8 и глубина D32S8 (у глубины сцены есть трафарет)"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Found {0} save slot(s)."
+msgstr "Найдено ячеек сохранения: {0}."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Existing saves will be backed up."
+msgstr "Для существующих сохранений будет создана резервная копия."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Invalid suspend skipped."
+msgstr "Повреждённое быстрое сохранение пропущено."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Import now?"
+msgstr "Импортировать сейчас?"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Import failed: {0}"
+msgstr "Ошибка импорта: {0}"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Cannot open the folder picker: {0}"
+msgstr "Не удалось открыть выбор папки: {0}"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Imported {0} save slot(s)."
+msgstr "Импортировано ячеек сохранения: {0}."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Previous saves backed up."
+msgstr "Предыдущие сохранения сохранены в резервной копии."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Load from the title."
+msgstr "Загрузите сохранение с главного экрана."
+
+#: src/viewer/setup.cpp
+msgid "Any file"
+msgstr "Любой файл"
+
+#: src/viewer/setup.cpp
+msgid "can't be read"
+msgstr "не удаётся прочитать"
+
+#: src/viewer/setup.cpp
+msgid "not a zip (no central directory) - an .ipa is one"
+msgstr "не zip-архив (нет центрального каталога), а .ipa должен им быть"
+
+#: src/viewer/setup.cpp
+msgid "its directory is past its end"
+msgstr "каталог архива выходит за конец файла"
+
+#: src/viewer/setup.cpp
+msgid "a broken directory entry"
+msgstr "повреждённая запись каталога"
+
+#: src/viewer/setup.cpp
+msgid "{0}: no local header"
+msgstr "{0}: нет локального заголовка"
+
+#: src/viewer/setup.cpp
+msgid "{0}: can't be written"
+msgstr "{0}: не удаётся записать"
+
+#: src/viewer/setup.cpp
+msgid "{0}: can't be unpacked"
+msgstr "{0}: не удаётся распаковать"
+
+#: src/viewer/setup.cpp
+msgid "A file picked can't be read ({0})."
+msgstr "Не удаётся прочитать выбранный файл ({0})."
+
+#: src/viewer/setup.cpp
+msgid ""
+"A file picked ({0} GB) needs about {1} GB free in {2} - the copy and what it unpacks to -, and there is {3} GB."
+msgstr ""
+"Выбранному файлу ({0} ГБ) нужно около {1} ГБ свободного места в {2} — для копии и распакованных данных, — а свободно {3} ГБ."
+
+#: src/viewer/setup.cpp
+msgid "Copying the file picked ({0} of {1}) ..."
+msgstr "Копирование выбранного файла ({0} из {1}) ..."
+
+#: src/viewer/setup.cpp
+msgid "Copying the file picked ..."
+msgstr "Копирование выбранного файла ..."
+
+#: src/viewer/setup.cpp
+msgid "A file picked can't be copied into {0}"
+msgstr "Не удаётся скопировать выбранный файл в {0}"
+
+#: src/viewer/setup.cpp
+msgid "can't be opened"
+msgstr "не удаётся открыть"
+
+#: src/viewer/setup.cpp
+msgid "no Payload/<name>.app in it - not an iOS app"
+msgstr "внутри нет Payload/<name>.app — это не приложение iOS"
+
+#: src/viewer/setup.cpp
+msgid "{0}: can't be made"
+msgstr "{0}: не удаётся создать"
+
+#: src/viewer/setup.cpp
+msgid "no work.bin (its licence) to decrypt it with"
+msgstr "нет work.bin (лицензии) для расшифровки"
+
+#: src/viewer/setup.cpp
+msgid "its files don't decrypt (a part of the dump missing or damaged?)"
+msgstr "файлы не расшифровываются (часть дампа отсутствует или повреждена?)"
+
+#: src/viewer/setup.cpp
+msgid ""
+"its files can't be read with its own work.bin - not a whole NoNpDrm dump"
+msgstr ""
+"файлы не читаются с его собственным work.bin — это неполный дамп NoNpDrm"
+
+#: src/viewer/setup.cpp
+msgid ""
+"this build can't decrypt the Vita's files - install the dump in Vita3K, then choose Vita3K's folder"
+msgstr ""
+"эта сборка не может расшифровать файлы Vita — установите дамп в Vita3K, затем выберите папку Vita3K"
+
+#: src/viewer/setup.cpp src/viewer/viewer_gfx.cpp
+msgid "{0}: {1}"
+msgstr "{0}: {1}"
+
+#: src/viewer/setup.cpp
+msgid "{0}: can't be written ({1})"
+msgstr "{0}: не удаётся записать ({1})"
+
+#: src/viewer/setup.cpp
+msgid "an entry it can't read (after the start)"
+msgstr "запись, которую не удаётся прочитать (после начала)"
+
+#: src/viewer/setup.cpp
+msgid "an entry it can't read (after {0})"
+msgstr "запись, которую не удаётся прочитать (после {0})"
+
+#: src/viewer/setup.cpp
+msgid ""
+"this build can't open archives - unpack it first, then choose its folder"
+msgstr ""
+"эта сборка не открывает архивы — сначала распакуйте его, затем выберите папку"
+
+#: src/viewer/setup.cpp
+msgid "no fan translation in it (its rePatch/{0}/)"
+msgstr "внутри нет фанатского перевода (его rePatch/{0}/)"
+
+#: src/viewer/setup.cpp
+msgid "not a SELF"
+msgstr "не SELF"
+
+#: src/viewer/setup.cpp
+msgid "a broken SELF"
+msgstr "повреждённый SELF"
+
+#: src/viewer/setup.cpp
+msgid "a broken SELF (a segment past its end)"
+msgstr "повреждённый SELF (сегмент выходит за конец файла)"
+
+#: src/viewer/setup.cpp
+msgid "a SELF of a kind (or key revision) the port has no key for"
+msgstr "SELF такого типа (или ревизии ключа), для которого у порта нет ключа"
+
+#: src/viewer/setup.cpp
+msgid "its key doesn't open it (its licence isn't its own?)"
+msgstr "его ключ не подходит (лицензия не от этой игры?)"
+
+#: src/viewer/setup.cpp
+msgid "a broken SELF (no metadata)"
+msgstr "повреждённый SELF (нет метаданных)"
+
+#: src/viewer/setup.cpp
+msgid "a broken SELF (its metadata)"
+msgstr "повреждённый SELF (метаданные)"
+
+#: src/viewer/setup.cpp
+msgid "a broken SELF (its keys)"
+msgstr "повреждённый SELF (ключи)"
+
+#: src/viewer/setup.cpp
+msgid "a broken SELF (an encrypted segment without its key)"
+msgstr "повреждённый SELF (зашифрованный сегмент без ключа)"
+
+#: src/viewer/setup.cpp
+msgid "a segment doesn't inflate"
+msgstr "сегмент не распаковывается"
+
+#: src/viewer/setup.cpp
+msgid "built without zlib"
+msgstr "сборка без zlib"
+
+#: src/viewer/setup.cpp
+msgid "this build can't decrypt the Vita's programs"
+msgstr "эта сборка не может расшифровать программы Vita"
+
+#: src/viewer/setup.cpp
+msgid "it needs about {0} GB free in {1}, and there is {2} GB"
+msgstr "нужно около {0} ГБ свободного места в {1}, а свободно {2} ГБ"
+
+#: src/viewer/setup.cpp
+msgid "Decrypting the Vita release ..."
+msgstr "Расшифровка версии для Vita ..."
+
+#: src/viewer/setup.cpp
+msgid "Copying the Vita release ..."
+msgstr "Копирование версии для Vita ..."
+
+#: src/viewer/setup.cpp
+msgid "Decrypting the game's add-on ..."
+msgstr "Расшифровка дополнения игры ..."
+
+#: src/viewer/setup.cpp
+msgid "Copying the game's add-on ..."
+msgstr "Копирование дополнения игры ..."
+
+#: src/viewer/setup.cpp
+msgid ""
+"{0}: no licence to decrypt it with (the dump's work.bin, Vita3K's ux0/license)"
+msgstr ""
+"{0}: нет лицензии для расшифровки (work.bin из дампа или ux0/license из Vita3K)"
+
+#: src/viewer/setup.cpp
+msgid ""
+"{0} plays your own copy of {1}. Choose where it is - any one of them; the files it needs are copied into its folder:"
+msgstr ""
+"{0} запускает вашу собственную копию {1}. Укажите, где она находится — подойдёт любая из перечисленных; нужные файлы будут скопированы в папку {0}:"
+
+#: src/viewer/setup.cpp
+msgid "Android - the APK and its {0} (both at once)"
+msgstr "Android — APK и его {0} (оба сразу)"
+
+#: src/viewer/setup.cpp
+msgid "Android - the .apks (or the APK and its asset packs, all at once)"
+msgstr "Android — .apks (или APK вместе с его пакетами ресурсов, все сразу)"
+
+#: src/viewer/setup.cpp
+msgid "iOS - the .ipa (an unpacked .app: copy it into ios/ over USB)"
+msgstr "iOS — .ipa (распакованное .app скопируйте в ios/ по USB)"
+
+#: src/viewer/setup.cpp
+msgid ""
+"Vita - a NoNpDrm dump: packed (.zip, .rar, .vpk), or its folder copied in over USB"
+msgstr ""
+"Vita — дамп NoNpDrm: в архиве (.zip, .rar, .vpk) или его папка, скопированная по USB"
+
+#: src/viewer/setup.cpp
+msgid "What is copied into its folder over USB is found with Look again."
+msgstr "То, что скопировано в папку по USB, находится кнопкой «Искать снова»."
+
+#: src/viewer/setup.cpp
+msgid "iOS - the .ipa (or a file in its unpacked .app)"
+msgstr "iOS — .ipa (или любой файл из распакованного .app)"
+
+#: src/viewer/setup.cpp
+msgid ""
+"Vita - Vita3K's folder with the game installed (or the game's {0} folder)"
+msgstr "Vita — папка Vita3K с установленной игрой (или папка игры {0})"
+
+#: src/viewer/setup.cpp
+msgid "Its folder: {0}"
+msgstr "Папка порта: {0}"
+
+#: src/viewer/setup.cpp
+msgid "In place:"
+msgstr "Уже на месте:"
+
+#: src/viewer/setup.cpp
+msgid "iOS: {0}"
+msgstr "iOS: {0}"
+
+#: src/viewer/setup.cpp
+msgid "Android: {0}"
+msgstr "Android: {0}"
+
+#: src/viewer/setup.cpp
+msgid "Vita: {0}"
+msgstr "Vita: {0}"
+
+#: src/viewer/setup.cpp
+msgid "Its fan translation: {0}"
+msgstr "Фанатский перевод: {0}"
+
+#: src/viewer/setup.cpp
+msgid ""
+"More of them add to it (the Vita's voices and music, Android's art); or Start."
+msgstr ""
+"Другие версии дополняют её (голоса и музыка Vita, графика Android) — или нажмите «Запустить»."
+
+#: src/viewer/setup.cpp
+msgid "iOS (.ipa)..."
+msgstr "iOS (.ipa)..."
+
+#: src/viewer/setup.cpp
+msgid "Android (APK + OBB)..."
+msgstr "Android (APK + OBB)..."
+
+#: src/viewer/setup.cpp
+msgid "Android (.apks)..."
+msgstr "Android (.apks)..."
+
+#: src/viewer/setup.cpp
+msgid "Vita..."
+msgstr "Vita..."
+
+#: src/viewer/setup.cpp
+msgid "Vita / Vita3K..."
+msgstr "Vita / Vita3K..."
+
+#: src/viewer/setup.cpp
+msgid "Start"
+msgstr "Запустить"
+
+#: src/viewer/setup.cpp
+msgid "Look again"
+msgstr "Искать снова"
+
+#: src/viewer/setup.cpp
+msgid "Quit"
+msgstr "Выход"
+
+#: src/viewer/setup.cpp
+msgid "iOS app (.ipa)"
+msgstr "Приложение iOS (.ipa)"
+
+#: src/viewer/setup.cpp
+msgid "Any file (one in an unpacked .app)"
+msgstr "Любой файл (из распакованного .app)"
+
+#: src/viewer/setup.cpp
+msgid ""
+"That isn't an .ipa. Choose the .ipa - or copy the unpacked .app into {0} over USB, then Look again."
+msgstr ""
+"Это не .ipa. Выберите .ipa — или скопируйте распакованное .app в {0} по USB и нажмите «Искать снова»."
+
+#: src/viewer/setup.cpp
+msgid "Unpacking {0} ..."
+msgstr "Распаковка {0} ..."
+
+#: src/viewer/setup.cpp
+msgid "No {0} data in {1}"
+msgstr "В {1} нет данных {0}"
+
+#: src/viewer/setup.cpp
+msgid "Copying {0} ..."
+msgstr "Копирование {0} ..."
+
+#: src/viewer/setup.cpp
+msgid "can't be written"
+msgstr "не удаётся записать"
+
+#: src/viewer/setup.cpp
+msgid "{0} isn't {1}'s iOS release."
+msgstr "{0} — не iOS-версия {1}."
+
+#: src/viewer/setup.cpp
+msgid "Android (.apk, .obb, .apks)"
+msgstr "Android (.apk, .obb, .apks)"
+
+#: src/viewer/setup.cpp
+msgid "Choose {0}'s Android release: the APK and its {1}, both at once."
+msgstr "Выберите Android-версию {0}: APK и его {1}, оба сразу."
+
+#: src/viewer/setup.cpp
+msgid "Copying the Android release ..."
+msgstr "Копирование версии для Android ..."
+
+#: src/viewer/setup.cpp
+msgid "Not {0}'s Android release (or not all of it):"
+msgstr "Это не Android-версия {0} (или она неполная):"
+
+#: src/viewer/setup.cpp
+msgid "Choose the APK and its {0}, both at once."
+msgstr "Выберите APK и его {0}, оба сразу."
+
+#: src/viewer/setup.cpp
+msgid ""
+"The Android release can't be copied into {0} (nor the profile folder's)."
+msgstr ""
+"Не удаётся скопировать версию для Android в {0} (и в папку профиля тоже)."
+
+#: src/viewer/setup.cpp
+msgid "Where is the Vita release?"
+msgstr "Где версия для Vita?"
+
+#: src/viewer/setup.cpp
+msgid ""
+"A folder - copied into {0} over USB: a NoNpDrm dump's as it was dumped (its app/, and addcont/ for the Prequel Trilogy), Vita3K's ux0, or the game's own folder"
+msgstr ""
+"Папка, скопированная в {0} по USB: папка дампа NoNpDrm в исходном виде (его app/, а для Prequel Trilogy ещё addcont/), ux0 из Vita3K или собственная папка игры"
+
+#: src/viewer/setup.cpp
+msgid ""
+"An archive - a NoNpDrm dump packed as .zip, .rar or .vpk (a .7z: unpack it on a PC)"
+msgstr "Архив — дамп NoNpDrm в .zip, .rar или .vpk (.7z распакуйте на ПК)"
+
+#: src/viewer/setup.cpp
+msgid "Copied in..."
+msgstr "Скопировано..."
+
+#: src/viewer/setup.cpp
+msgid "An archive..."
+msgstr "Архив..."
+
+#: src/viewer/setup.cpp src/viewer/viewer_gfx.cpp
+msgid "Back"
+msgstr "Назад"
+
+#: src/viewer/setup.cpp
+msgid "A folder - Vita3K's (or its ux0), the game's own, or a NoNpDrm dump's"
+msgstr "Папка — Vita3K (или её ux0), самой игры или дампа NoNpDrm"
+
+#: src/viewer/setup.cpp
+msgid "An archive - a NoNpDrm dump packed as .rar, .7z, .zip or .vpk"
+msgstr "Архив — дамп NoNpDrm в .rar, .7z, .zip или .vpk"
+
+#: src/viewer/setup.cpp
+msgid "A folder..."
+msgstr "Папка..."
+
+#: src/viewer/setup.cpp
+msgid "A Vita dump (.rar, .7z, .zip, .vpk)"
+msgstr "Дамп Vita (.rar, .7z, .zip, .vpk)"
+
+#: src/viewer/setup.cpp
+msgid ""
+"Copy the Vita release's folder into\n"
+"  {0}\n"
+"over USB from a PC - a NoNpDrm dump's as it was dumped (its app/, and addcont/ for the Prequel Trilogy), Vita3K's ux0, or the game's own folder -, then Continue."
+msgstr ""
+"Скопируйте папку версии для Vita в\n"
+"  {0}\n"
+"по USB с ПК — папку дампа NoNpDrm в исходном виде (его app/, а для Prequel Trilogy ещё addcont/), ux0 из Vita3K или собственную папку игры, — затем нажмите «Продолжить»."
+
+#: src/viewer/setup.cpp
+msgid "Continue"
+msgstr "Продолжить"
+
+#: src/viewer/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - install the add-on in Vita3K too, or choose a dump with it."
+msgstr ""
+"Prequel Trilogy хранит данные {0} в своём дополнении (addcont/PCSG00457/{1}), а его нет рядом с {2} — установите дополнение в Vita3K тоже или выберите дамп с ним."
+
+#: src/viewer/setup.cpp
+msgid ""
+"No {0} ({1}) in {2} - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it."
+msgstr ""
+"В {2} нет {0} ({1}) — выберите папку Vita3K, её ux0, собственную папку игры или её дамп NoNpDrm."
+
+#: src/viewer/setup.cpp
+msgid ""
+"No {0} ({1}) in the archive - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it."
+msgstr ""
+"В архиве нет {0} ({1}) — выберите папку Vita3K, её ux0, собственную папку игры или её дамп NoNpDrm."
+
+#: src/viewer/setup.cpp
+msgid "The Vita release in {0}: {1}"
+msgstr "Версия для Vita в {0}: {1}"
+
+#: src/viewer/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - install it in Vita3K too, or choose the dump with it."
+msgstr ""
+"Prequel Trilogy хранит данные {0} в своём дополнении (addcont/PCSG00457/{1}), а его нет рядом с {2} — установите его в Vita3K тоже или выберите дамп с ним."
+
+#: src/viewer/setup.cpp
+msgid "{0} isn't {1}'s Vita release as the port reads it."
+msgstr "{0} — не та версия {1} для Vita, которую может прочитать порт."
+
+#: src/viewer/setup.cpp
+msgid ""
+"The Vita release in {0} can't be copied into {1} (nor the profile folder's)."
+msgstr ""
+"Не удаётся скопировать версию для Vita из {0} в {1} (и в папку профиля тоже)."
+
+#: src/viewer/setup.cpp
+msgid "Choose its folder..."
+msgstr "Выбрать папку..."
+
+#: src/viewer/setup.cpp
+msgid "Its archive..."
+msgstr "Архив..."
+
+#: src/viewer/setup.cpp
+msgid "Without it"
+msgstr "Без перевода"
+
+#: src/viewer/setup.cpp
+msgid ""
+"This Vita release is in Japanese. A fan translation puts its text over it - gbatemp's English one or Joseas's Spanish one: its rePatch folder ({0}), or the .rar / .zip it comes in. Is one here too?"
+msgstr ""
+"Эта версия для Vita на японском. Фанатский перевод заменяет её текст — английский от gbatemp или испанский от Joseas: его папка rePatch ({0}) или .rar / .zip, в котором он распространяется. Он у вас тоже есть?"
+
+#: src/viewer/setup.cpp
+msgid "The fan translation (.rar, .zip, .7z)"
+msgstr "Фанатский перевод (.rar, .zip, .7z)"
+
+#: src/viewer/setup.cpp
+msgid "Unpacking the fan translation ..."
+msgstr "Распаковка фанатского перевода ..."
+
+#: src/viewer/setup.cpp
+msgid ""
+"Copy the fan translation's rePatch folder (or the {0} in it) into\n"
+"  {1}\n"
+"over USB from a PC, then Continue."
+msgstr ""
+"Скопируйте папку rePatch фанатского перевода (или папку {0} в ней) в\n"
+"  {1}\n"
+"по USB с ПК, затем нажмите «Продолжить»."
+
+#: src/viewer/setup.cpp
+msgid ""
+"No fan translation in {0} - copy its rePatch folder (or the {1} in it)."
+msgstr ""
+"В {0} нет фанатского перевода — скопируйте его папку rePatch (или папку {1} в ней)."
+
+#: src/viewer/setup.cpp
+msgid ""
+"No fan translation in {0} - choose its rePatch folder (or the {1} in it)."
+msgstr ""
+"В {0} нет фанатского перевода — выберите его папку rePatch (или папку {1} в ней)."
+
+#: src/viewer/setup.cpp
+msgid "The fan translation can't be moved to {0}"
+msgstr "Не удаётся переместить фанатский перевод в {0}"
+
+#: src/viewer/setup.cpp
+msgid "Copying the fan translation ..."
+msgstr "Копирование фанатского перевода ..."
+
+#: src/viewer/setup.cpp
+msgid "The fan translation can't be copied into {0}"
+msgstr "Не удаётся скопировать фанатский перевод в {0}"
+
+#: src/viewer/setup.cpp
+msgid "{0} can't be unpacked: {1}"
+msgstr "Не удаётся распаковать {0}: {1}"
+
+#: src/viewer/setup.cpp
+msgid "{0} holds no {1} ({2}) as the port reads it."
+msgstr "В {0} нет {1} ({2}) в виде, который может прочитать порт."
+
+#: src/viewer/setup.cpp
+msgid "The Vita release is unpacked and decrypted into {0}."
+msgstr "Версия для Vita распакована и расшифрована в {0}."
+
+#: src/viewer/setup.cpp
+msgid "{0} isn't needed any more - delete it to get the space back."
+msgstr "{0} больше не нужен — удалите его, чтобы освободить место."
+
+#: src/viewer/setup.cpp
+msgid "The Vita release is decrypted into {0}."
+msgstr "Версия для Vita расшифрована в {0}."
+
+#: src/viewer/setup.cpp
+msgid ""
+"The dump you copied in ({0}) isn't needed any more - delete it to get the space back."
+msgstr ""
+"Скопированный дамп ({0}) больше не нужен — удалите его, чтобы освободить место."
+
+#: src/viewer/setup.cpp
+msgid ""
+"The dump you copied in ({0} and {1}) isn't needed any more - delete it to get the space back."
+msgstr ""
+"Скопированный дамп ({0} и {1}) больше не нужен — удалите его, чтобы освободить место."
+
+#: src/viewer/setup.cpp
+msgid "The Vita dump in {0} can't be decrypted: {1}"
+msgstr "Не удаётся расшифровать дамп Vita в {0}: {1}"
+
+#: src/viewer/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - copy the dump's addcont folder in too, beside its app folder."
+msgstr ""
+"Prequel Trilogy хранит данные {0} в своём дополнении (addcont/PCSG00457/{1}), а его нет рядом с {2} — скопируйте также папку addcont дампа рядом с его папкой app."
+
+#: src/viewer/setup.cpp
+msgid ""
+"The Vita dump can't be decrypted into {0} - it can't be written there."
+msgstr "Не удаётся расшифровать дамп Vita в {0} — туда невозможно записать."
+
+#: src/viewer/setup.cpp
+msgid ""
+"{0} is unpacked into {1} - the .ipa isn't needed any more: delete it to get the space back."
+msgstr ""
+"{0} распакован в {1} — .ipa больше не нужен: удалите его, чтобы освободить место."
+
+#: src/viewer/setup.cpp
+msgid "{0} can't be opened by this build - unpack it into {1} first."
+msgstr "Эта сборка не может открыть {0} — сначала распакуйте его в {1}."
+
+#: src/viewer/setup.cpp
+msgid ""
+"The fan translation is unpacked into {0} - {1} isn't needed any more: delete it to get the space back."
+msgstr ""
+"Фанатский перевод распакован в {0} — {1} больше не нужен: удалите его, чтобы освободить место."
+
+#: src/viewer/viewer_gfx.cpp
+msgid "On"
+msgstr "Вкл."
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Off"
+msgstr "Выкл."
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Infinite HP"
+msgstr "Бесконечное здоровье"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The party's HP back to full after every blow: never felled"
+msgstr "Здоровье отряда восстанавливается после каждого удара: никто не падёт"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Infinite MP"
+msgstr "Бесконечная магия"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The party's skills and sopia cost no MP; MP full between battles too"
+msgstr "Навыки и сопии отряда не тратят магию; между боями магия тоже полная"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "One-Hit Kills"
+msgstr "Убийство одним ударом"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "A party blow that lands fells the monster (a miss is still a miss)"
+msgstr "Попавший удар отряда сражает монстра (промах остаётся промахом)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Full Break Gauge"
+msgstr "Полная шкала прорыва"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"The break gauge always full: the party's turn break every turn (+100 power, half the damage taken)"
+msgstr ""
+"Шкала прорыва всегда полна: прорыв отряда каждый ход (+100 к силе, вдвое меньше урона)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Full Charge Gauge"
+msgstr "Полная шкала заряда"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"The charge gauge always at 300: awakenings and advents whenever offered"
+msgstr "Шкала заряда всегда на 300: пробуждения и пришествия всегда доступны"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Always First Strike"
+msgstr "Всегда первый удар"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"The party strikes first in every random battle; never a monster assault"
+msgstr ""
+"Отряд бьёт первым в каждом случайном бою; монстры не нападают врасплох"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "No Random Battles"
+msgstr "Без случайных боёв"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "No encounters while walking; the story's battles still come"
+msgstr "Никаких встреч при ходьбе; сюжетные бои остаются"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "EXP Multiplier"
+msgstr "Множитель опыта"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The EXP the monsters give, this many times as much"
+msgstr "Опыт за монстров, умноженный на столько"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "SP Multiplier"
+msgstr "Множитель SP"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The SP the sopia gain, this many times as much"
+msgstr "SP, получаемые сопиями, умноженные на столько"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Max Oz"
+msgstr "Максимум Oz"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The Oz kept at 9,999,999 (turned off it stays where it is)"
+msgstr "OZ держатся на 9 999 999 (если выключить, останутся как есть)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "All Off"
+msgstr "Выключить все"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Every cheat off"
+msgstr "Выключить все читы"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Back to the settings"
+msgstr "Назад к настройкам"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Auto ({0})"
+msgstr "Авто ({0})"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Menu Language"
+msgstr "Язык интерфейса"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"The language of the port's own text - these settings and its messages; Auto: the game's language"
+msgstr ""
+"Язык собственного текста порта – этих настроек и его сообщений; Авто: язык игры"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Window"
+msgstr "Окно"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Fullscreen"
+msgstr "Полный экран"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Borderless"
+msgstr "Без рамки"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Display"
+msgstr "Экран"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"A window, fullscreen at the display's own mode, or borderless over the desktop"
+msgstr ""
+"Окно, полный экран в режиме дисплея или без рамки поверх рабочего стола"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Resolution"
+msgstr "Разрешение"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The frames' size (Window: the window's own), scaled to the window"
+msgstr "Размер кадров (Окно: размер самого окна), масштабируется под окно"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Camera Cutout"
+msgstr "Вырез камеры"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Ignore"
+msgstr "Игнорировать"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Avoid"
+msgstr "Обходить"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Avoid: the menus and text kept clear of the camera's notch or punch hole (the picture fills the screen either way)"
+msgstr ""
+"Обходить: меню и текст не заходят на вырез или отверстие камеры (картинка в любом случае на весь экран)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "VSync"
+msgstr "VSync"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Each frame waits for the display's refresh: no tearing"
+msgstr "Каждый кадр ждёт обновления дисплея: без разрывов"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Frame Rate"
+msgstr "Ограничение кадров"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Unlimited"
+msgstr "Без ограничений"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Frames drawn a second at most; the game itself runs at 20 a second, shown moving between them"
+msgstr ""
+"Не больше стольких кадров в секунду; сама игра идёт с частотой 20 в секунду, между ними показ плавный"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "{0} (next start)"
+msgstr "{0} (после перезапуска)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Renderer"
+msgstr "Рендерер"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Vulkan: the upscalers, MSAA and the faster path; OpenGL where Vulkan won't start"
+msgstr ""
+"Vulkan: масштабирование, MSAA и более быстрый путь; OpenGL – где Vulkan не запускается"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "{0} (n/a)"
+msgstr "{0} (недоступно)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Upscaler"
+msgstr "Масштабирование"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"The scene renders smaller and is rebuilt at full size; the menus stay sharp"
+msgstr ""
+"Сцена рисуется меньше и восстанавливается в полном размере; меню остаются чёткими"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Native AA"
+msgstr "Нативный AA"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Quality"
+msgstr "Качество"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Balanced"
+msgstr "Баланс"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Performance"
+msgstr "Производительность"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Ultra Performance"
+msgstr "Ультра-производительность"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The scene at {0}% of the frame per side"
+msgstr "Сцена – {0}% кадра по каждой стороне"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "(DLSS: DLAA)"
+msgstr "(DLSS: DLAA)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Upscale Mode"
+msgstr "Режим масштабирования"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Sharpness"
+msgstr "Резкость"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "FSR's sharpening pass (RCAS); DLSS and MetalFX have none"
+msgstr "Проход повышения резкости FSR (RCAS); у DLSS и MetalFX его нет"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Anti-aliasing"
+msgstr "Сглаживание"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Off while an upscaler is on (its own anti-aliasing)"
+msgstr "Выключено, пока включено масштабирование (у него своё сглаживание)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Multisampling: smoother edges"
+msgstr "Мультисэмплинг: более гладкие края"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Anisotropic Filtering"
+msgstr "Анизотропная фильтрация"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Textures stay sharp on floors and walls seen at an angle"
+msgstr "Сохраняет чёткость текстур пола и стен при взгляде под углом"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Not on this GPU"
+msgstr "Не поддерживается этой видеокартой"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Texture Filtering"
+msgstr "Фильтрация текстур"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Sharp"
+msgstr "Чёткая"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Smooth"
+msgstr "Сглаженная"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Sharp: the world's textures magnified by the nearest texel (square pixels up close); Smooth: blended"
+msgstr ""
+"Чётко: текстуры мира увеличиваются по ближайшему текселю (вблизи квадратные пиксели); Гладко: со смешиванием"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "HD Textures"
+msgstr "Текстуры HD"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Upscaled textures (waifu2x / Real-ESRGAN: tools/hd_textures.py) from {0}"
+msgstr ""
+"Увеличенные текстуры (waifu2x / Real-ESRGAN: tools/hd_textures.py) из {0}"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "None in {0} yet: --export-textures, then tools/hd_textures.py"
+msgstr "В {0} пока нет: --export-textures, затем tools/hd_textures.py"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "HD Models"
+msgstr "Модели HD"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Replacement models (glTF) from {0} - from the next scene on"
+msgstr "Заменённые модели (glTF) из {0} – со следующей сцены"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"None in {0} yet: --export-models, edit, save as models/hd/<figure>.glb"
+msgstr ""
+"В {0} пока нет: --export-models, отредактировать, сохранить как models/hd/<figure>.glb"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Smoother"
+msgstr "Усиленная"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Smooth Models"
+msgstr "Сглаживание моделей"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Rounder models (4x / 9x triangles), hard edges kept - from the next scene"
+msgstr ""
+"Более округлые модели (в 4 / 9 раз больше треугольников), острые края сохранены – со следующей сцены"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The models as the game built them"
+msgstr "Модели в том виде, в каком их создала игра"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Lock Orientation"
+msgstr "Блокировка ориентации"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Hold the current landscape direction and restore it on restart"
+msgstr ""
+"Удерживать текущую альбомную ориентацию и восстанавливать её при перезапуске"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Field Speed"
+msgstr "Скорость передвижения"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Walking the field 2 .. 5 times as fast - its scenes, talk and menus as they are"
+msgstr ""
+"Ходьба по локации в 2–5 раз быстрее – сцены, разговоры и меню как есть"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Battle Speed"
+msgstr "Скорость боя"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "The battles 2 .. 5 times as fast"
+msgstr "Сражения проходят в 2–5 раз быстрее"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Swap ○ and ×"
+msgstr "Поменять местами ○ и ×"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"A controller's × (the bottom button) confirms, ○ (the right one) goes back"
+msgstr "На контроллере × (нижняя кнопка) – подтвердить, ○ (правая) – назад"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"A controller's ○ (the right button) confirms, × (the bottom one) goes back - as on the Vita"
+msgstr ""
+"На контроллере ○ (правая кнопка) – подтвердить, × (нижняя) – назад, как на Vita"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Import Vita Saves"
+msgstr "Импорт сохранений Vita"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Import your decrypted Vita saves (docs/VITA_SAVES.md) - or press I in the options"
+msgstr ""
+"Импортировать расшифрованные сохранения Vita (docs/VITA_SAVES.md) – или нажмите I в настройках"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Cheats"
+msgstr "Читы"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"The port's own cheats: infinite HP / MP, one-hit kills, the gauges full, EXP and SP multipliers ..."
+msgstr ""
+"Собственные читы порта: бесконечные здоровье / магия, убийство одним ударом, полные шкалы, множители опыта и SP..."
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Defaults"
+msgstr "По умолчанию"
+
+#: src/viewer/viewer_gfx.cpp
+msgid ""
+"Every setting here back to its default (the cheats and the menu language as they are)"
+msgstr "Все настройки здесь – по умолчанию (читы и язык интерфейса остаются)"

@@ -485,6 +485,16 @@ void Viewer::loadMessageWindow(const std::string& fontPath, std::vector<uint8_t>
                                                      "/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc"})};
     if (!(fb && *fb)) // (font/'s Japanese / Chinese / Korean fonts before the system's - CR2_FONT_FALLBACK first)
         fallbacks.insert(fallbacks.begin(), ownCjkFonts.begin(), ownCjkFonts.end());
+    // (Cyrillic and Greek - the port's own text in Russian, a fan translation's -: a system sans before them all, the
+    // Japanese faces drawing those letters full-width; it fills only what the game's font lacks)
+    if (!(fb && *fb)) {
+        const std::string sans = cr2::TextRasterizer::firstFont(
+            {"/usr/share/fonts/noto/NotoSans-Regular.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
+             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+             winFonts + "segoeui.ttf", winFonts + "arial.ttf", "/System/Library/Fonts/Supplemental/Arial.ttf",
+             "/system/fonts/Roboto-Regular.ttf", "/system/fonts/NotoSans-Regular.ttf", "/system/fonts/DroidSans.ttf"});
+        if (!sans.empty() && sans != font.path()) fallbacks.insert(fallbacks.begin(), sans);
+    }
     std::string fallback;
     for (const std::string& f : fallbacks) {
         if (f.empty() || !font.loaded()) continue;
@@ -492,10 +502,10 @@ void Viewer::loadMessageWindow(const std::string& fontPath, std::vector<uint8_t>
         else fallback += (fallback.empty() ? "" : ", ") + f;
     }
 #ifdef SDL_PLATFORM_IOS
-    // (iOS: its own faces through CoreText, as the iPad release asks UIKit for them - Japanese, then Simplified and
+    // (iOS: its own faces through CoreText, as the iPad release asks UIKit for them - Arial for Cyrillic, Japanese, then Simplified and
     // Traditional Chinese, then Korean)
     if (!(fb && *fb) && font.loaded())
-        for (const char* name : {"HiraKakuProN-W6", "PingFangSC-Regular", "PingFangTC-Regular", "AppleSDGothicNeo-Regular"}) {
+        for (const char* name : {"ArialMT", "HiraKakuProN-W6", "PingFangSC-Regular", "PingFangTC-Regular", "AppleSDGothicNeo-Regular"}) {
             std::string p;
             int face = 0;
             if (cr2::TextRasterizer::appleFont(name, p, face) && font.addFallback(p, &err, face))
@@ -505,6 +515,8 @@ void Viewer::loadMessageWindow(const std::string& fontPath, std::vector<uint8_t>
     SDL_Log("message windows: vista %zu meshes, narration %zu joints; font %s%s%s", vistaWindow.fig.meshes.size(),
             narrationWindow.joints.size(), font.loaded() ? font.path().c_str() : "none (no text)", fallback.empty() ? "" : ", then ",
             fallback.c_str());
+    // (the port's own text: a translation these fonts can't draw shown in English)
+    if (font.loaded()) uitext::setCoverage([this](const std::string& t) { return font.drawsAll(t); }, font.generation());
 }
 
 // a joint of a window's figure, posed, in UI units

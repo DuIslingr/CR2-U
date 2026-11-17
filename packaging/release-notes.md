@@ -1,25 +1,34 @@
-# CR2-U v0.7.3
+# CR2-U v0.7.4
 
-A fix release for [v0.7.2](https://github.com/DuIslingr/CR2-U/releases/tag/v0.7.2): Flydigi controllers
-on Windows, and the story carrying on after the opening battle. Everything in v0.7.0's, v0.7.1's and
-v0.7.2's notes still applies.
+The port's own menus now come in nine languages. Everything in v0.7.0's - v0.7.3's notes still applies.
+
+## New
+
+- **Menu Language:** what CR2-U adds to the game - its settings list and Cheats (each row, value and
+  help line), the first start's setup and the Vita save import - is no longer English only. The
+  first row of *Display & Graphics* picks the language: English, Japanese, French, German, Spanish,
+  Simplified and Traditional Chinese, Korean or Russian. *Auto* (the default) follows the game's own
+  Language option; a first start uses your system's language. The translations use the game's own
+  terms in each language (the Break and Charge gauges, sopia, awakenings, advents, OZ).
+  - You can fix or add a translation without a new build: put a `lang/<code>.po` file (see
+    `engine/lang/README.md`) in your game folder or the profile folder, and it is read first.
+  - Only the shared strings' Russian has been written by a person (metastigma's); the rest of each
+    language is a machine translation, not yet reviewed by native speakers. Corrections are welcome.
 
 ## Fixed
 
-- **Flydigi controllers on Windows, take three:** v0.7.2's SDL update found the Vader 4 Pro, but it
-  shows up as two "Xbox 360 Controller" devices, and its input comes on the second, which was never
-  opened, so the pad looked found but did nothing. Now every controller is opened, and the one you
-  press or move takes over. Every controller SDL finds is still written to `cr2view.log`.
-- **The story goes on after the opening battle:** losing to Neron in the opening, as the story has
-  it, sent v0.7.0 - v0.7.2 back to the title screen instead of on into the story
-  ([#5](https://github.com/DuIslingr/CR2-U/issues/5)). A battle's way out was also taken for the one
-  of a battle run on its own, which ends at the title. Escapes and the story's other battles could
-  hit the same path. They all go back to the story now.
+- **Russian letters drawn full-width:** the game's fonts draw Cyrillic as wide as a kanji, so Russian
+  came out letter-spaced and ran past its row. Cyrillic now comes from a proportional system font
+  (Noto Sans, DejaVu Sans, Segoe UI, Arial, Roboto, whichever the system has), and a settings row too
+  long for its space is squeezed to fit. The game's own text has no Cyrillic, so nothing of the
+  original looks different.
+- **Linux, AMD (RADV):** FSR 4 runs about 0.3 ms faster per frame at 4K.
 
 ### Thanks to metastigma
 
-[metastigma](https://github.com/metastigma) sent the log that showed the Vader 4 Pro's two devices
-(CRO-U #4).
+[metastigma](https://github.com/metastigma) asked for the menus in every language (CRO-U #10) and
+wrote the Russian of the strings CRO-U shares
+([CRO-U-metastigma#51](https://github.com/metastigma/CRO-U-metastigma/pull/51)).
 
 ## Downloads
 
@@ -51,7 +60,7 @@ The README's "What you need" section lists which releases of the game work and w
 
 ## Good to know
 
-- **Android, updating:** v0.7.3 installs over v0.7.2, v0.7.1, v0.7.0 and v0.5.0, keeping your game files and saves.
+- **Android, updating:** v0.7.4 installs over v0.7.3, v0.7.2, v0.7.1, v0.7.0 and v0.5.0, keeping your game files and saves.
 - **No game data is included.** You need your own copy; the port reads it at run time.
 - **Tested on:** Linux (played), Windows (under Wine). The macOS, Android and iOS builds are made
   by CI. Reports are welcome.

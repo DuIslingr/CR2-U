@@ -19,6 +19,7 @@
 #include <functional>
 #include <iterator>
 #include <map>
+#include <unordered_map>
 #include <memory>
 #include <random>
 #include <set>
@@ -185,10 +186,30 @@ struct Viewer {
             bool any() const { return hp || mp || oneHit || fullBreak || fullCharge || firstStrike || noBattles || maxOz || exp > 1 || sp > 1; }
         } cheats;
         std::string uiLang = "auto"; // the Menu Language (the port's own text, platform/ui_text.hpp): "auto" (the game's language's) or a code
+        bool fanText = false;        // the fan translation is the game's text (settings.ini's fan_text=; #11)
     } settings;
+    // A fan translation as a language of its own (#11): its files loose in translation/<code>/ of a game folder or the
+    // profile folder (message\*.dat, data\*.dat, images\*.img - by their names, in any folders) read over the archive's
+    // while it is the language. The game's Language stays English (the translation's text is in English's slot): its
+    // layout, its voices; a file the translation lacks is the game's own
+    struct FanSource {
+        std::unordered_map<std::string, std::string> files; // the archive's name (MvglArchive::key) -> the file
+        std::string where, code, name;                       // its folder; its language ("ru"); that in itself ("Русский")
+        bool isOpen() const { return !files.empty(); }
+    } fan;
+    // `given` (--translation, CR_TRANSLATION) or the first translation/<folder>/ in `places` with files of the archive's
+    bool openFanTranslation(const std::string& given, const std::vector<std::string>& places);
+    // a translation's language from its files (Cyrillic in a message's English: "ru"), else its folder's name if it is a code
+    static std::string fanLanguageCode(const std::string& folder);
+    // the files a translation in `folder` has (.dat / .img, its folders as they are)
+    static bool fanFilesIn(const std::string& folder);
+    bool fanActive() const { return settings.fanText && optionLanguage == 1 && fan.isOpen(); }
+    int languageChoice() const { return fanActive() ? 8 : optionLanguage; } // (the Options' Language: 0..7 the game's, 8 the translation)
+    bool fanApplied = false;
+    void applyFanText(); // the overlay set or cleared as fanActive() says; the text and the redrawn art read again
     // that language set (applyUiLanguage: CR_UI_LANG over it) - again as the game's language changes, for "auto"
     void applyUiLanguage();
-    int uiLangFor = -2; // (the optionLanguage it was set for)
+    int uiLangFor = -2; // (the languageChoice() it was set for)
     // the cheats outside battle, each frame: the party's MP full between battles (Infinite MP), the Oz at
     // its most (Max Oz)
     void applyFieldCheats();

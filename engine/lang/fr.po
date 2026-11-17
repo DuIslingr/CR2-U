@@ -639,6 +639,10 @@ msgid ""
 msgstr ""
 "La traduction amateur est décompressée dans {0} ; {1} n'est plus nécessaire : le supprimer pour récupérer l'espace."
 
+#: src/viewer/viewer_fan.cpp
+msgid "Fan translation"
+msgstr "Traduction amateur"
+
 #: src/viewer/viewer_gfx.cpp
 msgid "On"
 msgstr "Activé"

@@ -613,6 +613,10 @@ msgid ""
 "The fan translation is unpacked into {0} - {1} isn't needed any more: delete it to get the space back."
 msgstr "팬 번역을 {0}에 압축 해제했습니다. {1}은(는) 이제 필요 없습니다. 삭제하면 공간을 되찾을 수 있습니다."
 
+#: src/viewer/viewer_fan.cpp
+msgid "Fan translation"
+msgstr "팬 번역"
+
 #: src/viewer/viewer_gfx.cpp
 msgid "On"
 msgstr "켜기"

@@ -638,6 +638,10 @@ msgid ""
 msgstr ""
 "La traducción de fans está descomprimida en {0}; {1} ya no hace falta: bórralo para recuperar el espacio."
 
+#: src/viewer/viewer_fan.cpp
+msgid "Fan translation"
+msgstr "Traducción de fans"
+
 #: src/viewer/viewer_gfx.cpp
 msgid "On"
 msgstr "Activado"

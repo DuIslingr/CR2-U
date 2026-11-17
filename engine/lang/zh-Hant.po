@@ -609,6 +609,10 @@ msgid ""
 "The fan translation is unpacked into {0} - {1} isn't needed any more: delete it to get the space back."
 msgstr "非官方翻譯已解壓縮到{0}。已不再需要{1}，可將其刪除以釋放空間。"
 
+#: src/viewer/viewer_fan.cpp
+msgid "Fan translation"
+msgstr "非官方翻譯"
+
 #: src/viewer/viewer_gfx.cpp
 msgid "On"
 msgstr "開啟"

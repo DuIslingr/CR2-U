@@ -41,12 +41,19 @@ public:
     bool read(const Entry& e, std::vector<uint8_t>& out, std::string* error = nullptr) const;
     bool read(const std::string& name, std::vector<uint8_t>& out, std::string* error = nullptr) const;
 
-private:
+    // Loose files read in place of the archive's by read(name): a fan translation's (#11) - its name in
+    // the archive ("message\\t01_02_c005_0101a.dat", any case, '/' or '\\') -> the file's path. Empty: none
+    void setOverlay(const std::unordered_map<std::string, std::string>& files);
+    const std::unordered_map<std::string, std::string>& overlay() const { return overlay_; }
+    // its key, as setOverlay's map and overlay() have them
     static std::string key(const std::string& name);
+
+private:
     std::string path_;
     std::FILE* file_ = nullptr;
     std::vector<Entry> entries_;
     std::unordered_map<std::string, size_t> byName_;
+    std::unordered_map<std::string, std::string> overlay_;
 };
 
 } // namespace cr2

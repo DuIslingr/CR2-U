@@ -700,6 +700,26 @@ int newSessionSelfTest() {
         if (!ok) { ++problems; std::puts("new session FAILED: the Menu Language row"); }
         uitext::setLanguage("en");
     }
+    { // a fan translation (#11): the Options' Language a ninth choice after Korean, there only while one is found; Menu
+      // Language's Auto its language, the archive's reads its files while it is chosen
+        Viewer v;
+        auto cycle = [&](int id) { // (as advance() follows it)
+            v.optionTap(id);
+            if (v.fanActive() != v.fanApplied) v.applyFanText();
+            if (v.languageChoice() != v.uiLangFor) v.applyUiLanguage();
+            return v.languageChoice();
+        };
+        v.optionLanguage = 7;
+        bool ok = cycle(3106) == 0; // (none: Korean to Japanese)
+        v.fan.files[cr2::MvglArchive::key("message\\announcemenuname.dat")] = "-", v.fan.code = "ru", v.fan.name = "Русский";
+        v.optionLanguage = 7;
+        ok = ok && cycle(3106) == 8 && v.optionLanguage == 1 && v.settings.fanText && v.archive.overlay().size() == 1;
+        if (!SDL_getenv("CR_UI_LANG")) ok = ok && uitext::language() == "ru";
+        ok = ok && cycle(3106) == 0 && !v.settings.fanText && v.archive.overlay().empty() && cycle(3105) == 8 && cycle(3105) == 7;
+        std::printf("fan translation: the ninth language: %s\n", ok ? "ok" : "WRONG");
+        if (!ok) { ++problems; std::puts("new session FAILED: the fan translation's Language choice"); }
+        uitext::setLanguage("en");
+    }
     if (!leaderByDefault(true,true,false,false) || leaderByDefault(true,false,false,false) || leaderByDefault(false,true,false,false)) {
         ++problems; std::puts("new session FAILED: a game from the title has no leader");
     }
@@ -758,6 +778,11 @@ static cr2::SetupGame cr2SetupGame() {
                cr2::androidBundleOk(p); // (or an .xapk / .apks with them: unpacked on the start after)
     };
     setup.vitaOk = [archiveIs](const std::string& p) { return archiveIs(p, ".psp2.mvgl"); };
+    // A fan translation (#11): the game's files it changed, loose - its .zip / .rar / .7z dropped into translation/ is
+    // unpacked there (translation/<code>/: its language, Viewer::fanLanguageCode); never asked for in the setup
+    setup.patchOk = [](const std::string& p) { return Viewer::fanFilesIn(p); };
+    setup.untranslated = [](const std::string&) { return false; };
+    setup.patchName = [](const std::string& p) { return Viewer::fanLanguageCode(p); };
     return setup;
 }
 
@@ -809,6 +834,8 @@ int main(int argc, char** argv) {
     std::string upscaler = "off", quality = "quality";
     float sharpness = 0.3f;
     float runSeconds = 0; // --run: a capture plays this long first, 60 frames a second
+    std::string translationArg; // --translation: a fan translation's folder (CR_TRANSLATION)
+    bool fanTextArg = false;    // --fan-text: the game's text the fan translation's
     int fps = 60;         // --fps: the frame rate the window aims at (0: as fast as the display shows them)
     float yaw = 30, pitch = 15, startTime = 0;
     // no arguments (a double-click, Android's launcher): the game, from its title screen
@@ -902,6 +929,8 @@ int main(int argc, char** argv) {
         else if (a == "--fps" && next) fps = std::clamp(std::atoi(next), 0, 1000), ++i;
         else if (a == "--run" && next) runSeconds = float(std::atof(next)), ++i;
         else if (a == "--sharpness" && next) sharpness = std::clamp(float(std::atof(next)), 0.0f, 1.0f), ++i;
+        else if (a == "--translation" && next) translationArg = next, ++i; // (a fan translation's folder, not translation/'s: #11)
+        else if (a == "--fan-text") fanTextArg = true; // (the game in it: tests, captures)
     }
 #if !defined(SDL_PLATFORM_ANDROID)
     // the log, also into cr2view.log in the profile folder (the last start's kept as cr2view.prev.log): the Windows
@@ -1086,6 +1115,17 @@ int main(int argc, char** argv) {
         return 1;
     }
     SDL_Log("data: %s", data.c_str());
+    { // a fan translation in translation/ (one dropped there as its .zip / .rar / .7z first unpacked): a language of its own (#11)
+        if (translationArg.empty())
+            if (const char* env = SDL_getenv("CR_TRANSLATION")) translationArg = env;
+        std::vector<std::string> places = dataPlaces();
+        places.push_back(Viewer::savePath("")); // (the profile folder: a phone's)
+        if (translationArg.empty())
+            for (const std::string& place : places)
+                if (cr2::installDroppedPatch(cr2SetupGame(), place, !capture.empty())) break;
+        v.openFanTranslation(translationArg, places);
+        if (fanTextArg) v.settings.fanText = true, v.optionLanguage = 1;
+    }
     const std::string gameFolder = searched.empty() ? dataPlaces().front() : searched.front(); // (textures/ goes here)
     { // the HD textures: textures/hd/ in the game folder - on, unless settings.ini says otherwise, when it is there
         const char* env = SDL_getenv("CR2_HD_TEXTURES");
@@ -1456,7 +1496,7 @@ int main(int argc, char** argv) {
         if (tapAfter) v.tap(); // (--tap: then a tap, before --run)
         if (const char* row = SDL_getenv("CR2_CAPTURE_SETTINGS")) { // (tests: as below, before --run)
             v.optionsOpen = true, v.campOpen = !v.battleMode;
-            v.openSettings();
+            if (row[0] != 'o') v.openSettings(); // ("o": the game's Options themselves)
             if (row[0] == 'c') v.settingsPage = 1, ++row; // ("c<row>": the Cheats page's)
             v.settingsCursor = std::atoi(row);
         }
@@ -1589,7 +1629,7 @@ int main(int argc, char** argv) {
         }
         if (const char* row = SDL_getenv("CR2_CAPTURE_SETTINGS"); row && !v.settingsOpen) { // (tests: the Display & Graphics list over the camp's options, that row in focus)
             v.optionsOpen = true, v.campOpen = !v.battleMode;
-            v.openSettings();
+            if (row[0] != 'o') v.openSettings(); // ("o": the game's Options themselves)
             if (row[0] == 'c') v.settingsPage = 1, ++row; // ("c<row>": the Cheats page's)
             v.settingsCursor = std::atoi(row);
         }

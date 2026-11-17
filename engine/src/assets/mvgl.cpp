@@ -138,7 +138,23 @@ bool MvglArchive::read(const Entry& e, std::vector<uint8_t>& out, std::string* e
     return true;
 }
 
+void MvglArchive::setOverlay(const std::unordered_map<std::string, std::string>& files) {
+    overlay_.clear();
+    for (const auto& [name, path] : files) overlay_[key(name)] = path;
+}
+
 bool MvglArchive::read(const std::string& name, std::vector<uint8_t>& out, std::string* error) const {
+    if (!overlay_.empty())
+        if (const auto it = overlay_.find(key(name)); it != overlay_.end()) {
+            if (std::FILE* f = std::fopen(it->second.c_str(), "rb")) {
+                out.clear();
+                uint8_t buf[65536];
+                for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) out.insert(out.end(), buf, buf + n);
+                const bool ok = !std::ferror(f);
+                std::fclose(f);
+                if (ok) return true;
+            } // (one that can't be read: the archive's own)
+        }
     const Entry* e = find(name);
     if (!e) return fail(error, name + ": not in the archive"), false;
     return read(*e, out, error);

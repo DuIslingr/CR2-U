@@ -55,6 +55,7 @@ AppImage). On Android it is `Android/data/local.preservation.chaosrings2/files/`
 ├── ios/       the iPad 2.1.0 .ipa, or its app (ChaosRings2enHD.app, or Payload/ChaosRings2enHD.app as unzipped)
 ├── vita/      PCSG00498/ as installed (eboot.bin, sce_sys/, CR2/) - or a NoNpDrm dump as dumped
 ├── font/      optional: your own fonts (.ttf, .otf, .ttc) over the game's
+├── translation/  optional: a fan translation of the game's text (see Settings)
 ├── fsr4/      optional: AMD's FSR 4 files (see Settings)
 ├── textures/  optional: export/ and hd/ for HD textures
 └── models/    optional: export/ and hd/ for HD models
@@ -160,6 +161,7 @@ CR2-U's list, saved in `settings.ini`. Most also have a command-line flag for a 
 
 | Setting | What it does |
 |---|---|
+| Menu Language | the language of CR2-U's own text: this list, Cheats, the first start's setup, the Vita save import. Auto (the default) follows the game's Language. |
 | Display, Resolution, VSync, Frame Rate | window / fullscreen / borderless, output size (up to 3840 x 2160), frame cap. The game runs at 20 updates a second; the port draws 60 or more frames in between. |
 | Renderer | Vulkan (default) or OpenGL; takes effect on the next start |
 | Upscaler, Upscale Mode, Sharpness | FSR 3.1, FSR 4, DLSS or MetalFX. The scene renders smaller and is upscaled; menus stay sharp. |
@@ -169,6 +171,17 @@ CR2-U's list, saved in `settings.ini`. Most also have a command-line flag for a 
 | Field Speed, Battle Speed | Off or 2x to 5x |
 | Swap ○ and × | which controller button confirms |
 | Lock Orientation | keep the current landscape direction (phones) |
+
+**Fan translation:** a translation of the game's text, in `translation/` in the game folder (or the
+profile folder). It doesn't replace anything: it is a language of its own after the game's, e.g.
+"Русский" in Options > Language, and English stays.
+- It is the game's files it changed, as they are in the archive: `message/*.dat` (and `data/*.dat`)
+  with the translation in English's place, and any art it redrew, `images/*.img`. Put them in a
+  folder named by the language, `translation/ru/`; any folders inside it are fine.
+- Or drop the `.zip`, `.rar` or `.7z` they come in into `translation/`: it is unpacked into its own
+  folder on the next start.
+- A file the translation doesn't have is the game's own (English). `--translation <folder>` or
+  `CR_TRANSLATION` picks one elsewhere; `--fan-text` starts in it.
 
 **FSR 4** (AMD RX 6000 or later, on Linux and Windows) needs AMD's own files, which can't be
 included. Put these in `fsr4/` in the game folder (its `README.txt` has the links):

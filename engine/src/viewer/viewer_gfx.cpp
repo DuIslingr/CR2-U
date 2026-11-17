@@ -126,6 +126,7 @@ void Viewer::loadSettings() {
         else if (k == "smooth_models") s.smoothModels = v == 2 || v == 3 ? v : 0;
         else if (k == "lock_orientation") s.lockOrientation = v != 0;
         else if (k == "cutout") s.cutout = v != 0;
+        else if (k == "fan_text") s.fanText = v != 0;
         else if (k == "landscape_flipped") s.landscapeFlipped = v != 0;
         else if (k == "pad_swap") s.padSwap = v != 0;
         else if (k == "field_speed") s.fieldSpeed = std::clamp(v, 1, 5);
@@ -159,7 +160,7 @@ void Viewer::saveSettings() const {
     SDL_free(serialized);
     text += "lock_orientation=" + std::to_string(int(s.lockOrientation)) + "\nlandscape_flipped=" + std::to_string(int(s.landscapeFlipped)) + "\n";
     text += "cutout=" + std::to_string(int(s.cutout)) + "\n";
-    text += "ui_lang=" + s.uiLang + "\n";
+    text += "ui_lang=" + s.uiLang + "\nfan_text=" + std::to_string(int(s.fanText)) + "\n";
     const Settings::Cheats& c = s.cheats; // (the Options' Cheats)
     text += "cheat_hp=" + std::to_string(int(c.hp)) + "\ncheat_mp=" + std::to_string(int(c.mp)) + "\ncheat_one_hit=" + std::to_string(int(c.oneHit)) +
             "\ncheat_full_break=" + std::to_string(int(c.fullBreak)) + "\ncheat_full_charge=" + std::to_string(int(c.fullCharge)) +
@@ -299,8 +300,10 @@ void Viewer::applyFieldCheats() {
 // The port's own text (platform/ui_text.hpp) in Settings::uiLang's language - "auto": the game's (the options' Language,
 // optionLanguage) -, CR_UI_LANG over it (tests, captures); its font the message windows' (a translation it can't draw: English)
 void Viewer::applyUiLanguage() {
-    uiLangFor = optionLanguage;
-    std::string want = settings.uiLang == "auto" ? uitext::codeForTextLanguage(optionLanguage) : settings.uiLang;
+    uiLangFor = languageChoice();
+    std::string want = settings.uiLang != "auto" ? settings.uiLang
+                       : fanActive()            ? fan.code // (the fan translation's language: Russian's catalog for a Russian one)
+                                                : uitext::codeForTextLanguage(optionLanguage);
     if (const char* forced = SDL_getenv("CR_UI_LANG"); forced && *forced) want = forced;
     if (want != uitext::language() && !uitext::setLanguage(want)) uitext::setLanguage("en");
 }

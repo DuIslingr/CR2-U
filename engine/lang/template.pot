@@ -597,6 +597,10 @@ msgid ""
 "The fan translation is unpacked into {0} - {1} isn't needed any more: delete it to get the space back."
 msgstr ""
 
+#: src/viewer/viewer_fan.cpp
+msgid "Fan translation"
+msgstr ""
+
 #: src/viewer/viewer_gfx.cpp
 msgid "On"
 msgstr ""

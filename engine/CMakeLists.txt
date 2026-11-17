@@ -373,6 +373,7 @@ set(VIEWER_SOURCES
     src/viewer/viewer_gfx.cpp
     src/viewer/viewer_battle.cpp
     src/viewer/viewer_event.cpp
+    src/viewer/viewer_fan.cpp
     src/viewer/viewer_menus.cpp
     src/viewer/audio.cpp
     src/viewer/setup.cpp

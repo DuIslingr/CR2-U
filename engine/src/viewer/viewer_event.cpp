@@ -1272,12 +1272,13 @@ void Viewer::optionTap(int id) {
         break;
     case 3103: optionQuality = (optionQuality + 2) % 3; break;
     case 3104: case 4098: optionQuality = (optionQuality + 1) % 3; break;
-    case 3105: // (only the languages this copy has: the Vita's no Korean)
-        do optionLanguage = (optionLanguage + 7) % 8; while (optionLanguage >= copyLanguages());
+    case 3105: case 3106: case 4099: { // (only the languages this copy has: the Vita's no Korean - then a fan translation, #11)
+        int c = languageChoice();
+        do c = (c + (id == 3105 ? 8 : 1)) % 9; while (c == 8 ? !fan.isOpen() : c >= copyLanguages());
+        if ((c == 8) != settings.fanText) settings.fanText = c == 8, saveSettings();
+        optionLanguage = c == 8 ? 1 : c;
         break;
-    case 3106: case 4099:
-        do optionLanguage = (optionLanguage + 1) % 8; while (optionLanguage >= copyLanguages());
-        break;
+    }
     case 3201: // (8: the music stopped, InterfaceMain to the title, 0x1d)
         audio.playSe(0xb4, false); // (the choice's own sound, left on)
         if (optionsReset == 1) { // (TitleOptionMenu 6: the second question)
@@ -1299,7 +1300,7 @@ void Viewer::optionTap(int id) {
         break;
     default: break;
     }
-    if (id >= 3103 && id <= 3106) SDL_Log("options: language %d, quality %d", optionLanguage, optionQuality);
+    if (id >= 3103 && id <= 3106) SDL_Log("options: language %d%s, quality %d", optionLanguage, fanActive() ? " (the fan translation)" : "", optionQuality);
 }
 void Viewer::openManual() {
     manualEntries.clear();
@@ -1485,12 +1486,16 @@ void Viewer::drawOptions(const Mat4& view, const Mat4& proj, int w, int h) {
             // UpdateLanguageButton: 0x534750's 41 Japanese, 42 English, ...)
             const int n = std::atoi(j.c_str() + 17);
             static const int kLanguageFrame[8] = {41, 42, 44, 45, 46, 47, 48, 40}; // (0x534728)
-            poseUi(c, "circlebtn_fr", float(n == 99 ? kLanguageFrame[std::clamp(optionLanguage, 0, 7)] : n == 98 ? 0 : n) / 20.0f); // (98, the quality's: frame 0, its text over it)
+            const bool fanButton = n == 99 && fanActive(); // (the fan translation's: frame 0, its name over it)
+            poseUi(c, "circlebtn_fr", float(fanButton ? 0 : n == 99 ? kLanguageFrame[std::clamp(optionLanguage, 0, 7)] : n == 98 ? 0 : n) / 20.0f); // (98, the quality's: frame 0, its text over it)
             c.fig.tint[0] = c.fig.tint[1] = c.fig.tint[2] = (n == 36 || n == 37) && ((n == 36) != settings.lockOrientation) ? 0.45f : 1.0f;
             drawFigure(c.fig, view.data());
             c.fig.tint[0] = c.fig.tint[1] = c.fig.tint[2] = 1.0f;
             float sx, sy, ex, ey;
-            if ((n == 36 || n == 37 || n == 98 || n == 99) && uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) tapRects.push_back({4000 + n, sx, sy, ex, ey});
+            if ((n == 36 || n == 37 || n == 98 || n == 99) && uiJoint(c, "tapAreaS01", sx, sy) && uiJoint(c, "tapAreaE01", ex, ey)) {
+                tapRects.push_back({4000 + n, sx, sy, ex, ey});
+                if (fanButton) drawBorderedText(fan.name, 26, (sx + ex) * 0.5f, (sy + ey) * 0.5f, w, h, false, 1.0f, std::abs(ex - sx) * 0.9f);
+            }
         } else if (j.rfind("call_mainIcon_id", 0) == 0 && uiJoint(seat, j, x, y)) {
             UiFig& ic = uiFig("mainicon_id");
             ic.fig.place = cr2::Mat34();

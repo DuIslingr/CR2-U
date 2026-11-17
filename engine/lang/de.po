@@ -639,6 +639,10 @@ msgid ""
 msgstr ""
 "Die Fan-Übersetzung wurde nach {0} entpackt – {1} wird nicht mehr benötigt: löschen, um den Platz freizugeben."
 
+#: src/viewer/viewer_fan.cpp
+msgid "Fan translation"
+msgstr "Fan-Übersetzung"
+
 #: src/viewer/viewer_gfx.cpp
 msgid "On"
 msgstr "An"

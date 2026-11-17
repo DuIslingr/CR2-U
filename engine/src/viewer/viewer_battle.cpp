@@ -121,6 +121,7 @@ void Viewer::applySystem() {
             optionLanguage = systemOptions[0], optionQuality = systemOptions[1], optionVolume[0] = systemOptions[2],
             optionVolume[1] = systemOptions[3], optionVolume[2] = systemOptions[4];
     }
+    if (fanActive() != fanApplied) applyFanText(); // (before any text is read in it)
     setVersionUpFlags();
 }
 // Cr3UtilSetupVersionUp, run at every boot after the system data loads: system flags 201 and 202

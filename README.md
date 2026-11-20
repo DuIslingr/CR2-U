@@ -142,7 +142,7 @@ Full details, with the original's code references: [docs/CONTROLS.md](docs/CONTR
 | Arrow keys / W A S D | run on the field (hold Shift to walk); move the cursor in menus |
 | Return | talk, turn a page, confirm |
 | Backspace (Android: Back) | back, cancel |
-| F11 or Alt+Enter | windowed / fullscreen (Options' Display setting; the fullscreen kind last chosen there, borderless at first; saved; desktop only) |
+| F11 or Alt+Enter | windowed / fullscreen for this session (the fullscreen kind last chosen in Options' Display, borderless at first); the next start opens as Display says; desktop only |
 | Page Up / Page Down | as L / R |
 | Y / N | answer a question |
 | Tab | the field tab (Camp, Map, Save); Graphics in the options |
@@ -171,6 +171,7 @@ CR2-U's list, saved in `settings.ini`. Most also have a command-line flag for a 
 | Field Speed, Battle Speed | Off or 2x to 5x |
 | Swap ○ and × | which controller button confirms |
 | Lock Orientation | keep the current landscape direction (phones) |
+| Quit Game | closes the game, after asking (desktop) |
 
 **Fan translation:** a translation of the game's text, in `translation/` in the game folder (or the
 profile folder). It doesn't replace anything: it is a language of its own after the game's, e.g.

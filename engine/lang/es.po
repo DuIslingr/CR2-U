@@ -638,6 +638,10 @@ msgid ""
 msgstr ""
 "La traducción de fans está descomprimida en {0}; {1} ya no hace falta: bórralo para recuperar el espacio."
 
+#: src/viewer/viewer_event.cpp
+msgid "Quit the game?"
+msgstr "¿Salir del juego?"
+
 #: src/viewer/viewer_fan.cpp
 msgid "Fan translation"
 msgstr "Traducción de fans"
@@ -1064,3 +1068,11 @@ msgid ""
 "Every setting here back to its default (the cheats and the menu language as they are)"
 msgstr ""
 "Todos estos ajustes a su valor predeterminado (los trucos y el idioma de los menús se mantienen)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Quit Game"
+msgstr "Salir del juego"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Close CR2-U. What you haven't saved is lost."
+msgstr "Cierra CR2-U. Lo que no hayas guardado se perderá."

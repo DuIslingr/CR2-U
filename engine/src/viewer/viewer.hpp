@@ -226,6 +226,10 @@ struct Viewer {
     // F11 / Alt+Enter (a desktop's): windowed <-> fullscreen - the kind last chosen, borderless at first -,
     // the Options' Display setting itself (shown there, saved)
     void toggleFullscreen();
+    // F11 / Alt+Enter's display, for this session only (-1: settings.display, Options' - the saved one); the
+    // fullscreen it goes back to (0: settings.fullscreenKind)
+    int sessionDisplay = -1, sessionKind = 0;
+    int displayNow() const { return sessionDisplay >= 0 ? sessionDisplay : settings.display; }
     // The HD replacement for a picture; one that doesn't fit it is left out, said once
     std::set<std::string> hdRefused;
     bool loadHd(const cr2::Image& img, cr2::Image& hd);
@@ -1555,7 +1559,7 @@ struct Viewer {
     // "erase all game data?" (announce 0x6e), then again (0x6f); yes: Cr3Util_Delete_GameData /
     // ContData / SystemData, Cr3OptionData::Init, Cr3UtilInitWork - the options closed, the title's
     // buttons; no either time, the options again
-    int optionsReset = 0; // (1 the first question, 2 the second)
+    int optionsReset = 0; // (1 the first question, 2 the second; 3 CR2-U's Quit Game - the desktop's)
     bool titleOptions() const;
     void resetData();
     void optionTap(int id);

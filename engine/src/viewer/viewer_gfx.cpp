@@ -172,12 +172,12 @@ void Viewer::saveSettings() const {
 }
 void Viewer::toggleFullscreen() {
 #if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
-    Settings& s = settings;
-    if (s.display) s.fullscreenKind = s.display;
-    s.display = s.display ? 0 : std::clamp(s.fullscreenKind, 1, 2);
-    SDL_Log("display: %s (F11 / Alt+Enter)", s.display == 0 ? "windowed" : s.display == 1 ? "fullscreen" : "borderless");
+    // (this session's alone: settings.ini keeps the Options' Display - CRO-U #15)
+    const int now = displayNow();
+    if (now) sessionKind = now;
+    sessionDisplay = now ? 0 : std::clamp(sessionKind ? sessionKind : settings.fullscreenKind, 1, 2);
+    SDL_Log("display: %s (F11 / Alt+Enter, this session)", sessionDisplay == 0 ? "windowed" : sessionDisplay == 1 ? "fullscreen" : "borderless");
     applySettings();
-    saveSettings();
 #endif
 }
 // The settings onto the device, the window and the textures (each only as it changes)
@@ -207,15 +207,15 @@ void Viewer::applySettings() {
     // (an upscaler's scene is smaller: the mips its output would take - DLSS's and FSR's advice)
     tf.lodBias = upscale.mode != cr2::Upscaler::Off ? -std::log2(upscale.ratio) : 0.0f;
     dev->setFiltering(tf);
-    if (window && s.display != appliedDisplay) {
+    if (window && displayNow() != appliedDisplay) {
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
         SDL_SetWindowFullscreen(window, true); // (a phone's or tablet's: the whole screen, the system's bars hidden - SDL's immersive mode)
 #else
-        if (s.display == 1) SDL_SetWindowFullscreenMode(window, SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(window)));
+        if (displayNow() == 1) SDL_SetWindowFullscreenMode(window, SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(window)));
         else SDL_SetWindowFullscreenMode(window, nullptr);
-        SDL_SetWindowFullscreen(window, s.display != 0);
+        SDL_SetWindowFullscreen(window, displayNow() != 0);
 #endif
-        appliedDisplay = s.display;
+        appliedDisplay = displayNow();
     }
     if (s.hdTextures != hdTextures) hdTextures = s.hdTextures, reloadTextures();
     if (!orientationApplied || appliedLock != s.lockOrientation || appliedFlip != s.landscapeFlipped) {
@@ -336,9 +336,9 @@ auto Viewer::settingRows() -> std::vector<SettingRow> {
     }
 #if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS) // (a phone's: the whole screen at its own size, always - applySettings)
     static const char* const kDisplay[] = {N_("Window"), N_("Fullscreen"), N_("Borderless")};
-    rows.push_back({tr("Display"), tr(kDisplay[std::clamp(s.display, 0, 2)]), tr("A window, fullscreen at the display's own mode, or borderless over the desktop"),
-                    true, [&s](int d) {
-                        s.display = (s.display + d + 3) % 3;
+    rows.push_back({tr("Display"), tr(kDisplay[std::clamp(displayNow(), 0, 2)]), tr("A window, fullscreen at the display's own mode, or borderless over the desktop"),
+                    true, [this, &s](int d) {
+                        s.display = (displayNow() + d + 3) % 3, sessionDisplay = -1, sessionKind = 0; // (the saved one, F11's undone)
                         if (s.display) s.fullscreenKind = s.display; // (F11's from now on)
                     }});
     {
@@ -462,12 +462,22 @@ auto Viewer::settingRows() -> std::vector<SettingRow> {
     rows.push_back({tr("Cheats"), s.cheats.any() ? tr("On") : "",
                     tr("The port's own cheats: infinite HP / MP, one-hit kills, the gauges full, EXP and SP multipliers ..."),
                     true, [this](int) { settingsPage = 1, settingsCursor = 0; }});
-    rows.push_back({tr("Defaults"), "", tr("Every setting here back to its default (the cheats and the menu language as they are)"), true, [&s](int) {
+    rows.push_back({tr("Defaults"), "", tr("Every setting here back to its default (the cheats and the menu language as they are)"), true, [this, &s](int) {
                         const Settings::Cheats keep = s.cheats;
                         const std::string lang = s.uiLang;
+                        const bool fanText = s.fanText;
                         s = Settings();
-                        s.cheats = keep, s.uiLang = lang;
+                        s.cheats = keep, s.uiLang = lang, s.fanText = fanText, sessionDisplay = -1, sessionKind = 0;
                     }});
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+    // Quit Game (CRO-U #16, the desktop's: a phone's app is left as the system leaves it) - asked first, on the
+    // game's own Yes / No window, the Options' "return to the title?"'s: the list and the options close, then it asks
+    rows.push_back({tr("Quit Game"), "", tr("Close CR2-U. What you haven't saved is lost."), true, [this](int) {
+                        settingsOpen = false, settingsPage = 0;
+                        optionsReset = 3;
+                        optionsCloseAt = uiClock, optionsCloseFrom = uiClock - optionsStart, optionsCloseTicks = 0, optionsCloseTarget = 1;
+                    }});
+#endif
     return rows;
 }
 void Viewer::settingChange(int row, int dir) {

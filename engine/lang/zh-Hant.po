@@ -609,6 +609,10 @@ msgid ""
 "The fan translation is unpacked into {0} - {1} isn't needed any more: delete it to get the space back."
 msgstr "非官方翻譯已解壓縮到{0}。已不再需要{1}，可將其刪除以釋放空間。"
 
+#: src/viewer/viewer_event.cpp
+msgid "Quit the game?"
+msgstr "要結束遊戲嗎？"
+
 #: src/viewer/viewer_fan.cpp
 msgid "Fan translation"
 msgstr "非官方翻譯"
@@ -1011,3 +1015,11 @@ msgstr "預設值"
 msgid ""
 "Every setting here back to its default (the cheats and the menu language as they are)"
 msgstr "將此處所有設定恢復預設（作弊和介面語言保持不變）"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Quit Game"
+msgstr "結束遊戲"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Close CR2-U. What you haven't saved is lost."
+msgstr "關閉 CR2-U。未儲存的進度將會遺失。"

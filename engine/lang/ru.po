@@ -630,6 +630,10 @@ msgid ""
 msgstr ""
 "Фанатский перевод распакован в {0} — {1} больше не нужен: удалите его, чтобы освободить место."
 
+#: src/viewer/viewer_event.cpp
+msgid "Quit the game?"
+msgstr "Выйти из игры?"
+
 #: src/viewer/viewer_fan.cpp
 msgid "Fan translation"
 msgstr "Фанатский перевод"
@@ -1049,3 +1053,11 @@ msgstr "По умолчанию"
 msgid ""
 "Every setting here back to its default (the cheats and the menu language as they are)"
 msgstr "Все настройки здесь – по умолчанию (читы и язык интерфейса остаются)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Quit Game"
+msgstr "Выйти из игры"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Close CR2-U. What you haven't saved is lost."
+msgstr "Закрыть CR2-U. Всё несохранённое будет потеряно."

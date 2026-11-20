@@ -1281,6 +1281,14 @@ void Viewer::optionTap(int id) {
     }
     case 3201: // (8: the music stopped, InterfaceMain to the title, 0x1d)
         audio.playSe(0xb4, false); // (the choice's own sound, left on)
+        if (optionsReset == 3) { // (CR2-U's Quit Game: as the window's close button)
+            SDL_Event quit{};
+            quit.type = SDL_EVENT_QUIT;
+            SDL_PushEvent(&quit);
+            optionsReset = 0, optionsAsk = false;
+            SDL_Log("options: quit");
+            break;
+        }
         if (optionsReset == 1) { // (TitleOptionMenu 6: the second question)
             optionsReset = 2, optionsAskStart = uiClock;
             break;
@@ -1435,7 +1443,8 @@ void Viewer::drawOptionsAsk(const Mat4& view, int w, int h) { // (Battle / CampO
     tapRects.clear();
     const float t = optionsCloseAt >= 0 && optionsCloseTarget == 3 ? std::max(std::min(optionsCloseFrom, 0.2f) - (uiClock - optionsCloseAt), 0.0f)
                                                                   : uiClock - optionsAskStart; // (the No: the choice played back)
-    drawAsk(announce(optionsReset == 1 ? 0x6e : optionsReset == 2 ? 0x6f : 0x6d), t, view, w, h, 3201, 3202, true);
+    drawAsk(optionsReset == 3 ? std::string(tr("Quit the game?")) : announce(optionsReset == 1 ? 0x6e : optionsReset == 2 ? 0x6f : 0x6d), t, view, w, h, 3201,
+            3202, true);
 }
 void Viewer::saveImportAnswer(bool yes) {
     const bool finished = saveImport.state == vitaimport::Session::Result && saveImport.succeeded;

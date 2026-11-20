@@ -612,6 +612,10 @@ msgid ""
 "The fan translation is unpacked into {0} - {1} isn't needed any more: delete it to get the space back."
 msgstr "ファン翻訳を{0}に展開しました。{1}はもう不要です。削除すると空き容量が戻ります。"
 
+#: src/viewer/viewer_event.cpp
+msgid "Quit the game?"
+msgstr "ゲームを終了しますか？"
+
 #: src/viewer/viewer_fan.cpp
 msgid "Fan translation"
 msgstr "ファン翻訳"
@@ -1014,3 +1018,11 @@ msgstr "初期設定"
 msgid ""
 "Every setting here back to its default (the cheats and the menu language as they are)"
 msgstr "ここの設定をすべて初期値に戻す（チートとメニュー言語はそのまま）"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Quit Game"
+msgstr "ゲームを終了"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Close CR2-U. What you haven't saved is lost."
+msgstr "CR2-Uを終了します。セーブしていない進行状況は失われます。"

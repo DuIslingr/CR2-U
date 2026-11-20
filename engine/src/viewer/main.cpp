@@ -720,6 +720,35 @@ int newSessionSelfTest() {
         if (!ok) { ++problems; std::puts("new session FAILED: the fan translation's Language choice"); }
         uitext::setLanguage("en");
     }
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+    { // F11 / Alt+Enter this session's alone (CRO-U #15): settings.ini's display as it was; Options' Display the saved one,
+      // F11's undone. Quit Game (#16): asked first, Yes the window's close
+        Viewer v;
+        v.settings.display = 0, v.settings.fullscreenKind = 2;
+        v.toggleFullscreen();
+        bool ok = v.displayNow() == 2 && v.settings.display == 0;
+        v.toggleFullscreen();
+        ok = ok && v.displayNow() == 0 && v.settings.display == 0;
+        v.toggleFullscreen();
+        std::vector<Viewer::SettingRow> rows = v.settingRows();
+        for (Viewer::SettingRow& r : rows)
+            if (r.label == "Display") r.change(1); // (from the fullscreen F11 gave: to the window, saved)
+        ok = ok && v.sessionDisplay == -1 && v.settings.display == 0 && v.displayNow() == 0;
+        std::printf("display: F11 for the session: %s\n", ok ? "ok" : "WRONG");
+        if (!ok) { ++problems; std::puts("new session FAILED: F11 changed the saved display"); }
+        bool quit = false;
+        for (Viewer::SettingRow& r : v.settingRows())
+            if (r.label == "Quit Game") quit = true, r.change(1);
+        quit = quit && v.optionsReset == 3 && !v.settingsOpen && v.optionsCloseTarget == 1;
+        SDL_FlushEvent(SDL_EVENT_QUIT);
+        v.optionTap(3201);
+        SDL_PumpEvents();
+        quit = quit && SDL_PeepEvents(nullptr, 0, SDL_PEEKEVENT, SDL_EVENT_QUIT, SDL_EVENT_QUIT) == 1 && v.optionsReset == 0;
+        SDL_FlushEvent(SDL_EVENT_QUIT);
+        std::printf("quit game: asked, Yes quits: %s\n", quit ? "ok" : "WRONG");
+        if (!quit) { ++problems; std::puts("new session FAILED: Quit Game"); }
+    }
+#endif
     if (!leaderByDefault(true,true,false,false) || leaderByDefault(true,false,false,false) || leaderByDefault(false,true,false,false)) {
         ++problems; std::puts("new session FAILED: a game from the title has no leader");
     }
@@ -1284,7 +1313,10 @@ int main(int argc, char** argv) {
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
     const SDL_WindowFlags shown = capture.empty() && exploreDir.empty() ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_HIDDEN; // (the system's bars hidden from the start)
 #else
-    const SDL_WindowFlags shown = capture.empty() && exploreDir.empty() ? SDL_WINDOW_RESIZABLE : SDL_WINDOW_HIDDEN;
+    // (a game run's shown once settings.ini's display is set - applySettings below -: no window first, decorated,
+    // before its fullscreen - CRO-U #13; a capture's, an explore's stay hidden)
+    const bool showLater = capture.empty() && exploreDir.empty();
+    const SDL_WindowFlags shown = showLater ? SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN : SDL_WINDOW_HIDDEN;
 #endif
     for (const cr2::Backend b : {cr2::Backend::Vulkan, cr2::Backend::OpenGL}) {
         if (b == cr2::Backend::Vulkan && renderer != "vulkan") continue;
@@ -1323,6 +1355,16 @@ int main(int argc, char** argv) {
     v.rendererInUse = dev->offscreen() ? 0 : 1;
     v.settings.upscaler = int(upscale.mode); // (one that can't run here: off)
     v.applySettings();
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+    if (showLater) { // (black until the first frame - not whatever the window held - while the data loads)
+        SDL_ShowWindow(win);
+        int pw = 0, ph = 0;
+        SDL_GetWindowSizeInPixels(win, &pw, &ph);
+        dev->beginFrame(pw, ph);
+        dev->endFrame(true);
+        SDL_Log("window: shown, %dx%d pixels, %s", pw, ph, v.displayNow() == 0 ? "windowed" : v.displayNow() == 1 ? "fullscreen" : "borderless");
+    }
+#endif
     v.shaders = std::make_unique<cr2::ShaderLibrary>(v.archive);
     if (titleScreen && playFrom.empty()) playFrom = "d1020"; // (the title's New Game: --play's start)
     if (!playFrom.empty()) fieldName = playFrom, v.playMode = true;
@@ -1496,7 +1538,9 @@ int main(int argc, char** argv) {
         if (tapAfter) v.tap(); // (--tap: then a tap, before --run)
         if (const char* row = SDL_getenv("CR2_CAPTURE_SETTINGS")) { // (tests: as below, before --run)
             v.optionsOpen = true, v.campOpen = !v.battleMode;
-            if (row[0] != 'o') v.openSettings(); // ("o": the game's Options themselves)
+            if (row[0] != 'o' && row[0] != 'q') v.openSettings(); // ("o": the game's Options themselves; "q": Quit Game's question)
+            if (row[0] == 'q' && !v.optionsAsk) v.optionsAsk = true, v.optionsReset = 3, v.optionsAskStart = v.uiClock;
+            if (row[0] == 'q') v.optionsOpen = false;
             if (row[0] == 'c') v.settingsPage = 1, ++row; // ("c<row>": the Cheats page's)
             v.settingsCursor = std::atoi(row);
         }
@@ -1629,7 +1673,9 @@ int main(int argc, char** argv) {
         }
         if (const char* row = SDL_getenv("CR2_CAPTURE_SETTINGS"); row && !v.settingsOpen) { // (tests: the Display & Graphics list over the camp's options, that row in focus)
             v.optionsOpen = true, v.campOpen = !v.battleMode;
-            if (row[0] != 'o') v.openSettings(); // ("o": the game's Options themselves)
+            if (row[0] != 'o' && row[0] != 'q') v.openSettings(); // ("o": the game's Options themselves; "q": Quit Game's question)
+            if (row[0] == 'q' && !v.optionsAsk) v.optionsAsk = true, v.optionsReset = 3, v.optionsAskStart = v.uiClock;
+            if (row[0] == 'q') v.optionsOpen = false;
             if (row[0] == 'c') v.settingsPage = 1, ++row; // ("c<row>": the Cheats page's)
             v.settingsCursor = std::atoi(row);
         }

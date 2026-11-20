@@ -639,6 +639,10 @@ msgid ""
 msgstr ""
 "La traduction amateur est décompressée dans {0} ; {1} n'est plus nécessaire : le supprimer pour récupérer l'espace."
 
+#: src/viewer/viewer_event.cpp
+msgid "Quit the game?"
+msgstr "Quitter le jeu ?"
+
 #: src/viewer/viewer_fan.cpp
 msgid "Fan translation"
 msgstr "Traduction amateur"
@@ -1068,3 +1072,11 @@ msgid ""
 "Every setting here back to its default (the cheats and the menu language as they are)"
 msgstr ""
 "Tous les réglages ici à leur valeur par défaut (les triches et la langue des menus restent)"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Quit Game"
+msgstr "Quitter le jeu"
+
+#: src/viewer/viewer_gfx.cpp
+msgid "Close CR2-U. What you haven't saved is lost."
+msgstr "Ferme CR2-U. Ce que vous n'avez pas sauvegardé est perdu."

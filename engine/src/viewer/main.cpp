@@ -1322,7 +1322,7 @@ int main(int argc, char** argv) {
         if (b == cr2::Backend::Vulkan && renderer != "vulkan") continue;
         std::unique_ptr<cr2::RenderDevice> d = b == cr2::Backend::Vulkan ? cr2::makeVkDevice() : cr2::makeGlDevice();
         if (!d) continue;
-        win = SDL_CreateWindow(titleScreen ? "Chaos Rings II" : "CR2-U viewer", width, height, SDL_WindowFlags(d->windowFlags()) | shown);
+        win = SDL_CreateWindow(titleScreen || continueSave ? "Chaos Rings II" : "CR2-U viewer", width, height, SDL_WindowFlags(d->windowFlags()) | shown);
         if (win && d->init(win)) {
             dev = std::move(d);
             SDL_Log("renderer: %s", dev->description().c_str());
@@ -2110,8 +2110,9 @@ int main(int argc, char** argv) {
             }
             if (v.fig.animLoaded && v.time > v.fig.anim.duration()) v.time = std::fmod(v.time, std::max(v.fig.anim.duration(), 0.05f));
             v.pose();
-            SDL_SetWindowTitle(win, ("CR2-U viewer (" + std::string(cr2::backendName(dev->windowFlags() & SDL_WINDOW_VULKAN ? cr2::Backend::Vulkan : cr2::Backend::OpenGL)) + ", " +
-                                     describe() + ", " + std::to_string(int(measured + 0.5f)) + " fps) - " + v.status + v.animStatus()).c_str());
+            if (!titleScreen && !continueSave) // (a game run keeps its plain "Chaos Rings II": the details are the viewer's)
+                SDL_SetWindowTitle(win, ("CR2-U viewer (" + std::string(cr2::backendName(dev->windowFlags() & SDL_WINDOW_VULKAN ? cr2::Backend::Vulkan : cr2::Backend::OpenGL)) + ", " +
+                                         describe() + ", " + std::to_string(int(measured + 0.5f)) + " fps) - " + v.status + v.animStatus()).c_str());
             int w = 0, h = 0;
             frameSize(w, h);
             v.draw(w, h);

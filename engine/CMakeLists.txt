@@ -236,31 +236,20 @@ if(NOT IOS) # (the command-line tool: a desktop's)
     target_link_libraries(cr2tool PRIVATE cr2core)
 endif()
 
-# The viewer: SDL3 (the system's when present, else built from source as CR1:U does) and OpenGL 3.3. Windows
-# always builds its own, from SDL's development branch at 59ccf612 (2026-11-14): the Flydigi Vader 4 Pro, wired
-# and through its receiver, isn't found with 3.4.20 - not with its HIDAPI Flydigi driver off either (CRO-U #4) -,
-# and works with that commit, as the metastigma fork has it and its user verified (metastigma/CRO-U-metastigma#42,
-# #45): SDL's Flydigi XInput detection and ignored-devices fixes after 3.4.20 (as CRO-U's c2de196). Back to a
-# release once one carries them
-if(NOT WIN32)
-    find_package(SDL3 CONFIG QUIET)
-endif()
-if(NOT SDL3_FOUND)
-    include(FetchContent)
-    if(WIN32)
-        FetchContent_Declare(SDL3
-            GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-            GIT_TAG 59ccf612c1ee00e3845947503ead7da3f46f6615)
-    else()
-        FetchContent_Declare(SDL3
-            GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-            GIT_TAG release-3.4.20  # the stable SDL3 of 2026-11 (as the Linux packages carry): its controller hot-plug fixes
-            GIT_SHALLOW TRUE)
-    endif()
-    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-    set(SDL_STATIC ON CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(SDL3)
-endif()
+# The viewer: SDL3 and OpenGL 3.3. SDL3 is built from source on every platform, from SDL's development branch at 59ccf612
+# (2026-11-14, SDL 3.5.0): the Flydigi Vader 4 Pro, wired and through its receiver, isn't found with 3.4.20 - not
+# with its HIDAPI Flydigi driver off either (CRO-U #4) -, and works with that commit, as the metastigma fork has it
+# and its user verified (metastigma/CRO-U-metastigma#42, #45): SDL's Flydigi XInput detection and ignored-devices
+# fixes after 3.4.20. Windows since 2026-11-14, every platform since 2026-11-20, so all controllers get the same
+# SDL; the system's package isn't used (Linux distributions carry 3.4). Android's Java glue comes from the same
+# commit (android/SDL, which needs compileSdk 36). Back to a release once one carries the fixes
+include(FetchContent)
+FetchContent_Declare(SDL3
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+    GIT_TAG 59ccf612c1ee00e3845947503ead7da3f46f6615)
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_STATIC ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(SDL3)
 # Vulkan back end: the loader + headers and glslc (shaders are compiled to SPIR-V at build time
 # and embedded). Without them the game builds with OpenGL only.
 # iOS: MoltenVK linked into the app (a MoltenVK release's static xcframework - CR_MOLTENVK, the folder

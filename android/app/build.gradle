@@ -1,23 +1,26 @@
 // The APK: the engine's libmain.so (SDL3 linked in, built from source) and SDL's own Java glue
 // (its android-project's org.libsdl.app, from the same SDL source: SDL3_SOURCE_DIR, else
-// android/SDL - a checkout of the tag engine/CMakeLists.txt fetches).
+// android/SDL - a checkout of the commit engine/CMakeLists.txt fetches).
 plugins {
     id 'com.android.application'
 }
 
 def sdlDir = System.getenv('SDL3_SOURCE_DIR') ?: "${rootDir}/SDL"
+// The version: engine/CMakeLists.txt's CR_VERSION (x.y.z), so a release bumps it in one place; the
+// version code x * 10000 + y * 100 + z, above every earlier build's (11)
+def crVersion = (file("${rootDir}/../engine/CMakeLists.txt").text =~ /set\(CR_VERSION "(\d+)\.(\d+)\.(\d+)"/)[0]
 
 android {
     namespace 'local.preservation.chaosrings2'
-    compileSdk 35
+    compileSdk 36 // (SDL 3.5's Java glue calls API 36's Display.getHighestHdrSdrRatio, behind a version check)
     if (project.hasProperty('ndkVersion')) ndkVersion project.property('ndkVersion')
 
     defaultConfig {
         applicationId 'local.preservation.chaosrings2'
         minSdk 24
         targetSdk 35
-        versionCode 11
-        versionName '0.5.0'
+        versionCode crVersion[1].toInteger() * 10000 + crVersion[2].toInteger() * 100 + crVersion[3].toInteger()
+        versionName "${crVersion[1]}.${crVersion[2]}.${crVersion[3]}"
         ndk { abiFilters 'arm64-v8a', 'x86_64' }
         externalNativeBuild {
             cmake {

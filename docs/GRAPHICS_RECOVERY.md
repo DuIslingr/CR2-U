@@ -12,7 +12,7 @@ art or a blank screen even though the gameplay state was still present.
 
 The pinned SDL release itself establishes the recovery contract:
 [`SDL_androidevents.c`, release-3.2.0](https://github.com/libsdl-org/SDL/blob/release-3.2.0/src/video/android/SDL_androidevents.c)
-(the same in [release-3.4.20](https://github.com/libsdl-org/SDL/blob/release-3.4.20/src/video/android/SDL_androidevents.c), pinned since 2026-11-14).
+(the same in [release-3.4.20](https://github.com/libsdl-org/SDL/blob/release-3.4.20/src/video/android/SDL_androidevents.c) and, for an OpenGL window, at [59ccf612](https://github.com/libsdl-org/SDL/blob/59ccf612c1ee00e3845947503ead7da3f46f6615/src/video/android/SDL_androidevents.c), SDL 3.5.0, pinned since 2026-11-20: only a Vulkan window now skips the EGL context backup).
 `android_egl_context_restore` tries to make the old EGL context current. When that
 fails, SDL creates and makes a replacement current, then pushes
 `SDL_EVENT_RENDER_DEVICE_RESET` with the window ID. The port must adopt that

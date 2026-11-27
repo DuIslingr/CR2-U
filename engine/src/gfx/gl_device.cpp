@@ -252,6 +252,9 @@ public:
                reinterpret_cast<const char*>(gl::GetString(GL_RENDERER));
     }
 
+    // (what's drawn from here to the next frame: the UI - Texture Filtering's Sharp is the world's alone)
+    void endScene() override { uiPass_ = true; }
+
     void setFiltering(const TextureFiltering& f) override {
         if (f == filtering_) return;
         filtering_ = f;
@@ -330,6 +333,7 @@ public:
     }
 
     void beginFrame(int w, int h) override {
+        uiPass_ = false;
         drawableW_ = w;
         drawableH_ = h;
         gl::Viewport(0, 0, w, h);
@@ -375,6 +379,8 @@ public:
         gl::BufferData(GL_ARRAY_BUFFER, sizeof(float) * 24, v, GL_DYNAMIC_DRAW);
         gl::ActiveTexture(GL_TEXTURE0);
         gl::BindTexture(GL_TEXTURE_2D, textureName(tex.id));
+        if (mipmapped_.count(tex.id)) // (a mipmapped texture's magnification: Sharp in the scene, the UI's always blended)
+            gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filtering_.sharp && !uiPass_ ? GL_NEAREST : GL_LINEAR);
         gl::Uniform4f(uColor_, rgba[0], rgba[1], rgba[2], rgba[3]);
         gl::DrawArrays(GL_TRIANGLES, 0, 6);
     }
@@ -569,7 +575,9 @@ private:
         gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
                           mips ? (smp.minLinear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR)
                                : smp.minLinear ? GL_LINEAR : GL_NEAREST);
-        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, smp.magLinear ? GL_LINEAR : GL_NEAREST);
+        // (Texture Filtering's Sharp: a mipmapped texture of the world's magnified by the nearest texel -
+        // set here, as every draw sets its own; not the UI's art)
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, smp.magLinear && !(mips && filtering_.sharp && !uiPass_) ? GL_LINEAR : GL_NEAREST);
     }
 
     // A 1x1 white texture for untextured meshes
@@ -593,6 +601,7 @@ private:
     bool colorWrite_ = true; // (setColorWrite: the props' depth-only pass)
     std::unordered_set<unsigned> mipmapped_; // textures uploaded with a mip chain
     TextureFiltering filtering_;
+    bool uiPass_ = false; // (endScene to the next beginFrame)
     // A mipmapped texture's filtering (bound): GL_TEXTURE_MAX_ANISOTROPY (GL 4.6 /
     // EXT_texture_filter_anisotropic; clamped to the GPU's limit), the nearest texel magnified
     void filter(unsigned id) {

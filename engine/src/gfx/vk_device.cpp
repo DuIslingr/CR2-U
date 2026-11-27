@@ -72,8 +72,8 @@ constexpr int kFrames = 2;                      // frames in flight
 constexpr VkDeviceSize kBlockSize = 64u << 20;  // memory blocks / buffer arenas
 constexpr VkDeviceSize kRingSize = 16u << 20;   // per-frame dynamic vertices, grows as needed
 constexpr VkDeviceSize kShadingRing = 1u << 20; // per-frame Material blocks (shading.glsl), grows too
-constexpr unsigned kSamplers = 128;             // sampler variants: 1/2 clamp S/T, 4 min / 8 mag linear,
-                                                 // 16 mipmapped, 32/64 mirrored S/T
+constexpr unsigned kSamplers = 256;             // sampler variants: 1/2 clamp S/T, 4 min / 8 mag linear,
+                                                 // 16 mipmapped, 32/64 mirrored S/T, 128 the UI's (mipmapped: not Sharp)
 constexpr VkFormat kColorFormat = VK_FORMAT_R8G8B8A8_UNORM;
 constexpr VkFormat kMotionFormat = VK_FORMAT_R16G16_SFLOAT; // scene: motion vectors
 constexpr VkFormat kReactiveFormat = VK_FORMAT_R8_UNORM;    // scene: reactive mask
@@ -416,6 +416,7 @@ public:
     // ---- frames ----
 
     void beginFrame(int w, int h) override {
+        uiPass_ = false;
         w = std::max(w, 1);
         h = std::max(h, 1);
         ++serial_;
@@ -587,6 +588,7 @@ public:
 
     // Scene -> upscaler -> the frame, which the UI then draws over
     void endScene() override {
+        uiPass_ = true; // (what's drawn from here: the UI - Texture Filtering's Sharp is the world's alone)
         if (!inScene_ || !cmd_) return;
         vkCmdEndRendering(cmd_);
         inScene_ = false;
@@ -1603,7 +1605,7 @@ private:
             if (bits & 16) { // (the mipmapped textures: the options' filtering)
                 const float aniso = std::min(float(filtering_.anisotropy), anisotropy_);
                 if (aniso > 1.0f) si.anisotropyEnable = VK_TRUE, si.maxAnisotropy = aniso; // (sharp at an angle)
-                if (filtering_.sharp) si.magFilter = VK_FILTER_NEAREST;
+                if (filtering_.sharp && !(bits & 128)) si.magFilter = VK_FILTER_NEAREST; // (the world's: not the UI's art)
                 si.mipLodBias = filtering_.lodBias;
             }
             if (!ok(vkCreateSampler(device_, &si, nullptr, &samplers_[bits]))) return false;
@@ -1623,7 +1625,7 @@ private:
         if (index >= textures_.size()) return;
         TextureRec& t = textures_[index];
         if (!t.image) return;
-        samplerBits = (samplerBits & ~16u & (kSamplers - 1)) | (t.mips > 1 ? 16u : 0u);
+        samplerBits = (samplerBits & ~(16u | 128u) & (kSamplers - 1)) | (t.mips > 1 ? 16u : 0u) | (uiPass_ && t.mips > 1 ? 128u : 0u);
         VkDescriptorSet& set = t.sets[samplerBits];
         if (!set) {
             VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
@@ -2241,6 +2243,7 @@ private:
                 sceneReactiveView_ = VK_NULL_HANDLE;
     Alloc sceneColorMem_, sceneDepthMem_, sceneMotionMem_, sceneReactiveMem_;
     bool inScene_ = false, historyReset_ = true;
+    bool uiPass_ = false; // (endScene to the next beginFrame: the UI's draws, their art not made Sharp)
     int passW_ = 0, passH_ = 0;        // the render pass being recorded
     float vpW_ = 1, vpH_ = 1;          // the current viewport
     float jitter_[2] = {0, 0};         // pixels
